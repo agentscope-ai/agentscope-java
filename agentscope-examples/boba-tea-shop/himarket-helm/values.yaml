@@ -1,7 +1,7 @@
-# Copyright 2024-2025 the original author or authors.
+# Copyright 2024-2026 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# You may not use this file except in compliance with the License.
+# you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -68,7 +68,7 @@ server:
     port: 80
   replicaCount: 1
   serverPort: 8080
-  
+
   # initContainer configuration
   # Note: When mysql.enabled=true, an initContainer will be automatically added to wait for MySQL to be ready
   # initContainer uses MySQL image (no additional pull required), detecting MySQL service via mysqladmin command
@@ -97,33 +97,33 @@ mysql:
   # Whether to use built-in MySQL (true = deploy MySQL StatefulSet, false = use external MySQL)
   # Note: When built-in MySQL is enabled, HiMarket Server will automatically add initContainer to wait for MySQL to be ready
   enabled: true
-  
+
   # Built-in MySQL image configuration
   image:
     hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
     repository: mysql
     tag: "latest"
     pullPolicy: Always
-  
+
   # Database configuration
   auth:
     database: "himarket_db"
     username: "himarket_user"
     rootPassword: ""  # Leave empty for auto-generation
     password: ""      # Leave empty for auto-generation
-  
+
   # Service configuration
   service:
     external:
       enabled: false  # Whether to expose external access
       type: LoadBalancer
-  
+
   # Storage configuration
   persistence:
     storageClass: "alicloud-disk-essd"
     size: 50Gi
     accessMode: ReadWriteOnce
-  
+
   # Resource configuration
   resources:
     requests:
@@ -132,7 +132,7 @@ mysql:
     limits:
       cpu: "2"
       memory: "2Gi"
-  
+
   # StatefulSet replica count
   replicaCount: 1
 
@@ -151,20 +151,20 @@ database:
 autoInit:
   enabled: true      # Whether to auto-initialize
   delay: 10          # Initialization delay (seconds)
-  
+
   # Frontend access URL (for domain binding)
   frontendUrl: http://localhost:3000
-  
+
   # Admin account
   admin:
     username: admin
     password: admin
-  
+
   # Developer account
   developer:
     username: demo
     password: demo123
-  
+
   # Portal configuration
   portal:
     name: demo
@@ -175,15 +175,15 @@ autoInit:
 nacos:
   # Whether to register Nacos instance to HiMarket
   enabled: true
-  
+
   # Nacos instance configuration
   name: nacos-demo
   serverUrl: {NACOS_SERVER_URL}
-  
+
   # Authentication method 1: Username/Password (open source Nacos)
   username: nacos
   password: {NACOS_PASSWORD}
-  
+
   # Authentication method 2: AccessKey/SecretKey (commercial Nacos)
   accessKey: ""
   secretKey: ""
@@ -194,17 +194,17 @@ nacos:
 gateway:
   # Whether to register gateway instance to HiMarket
   enabled: false
-  
+
   # Gateway type: HIGRESS or APIG_AI
   type: HIGRESS
   name: higress-demo
-  
+
   # Higress configuration
   higress:
     url: http://higress-console:8080
     username: admin
     password: admin
-  
+
   # Alibaba Cloud AI Gateway configuration
   apig:
     region: cn-hangzhou
@@ -217,10 +217,10 @@ gateway:
 mcp:
   # Whether to import MCP to Nacos (enabled by default)
   importToNacos: true
-  
+
   # Whether to publish MCP in HiMarket (enabled by default)
   publishToHimarket: true
-  
+
   # MCP JSON file path (built into the image)
   jsonFile: /opt/himarket/data/nacos-mcp.json
 
