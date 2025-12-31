@@ -71,7 +71,7 @@ Boba Tea Shop 是一个基于 **AgentScope Java** 框架构建的多智能体系
 |------|---------------|
 | **AgentScope Java** | 多智能体框架核心      |
 | **Spring Boot** | 应用框架          |
-| **Spring AI Alibaba** | MCP Server 构建 |
+| **MCP Spring Webflux** | MCP Server 构建 |
 | **MySQL** | 关系型数据库        |
 | **Nacos** | 服务注册与配置中心     |
 

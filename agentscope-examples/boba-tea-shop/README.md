@@ -71,7 +71,7 @@ Through this example, you can learn:
 |------------|-------------|
 | **AgentScope Java** | Multi-agent framework core |
 | **Spring Boot** | Application framework |
-| **Spring AI Alibaba** | MCP Server building |
+| **MCP Spring Webflux** | MCP Server building |
 | **MySQL** | Relational database |
 | **Nacos** | Service registry and configuration center |
 
