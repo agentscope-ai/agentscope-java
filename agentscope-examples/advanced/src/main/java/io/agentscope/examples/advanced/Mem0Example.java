@@ -31,14 +31,21 @@ public class Mem0Example {
         // Get API keys
         String dashscopeApiKey = ExampleUtils.getDashScopeApiKey();
         String mem0BaseUrl = getMem0BaseUrl();
+        String mem0ApiType = getMem0ApiType();
 
-        Mem0LongTermMemory longTermMemory =
+        Mem0LongTermMemory.Builder memoryBuilder =
                 Mem0LongTermMemory.builder()
                         .agentName("SmartAssistant")
                         .userId("static-control01126")
                         .apiBaseUrl(mem0BaseUrl)
-                        .apiKey(System.getenv("MEM0_API_KEY"))
-                        .build();
+                        .apiKey(System.getenv("MEM0_API_KEY"));
+
+        // Set apiType if specified (for self-hosted Mem0)
+        if (mem0ApiType != null && !mem0ApiType.isEmpty()) {
+            memoryBuilder.apiType(mem0ApiType);
+        }
+
+        Mem0LongTermMemory longTermMemory = memoryBuilder.build();
 
         // Create agent with AGENT_CONTROL mode
         ReActAgent agent =
@@ -74,5 +81,14 @@ public class Mem0Example {
             return "https://api.mem0.ai";
         }
         return baseUrl;
+    }
+
+    /**
+     * Gets Mem0 API type from environment variable.
+     *
+     * @return API type: "platform" (default) or "self-hosted", or null if not specified
+     */
+    private static String getMem0ApiType() {
+        return System.getenv("MEM0_API_TYPE");
     }
 }

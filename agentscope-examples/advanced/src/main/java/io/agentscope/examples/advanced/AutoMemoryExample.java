@@ -18,6 +18,7 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextHook;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
@@ -58,7 +59,9 @@ public class AutoMemoryExample {
                 Mem0LongTermMemory.builder()
                         .apiKey(ExampleUtils.getMem0ApiKey())
                         .userId("example-user") // Use a placeholder user ID for example code
-                        .apiBaseUrl("https://api.mem0.ai");
+                        .apiBaseUrl("http://127.0.0.1:8888")
+                        // .apiBaseUrl("https://api.mem0.ai");
+                        .apiType("self-hosted");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
                 AutoContextConfig.builder().tokenRatio(0.4).lastKeep(20).build();
@@ -78,11 +81,12 @@ public class AutoMemoryExample {
                         .memory(memory)
                         .maxIters(50)
                         .longTermMemory(longTermMemory)
+                        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
                         .enablePlan()
                         .toolkit(toolkit)
                         .hook(new AutoContextHook()) // Register the hook for automatic setup
                         .build();
-        String sessionId = "session111111111111";
+        String sessionId = "123453344";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");

@@ -65,6 +65,14 @@ import reactor.core.publisher.Mono;
  *     .apiBaseUrl("http://localhost:8000")
  *     .build();
  *
+ * // For self-hosted Mem0
+ * Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
+ *     .agentName("Assistant")
+ *     .userName("user_123")
+ *     .apiBaseUrl("http://localhost:8000")
+ *     .apiType("self-hosted")  // Specify self-hosted API type
+ *     .build();
+ *
  * // Record a message
  * Msg msg = Msg.builder()
  *     .role(MsgRole.USER)
@@ -97,7 +105,12 @@ public class Mem0LongTermMemory implements LongTermMemory {
      * Private constructor - use Builder instead.
      */
     private Mem0LongTermMemory(Builder builder) {
-        this.client = new Mem0Client(builder.apiBaseUrl, builder.apiKey, builder.timeout);
+        this.client =
+                new Mem0Client(
+                        builder.apiBaseUrl,
+                        builder.apiKey,
+                        builder.apiType != null ? builder.apiType : "platform",
+                        builder.timeout);
         this.agentId = builder.agentName;
         this.userId = builder.userId;
         this.runId = builder.runName;
@@ -244,6 +257,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         private String runName;
         private String apiBaseUrl;
         private String apiKey;
+        private String apiType; // "platform" or "self-hosted"
         private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
 
         /**
@@ -310,6 +324,18 @@ public class Mem0LongTermMemory implements LongTermMemory {
          */
         public Builder timeout(java.time.Duration timeout) {
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Sets the Mem0 API type.
+         *
+         * @param apiType API type: "platform" for Platform Mem0 (default),
+         *                "self-hosted" for self-hosted Mem0
+         * @return This builder
+         */
+        public Builder apiType(String apiType) {
+            this.apiType = apiType;
             return this;
         }
 

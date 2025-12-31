@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.mem0;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
@@ -28,6 +29,7 @@ import java.util.List;
  * <p>An empty results list indicates that no relevant memories were found for the query.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Mem0SearchResponse {
 
     /**

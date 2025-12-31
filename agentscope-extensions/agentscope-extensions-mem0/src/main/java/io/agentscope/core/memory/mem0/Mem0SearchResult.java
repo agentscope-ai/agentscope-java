@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.mem0;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.OffsetDateTime;
@@ -39,6 +40,7 @@ import java.util.Map;
  * <p>Results are typically ordered by relevance.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Mem0SearchResult {
 
     /** Unique identifier for this memory (UUID format). */
