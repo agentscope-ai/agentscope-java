@@ -98,10 +98,12 @@ class ProviderCapabilityTest {
     void testGLMCapabilities() {
         ProviderCapability glm = ProviderCapability.GLM;
 
-        // GLM only supports auto
+        // GLM supports auto, required, specific (based on actual API behavior)
+        // Note: Official docs state "默认且仅支持 auto" but actual API shows
+        // required and specific tool choice work correctly.
         assertFalse(glm.supportsNone(), "GLM should not support 'none'");
-        assertFalse(glm.supportsRequired(), "GLM should not support 'required'");
-        assertFalse(glm.supportsSpecific(), "GLM should not support specific tool choice");
+        assertTrue(glm.supportsRequired(), "GLM should support 'required'");
+        assertTrue(glm.supportsSpecific(), "GLM should support specific tool choice");
     }
 
     @Test

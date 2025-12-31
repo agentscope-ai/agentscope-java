@@ -113,8 +113,9 @@ public class OpenAIToolsHelper {
             // Some providers still expect the legacy max_tokens field
             request.setMaxTokens(maxTokens);
         } else if (isReasoningModel) {
-            // Reasoning models require max_tokens to be set (default to 4096)
-            request.setMaxTokens(4096);
+            // Reasoning models require max_tokens to be set
+            // DeepSeek R1 has a limit of 4092, use safe default
+            request.setMaxTokens(4000);
         }
 
         // Apply seed

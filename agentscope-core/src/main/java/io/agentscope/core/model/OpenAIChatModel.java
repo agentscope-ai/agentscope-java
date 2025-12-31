@@ -176,71 +176,70 @@ public class OpenAIChatModel extends ChatModelBase {
                     new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
         }
 
-        Flux<ChatResponse> responseFlux =
-                Flux.defer(
-                        () -> {
-                            try {
-                                // Build chat completion request
-                                ChatCompletionCreateParams.Builder paramsBuilder =
-                                        ChatCompletionCreateParams.builder().model(model);
+        OpenAIRequest request = requestBuilder.build();
 
-                                // Use formatter to convert Msg to OpenAI
-                                // ChatCompletionMessageParam
-                                List<ChatCompletionMessageParam> formattedMessages =
-                                        formatter.format(messages);
-                                for (ChatCompletionMessageParam param : formattedMessages) {
-                                    paramsBuilder.addMessage(param);
-                                }
+        // Apply tools to request
+        if (tools != null && !tools.isEmpty()) {
+            formatter.applyTools(request, tools, baseUrl, modelName);
+        }
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
+        // Apply generation options
+        formatter.applyOptions(request, options, null);
 
-                                // Apply generation options via formatter
-                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
+        // Apply tool choice if specified
+        if (options.getToolChoice() != null) {
+            formatter.applyToolChoice(request, options.getToolChoice(), baseUrl, modelName);
+        }
 
-                                // Apply tool choice if available
-                                applyToolChoiceIfAvailable(paramsBuilder, options);
+        // Make the API call
+        if (stream) {
+            // Streaming mode
+            return client.stream(apiKey, baseUrl, request, options)
+                    .map(response -> formatter.parseResponse(response, start))
+                    .filter(Objects::nonNull);
+        } else {
+            // Non-streaming mode: make a single call and return as Flux
+            return Flux.defer(
+                    () -> {
+                        try {
+                            OpenAIResponse response =
+                                    client.call(apiKey, baseUrl, request, options);
+                            ChatResponse chatResponse = formatter.parseResponse(response, start);
+                            return Flux.just(chatResponse);
+                        } catch (Exception e) {
+                            return Flux.error(
+                                    new ModelException(
+                                            "Failed to call OpenAI API: " + e.getMessage(),
+                                            e,
+                                            modelName,
+                                            "openai"));
+                        }
+                    });
+        }
+    }
 
-                                // Create the request
-                                ChatCompletionCreateParams params = paramsBuilder.build();
+    /**
+     * Apply provider-specific message format fixes.
+     *
+     * <p>This method handles provider-specific message format requirements that cannot be
+     * handled by the standard formatter.
+     *
+     * @param messages the formatted OpenAI messages
+     * @param capability the provider capability
+     * @return the adjusted messages
+     */
+    private static List<OpenAIMessage> applyProviderMessageFixes(
+            List<OpenAIMessage> messages, ProviderCapability capability) {
 
-                                if (streamEnabled) {
-                                    // Make streaming API call
-                                    StreamResponse<ChatCompletionChunk> streamResponse =
-                                            client.chat().completions().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
-                                    return Flux.fromStream(streamResponse.stream())
-                                            .subscribeOn(Schedulers.boundedElastic())
-                                            .map(chunk -> formatter.parseResponse(chunk, startTime))
-                                            .filter(Objects::nonNull)
-                                            .doFinally(
-                                                    signalType -> {
-                                                        try {
-                                                            streamResponse.close();
-                                                        } catch (Exception ignored) {
-                                                        }
-                                                    });
-                                } else {
-                                    // For non-streaming, make a single call
-                                    // and return as Flux
-                                    ChatCompletion completion =
-                                            client.chat().completions().create(params);
-                                    ChatResponse response =
-                                            formatter.parseResponse(completion, startTime);
-                                    return Flux.just(response);
-                                }
-                            } catch (Exception e) {
-                                return Flux.error(
-                                        new ModelException(
-                                                "Failed to stream OpenAI API: " + e.getMessage(),
-                                                e,
-                                                modelName,
-                                                "openai"));
-                            }
-                        });
+        if (capability == ProviderCapability.GLM) {
+            // GLM API requires at least one user message in the conversation
+            boolean hasUserMessage = false;
+            for (OpenAIMessage msg : messages) {
+                if ("user".equals(msg.getRole())) {
+                    hasUserMessage = true;
+                    break;
+                }
+            }
 
             if (!hasUserMessage) {
                 // GLM API returns error 1214 if there's no user message
@@ -252,6 +251,77 @@ public class OpenAIChatModel extends ChatModelBase {
                         OpenAIMessage.builder().role("user").content("Please proceed.").build();
                 List<OpenAIMessage> adjustedMessages = new ArrayList<>(messages);
                 adjustedMessages.add(placeholderUserMessage);
+                return adjustedMessages;
+            }
+        }
+
+        // DeepSeek R1: Fix message format for reasoning model
+        // DeepSeek R1 requires:
+        // 1. No reasoning_content in request messages
+        // 2. No system role (convert to user)
+        // 3. No name field in messages
+        // 4. Messages must end with user role (to allow the model to respond)
+        if (capability == ProviderCapability.DEEPSEEK) {
+            boolean needsFix = false;
+            // Check if reasoning_content exists or system message exists
+            for (OpenAIMessage msg : messages) {
+                if (msg.getReasoningContent() != null || "system".equals(msg.getRole())) {
+                    needsFix = true;
+                    break;
+                }
+            }
+            // Check if last message is assistant (need to add user message to continue)
+            if (!needsFix
+                    && !messages.isEmpty()
+                    && "assistant".equals(messages.get(messages.size() - 1).getRole())) {
+                needsFix = true;
+            }
+
+            if (needsFix) {
+                log.debug("DeepSeek provider detected: fixing message format");
+                List<OpenAIMessage> adjustedMessages = new ArrayList<>();
+                for (OpenAIMessage msg : messages) {
+                    // Convert system message to user
+                    String role = msg.getRole();
+                    if ("system".equals(role)) {
+                        role = "user";
+                    }
+
+                    // Build new message without reasoning_content and name
+                    OpenAIMessage.Builder builder = OpenAIMessage.builder().role(role);
+                    // Handle content (could be String or List)
+                    Object content = msg.getContent();
+                    if (content instanceof String) {
+                        builder.content((String) content);
+                    } else if (content instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<io.agentscope.core.formatter.openai.dto.OpenAIContentPart>
+                                contentParts =
+                                        (List<
+                                                        io.agentscope.core.formatter.openai.dto
+                                                                .OpenAIContentPart>)
+                                                content;
+                        builder.content(contentParts);
+                    }
+                    // Note: Don't include name field for DeepSeek
+                    if (msg.getToolCalls() != null) {
+                        builder.toolCalls(msg.getToolCalls());
+                    }
+                    adjustedMessages.add(builder.build());
+                }
+                // If last message is assistant, add a user message to continue
+                if (!adjustedMessages.isEmpty()
+                        && "assistant"
+                                .equals(
+                                        adjustedMessages
+                                                .get(adjustedMessages.size() - 1)
+                                                .getRole())) {
+                    adjustedMessages.add(
+                            OpenAIMessage.builder()
+                                    .role("user")
+                                    .content("Please continue.")
+                                    .build());
+                }
                 return adjustedMessages;
             }
         }
