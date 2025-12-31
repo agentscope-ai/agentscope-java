@@ -44,7 +44,7 @@
     <licenses>
         <license>
             <name>Apache 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
@@ -332,7 +332,7 @@
                 <artifactId>spring-boot-autoconfigure</artifactId>
                 <version>${spring-boot.version}</version>
             </dependency>
-            
+
             <!-- Nacos dependencies -->
             <dependency>
                 <groupId>com.alibaba.nacos</groupId>
