@@ -55,12 +55,13 @@ public enum ProviderCapability {
     GEMINI(true, true, false, false, "googleapis.com", "generativelanguage.googleapis.com"),
 
     /**
-     * Zhipu GLM - Limited tool_choice support.
-     * <p>Supports: auto only (no none, no required, no specific)
-     * <p>Does not support: strict parameter
-     * <p>Reference: <a href="https://docs.bigmodel.cn/cn/guide/capabilities/function-calling">GLM Function Calling</a>
+     * Zhipu GLM - Partial tool_choice support.
+     * <p>Supports: auto, required, specific
+     * <p>Does not support: none (ignored by API), strict parameter
+     * <p>Note: Official docs state "默认且仅支持 auto" but actual API behavior shows
+     * required and specific tool choice work correctly.
      */
-    GLM(false, false, false, false, "bigmodel.cn", "open.bigmodel.cn"),
+    GLM(false, true, true, false, "bigmodel.cn", "open.bigmodel.cn"),
 
     /**
      * DashScope (Alibaba) - Full tool_choice support.

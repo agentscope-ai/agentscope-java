@@ -120,6 +120,7 @@ public class GLMProvider implements ModelProvider {
 
     /**
      * GLM-4V Plus - Latest generation multimodal model.
+     * <p>Note: GLM-4V series does NOT support tool calling (function calling).
      */
     public static class GLM4VPlus extends GLMProvider {
         public GLM4VPlus() {
@@ -130,10 +131,16 @@ public class GLMProvider implements ModelProvider {
         public String getProviderName() {
             return "GLM-4V Plus";
         }
+
+        @Override
+        public boolean supportsToolCalling() {
+            return false;
+        }
     }
 
     /**
      * GLM-4V Plus with Multi-Agent Formatter.
+     * <p>Note: GLM-4V series does NOT support tool calling (function calling).
      */
     public static class GLM4VPlusMultiAgent extends GLMProvider {
         public GLM4VPlusMultiAgent() {
@@ -143,6 +150,54 @@ public class GLMProvider implements ModelProvider {
         @Override
         public String getProviderName() {
             return "GLM-4V Plus (MultiAgent)";
+        }
+
+        @Override
+        public boolean supportsToolCalling() {
+            return false;
+        }
+    }
+
+    /**
+     * GLM-Z1-Air - Reasoning model with thinking mode support.
+     * <p>Uses reinforcement learning for deep reasoning on complex tasks.
+     * Supports thinking mode via thinking.type parameter.
+     * <p>Reference: <a href="https://open.bigmodel.cn/dev/api/Reasoning-models/glm-z1">GLM-Z1 Documentation</a>
+     */
+    public static class GLMZ1Air extends GLMProvider {
+        public GLMZ1Air() {
+            super("glm-z1-air", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "GLM-Z1-Air";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
+    }
+
+    /**
+     * GLM-4.5 - Hybrid reasoning model with ARC (Agentic/Reasoning/Coding) capabilities.
+     * <p>Supports thinking mode toggle for complex reasoning tasks.
+     * <p>Reference: <a href="https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5">GLM-4.5 Documentation</a>
+     */
+    public static class GLM45 extends GLMProvider {
+        public GLM45() {
+            super("glm-4.5", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "GLM-4.5";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
         }
     }
 }

@@ -18,6 +18,7 @@ package io.agentscope.core.e2e;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
@@ -178,6 +179,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should return basic structured output in single round")
     void testBasicStructuredOutput(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Basic Structured Output with " + provider.getProviderName() + " ===");
 
@@ -216,6 +221,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should combine tool calling with structured output")
     void testStructuredOutputWithToolCalling(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Structured Output with Tool Calling - "
                         + provider.getProviderName()
@@ -271,6 +280,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should generate structured output after multi-round conversation")
     void testStructuredOutputAfterMultiRound(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Structured Output After Multi-Round - "
                         + provider.getProviderName()
@@ -346,6 +359,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle complex nested data structures")
     void testComplexNestedStructure(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         if (provider.getModelName().startsWith("gemini")) {
             // Gemini cannot handle this case well
             return;
@@ -407,6 +424,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should generate structured output from existing memory without new input")
     void testStructuredOutputWithoutNewInput(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Structured Output Without New Input - "
                         + provider.getProviderName()
@@ -449,6 +470,10 @@ class StructuredOutputE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should properly cleanup memory after structured output generation")
     void testStructuredOutputMemoryCleanup(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Memory Cleanup After Structured Output - "
                         + provider.getProviderName()

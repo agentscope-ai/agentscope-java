@@ -360,6 +360,11 @@ public class ProviderFactory {
             builders.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
         }
 
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLMZ1Air());
+            builders.add(new GLMProvider.GLM45());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
@@ -380,6 +385,12 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeProvider.QwenPlusThinkingDashScope(1000));
             builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope(1000));
+        }
+
+        if (hasGLMKey()) {
+            // GLM-Z1-Air and GLM-4.5 have built-in thinking management
+            builders.add(new GLMProvider.GLMZ1Air());
+            builders.add(new GLMProvider.GLM45());
         }
 
         if (hasOpenRouterKey()) {

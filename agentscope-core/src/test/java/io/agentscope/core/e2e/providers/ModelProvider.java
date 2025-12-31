@@ -62,4 +62,15 @@ public interface ModelProvider {
      * @return Model name
      */
     String getModelName();
+
+    /**
+     * Checks if this provider supports tool calling (function calling).
+     *
+     * <p>Vision models like GLM-4V do not support tool calling.
+     *
+     * @return true if tool calling is supported
+     */
+    default boolean supportsToolCalling() {
+        return true;
+    }
 }

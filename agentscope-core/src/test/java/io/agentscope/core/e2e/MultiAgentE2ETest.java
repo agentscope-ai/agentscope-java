@@ -18,6 +18,7 @@ package io.agentscope.core.e2e;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
@@ -250,6 +251,10 @@ class MultiAgentE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle multi-agent with tool calling")
     void testMultiAgentWithToolCalling(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Multi-Agent with Tool Calling - "
                         + provider.getProviderName()
@@ -497,6 +502,10 @@ class MultiAgentE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should combine multi-agent with structured output")
     void testMultiAgentWithStructuredOutput(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Multi-Agent with Structured Output - "
                         + provider.getProviderName()
