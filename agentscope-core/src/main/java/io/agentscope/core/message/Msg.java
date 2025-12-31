@@ -101,7 +101,7 @@ public class Msg {
                 if (Objects.isNull(key) || Objects.isNull(value)) {
                     continue;
                 }
-                metadata.put(key, value);
+                this.metadata.put(key, value);
             }
         }
         this.timestamp = timestamp;
