@@ -22,8 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Ollama tool call DTO.
  * Represents a specific tool call invocation.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaToolCall {

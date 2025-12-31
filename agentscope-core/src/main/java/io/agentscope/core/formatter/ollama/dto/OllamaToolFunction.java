@@ -23,8 +23,6 @@ import java.util.Map;
  * Ollama tool function definition DTO.
  * Represents the definition of a function that can be called by the model.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaToolFunction {

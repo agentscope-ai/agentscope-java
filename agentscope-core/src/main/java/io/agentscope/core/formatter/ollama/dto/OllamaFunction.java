@@ -23,8 +23,6 @@ import java.util.Map;
  * Ollama function execution DTO.
  * Represents the function details in a tool call from the model.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaFunction {

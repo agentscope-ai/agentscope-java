@@ -40,7 +40,6 @@ import java.util.List;
  *
  *
  *
- * @author qjc
  */
 @JsonSerialize(using = ThinkOption.ThinkOptionSerializer.class)
 @JsonDeserialize(using = ThinkOption.ThinkOptionDeserializer.class)

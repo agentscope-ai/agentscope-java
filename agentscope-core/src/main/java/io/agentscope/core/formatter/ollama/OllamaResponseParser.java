@@ -33,8 +33,6 @@ import java.util.UUID;
 /**
  * Parser for converting OllamaResponse objects to AgentScope ChatResponse objects.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaResponseParser {
 

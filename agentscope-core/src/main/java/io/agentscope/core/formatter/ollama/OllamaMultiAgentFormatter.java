@@ -39,8 +39,6 @@ import java.util.List;
  * Converts AgentScope Msg objects to Ollama DTO Message objects with multi-agent support.
  * Collapses multi-agent conversation into a single user message with history tags.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaMultiAgentFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {

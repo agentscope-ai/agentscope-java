@@ -48,8 +48,6 @@ import reactor.core.publisher.Flux;
  *   <li>Automatic timeout and retry mechanisms</li>
  * </ul>
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaChatModel extends ChatModelBase {
     private static final Logger log = LoggerFactory.getLogger(OllamaChatModel.class);

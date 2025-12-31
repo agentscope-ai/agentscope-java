@@ -53,8 +53,6 @@ import reactor.core.publisher.Flux;
  *
  * <p>Default base URL is http://localhost:11434, which is the standard Ollama server address.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaHttpClient {
 

@@ -24,8 +24,6 @@ import java.util.Map;
  * Ollama chat request DTO.
  * Represents the payload sent to the Ollama chat API.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaRequest {

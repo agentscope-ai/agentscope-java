@@ -23,8 +23,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Ollama chat response DTO.
  * Represents the response from the Ollama chat API.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)

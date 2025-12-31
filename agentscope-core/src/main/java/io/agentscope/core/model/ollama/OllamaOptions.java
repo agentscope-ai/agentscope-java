@@ -38,8 +38,6 @@ import java.util.Objects;
  * The class provides utility methods for conversion to/from generic {@link GenerateOptions},
  * allowing seamless integration with AgentScope's general model interface.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(Include.NON_NULL)
 public class OllamaOptions {

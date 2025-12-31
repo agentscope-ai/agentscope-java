@@ -33,8 +33,6 @@ import java.util.List;
  * Formatter for Ollama Chat API.
  * Converts between AgentScope Msg objects and Ollama DTO types.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaChatFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {

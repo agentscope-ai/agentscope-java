@@ -38,8 +38,6 @@ import org.slf4j.LoggerFactory;
 /**
  * Helper class for managing Ollama tool conversions and options application.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaToolsHelper {
 

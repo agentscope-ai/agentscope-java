@@ -23,8 +23,6 @@ import java.util.List;
  * Ollama chat message DTO.
  * Represents a message in the conversation history.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaMessage {

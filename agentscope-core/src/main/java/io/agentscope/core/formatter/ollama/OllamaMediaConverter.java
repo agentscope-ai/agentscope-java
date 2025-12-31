@@ -27,8 +27,6 @@ import org.slf4j.LoggerFactory;
  * Handles media content conversion for Ollama API.
  * Converts ImageBlock to Base64 strings as required by Ollama.
  *
- * @author qjc
- * @since 1.0.0
  */
 public class OllamaMediaConverter {
 

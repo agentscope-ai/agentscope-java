@@ -22,8 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Ollama tool definition DTO.
  * Wraps a function definition as a tool.
  *
- * @author qjc
- * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaTool {
