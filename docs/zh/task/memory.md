@@ -225,13 +225,18 @@ ReActAgent agent = ReActAgent.builder()
 **自建 Mem0**：
 
 ```java
-// 使用自建 Mem0，需要指定 apiType 为 "self-hosted"
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.mem0.Mem0ApiType;
+import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
+
+// 使用自建 Mem0，需要指定 apiType 为 Mem0ApiType.SELF_HOSTED
 Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
         .agentName("SmartAssistant")
         .userId("user-001")
         .apiBaseUrl("http://localhost:8000")  // 自建 Mem0 服务地址
         .apiKey(System.getenv("MEM0_API_KEY"))  // 可选，取决于自建服务配置
-        .apiType("self-hosted")  // 指定为自建 Mem0
+        .apiType(Mem0ApiType.SELF_HOSTED)  // 指定为自建 Mem0
         .build();
 
 ReActAgent agent = ReActAgent.builder()
@@ -245,9 +250,8 @@ ReActAgent agent = ReActAgent.builder()
 **配置说明**：
 
 - `apiType`：可选参数，指定 Mem0 部署类型
-  - `"platform"`（默认）：使用 Platform Mem0 的 API 端点
-  - `"self-hosted"`：使用自建 Mem0 的 API 端点
-  - 大小写不敏感，支持 `"SELF-HOSTED"`、`"Self-Hosted"` 等格式
+  - `Mem0ApiType.PLATFORM`（默认）：使用 Platform Mem0 的 API 端点
+  - `Mem0ApiType.SELF_HOSTED`：使用自建 Mem0 的 API 端点
 - `apiBaseUrl`：Mem0 服务的基地址
   - Platform Mem0：通常为 `https://api.mem0.ai`
   - 自建 Mem0：通常为 `http://localhost:8000` 或您的服务器地址

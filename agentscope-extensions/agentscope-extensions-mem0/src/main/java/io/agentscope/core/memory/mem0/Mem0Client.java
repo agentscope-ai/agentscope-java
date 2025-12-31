@@ -58,7 +58,6 @@ public class Mem0Client {
     private final ObjectMapper objectMapper;
     private final String addEndpoint;
     private final String searchEndpoint;
-    private final String apiType;
 
     /**
      * Creates a new Mem0Client with specified configuration (defaults to Platform Mem0).
@@ -80,7 +79,7 @@ public class Mem0Client {
      * @param timeout HTTP request timeout duration
      */
     public Mem0Client(String apiBaseUrl, String apiKey, Duration timeout) {
-        this(apiBaseUrl, apiKey, "platform", timeout);
+        this(apiBaseUrl, apiKey, Mem0ApiType.PLATFORM, timeout);
     }
 
     /**
@@ -89,10 +88,10 @@ public class Mem0Client {
      * @param apiBaseUrl The base URL of the Mem0 API
      * @param apiKey The API key for authentication (can be null for local deployments without
      *     authentication)
-     * @param apiType API type: "platform" for Platform Mem0, "self-hosted" for self-hosted Mem0
+     * @param apiType API type enum
      * @param timeout HTTP request timeout duration
      */
-    public Mem0Client(String apiBaseUrl, String apiKey, String apiType, Duration timeout) {
+    public Mem0Client(String apiBaseUrl, String apiKey, Mem0ApiType apiType, Duration timeout) {
         this.apiBaseUrl =
                 apiBaseUrl.endsWith("/")
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
@@ -108,11 +107,11 @@ public class Mem0Client {
                         .writeTimeout(Duration.ofSeconds(30))
                         .build();
 
-        // Store API type (normalize to lowercase for comparison)
-        this.apiType = apiType != null ? apiType.toLowerCase() : "platform";
+        // Determine API type (default to PLATFORM if null)
+        Mem0ApiType resolvedApiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
 
         // Select endpoints based on API type
-        if ("self-hosted".equals(this.apiType)) {
+        if (resolvedApiType == Mem0ApiType.SELF_HOSTED) {
             this.addEndpoint = SELF_HOSTED_MEMORIES_ENDPOINT;
             this.searchEndpoint = SELF_HOSTED_SEARCH_ENDPOINT;
         } else {
@@ -254,14 +253,10 @@ public class Mem0Client {
                 .map(
                         responseBody -> {
                             try {
-                                if ("self-hosted".equals(apiType)) {
-                                    // Self-hosted Mem0 returns response wrapped in {"results":
-                                    // [...]}
-                                    Mem0SearchResponse searchResponse =
-                                            objectMapper.readValue(
-                                                    responseBody, Mem0SearchResponse.class);
-                                    return searchResponse;
-                                } else {
+                                // Platform Mem0 uses /v2/memories/search/ endpoint and returns
+                                // direct array
+                                // Self-hosted Mem0 uses /search endpoint and returns wrapped format
+                                if (searchEndpoint.contains("/v2/")) {
                                     // Platform Mem0 returns direct array
                                     List<Mem0SearchResult> results =
                                             objectMapper.readValue(
@@ -275,6 +270,13 @@ public class Mem0Client {
                                     // Wrap in Mem0SearchResponse for consistency
                                     Mem0SearchResponse searchResponse = new Mem0SearchResponse();
                                     searchResponse.setResults(results);
+                                    return searchResponse;
+                                } else {
+                                    // Self-hosted Mem0 returns response wrapped in {"results":
+                                    // [...]}
+                                    Mem0SearchResponse searchResponse =
+                                            objectMapper.readValue(
+                                                    responseBody, Mem0SearchResponse.class);
                                     return searchResponse;
                                 }
                             } catch (Exception e) {

@@ -70,7 +70,7 @@ import reactor.core.publisher.Mono;
  *     .agentName("Assistant")
  *     .userName("user_123")
  *     .apiBaseUrl("http://localhost:8000")
- *     .apiType("self-hosted")  // Specify self-hosted API type
+ *     .apiType(Mem0ApiType.SELF_HOSTED)  // Specify self-hosted API type
  *     .build();
  *
  * // Record a message
@@ -105,12 +105,8 @@ public class Mem0LongTermMemory implements LongTermMemory {
      * Private constructor - use Builder instead.
      */
     private Mem0LongTermMemory(Builder builder) {
-        this.client =
-                new Mem0Client(
-                        builder.apiBaseUrl,
-                        builder.apiKey,
-                        builder.apiType != null ? builder.apiType : "platform",
-                        builder.timeout);
+        Mem0ApiType apiType = builder.apiType != null ? builder.apiType : Mem0ApiType.PLATFORM;
+        this.client = new Mem0Client(builder.apiBaseUrl, builder.apiKey, apiType, builder.timeout);
         this.agentId = builder.agentName;
         this.userId = builder.userId;
         this.runId = builder.runName;
@@ -257,7 +253,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         private String runName;
         private String apiBaseUrl;
         private String apiKey;
-        private String apiType; // "platform" or "self-hosted"
+        private Mem0ApiType apiType;
         private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
 
         /**
@@ -330,11 +326,10 @@ public class Mem0LongTermMemory implements LongTermMemory {
         /**
          * Sets the Mem0 API type.
          *
-         * @param apiType API type: "platform" for Platform Mem0 (default),
-         *                "self-hosted" for self-hosted Mem0
+         * @param apiType API type enum
          * @return This builder
          */
-        public Builder apiType(String apiType) {
+        public Builder apiType(Mem0ApiType apiType) {
             this.apiType = apiType;
             return this;
         }

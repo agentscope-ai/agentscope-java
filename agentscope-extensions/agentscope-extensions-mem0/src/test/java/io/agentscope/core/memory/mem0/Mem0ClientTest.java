@@ -381,18 +381,9 @@ class Mem0ClientTest {
     @Test
     void testConstructorWithSelfHostedApiType() {
         String baseUrl = "http://localhost:8000";
-        Mem0Client client = new Mem0Client(baseUrl, "key", "self-hosted", Duration.ofSeconds(60));
+        Mem0Client client =
+                new Mem0Client(baseUrl, "key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
         assertNotNull(client);
-    }
-
-    @Test
-    void testConstructorWithSelfHostedApiTypeCaseInsensitive() {
-        String baseUrl = "http://localhost:8000";
-        // Test different case variations
-        Mem0Client client1 = new Mem0Client(baseUrl, "key", "SELF-HOSTED", Duration.ofSeconds(60));
-        Mem0Client client2 = new Mem0Client(baseUrl, "key", "Self-Hosted", Duration.ofSeconds(60));
-        assertNotNull(client1);
-        assertNotNull(client2);
     }
 
     @Test
@@ -400,7 +391,8 @@ class Mem0ClientTest {
         // Create self-hosted client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client selfHostedClient =
-                new Mem0Client(baseUrl, "test-api-key", "self-hosted", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
 
         // Mock successful response
         String responseJson =
@@ -451,7 +443,8 @@ class Mem0ClientTest {
         // Create self-hosted client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client selfHostedClient =
-                new Mem0Client(baseUrl, "test-api-key", "self-hosted", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
 
         // Mock self-hosted search response (wrapped in {"results": [...]})
         String responseJson =
@@ -505,7 +498,8 @@ class Mem0ClientTest {
         // Create self-hosted client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client selfHostedClient =
-                new Mem0Client(baseUrl, "test-api-key", "self-hosted", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
 
         // Mock self-hosted empty response (wrapped format)
         String responseJson = "{\"results\":[]}";
@@ -531,7 +525,8 @@ class Mem0ClientTest {
         // Create self-hosted client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client selfHostedClient =
-                new Mem0Client(baseUrl, "test-api-key", "self-hosted", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
 
         // Mock self-hosted response with multiple results (wrapped format)
         String responseJson =
@@ -566,7 +561,8 @@ class Mem0ClientTest {
         // Explicitly create platform client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client platformClient =
-                new Mem0Client(baseUrl, "test-api-key", "platform", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
 
         // Mock response
         mockServer.enqueue(
@@ -597,7 +593,8 @@ class Mem0ClientTest {
         // Explicitly create platform client
         String baseUrl = mockServer.url("/").toString();
         Mem0Client platformClient =
-                new Mem0Client(baseUrl, "test-api-key", "platform", Duration.ofSeconds(60));
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
 
         // Mock platform search response (direct array)
         String responseJson =

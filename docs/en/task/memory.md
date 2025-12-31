@@ -225,13 +225,18 @@ ReActAgent agent = ReActAgent.builder()
 **Self-hosted Mem0**:
 
 ```java
-// Using self-hosted Mem0, need to specify apiType as "self-hosted"
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.mem0.Mem0ApiType;
+import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
+
+// Using self-hosted Mem0, need to specify apiType as Mem0ApiType.SELF_HOSTED
 Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
         .agentName("SmartAssistant")
         .userId("user-001")
         .apiBaseUrl("http://localhost:8000")  // Self-hosted Mem0 service address
         .apiKey(System.getenv("MEM0_API_KEY"))  // Optional, depends on self-hosted service config
-        .apiType("self-hosted")  // Specify as self-hosted Mem0
+        .apiType(Mem0ApiType.SELF_HOSTED)  // Specify as self-hosted Mem0
         .build();
 
 ReActAgent agent = ReActAgent.builder()
@@ -245,9 +250,8 @@ ReActAgent agent = ReActAgent.builder()
 **Configuration Notes**:
 
 - `apiType`: Optional parameter to specify Mem0 deployment type
-  - `"platform"` (default): Uses Platform Mem0 API endpoints
-  - `"self-hosted"`: Uses self-hosted Mem0 API endpoints
-  - Case-insensitive, supports `"SELF-HOSTED"`, `"Self-Hosted"`, etc.
+  - `Mem0ApiType.PLATFORM` (default): Uses Platform Mem0 API endpoints
+  - `Mem0ApiType.SELF_HOSTED`: Uses self-hosted Mem0 API endpoints
 - `apiBaseUrl`: Base URL of the Mem0 service
   - Platform Mem0: Usually `https://api.mem0.ai`
   - Self-hosted Mem0: Usually `http://localhost:8000` or your server address
