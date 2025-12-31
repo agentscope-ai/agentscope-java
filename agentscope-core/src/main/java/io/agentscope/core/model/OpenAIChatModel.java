@@ -176,69 +176,71 @@ public class OpenAIChatModel extends ChatModelBase {
                     new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
         }
 
-        OpenAIRequest request = requestBuilder.build();
+        Flux<ChatResponse> responseFlux =
+                Flux.defer(
+                        () -> {
+                            try {
+                                // Build chat completion request
+                                ChatCompletionCreateParams.Builder paramsBuilder =
+                                        ChatCompletionCreateParams.builder().model(model);
 
-        // Apply generation options (temperature, maxTokens, etc.)
-        formatter.applyOptions(request, options, null);
+                                // Use formatter to convert Msg to OpenAI
+                                // ChatCompletionMessageParam
+                                List<ChatCompletionMessageParam> formattedMessages =
+                                        formatter.format(messages);
+                                for (ChatCompletionMessageParam param : formattedMessages) {
+                                    paramsBuilder.addMessage(param);
+                                }
 
-        // Apply tools with provider capability detection
-        formatter.applyTools(request, tools, baseUrl, modelName);
+                                // Add tools if provided
+                                if (tools != null && !tools.isEmpty()) {
+                                    formatter.applyTools(paramsBuilder, tools);
+                                }
 
-        // Apply tool choice with provider capability detection
-        formatter.applyToolChoice(request, options.getToolChoice(), baseUrl, modelName);
+                                // Apply generation options via formatter
+                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
-        // Execute request
-        if (stream) {
-            // Streaming mode
-            return client.stream(apiKey, baseUrl, request, options)
-                    .map(response -> formatter.parseResponse(response, start));
-        } else {
-            // Non-streaming mode
-            return Flux.defer(
-                    () -> {
-                        try {
-                            OpenAIResponse response =
-                                    client.call(apiKey, baseUrl, request, options);
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            log.error("OpenAI HTTP client error: {}", e.getMessage(), e);
-                            return Flux.error(
-                                    new RuntimeException(
-                                            "OpenAI API call failed: " + e.getMessage(), e));
-                        }
-                    });
-        }
-    }
+                                // Apply tool choice if available
+                                applyToolChoiceIfAvailable(paramsBuilder, options);
 
-    /**
-     * Apply provider-specific message format fixes.
-     *
-     * <p>This method handles provider-specific message format requirements:
-     * <ul>
-     *   <li>GLM: Requires at least one user message (cannot have only system messages)</li>
-     * </ul>
-     *
-     * @param messages The formatted OpenAI messages
-     * @param capability The detected provider capability
-     * @return The adjusted messages
-     */
-    private List<OpenAIMessage> applyProviderMessageFixes(
-            List<OpenAIMessage> messages, ProviderCapability capability) {
+                                // Create the request
+                                ChatCompletionCreateParams params = paramsBuilder.build();
 
-        if (messages == null || messages.isEmpty()) {
-            return messages;
-        }
+                                if (streamEnabled) {
+                                    // Make streaming API call
+                                    StreamResponse<ChatCompletionChunk> streamResponse =
+                                            client.chat().completions().createStreaming(params);
 
-        // GLM requires at least one user message
-        if (capability == ProviderCapability.GLM) {
-            boolean hasUserMessage = false;
-            for (OpenAIMessage msg : messages) {
-                if ("user".equals(msg.getRole())) {
-                    hasUserMessage = true;
-                    break;
-                }
-            }
+                                    // Convert the SDK's Stream to Flux
+                                    return Flux.fromStream(streamResponse.stream())
+                                            .subscribeOn(Schedulers.boundedElastic())
+                                            .map(chunk -> formatter.parseResponse(chunk, startTime))
+                                            .filter(Objects::nonNull)
+                                            .doFinally(
+                                                    signalType -> {
+                                                        try {
+                                                            streamResponse.close();
+                                                        } catch (Exception ignored) {
+                                                        }
+                                                    });
+                                } else {
+                                    // For non-streaming, make a single call
+                                    // and return as Flux
+                                    ChatCompletion completion =
+                                            client.chat().completions().create(params);
+                                    ChatResponse response =
+                                            formatter.parseResponse(completion, startTime);
+                                    return Flux.just(response);
+                                }
+                            } catch (Exception e) {
+                                return Flux.error(
+                                        new ModelException(
+                                                "Failed to stream OpenAI API: " + e.getMessage(),
+                                                e,
+                                                modelName,
+                                                "openai"));
+                            }
+                        });
 
             if (!hasUserMessage) {
                 // GLM API returns error 1214 if there's no user message

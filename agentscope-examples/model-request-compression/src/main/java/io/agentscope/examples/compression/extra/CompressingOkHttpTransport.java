@@ -244,7 +244,7 @@ public class CompressingOkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .publishOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override

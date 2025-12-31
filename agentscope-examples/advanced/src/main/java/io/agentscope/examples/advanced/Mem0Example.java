@@ -18,6 +18,7 @@ package io.agentscope.examples.advanced;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.user.UserAgent;
 import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.mem0.Mem0ApiType;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -31,14 +32,17 @@ public class Mem0Example {
         // Get API keys
         String dashscopeApiKey = ExampleUtils.getDashScopeApiKey();
         String mem0BaseUrl = getMem0BaseUrl();
+        Mem0ApiType mem0ApiType = getMem0ApiType();
 
-        Mem0LongTermMemory longTermMemory =
+        Mem0LongTermMemory.Builder memoryBuilder =
                 Mem0LongTermMemory.builder()
                         .agentName("SmartAssistant")
                         .userId("static-control01126")
                         .apiBaseUrl(mem0BaseUrl)
                         .apiKey(System.getenv("MEM0_API_KEY"))
-                        .build();
+                        .apiType(mem0ApiType);
+
+        Mem0LongTermMemory longTermMemory = memoryBuilder.build();
 
         // Create agent with AGENT_CONTROL mode
         ReActAgent agent =
@@ -74,5 +78,18 @@ public class Mem0Example {
             return "https://api.mem0.ai";
         }
         return baseUrl;
+    }
+
+    /**
+     * Gets Mem0 API type from environment variable.
+     *
+     * @return API type enum: PLATFORM (default) or SELF_HOSTED
+     */
+    private static Mem0ApiType getMem0ApiType() {
+        String apiTypeStr = System.getenv("MEM0_API_TYPE");
+        if (apiTypeStr == null || apiTypeStr.isEmpty()) {
+            return Mem0ApiType.PLATFORM;
+        }
+        return Mem0ApiType.fromString(apiTypeStr);
     }
 }

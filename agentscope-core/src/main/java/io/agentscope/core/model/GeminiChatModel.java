@@ -207,7 +207,7 @@ public class GeminiChatModel extends ChatModelBase {
 
                                     // Convert ResponseStream to Flux
                                     return Flux.fromIterable(responseStream)
-                                            .publishOn(Schedulers.boundedElastic())
+                                            .subscribeOn(Schedulers.boundedElastic())
                                             .map(
                                                     response ->
                                                             formatter.parseResponse(
