@@ -685,12 +685,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                             })
                                     .subscribe(
                                             finalMsg -> {
-                                                Event finalEvent =
-                                                        new Event(
-                                                                EventType.AGENT_RESULT,
-                                                                finalMsg,
-                                                                true);
-                                                sink.next(finalEvent);
+                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
+                                                    Event finalEvent =
+                                                            new Event(
+                                                                    EventType.AGENT_RESULT,
+                                                                    finalMsg,
+                                                                    true);
+                                                    sink.next(finalEvent);
+                                                }
 
                                                 // Complete the stream
                                                 sink.complete();

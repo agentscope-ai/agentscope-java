@@ -63,14 +63,16 @@ class StreamingHook implements Hook {
             PostReasoningEvent e = (PostReasoningEvent) event;
             // postReasoning is called after streaming completes
             // This is the last/complete message
-            if (options.shouldStream(EventType.REASONING)) {
+            if (options.shouldStream(EventType.REASONING)
+                    && options.shouldIncludeReasoningEmission(false)) {
                 emitEvent(EventType.REASONING, e.getReasoningMessage(), true);
             }
             return Mono.just(event);
         } else if (event instanceof ReasoningChunkEvent) {
             ReasoningChunkEvent e = (ReasoningChunkEvent) event;
             // This is an intermediate chunk
-            if (options.shouldStream(EventType.REASONING)) {
+            if (options.shouldStream(EventType.REASONING)
+                    && options.shouldIncludeReasoningEmission(true)) {
                 // Use incremental or accumulated based on StreamOptions
                 Msg msgToEmit =
                         options.isIncremental() ? e.getIncrementalChunk() : e.getAccumulated();
