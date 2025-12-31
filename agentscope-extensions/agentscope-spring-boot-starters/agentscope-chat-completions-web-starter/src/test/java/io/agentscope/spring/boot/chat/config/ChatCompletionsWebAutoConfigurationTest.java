@@ -67,8 +67,56 @@ class ChatCompletionsWebAutoConfigurationTest {
                     assertThat(context.getBean(ChatCompletionsSessionManager.class))
                             .isInstanceOf(
                                     io.agentscope.spring.boot.chat.session
-                                            .ChatCompletionsSessionManager.class);
+                                            .SpringInMemorySessionManager.class);
                 });
+    }
+
+    @Test
+    void shouldCreateInMemorySessionManagerWhenTypeIsInMemory() {
+        contextRunner
+                .withPropertyValues("agentscope.chat-completions.session-manager.type=in-memory")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
+                            assertThat(context.getBean(ChatCompletionsSessionManager.class))
+                                    .isInstanceOf(
+                                            io.agentscope.spring.boot.chat.session
+                                                    .SpringInMemorySessionManager.class);
+                        });
+    }
+
+    @Test
+    void shouldBindSessionManagerTypeProperty() {
+        // Note: Setting type to "redis" will prevent inMemorySessionManager bean creation,
+        // but we can still verify the property binding by providing a custom session manager
+        ChatCompletionsSessionManager customManager =
+                new ChatCompletionsSessionManager() {
+                    @Override
+                    public ReActAgent getOrCreateAgent(
+                            String sessionId,
+                            java.util.function.Supplier<ReActAgent> agentSupplier) {
+                        return agentSupplier.get();
+                    }
+
+                    @Override
+                    public ReActAgent getOrCreateAgent(
+                            String sessionId,
+                            org.springframework.beans.factory.ObjectProvider<ReActAgent>
+                                    agentProvider) {
+                        return agentProvider.getObject();
+                    }
+                };
+
+        contextRunner
+                .withPropertyValues("agentscope.chat-completions.session-manager.type=redis")
+                .withBean(ChatCompletionsSessionManager.class, () -> customManager)
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(ChatCompletionsProperties.class);
+                            ChatCompletionsProperties properties =
+                                    context.getBean(ChatCompletionsProperties.class);
+                            assertThat(properties.getSessionManager().getType()).isEqualTo("redis");
+                        });
     }
 
     @Test

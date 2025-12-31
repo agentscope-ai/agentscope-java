@@ -18,8 +18,8 @@ package io.agentscope.spring.boot.chat.config;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.core.chat.completions.session.InMemorySessionManager;
 import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
+import io.agentscope.spring.boot.chat.session.SpringInMemorySessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.springframework.beans.factory.ObjectProvider;
@@ -73,29 +73,31 @@ public class ChatCompletionsWebAutoConfiguration {
     }
 
     /**
-     * Create the default session manager bean.
+     * Create the default in-memory session manager bean.
+     *
+     * <p>This bean is created when:
+     * <ul>
+     *   <li>No existing {@link ChatCompletionsSessionManager} bean exists</li>
+     *   <li>The session manager type is "in-memory" (default) or not specified</li>
+     * </ul>
      *
      * <p>Users can provide their own implementation by creating a bean of type
-     * {@link ChatCompletionsSessionManager}.
-     *
-     * <p>Note: We wrap {@link InMemorySessionManager} in an adapter that implements Spring's
-     * interface. The Spring interface's default method automatically handles ObjectProvider ->
-     * Supplier conversion, so we only need to delegate the Supplier-based method.
+     * {@link ChatCompletionsSessionManager}, or configure a different type via
+     * {@code agentscope.chat-completions.session-manager.type}.
      */
     @Bean
-    @ConditionalOnMissingBean
-    public ChatCompletionsSessionManager chatCompletionsSessionManager() {
-        InMemorySessionManager coreManager = new InMemorySessionManager();
-        // Simple adapter: delegate to core manager, Spring interface's default method handles
-        // ObjectProvider conversion
-        return new ChatCompletionsSessionManager() {
-            @Override
-            public ReActAgent getOrCreateAgent(
-                    String sessionId, java.util.function.Supplier<ReActAgent> agentSupplier) {
-                return coreManager.getOrCreateAgent(sessionId, agentSupplier);
-            }
-        };
+    @ConditionalOnMissingBean(ChatCompletionsSessionManager.class)
+    @ConditionalOnProperty(
+            prefix = "agentscope.chat-completions.session-manager",
+            name = "type",
+            havingValue = "in-memory",
+            matchIfMissing = true)
+    public ChatCompletionsSessionManager inMemorySessionManager() {
+        return new SpringInMemorySessionManager();
     }
+
+    // Future: Add RedisSessionManagerAdapter bean with @ConditionalOnProperty(type = "redis")
+    // Future: Add MySQLSessionManagerAdapter bean with @ConditionalOnProperty(type = "mysql")
 
     /**
      * Create the chat completions controller bean.
