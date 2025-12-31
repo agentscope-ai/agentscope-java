@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,46 +16,50 @@
 package io.agentscope.core.session.redis.jedis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionInfo;
-import io.agentscope.core.state.StateModule;
-import java.nio.charset.StandardCharsets;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Optional;
+import java.util.Set;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Redis-based session implementation using Jedis.
  *
- * <p>This implementation stores session state as JSON strings in Redis. Each session is stored as a
- * single JSON value under a Redis key derived from the session ID.
+ * <p>This implementation stores session state in Redis with the following key structure:
+ *
+ * <ul>
+ *   <li>Single state: {@code {prefix}{sessionId}:{stateKey}} - Redis String containing JSON
+ *   <li>List state: {@code {prefix}{sessionId}:{stateKey}:list} - Redis List containing JSON items
+ *   <li>Session marker: {@code {prefix}{sessionId}:_keys} - Redis Set tracking all state keys
+ * </ul>
  *
  * <p>Features:
  *
  * <ul>
- *   <li>Multi-module session support
- *   <li>JSON-encoded session state
- *   <li>Configurable Redis connection and key prefix
- *   <li>Graceful handling of missing sessions
+ *   <li>Incremental list storage (only appends new items)
+ *   <li>Type-safe state serialization using Jackson
+ *   <li>Automatic session key tracking
  * </ul>
  */
 public class JedisSession implements Session {
 
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
-    private static final String META_SUFFIX = ":meta";
-    private static final String META_FIELD_LAST_MODIFIED = "lastModified";
-    private static final String SCAN_POINTER_START = "0";
+    private static final String KEYS_SUFFIX = ":_keys";
+    private static final String LIST_SUFFIX = ":list";
+    private static final String HASH_SUFFIX = ":_hash";
 
     private final JedisPool jedisPool;
-    private final ObjectMapper objectMapper;
     private final String keyPrefix;
+    private final ObjectMapper objectMapper;
 
     private JedisSession(Builder builder) {
         if (builder.keyPrefix == null || builder.keyPrefix.trim().isEmpty()) {
@@ -65,8 +69,8 @@ public class JedisSession implements Session {
             throw new IllegalArgumentException("JedisPool cannot be null");
         }
         this.keyPrefix = builder.keyPrefix;
-        this.objectMapper = new ObjectMapper();
         this.jedisPool = builder.jedisPool;
+        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -78,336 +82,211 @@ public class JedisSession implements Session {
         return new Builder();
     }
 
-    /**
-     * Save the state of multiple StateModules to Redis.
-     *
-     * <p>This implementation persists the state of all provided StateModules as a single JSON
-     * string stored under a Redis key derived from the session ID. The method collects state
-     * dictionaries from all modules and writes them as a JSON object.
-     *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances
-     * @throws RuntimeException if Redis operations fail
-     */
     @Override
-    public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
-        validateSessionId(sessionId);
+    public void save(SessionKey sessionKey, String key, State value) {
+        String sessionId = sessionKey.toIdentifier();
+        String redisKey = getStateKey(sessionId, key);
+        String keysKey = getKeysKey(sessionId);
 
-        try {
-            Map<String, Object> sessionState = new HashMap<>();
-            for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                sessionState.put(entry.getKey(), entry.getValue().stateDict());
-            }
-
-            String sessionKey = getSessionKey(sessionId);
-            String metaKey = getMetaKey(sessionId);
-
-            String json =
-                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(sessionState);
-
-            long now = System.currentTimeMillis();
-
-            try (Jedis jedis = getJedisResource()) {
-                jedis.set(sessionKey, json);
-
-                Map<String, String> meta = new HashMap<>();
-                meta.put(META_FIELD_LAST_MODIFIED, String.valueOf(now));
-                jedis.hset(metaKey, meta);
-            }
-
+        try (Jedis jedis = jedisPool.getResource()) {
+            String json = objectMapper.writeValueAsString(value);
+            jedis.set(redisKey, json);
+            // Track this key in the session's key set
+            jedis.sadd(keysKey, key);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to save session: " + sessionId, e);
+            throw new RuntimeException("Failed to save state: " + key, e);
         }
     }
 
     /**
-     * Load session state from Redis into multiple StateModules.
+     * Save a list of state values with hash-based change detection.
      *
-     * <p>This implementation restores the state of all provided StateModules from a JSON string
-     * stored in Redis. The method reads the JSON value, extracts component states, and loads them
-     * into the corresponding StateModule instances using non-strict loading.
+     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
      *
-     * @param sessionId Unique identifier for the session
-     * @param allowNotExist Whether to allow loading from non-existent sessions
-     * @param stateModules Map of component names to StateModule instances to load into
-     * @throws RuntimeException if Redis operations fail or session doesn't exist when
-     *     allowNotExist is false
+     * <ul>
+     *   <li>If the hash changes (list was modified), the Redis list is deleted and recreated
+     *   <li>If the list shrinks, the Redis list is deleted and recreated
+     *   <li>If the list only grows (append-only), only new items are appended
+     *   <li>If nothing changes, the operation is skipped
+     * </ul>
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the list of state values to save
      */
     @Override
-    public void loadSessionState(
-            String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
-        validateSessionId(sessionId);
+    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
+        String sessionId = sessionKey.toIdentifier();
+        String listKey = getListKey(sessionId, key);
+        String hashKey = listKey + HASH_SUFFIX;
+        String keysKey = getKeysKey(sessionId);
 
-        String sessionKey = getSessionKey(sessionId);
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Compute current hash
+            String currentHash = ListHashUtil.computeHash(values);
 
-        try (Jedis jedis = getJedisResource()) {
-            String json = jedis.get(sessionKey);
+            // Get stored hash
+            String storedHash = jedis.get(hashKey);
 
+            // Get current list length
+            long existingCount = jedis.llen(listKey);
+
+            // Determine if full rewrite is needed
+            boolean needsFullRewrite =
+                    ListHashUtil.needsFullRewrite(
+                            currentHash, storedHash, values.size(), (int) existingCount);
+
+            if (needsFullRewrite) {
+                // Delete and recreate the list
+                jedis.del(listKey);
+                for (State item : values) {
+                    String json = objectMapper.writeValueAsString(item);
+                    jedis.rpush(listKey, json);
+                }
+            } else if (values.size() > existingCount) {
+                // Incremental append
+                List<? extends State> newItems = values.subList((int) existingCount, values.size());
+                for (State item : newItems) {
+                    String json = objectMapper.writeValueAsString(item);
+                    jedis.rpush(listKey, json);
+                }
+            }
+            // else: no change, skip
+
+            // Update hash
+            jedis.set(hashKey, currentHash);
+
+            // Track this key in the session's key set
+            jedis.sadd(keysKey, key + LIST_SUFFIX);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save list: " + key, e);
+        }
+    }
+
+    @Override
+    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
+        String sessionId = sessionKey.toIdentifier();
+        String redisKey = getStateKey(sessionId, key);
+
+        try (Jedis jedis = jedisPool.getResource()) {
+            String json = jedis.get(redisKey);
             if (json == null) {
-                if (allowNotExist) {
-                    return;
-                } else {
-                    throw new RuntimeException("Session not found: " + sessionId);
-                }
+                return Optional.empty();
             }
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> sessionState = objectMapper.readValue(json, Map.class);
-
-            for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                String componentName = entry.getKey();
-                StateModule module = entry.getValue();
-
-                if (sessionState.containsKey(componentName)) {
-                    Object componentState = sessionState.get(componentName);
-                    if (componentState instanceof Map) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> componentStateMap =
-                                (Map<String, Object>) componentState;
-                        module.loadStateDict(componentStateMap, false);
-                    }
-                }
-            }
-
+            return Optional.of(objectMapper.readValue(json, type));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load session: " + sessionId, e);
+            throw new RuntimeException("Failed to get state: " + key, e);
         }
     }
 
-    /**
-     * Check if a session exists in Redis.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if the session key exists
-     */
     @Override
-    public boolean sessionExists(String sessionId) {
-        validateSessionId(sessionId);
+    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
+        String sessionId = sessionKey.toIdentifier();
+        String redisKey = getListKey(sessionId, key);
 
-        String sessionKey = getSessionKey(sessionId);
+        try (Jedis jedis = jedisPool.getResource()) {
+            List<String> jsonList = jedis.lrange(redisKey, 0, -1);
+            if (jsonList == null || jsonList.isEmpty()) {
+                return List.of();
+            }
 
-        try (Jedis jedis = getJedisResource()) {
-            return jedis.exists(sessionKey);
+            List<T> result = new ArrayList<>();
+            for (String json : jsonList) {
+                T item = objectMapper.readValue(json, itemType);
+                result.add(item);
+            }
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get list: " + key, e);
+        }
+    }
+
+    @Override
+    public boolean exists(SessionKey sessionKey) {
+        String sessionId = sessionKey.toIdentifier();
+        String keysKey = getKeysKey(sessionId);
+
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Session exists if it has any tracked keys
+            return jedis.exists(keysKey) && jedis.scard(keysKey) > 0;
         } catch (Exception e) {
             throw new RuntimeException("Failed to check session existence: " + sessionId, e);
         }
     }
 
-    /**
-     * Delete a session from Redis.
-     *
-     * <p>This implementation removes both the session data key and its metadata key.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if the session key was deleted
-     * @throws RuntimeException if Redis operations fail
-     */
     @Override
-    public boolean deleteSession(String sessionId) {
-        validateSessionId(sessionId);
+    public void delete(SessionKey sessionKey) {
+        String sessionId = sessionKey.toIdentifier();
+        String keysKey = getKeysKey(sessionId);
 
-        String sessionKey = getSessionKey(sessionId);
-        String metaKey = getMetaKey(sessionId);
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Get all tracked keys for this session
+            Set<String> trackedKeys = jedis.smembers(keysKey);
 
-        try (Jedis jedis = getJedisResource()) {
-            long deleted = jedis.del(sessionKey, metaKey);
-            return deleted > 0;
+            if (trackedKeys != null && !trackedKeys.isEmpty()) {
+                // Build list of actual Redis keys to delete
+                Set<String> keysToDelete = new HashSet<>();
+                keysToDelete.add(keysKey);
+
+                for (String trackedKey : trackedKeys) {
+                    if (trackedKey.endsWith(LIST_SUFFIX)) {
+                        // It's a list key
+                        String baseKey =
+                                trackedKey.substring(0, trackedKey.length() - LIST_SUFFIX.length());
+                        keysToDelete.add(getListKey(sessionId, baseKey));
+                    } else {
+                        // It's a single state key
+                        keysToDelete.add(getStateKey(sessionId, trackedKey));
+                    }
+                }
+
+                jedis.del(keysToDelete.toArray(new String[0]));
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete session: " + sessionId, e);
         }
     }
 
-    /**
-     * Get a list of all session IDs from Redis.
-     *
-     * <p>This implementation scans Redis for keys with the configured prefix and returns their
-     * session IDs (without the prefix), sorted alphabetically. Metadata keys are ignored.
-     *
-     * @return List of session IDs, or empty list if no sessions exist
-     * @throws RuntimeException if Redis operations fail
-     */
     @Override
-    public List<String> listSessions() {
-        try (Jedis jedis = getJedisResource()) {
-            List<String> sessionIds = new ArrayList<>();
+    public Set<SessionKey> listSessionKeys() {
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Find all session key sets
+            Set<String> keysKeys = jedis.keys(keyPrefix + "*" + KEYS_SUFFIX);
 
-            String cursor = SCAN_POINTER_START;
-
-            do {
-                ScanResult<String> result = jedis.scan(cursor);
-                List<String> keys = result.getResult();
-
-                for (String key : keys) {
-                    if (!key.startsWith(keyPrefix)) {
-                        continue;
-                    }
-                    if (key.endsWith(META_SUFFIX)) {
-                        continue;
-                    }
-                    String sessionId = extractSessionId(key);
-                    if (sessionId != null) {
-                        sessionIds.add(sessionId);
-                    }
-                }
-
-                cursor = result.getCursor();
-
-            } while (!SCAN_POINTER_START.equals(cursor));
-
-            return sessionIds.stream().sorted().collect(Collectors.toList());
-
+            Set<SessionKey> sessionKeys = new HashSet<>();
+            for (String keysKey : keysKeys) {
+                // Extract session ID from the keys key
+                // Pattern: {prefix}{sessionId}:_keys
+                String withoutPrefix = keysKey.substring(keyPrefix.length());
+                String sessionId =
+                        withoutPrefix.substring(0, withoutPrefix.length() - KEYS_SUFFIX.length());
+                sessionKeys.add(SimpleSessionKey.of(sessionId));
+            }
+            return sessionKeys;
         } catch (Exception e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
     }
 
-    /**
-     * Get information about a session stored in Redis.
-     *
-     * <p>This implementation reads the JSON value from Redis to determine its size in bytes and the
-     * number of state components. The last modification time is stored separately in a metadata
-     * hash and returned if available.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return Session information including size, last modified time, and component count
-     * @throws RuntimeException if Redis operations fail or session doesn't exist
-     */
     @Override
-    public SessionInfo getSessionInfo(String sessionId) {
-        validateSessionId(sessionId);
-
-        String sessionKey = getSessionKey(sessionId);
-        String metaKey = getMetaKey(sessionId);
-
-        try (Jedis jedis = getJedisResource()) {
-            String json = jedis.get(sessionKey);
-            if (json == null) {
-                throw new RuntimeException("Session not found: " + sessionId);
-            }
-
-            byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-            long size = bytes.length;
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> sessionState = objectMapper.readValue(json, Map.class);
-            int componentCount = sessionState.size();
-
-            long lastModified = 0L;
-            String lastModifiedStr = jedis.hget(metaKey, META_FIELD_LAST_MODIFIED);
-            if (lastModifiedStr != null) {
-                try {
-                    lastModified = Long.parseLong(lastModifiedStr);
-                } catch (NumberFormatException ignored) {
-                    lastModified = 0L;
-                }
-            }
-
-            return new SessionInfo(sessionId, size, lastModified, componentCount);
-
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to get session info: " + sessionId, e);
-        }
-    }
-
-    /**
-     * Validate a session ID format.
-     *
-     * @param sessionId Session ID to validate
-     * @throws IllegalArgumentException if session ID is invalid
-     */
-    protected void validateSessionId(String sessionId) {
-        if (sessionId == null || sessionId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Session ID cannot be null or empty");
-        }
-        if (sessionId.contains("/") || sessionId.contains("\\")) {
-            throw new IllegalArgumentException("Session ID cannot contain path separators");
-        }
-        if (sessionId.length() > 255) {
-            throw new IllegalArgumentException("Session ID cannot exceed 255 characters");
-        }
-    }
-
-    /**
-     * Get the Redis key for a session.
-     *
-     * @param sessionId Session ID
-     * @return Redis key for the session data
-     */
-    private String getSessionKey(String sessionId) {
-        return keyPrefix + sessionId;
-    }
-
-    /**
-     * Get the Redis key for session metadata.
-     *
-     * @param sessionId Session ID
-     * @return Redis key for the session metadata
-     */
-    private String getMetaKey(String sessionId) {
-        return getSessionKey(sessionId) + META_SUFFIX;
-    }
-
-    /**
-     * Extract the session ID from a Redis key.
-     *
-     * @param key Redis key
-     * @return Session ID, or null if the key does not match the prefix
-     */
-    private String extractSessionId(String key) {
-        if (!key.startsWith(keyPrefix)) {
-            return null;
-        }
-        String sessionId = key.substring(keyPrefix.length());
-        if (sessionId.endsWith(META_SUFFIX)) {
-            return null;
-        }
-        return sessionId;
+    public void close() {
+        jedisPool.close();
     }
 
     /**
      * Clear all sessions stored in Redis (for testing or cleanup).
      *
-     * <p>This implementation asynchronously scans for all session keys (both data and metadata) and
-     * deletes them.
-     *
-     * @return Mono that completes with the number of deleted session data keys
+     * @return Mono that completes with the number of deleted session keys
      */
     public Mono<Integer> clearAllSessions() {
         return Mono.fromSupplier(
                         () -> {
-                            try (Jedis jedis = getJedisResource()) {
-                                int deletedSessions = 0;
-                                List<String> keysToDelete = new ArrayList<>();
-                                List<String> dataKeys = new ArrayList<>();
-
-                                String cursor = SCAN_POINTER_START;
-
-                                do {
-                                    ScanResult<String> result = jedis.scan(cursor);
-                                    List<String> keys = result.getResult();
-
-                                    if (!keys.isEmpty()) {
-                                        for (String key : keys) {
-                                            if (!key.startsWith(keyPrefix)) {
-                                                continue;
-                                            }
-                                            keysToDelete.add(key);
-                                            if (!key.endsWith(META_SUFFIX)) {
-                                                dataKeys.add(key);
-                                            }
-                                        }
-                                    }
-
-                                    cursor = result.getCursor();
-
-                                } while (!SCAN_POINTER_START.equals(cursor));
-
-                                if (!keysToDelete.isEmpty()) {
-                                    jedis.del(keysToDelete.toArray(new String[0]));
-                                    deletedSessions = dataKeys.size();
+                            try (Jedis jedis = jedisPool.getResource()) {
+                                Set<String> keys = jedis.keys(keyPrefix + "*");
+                                if (!keys.isEmpty()) {
+                                    jedis.del(keys.toArray(new String[0]));
                                 }
-
-                                return deletedSessions;
+                                return keys.size();
                             } catch (Exception e) {
                                 throw new RuntimeException("Failed to clear sessions", e);
                             }
@@ -416,71 +295,55 @@ public class JedisSession implements Session {
     }
 
     /**
-     * Close the underlying JedisPool.
+     * Get the Redis key for a single state value.
+     *
+     * @param sessionId the session ID
+     * @param key the state key
+     * @return Redis key in format {prefix}{sessionId}:{key}
      */
-    @Override
-    public void close() {
-        jedisPool.close();
+    private String getStateKey(String sessionId, String key) {
+        return keyPrefix + sessionId + ":" + key;
     }
 
     /**
-     * Get a Jedis connection from the pool.
+     * Get the Redis key for a list state value.
      *
-     * <p>The pool itself should be fully configured (host, port, password, database, etc.).
-     *
-     * @return Jedis instance
+     * @param sessionId the session ID
+     * @param key the state key
+     * @return Redis key in format {prefix}{sessionId}:{key}:list
      */
-    private Jedis getJedisResource() {
-        return jedisPool.getResource();
+    private String getListKey(String sessionId, String key) {
+        return keyPrefix + sessionId + ":" + key + LIST_SUFFIX;
+    }
+
+    /**
+     * Get the Redis key for tracking session keys.
+     *
+     * @param sessionId the session ID
+     * @return Redis key in format {prefix}{sessionId}:_keys
+     */
+    private String getKeysKey(String sessionId) {
+        return keyPrefix + sessionId + KEYS_SUFFIX;
     }
 
     /**
      * Builder for {@link JedisSession}.
-     *
-     * <p>Usage example:
-     *
-     * <pre>{@code
-     * JedisPool pool = new JedisPool("127.0.0.1", 6379);
-     * JedisSession session = JedisSession.builder()
-     *     .jedisPool(pool)
-     *     .keyPrefix("agentscope:session:")
-     *     .build();
-     * }</pre>
      */
     public static class Builder {
 
         private String keyPrefix = DEFAULT_KEY_PREFIX;
         private JedisPool jedisPool;
 
-        /**
-         * Sets the key prefix for all session keys.
-         *
-         * @param keyPrefix the key prefix
-         * @return this builder
-         */
         public Builder keyPrefix(String keyPrefix) {
             this.keyPrefix = keyPrefix;
             return this;
         }
 
-        /**
-         * Sets a custom JedisPool instance.
-         *
-         * <p>The pool should already be fully configured (host, port, password, database, etc.).
-         *
-         * @param jedisPool the Jedis connection pool
-         * @return this builder
-         */
         public Builder jedisPool(JedisPool jedisPool) {
             this.jedisPool = jedisPool;
             return this;
         }
 
-        /**
-         * Builds a new {@link JedisSession} instance.
-         *
-         * @return a configured JedisSession
-         */
         public JedisSession build() {
             return new JedisSession(this);
         }

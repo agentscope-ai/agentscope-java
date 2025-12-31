@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,11 +22,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.state.State;
 import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -48,7 +50,7 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Msg {
+public class Msg implements State {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
@@ -88,8 +90,21 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
+        this.content =
+                Objects.nonNull(content)
+                        ? content.stream().filter(Objects::nonNull).toList()
+                        : List.of();
+        this.metadata = new HashMap<>();
+        if (Objects.nonNull(metadata)) {
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (Objects.isNull(key) || Objects.isNull(value)) {
+                    continue;
+                }
+                this.metadata.put(key, value);
+            }
+        }
         this.timestamp = timestamp;
     }
 

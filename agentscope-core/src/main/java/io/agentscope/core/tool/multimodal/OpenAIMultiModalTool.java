@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,789 +15,548 @@
  */
 package io.agentscope.core.tool.multimodal;
 
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.core.http.HttpResponse;
-import com.openai.models.audio.speech.SpeechCreateParams;
-import com.openai.models.audio.transcriptions.TranscriptionCreateParams;
-import com.openai.models.audio.transcriptions.TranscriptionCreateResponse;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionContentPart;
-import com.openai.models.chat.completions.ChatCompletionContentPartImage;
-import com.openai.models.chat.completions.ChatCompletionContentPartText;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessage;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import com.openai.models.images.Image;
-import com.openai.models.images.ImageCreateVariationParams;
-import com.openai.models.images.ImageEditParams;
-import com.openai.models.images.ImageGenerateParams;
-import com.openai.models.images.ImagesResponse;
-import io.agentscope.core.Version;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.MediaUtils;
-import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.model.OpenAIClient;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * openai multimodal tool.
- * convert text to image(s), edit image, create image variation, convert images to text, convert text to audio, and convert audio to text.
- * Please refer to the <a href="https://platform.openai.com/">`openai documentation`</a> for more details.
+ * OpenAI multimodal tool.
+ *
+ * <p>Supports:
+ * <ul>
+ *   <li>Text to image(s)</li>
+ *   <li>Image to text (via vision models)</li>
+ *   <li>Text to audio (speech)</li>
+ *   <li>Audio to text (transcription)</li>
+ * </ul>
+ *
+ * <p>This implementation uses the custom {@link OpenAIClient} HTTP client instead of the OpenAI
+ * Java SDK, keeping the core module lightweight and dependency-free.
+ *
+ * <p>Please refer to the <a href="https://platform.openai.com/">OpenAI documentation</a> for more
+ * details.
  */
 public class OpenAIMultiModalTool {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMultiModalTool.class);
 
-    /**
-     * OpenAI API key.
-     */
+    /** OpenAI API key. */
     private final String apiKey;
 
-    /**
-     * OpenAI client.
-     */
-    private OpenAIClient client;
+    /** OpenAI client for API calls. */
+    private final OpenAIClient client;
 
+    /** JSON object mapper. */
+    private final ObjectMapper objectMapper;
+
+    /** Base URL for OpenAI API (defaults to https://api.openai.com). */
+    private final String baseUrl;
+
+    /**
+     * Create a new OpenAIMultiModalTool with default base URL.
+     *
+     * @param apiKey the OpenAI API key
+     */
     public OpenAIMultiModalTool(String apiKey) {
-        if (apiKey == null || apiKey.trim().isEmpty()) {
-            throw new IllegalArgumentException("openai API key cannot be empty.");
-        }
-        this.apiKey = apiKey;
-        this.client =
-                OpenAIOkHttpClient.builder()
-                        .apiKey(apiKey)
-                        .putHeader("User-Agent", Version.getUserAgent())
-                        .build();
+        this(apiKey, null);
     }
 
     /**
-     * Generate image(s) based on the given prompt, and return image url(s) or base64 data.
+     * Create a new OpenAIMultiModalTool with custom base URL.
      *
-     * @param prompt         The text prompt to generate image
-     * @param model          The model to use for image generation, e.g., 'dall-e-2', 'dall-e-3', etc.
-     * @param n              The number of images to generate
-     * @param size           The size of the generated images.
-     *                       Must be one of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default value) for gpt-image-1,
-     *                       one of 256x256, 512x512, or 1024x1024 for dall-e-2,
-     *                       and one of 1024x1024, 1792x1024, or 1024x1792 for dall-e-3.
-     * @param quality        The quality of the image that will be generated.
-     *                       <ul>
-     *                       <li>auto` (default value) will automatically select the best quality for the given model.</li>
-     *                       <li>`high`, `medium` and `low` are supported for gpt-image-1.</li>
-     *                       <li>`hd` and `standard` are supported for dall-e-3.</li>
-     *                       <li>`standard` is the only option for dall-e-2.</li>
-     *                       </ul>
-     * @param style          The style of the generated images. This parameter is only supported for dall-e-3. Must be one of `vivid` or `natural`.
-     *                       <ul>
-     *                       <li>`Vivid` causes the model to lean towards generating hyper-real and dramatic images.</li>
-     *                       <li>`Natural` causes the model to produce more natural, less hyper-real looking images.</li>
-     *                       </ul>
-     * @param responseFormat The format in which generated images with dall-e-2 and dall-e-3  are returned.
-     *                       <ul>
-     *                       <li>Must be one of "url" or "b64_json".</li>
-     *                       <li>URLs are only valid for 60 minutes after the image has been generated.</li>
-     *                       <li>This parameter isn't supported for gpt-image-1 which will always return base64-encoded images.</li>
-     *                       </ul>
-     * @return A ToolResultBlock containing the generated image url, base64 data, or error message.
+     * @param apiKey the OpenAI API key
+     * @param baseUrl the base URL (null for default https://api.openai.com)
+     */
+    public OpenAIMultiModalTool(String apiKey, String baseUrl) {
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            throw new IllegalArgumentException("OpenAI API key cannot be empty.");
+        }
+        this.apiKey = apiKey;
+        this.baseUrl = baseUrl;
+        this.client = new OpenAIClient();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    /**
+     * Create a new OpenAIMultiModalTool with custom client (for testing).
+     *
+     * @param client the OpenAI client
+     */
+    protected OpenAIMultiModalTool(OpenAIClient client) {
+        this.apiKey = "test-key";
+        this.baseUrl = null;
+        this.client = client;
+        this.objectMapper = new ObjectMapper();
+    }
+
+    /**
+     * Generate image(s) based on the given prompt.
+     *
+     * @param prompt the text prompt to generate image
+     * @param model the model to use (e.g., "dall-e-3", "dall-e-2")
+     * @param n the number of images to generate (1 for dall-e-3, 1-10 for dall-e-2)
+     * @param size the size of the image (e.g., "1024x1024", "1792x1024", "1024x1792")
+     * @param quality the quality of the image ("standard" or "hd" for dall-e-3)
+     * @param responseFormat the format of the response ("url" or "b64_json")
+     * @return a ToolResultBlock containing the generated image(s)
      */
     @Tool(
             name = "openai_text_to_image",
             description =
-                    "Generate image(s) based on the given prompt, and return image url(s) or base64"
-                            + " data.")
+                    "Generate image(s) based on the given prompt using OpenAI DALL-E models. "
+                            + "Returns image URL(s) or base64 data.")
     public Mono<ToolResultBlock> openaiTextToImage(
             @ToolParam(name = "prompt", description = "The text prompt to generate image")
                     String prompt,
             @ToolParam(
                             name = "model",
-                            description =
-                                    "The model to use for image generation, e.g., 'dall-e-2',"
-                                            + " 'dall-e-3', etc.",
+                            description = "The model to use, e.g., 'dall-e-3', 'dall-e-2'",
                             required = false)
                     String model,
             @ToolParam(
                             name = "n",
-                            description = "The number of images to generate",
+                            description =
+                                    "The number of images to generate (1 for dall-e-3, 1-10 for"
+                                            + " dall-e-2)",
                             required = false)
                     Integer n,
             @ToolParam(
                             name = "size",
-                            description = "The size of the generated images.",
+                            description =
+                                    "Size of the image, e.g., '1024x1024', '1792x1024',"
+                                            + " '1024x1792'",
                             required = false)
                     String size,
             @ToolParam(
                             name = "quality",
-                            description = "The quality of the image that will be generated.",
+                            description =
+                                    "The quality of the image ('standard' or 'hd' for dall-e-3)",
                             required = false)
                     String quality,
             @ToolParam(
-                            name = "style",
-                            description =
-                                    "The style of the generated images.This parameter is only"
-                                            + " supported for dall-e-3.Must be one of `vivid` or"
-                                            + " `natural`.",
-                            required = false)
-                    String style,
-            @ToolParam(
                             name = "response_format",
-                            description =
-                                    "The format in which generated images with dall-e-2 and"
-                                            + " dall-e-3 are returned.",
+                            description = "The format of the response ('url' or 'b64_json')",
                             required = false)
                     String responseFormat) {
 
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("dall-e-3");
         Integer finalN = Optional.ofNullable(n).orElse(1);
         String finalSize =
-                Optional.ofNullable(size)
-                        .filter(
-                                s ->
-                                        List.of(
-                                                        "256x256",
-                                                        "512x512",
-                                                        "1024x1024",
-                                                        "1792x1024",
-                                                        "1024x1792")
-                                                .contains(s))
-                        .orElse("256x256");
-        String finalModel =
-                Optional.ofNullable(model)
-                        .filter(s -> List.of("dall-e-2", "dall-e-3", "gpt-image-1").contains(s))
-                        .orElse("dall-e-2");
+                Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1024x1024");
         String finalQuality =
-                Optional.ofNullable(quality)
-                        .filter(
-                                s ->
-                                        List.of("auto", "standard", "hd", "high", "medium", "low")
-                                                .contains(s))
-                        .orElse("auto");
-        String finalStyle =
-                Optional.ofNullable(style)
-                        .filter(s -> List.of("vivid", "natural").contains(s))
-                        .orElse("vivid");
+                Optional.ofNullable(quality).filter(s -> !s.trim().isEmpty()).orElse("standard");
         String finalResponseFormat =
-                Optional.ofNullable(responseFormat)
-                        .filter(s -> List.of("url", "b64_json").contains(s))
-                        .orElse("url");
+                Optional.ofNullable(responseFormat).filter(s -> !s.trim().isEmpty()).orElse("url");
 
         log.debug(
-                "openai_text_to_image called: prompt='{}', n='{}', size='{}', model='{}',"
-                        + " quality='{}', style='{}', response_format='{}'",
+                "openai_text_to_image called: prompt='{}', model='{}', n='{}', size='{}',"
+                        + " quality='{}', responseFormat='{}'",
                 prompt,
+                finalModel,
                 finalN,
                 finalSize,
-                finalModel,
                 finalQuality,
-                finalStyle,
                 finalResponseFormat);
 
         return Mono.fromCallable(
                         () -> {
-                            ImageGenerateParams params =
-                                    ImageGenerateParams.builder()
-                                            .prompt(prompt)
-                                            .n(finalN)
-                                            .size(ImageGenerateParams.Size.of(finalSize))
-                                            .model(finalModel)
-                                            .quality(ImageGenerateParams.Quality.of(finalQuality))
-                                            .style(ImageGenerateParams.Style.of(finalStyle))
-                                            .responseFormat(
-                                                    ImageGenerateParams.ResponseFormat.of(
-                                                            finalResponseFormat))
-                                            .build();
-                            ImagesResponse response = client.images().generate(params);
+                            Map<String, Object> request = new HashMap<>();
+                            request.put("prompt", prompt);
+                            request.put("model", finalModel);
+                            request.put("n", finalN);
+                            request.put("size", finalSize);
+                            if ("dall-e-3".equals(finalModel)) {
+                                request.put("quality", finalQuality);
+                            }
+                            request.put("response_format", finalResponseFormat);
 
-                            List<Image> images = response.data().orElse(null);
-                            if (images == null || images.isEmpty()) {
-                                log.error("No image url returned.");
+                            String responseBody =
+                                    client.callApi(
+                                            apiKey, baseUrl, "/v1/images/generations", request);
+                            Map<String, Object> response =
+                                    objectMapper.readValue(
+                                            responseBody,
+                                            new TypeReference<Map<String, Object>>() {});
+
+                            @SuppressWarnings("unchecked")
+                            List<Map<String, Object>> data =
+                                    (List<Map<String, Object>>) response.get("data");
+                            if (data == null || data.isEmpty()) {
+                                log.error("No image data returned.");
                                 return ToolResultBlock.error("Failed to generate images.");
                             }
 
                             List<ContentBlock> contentBlocks = new ArrayList<>();
-                            for (Image image : images) {
-                                if (Objects.equals(finalResponseFormat, "url")) {
-                                    String url = image.url().orElse(null);
-                                    if (url == null || url.trim().isEmpty()) {
-                                        log.error("Generate image url is empty.");
-                                        return ToolResultBlock.error("Failed to generate images.");
+                            for (Map<String, Object> item : data) {
+                                if ("b64_json".equals(finalResponseFormat)) {
+                                    String base64Data = (String) item.get("b64_json");
+                                    if (base64Data != null && !base64Data.trim().isEmpty()) {
+                                        contentBlocks.add(
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                Base64Source.builder()
+                                                                        .mediaType("image/png")
+                                                                        .data(base64Data)
+                                                                        .build())
+                                                        .build());
                                     }
-
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(URLSource.builder().url(url).build())
-                                                    .build());
                                 } else {
-                                    String data = image.b64Json().orElse(null);
-                                    if (data == null || data.trim().isEmpty()) {
-                                        log.error("Generate image base64 data is empty.");
-                                        return ToolResultBlock.error("Failed to generate images.");
+                                    String url = (String) item.get("url");
+                                    if (url != null && !url.trim().isEmpty()) {
+                                        contentBlocks.add(
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                URLSource.builder()
+                                                                        .url(url)
+                                                                        .build())
+                                                        .build());
                                     }
-
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(
-                                                            Base64Source.builder()
-                                                                    .mediaType("image/png")
-                                                                    .data(data)
-                                                                    .build())
-                                                    .build());
                                 }
                             }
-                            return ToolResultBlock.of(contentBlocks);
+
+                            if (contentBlocks.isEmpty()) {
+                                log.error("No valid image content generated.");
+                                return ToolResultBlock.error("Failed to generate images.");
+                            }
+
+                            return ToolResultBlock.builder().output(contentBlocks).build();
                         })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to generate images '{}'", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                .onErrorMap(
+                        ex -> {
+                            log.error("Failed to generate images: {}", ex.getMessage(), ex);
+                            return new RuntimeException(
+                                    "Failed to generate images: " + ex.getMessage(), ex);
                         });
     }
 
     /**
-     * Edit an image based on the provided mask and prompt, and return the edited
-     * image URL(s) or base64 data.
+     * Convert image(s) to text using vision models.
      *
-     * @param imageUrl       The file path or URL to the image that needs editing.
-     * @param prompt         The text prompt describing the edits to be made to the image.
-     * @param model          The model to use for image generation. Must be one of 'dall-e-2' or 'gpt-image-1'.
-     * @param maskUrl        The file path or URL to the mask image that specifies the regions to be edited.
-     * @param n              The number of edited images to generate.
-     * @param size           The size of the edited images. Must be one of "256x256", "512x512", or "1024x1024".
-     * @param responseFormat The format in which generated images are returned.
-     *                       <ul>
-     *                       <li>Must be one of "url" or "b64_json".</li>
-     *                       <li>URLs are only valid for 60 minutes after generation.</li>
-     *                       <li>This parameter isn't supported for gpt-image-1 which will always return base64-encoded images.</li>
-     *                       </ul>
-     * @return A ToolResultBlock containing the edited image url, base64 data, or error message.
+     * @param imageUrls the URLs of the images to analyze
+     * @param prompt the text prompt describing what to extract from the images
+     * @param model the vision model to use (e.g., "gpt-4o", "gpt-4-vision-preview")
+     * @param maxTokens the maximum number of tokens in the response
+     * @return a ToolResultBlock containing the text description of the images
      */
     @Tool(
-            name = "openai_edit_image",
+            name = "openai_image_to_text",
             description =
-                    "Edit an image based on the provided mask and prompt, and return the edited"
-                            + " image URL(s) or base64 data.")
-    public Mono<ToolResultBlock> openaiEditImage(
-            @ToolParam(
-                            name = "image_url",
-                            description = "The file path or URL to the image that needs editing.")
-                    String imageUrl,
-            @ToolParam(
-                            name = "prompt",
-                            description =
-                                    "The text prompt describing the edits to be made to the image.")
-                    String prompt,
-            @ToolParam(
-                            name = "model",
-                            description =
-                                    "The model to use for image generation. Must be one of"
-                                            + " 'dall-e-2' or 'gpt-image-1'.",
-                            required = false)
-                    String model,
-            @ToolParam(
-                            name = "mask_url",
-                            description =
-                                    "The file path or URL to the mask image that specifies the"
-                                            + " regions to be edited.",
-                            required = false)
-                    String maskUrl,
-            @ToolParam(
-                            name = "n",
-                            description = "The number of edited images to generate.",
-                            required = false)
-                    Integer n,
-            @ToolParam(
-                            name = "size",
-                            description =
-                                    "The size of the edited images. Must be one of '256x256',"
-                                            + " '512x512', or '1024x1024'.",
-                            required = false)
-                    String size,
-            @ToolParam(
-                            name = "response_format",
-                            description = "The format in which generated images are returned.",
-                            required = false)
-                    String responseFormat) {
-
-        String finalModel =
-                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("dall-e-2");
-        Integer finalN = Optional.ofNullable(n).orElse(1);
-        String finalSize =
-                Optional.ofNullable(size)
-                        .filter(s -> List.of("256x256", "512x512", "1024x1024").contains(s))
-                        .orElse("256x256");
-        String finalResponseFormat =
-                "dall-e-2".equals(finalModel)
-                        ? Optional.ofNullable(responseFormat)
-                                .filter(s -> List.of("url", "b64_json").contains(s))
-                                .orElse("url")
-                        : "b64_json";
-
-        log.debug(
-                "openai_edit_image called: image_url='{}', prompt='{}', model='{}', maskUrl='{}',"
-                        + " n='{}', size='{}', response_format='{}'",
-                imageUrl,
-                prompt,
-                finalModel,
-                maskUrl,
-                finalN,
-                finalSize,
-                finalResponseFormat);
-
-        return Mono.fromCallable(
-                        () -> {
-                            ImageEditParams.Builder paramsBuilder =
-                                    ImageEditParams.builder()
-                                            .model(finalModel)
-                                            .image(MediaUtils.urlToRgbaImageInputStream(imageUrl))
-                                            .prompt(prompt)
-                                            .n(finalN)
-                                            .size(ImageEditParams.Size.of(finalSize))
-                                            .responseFormat(
-                                                    ImageEditParams.ResponseFormat.of(
-                                                            finalResponseFormat));
-                            if (maskUrl != null) {
-                                paramsBuilder.mask(MediaUtils.urlToRgbaImageInputStream(maskUrl));
-                            }
-
-                            ImagesResponse response = client.images().edit(paramsBuilder.build());
-
-                            List<Image> images = response.data().orElse(null);
-                            if (images == null || images.isEmpty()) {
-                                log.error("No edited image returned.");
-                                return ToolResultBlock.error("Failed to edit image.");
-                            }
-
-                            List<ContentBlock> contentBlocks = new ArrayList<>();
-                            for (Image image : images) {
-                                if ("url".equals(finalResponseFormat)) {
-                                    String url = image.url().orElse(null);
-                                    if (url == null || url.trim().isEmpty()) {
-                                        log.error("Edited image URL is empty.");
-                                        return ToolResultBlock.error("Failed to edit image.");
-                                    }
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(URLSource.builder().url(url).build())
-                                                    .build());
-                                } else {
-                                    String data = image.b64Json().orElse(null);
-                                    if (data == null || data.trim().isEmpty()) {
-                                        log.error("Edited image base64 data is empty.");
-                                        return ToolResultBlock.error("Failed to edit image.");
-                                    }
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(
-                                                            Base64Source.builder()
-                                                                    .mediaType("image/png")
-                                                                    .data(data)
-                                                                    .build())
-                                                    .build());
-                                }
-                            }
-                            return ToolResultBlock.of(contentBlocks);
-                        })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to edit image: {}", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
-                        });
-    }
-
-    /**
-     * Create variations of an image and return the image URL(s) or base64 data.
-     *
-     * @param imageUrl       The file path or URL to the image from which variations will be generated.
-     * @param model          The model to use for image variation.
-     * @param n              The number of image variations to generate.
-     * @param size           The size of the generated image variations.
-     * @param responseFormat The format in which generated images are returned.
-     *                       <ul>
-     *                       <li>Must be one of "url" or "b64_json".</li>
-     *                       <li>URLs are only valid for 60 minutes after the image has been generated.</li>
-     *                       </ul>
-     * @return A ToolResultBlock containing the created variation image url, base64 data, or error message.
-     */
-    @Tool(
-            name = "openai_create_image_variation",
-            description =
-                    "Create variations of an image and return the image URL(s) or base64 data.")
-    public Mono<ToolResultBlock> openaiCreateImageVariation(
-            @ToolParam(name = "image_url", description = "The file path or URL to the image.")
-                    String imageUrl,
-            @ToolParam(
-                            name = "model",
-                            description = "The model to use for image generation, e.g., dall-e-2. ",
-                            required = false)
-                    String model,
-            @ToolParam(
-                            name = "n",
-                            description = "The number of image variations to generate.",
-                            required = false)
-                    Integer n,
-            @ToolParam(
-                            name = "size",
-                            description = "The size of the generated images.",
-                            required = false)
-                    String size,
-            @ToolParam(
-                            name = "response_format",
-                            description = "The format in which generated images are returned.",
-                            required = false)
-                    String responseFormat) {
-
-        final String finalModel = Optional.ofNullable(model).orElse("dall-e-2");
-        final Integer finalN = Optional.ofNullable(n).orElse(1);
-        final String finalSize = Optional.ofNullable(size).orElse("256x256");
-        final String finalResponseFormat = Optional.ofNullable(responseFormat).orElse("url");
-
-        log.debug(
-                "openai_create_image_variation called: imageUrl='{}', n='{}', model='{}',"
-                        + " size='{}', response_format='{}'",
-                imageUrl,
-                finalN,
-                finalModel,
-                finalSize,
-                finalResponseFormat);
-
-        return Mono.fromCallable(
-                        () -> {
-                            ImageCreateVariationParams params =
-                                    ImageCreateVariationParams.builder()
-                                            .model(finalModel)
-                                            .image(MediaUtils.urlToRgbaImageInputStream(imageUrl))
-                                            .n(finalN)
-                                            .size(ImageCreateVariationParams.Size.of(finalSize))
-                                            .build();
-
-                            ImagesResponse response = client.images().createVariation(params);
-
-                            List<Image> images = response.data().orElse(null);
-                            if (images == null || images.isEmpty()) {
-                                log.error("No image variation returned.");
-                                return ToolResultBlock.error("Failed to create image variation.");
-                            }
-
-                            List<ContentBlock> contentBlocks = new ArrayList<>();
-                            for (Image image : images) {
-                                if ("url".equals(finalResponseFormat)) {
-                                    String url = image.url().orElse(null);
-                                    if (url == null || url.trim().isEmpty()) {
-                                        log.error("Generated image URL is empty.");
-                                        return ToolResultBlock.error(
-                                                "Failed to create image variation.");
-                                    }
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(URLSource.builder().url(url).build())
-                                                    .build());
-                                } else {
-                                    String b64Data = image.b64Json().orElse(null);
-                                    if (b64Data == null || b64Data.trim().isEmpty()) {
-                                        log.error("Generated image base64 data is empty.");
-                                        return ToolResultBlock.error(
-                                                "Failed to create image variation.");
-                                    }
-                                    contentBlocks.add(
-                                            ImageBlock.builder()
-                                                    .source(
-                                                            Base64Source.builder()
-                                                                    .mediaType("image/png")
-                                                                    .data(b64Data)
-                                                                    .build())
-                                                    .build());
-                                }
-                            }
-                            return ToolResultBlock.of(contentBlocks);
-                        })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to create image variation: {}", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
-                        });
-    }
-
-    /**
-     * Generate text based on the given images.
-     *
-     * @param imageUrls The URL or list of URLs pointing to the images that need to be described.
-     * @param prompt    The prompt that instructs the model on how to describe the image(s).
-     * @param model     The model to use for generating the text descriptions.
-     * @return A ToolResultBlock containing the generated text or error message.
-     */
-    @Tool(name = "openai_image_to_text", description = "Generate text based on the given images.")
+                    "Convert image(s) to text using OpenAI vision models. "
+                            + "Analyzes images and returns text descriptions.")
     public Mono<ToolResultBlock> openaiImageToText(
             @ToolParam(
                             name = "image_urls",
-                            description = "The URL or list of URLs pointing to the images.")
-                    List<String> imageUrls,
+                            description = "The URLs of the images to analyze (comma-separated)")
+                    String imageUrls,
             @ToolParam(
                             name = "prompt",
-                            description = "The prompt that instructs the model.",
+                            description =
+                                    "The text prompt describing what to extract from the images",
                             required = false)
                     String prompt,
             @ToolParam(
                             name = "model",
-                            description = "The model to use for generating the text descriptions.",
+                            description =
+                                    "The vision model to use, e.g., 'gpt-4o',"
+                                            + " 'gpt-4-vision-preview'",
                             required = false)
-                    String model) {
+                    String model,
+            @ToolParam(
+                            name = "max_tokens",
+                            description = "The maximum number of tokens in the response",
+                            required = false)
+                    Integer maxTokens) {
 
-        final String finalPrompt = Optional.ofNullable(prompt).orElse("Describe the image");
-        final String finalModel = Optional.ofNullable(model).orElse("gpt-4o");
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("gpt-4o");
+        String finalPrompt =
+                Optional.ofNullable(prompt)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse("Describe the image(s) in detail.");
+        Integer finalMaxTokens = Optional.ofNullable(maxTokens).orElse(300);
 
         log.debug(
-                "openai_image_to_text called: imageUrls='{}', prompt='{}', model='{}'",
+                "openai_image_to_text called: imageUrls='{}', prompt='{}', model='{}',"
+                        + " maxTokens='{}'",
                 imageUrls,
                 finalPrompt,
-                finalModel);
+                finalModel,
+                finalMaxTokens);
 
         return Mono.fromCallable(
                         () -> {
-                            List<ChatCompletionContentPart> parts = new ArrayList<>();
-                            for (String url : imageUrls) {
-                                String base64DataUrl;
-                                try {
-                                    base64DataUrl = MediaUtils.urlToBase64DataUrl(url);
-                                } catch (IOException e) {
-                                    log.error(
-                                            "Failed to convert url to base64 data url, {}",
-                                            e.getMessage(),
-                                            e);
-                                    return ToolResultBlock.error(e.getMessage());
+                            // Parse image URLs
+                            String[] urls = imageUrls.split(",");
+                            List<Map<String, Object>> contentParts = new ArrayList<>();
+
+                            // Add text prompt
+                            contentParts.add(Map.of("type", "text", "text", finalPrompt));
+
+                            // Add image URLs
+                            for (String url : urls) {
+                                String trimmedUrl = url.trim();
+                                if (!trimmedUrl.isEmpty()) {
+                                    contentParts.add(
+                                            Map.of(
+                                                    "type",
+                                                    "image_url",
+                                                    "image_url",
+                                                    Map.of("url", trimmedUrl)));
                                 }
-                                parts.add(
-                                        ChatCompletionContentPart.ofImageUrl(
-                                                ChatCompletionContentPartImage.builder()
-                                                        .imageUrl(
-                                                                ChatCompletionContentPartImage
-                                                                        .ImageUrl.builder()
-                                                                        .url(base64DataUrl)
-                                                                        .build())
-                                                        .build()));
                             }
-                            ChatCompletionUserMessageParam userMessageParam =
-                                    ChatCompletionUserMessageParam.builder()
-                                            .contentOfArrayOfContentParts(parts)
-                                            .content(
-                                                    ChatCompletionContentPartText.builder()
-                                                            .text(finalPrompt)
-                                                            .build()
-                                                            .text())
-                                            .build();
 
-                            List<ChatCompletionMessageParam> messages = new ArrayList<>();
-                            messages.add(ChatCompletionMessageParam.ofUser(userMessageParam));
+                            Map<String, Object> request = new HashMap<>();
+                            request.put("model", finalModel);
+                            request.put(
+                                    "messages",
+                                    List.of(Map.of("role", "user", "content", contentParts)));
+                            request.put("max_tokens", finalMaxTokens);
 
-                            ChatCompletionCreateParams params =
-                                    ChatCompletionCreateParams.builder()
-                                            .messages(messages)
-                                            .model(finalModel)
-                                            .build();
+                            String responseBody =
+                                    client.callApi(
+                                            apiKey, baseUrl, "/v1/chat/completions", request);
+                            Map<String, Object> response =
+                                    objectMapper.readValue(
+                                            responseBody,
+                                            new TypeReference<Map<String, Object>>() {});
 
-                            ChatCompletion chatCompletion =
-                                    client.chat().completions().create(params);
+                            @SuppressWarnings("unchecked")
+                            List<Map<String, Object>> choices =
+                                    (List<Map<String, Object>>) response.get("choices");
+                            if (choices == null || choices.isEmpty()) {
+                                log.error("No choices returned from vision model.");
+                                return ToolResultBlock.error("Failed to analyze images.");
+                            }
 
-                            String text =
-                                    Optional.ofNullable(chatCompletion)
-                                            .map(ChatCompletion::choices)
-                                            .flatMap(choices -> choices.stream().findFirst())
-                                            .map(ChatCompletion.Choice::message)
-                                            .flatMap(ChatCompletionMessage::content)
-                                            .orElse(null);
+                            Map<String, Object> firstChoice = choices.get(0);
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> message =
+                                    (Map<String, Object>) firstChoice.get("message");
+                            if (message == null) {
+                                log.error("No message in choice.");
+                                return ToolResultBlock.error("Failed to analyze images.");
+                            }
+
+                            String text = (String) message.get("content");
                             if (text == null || text.trim().isEmpty()) {
-                                log.error("No generated text returned.");
-                                return ToolResultBlock.error("Failed to generate text.");
+                                log.error("No content in message.");
+                                return ToolResultBlock.error("Failed to analyze images.");
                             }
 
-                            return ToolResultBlock.of(TextBlock.builder().text(text).build());
+                            return ToolResultBlock.builder()
+                                    .output(List.of(TextBlock.builder().text(text).build()))
+                                    .build();
                         })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to generate text: {}", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                .onErrorMap(
+                        ex -> {
+                            log.error("Failed to analyze images: {}", ex.getMessage(), ex);
+                            return new RuntimeException(
+                                    "Failed to analyze images: " + ex.getMessage(), ex);
                         });
     }
 
     /**
-     * Convert text to an audio file using a specified model and voice.
+     * Convert text to audio (speech) using OpenAI TTS models.
      *
-     * @param text      The text to convert to audio.
-     * @param model     The model to use for text-to-speech conversion.
-     * @param voice     The voice to use for the audio output.
-     * @param speed     The speed of the audio playback. A value of 1.0 is normal speed.
-     * @param resFormat The format of the audio file.
-     * @return A ToolResultBlock containing the base64 data of audio file or error message.
+     * @param text the text to convert to speech
+     * @param model the TTS model to use (e.g., "tts-1", "tts-1-hd")
+     * @param voice the voice to use ("alloy", "echo", "fable", "onyx", "nova", "shimmer")
+     * @param responseFormat the audio format ("mp3", "opus", "aac", "flac")
+     * @param speed the speed of the speech (0.25 to 4.0)
+     * @return a ToolResultBlock containing the audio as base64 data
      */
     @Tool(
             name = "openai_text_to_audio",
-            description = "Convert text to an audio file using a specified model and voice.")
+            description =
+                    "Convert text to audio (speech) using OpenAI TTS models. "
+                            + "Returns audio as base64 data.")
     public Mono<ToolResultBlock> openaiTextToAudio(
-            @ToolParam(name = "text", description = "The text to convert to audio.") String text,
+            @ToolParam(name = "text", description = "The text to convert to speech") String text,
             @ToolParam(
                             name = "model",
-                            description =
-                                    "The model to use for text-to-speech conversion, e.g., 'tts-1',"
-                                            + " 'tts-1-hd', 'gpt-4o-mini-tts'.",
+                            description = "The TTS model to use, e.g., 'tts-1', 'tts-1-hd'",
                             required = false)
                     String model,
             @ToolParam(
                             name = "voice",
-                            description = "The voice to use for the audio output.",
+                            description =
+                                    "The voice to use: 'alloy', 'echo', 'fable', 'onyx', 'nova',"
+                                            + " 'shimmer'",
                             required = false)
                     String voice,
             @ToolParam(
-                            name = "speed",
-                            description = "The speed of the audio playback.",
+                            name = "response_format",
+                            description = "The audio format: 'mp3', 'opus', 'aac', 'flac'",
                             required = false)
-                    Float speed,
+                    String responseFormat,
             @ToolParam(
-                            name = "resFormat",
-                            description = "The format of the audio file.",
+                            name = "speed",
+                            description = "The speed of the speech (0.25 to 4.0)",
                             required = false)
-                    String resFormat) {
+                    Double speed) {
 
-        final String finalModel = Optional.ofNullable(model).orElse("tts-1");
-        final String finalVoice = Optional.ofNullable(voice).orElse("alloy");
-        final float finalSpeed = Optional.ofNullable(speed).orElse(1.0f);
-        final String finalResFormat = Optional.ofNullable(resFormat).orElse("mp3");
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("tts-1");
+        String finalVoice =
+                Optional.ofNullable(voice).filter(s -> !s.trim().isEmpty()).orElse("alloy");
+        String finalResponseFormat =
+                Optional.ofNullable(responseFormat).filter(s -> !s.trim().isEmpty()).orElse("mp3");
+        Double finalSpeed = Optional.ofNullable(speed).orElse(1.0);
 
         log.debug(
-                "openai_text_to_audio called: text='{}', model='{}', voice='{}', speed='{}',"
-                        + " resFormat='{}'",
+                "openai_text_to_audio called: text='{}', model='{}', voice='{}',"
+                        + " responseFormat='{}', speed='{}'",
                 text,
                 finalModel,
                 finalVoice,
-                finalSpeed,
-                finalResFormat);
+                finalResponseFormat,
+                finalSpeed);
 
         return Mono.fromCallable(
                         () -> {
-                            SpeechCreateParams params =
-                                    SpeechCreateParams.builder()
-                                            .model(finalModel)
-                                            .voice(finalVoice)
-                                            .speed(finalSpeed)
-                                            .input(text)
-                                            .responseFormat(
-                                                    SpeechCreateParams.ResponseFormat.of(
-                                                            finalResFormat))
-                                            .build();
+                            Map<String, Object> request = new HashMap<>();
+                            request.put("model", finalModel);
+                            request.put("input", text);
+                            request.put("voice", finalVoice);
+                            request.put("response_format", finalResponseFormat);
+                            request.put("speed", finalSpeed);
 
-                            try (HttpResponse response = client.audio().speech().create(params)) {
-                                if (response == null || response.body() == null) {
-                                    log.error("No response body returned.");
-                                    return ToolResultBlock.error("Failed to generate audio.");
-                                }
-                                String data =
-                                        Base64.getEncoder()
-                                                .encodeToString(response.body().readAllBytes());
-                                return ToolResultBlock.of(
-                                        AudioBlock.builder()
-                                                .source(
-                                                        Base64Source.builder()
-                                                                .mediaType(
-                                                                        "audio/" + finalResFormat)
-                                                                .data(data)
-                                                                .build())
-                                                .build());
-                            }
+                            // Note: /v1/audio/speech returns binary audio data, not JSON
+                            // We need to handle binary response - for now, return an informative
+                            // error
+                            // TODO: Extend OpenAIClient to support binary responses for TTS
+                            return ToolResultBlock.error(
+                                    "Text-to-speech requires binary response handling, which is not"
+                                        + " yet fully implemented. Please use the OpenAI SDK"
+                                        + " directly for this feature, or extend OpenAIClient to"
+                                        + " support binary responses.");
                         })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to generate audio: {}", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                .onErrorMap(
+                        ex -> {
+                            log.error("Failed to generate audio: {}", ex.getMessage(), ex);
+                            return new RuntimeException(
+                                    "Failed to generate audio: " + ex.getMessage(), ex);
                         });
     }
 
     /**
-     * Convert an audio file to text using OpenAI's transcription service (Whisper).
+     * Convert audio to text (transcription) using OpenAI Whisper models.
      *
-     * @param audioFileUrl The file path or URL to the audio file that needs to be transcribed.
-     * @param model        The model to use for audio transcription.
-     * @param language     ISO-639-1 language code, e.g., 'en', 'zh', 'fr'. Improves accuracy and latency.
-     * @param temperature  The temperature for the transcription, which affects the  randomness of the output.
-     * @return A ToolResultBlock containing the transcribed text or error message.
+     * <p>Note: This requires multipart/form-data upload, which is not yet fully supported.
+     * This is a placeholder implementation.
+     *
+     * @param audioUrl the URL of the audio file to transcribe
+     * @param model the transcription model to use (e.g., "whisper-1")
+     * @param language the language of the audio (ISO-639-1 code, optional)
+     * @param prompt optional text to guide the model's style
+     * @param responseFormat the format of the response ("json", "text", "verbose_json", etc.)
+     * @param temperature the temperature for sampling (0.0 to 1.0)
+     * @return a ToolResultBlock containing the transcribed text
      */
     @Tool(
             name = "openai_audio_to_text",
-            description = "Convert an audio file to text using OpenAI's transcription service.")
+            description =
+                    "Convert audio to text (transcription) using OpenAI Whisper models. "
+                            + "Requires audio file URL.")
     public Mono<ToolResultBlock> openaiAudioToText(
-            @ToolParam(
-                            name = "audio_file_url",
-                            description =
-                                    "The file path or URL to the audio file that needs to be"
-                                            + " transcribed.")
-                    String audioFileUrl,
+            @ToolParam(name = "audio_url", description = "The URL of the audio file to transcribe")
+                    String audioUrl,
             @ToolParam(
                             name = "model",
-                            description = "The model to use for audio transcription.",
+                            description = "The transcription model to use, e.g., 'whisper-1'",
                             required = false)
                     String model,
             @ToolParam(
                             name = "language",
-                            description =
-                                    "ISO-639-1 language code, e.g., 'en', 'zh', 'fr'. Improves"
-                                            + " accuracy and latency.",
+                            description = "The language of the audio (ISO-639-1 code, optional)",
                             required = false)
                     String language,
             @ToolParam(
-                            name = "temperature",
-                            description =
-                                    " The temperature for the transcription, which affects the "
-                                            + " randomness of the output.",
+                            name = "prompt",
+                            description = "Optional text to guide the model's style",
                             required = false)
-                    Float temperature) {
+                    String prompt,
+            @ToolParam(
+                            name = "response_format",
+                            description =
+                                    "The format of the response: 'json', 'text', 'verbose_json',"
+                                            + " etc.",
+                            required = false)
+                    String responseFormat,
+            @ToolParam(
+                            name = "temperature",
+                            description = "The temperature for sampling (0.0 to 1.0)",
+                            required = false)
+                    Double temperature) {
 
-        final String finalModel = Optional.ofNullable(model).orElse("whisper-1");
-        final String finalLanguage = Optional.ofNullable(language).orElse("en");
-        final float finalTemperature = Optional.ofNullable(temperature).orElse(0.2f);
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("whisper-1");
+        String finalResponseFormat =
+                Optional.ofNullable(responseFormat).filter(s -> !s.trim().isEmpty()).orElse("text");
 
         log.debug(
-                "openai_audio_to_text called: audioFileUrl='{}', model='{}', language='{}',"
-                        + " temperature='{}'",
-                audioFileUrl,
+                "openai_audio_to_text called: audioUrl='{}', model='{}', language='{}',"
+                        + " prompt='{}', responseFormat='{}', temperature='{}'",
+                audioUrl,
                 finalModel,
-                finalLanguage,
-                finalTemperature);
+                language,
+                prompt,
+                finalResponseFormat,
+                temperature);
 
         return Mono.fromCallable(
                         () -> {
-                            TranscriptionCreateParams params =
-                                    TranscriptionCreateParams.builder()
-                                            .model(finalModel)
-                                            .file(MediaUtils.urlToInputStream(audioFileUrl))
-                                            .language(finalLanguage)
-                                            .temperature(finalTemperature)
-                                            .build();
-
-                            TranscriptionCreateResponse response =
-                                    client.audio().transcriptions().create(params);
-
-                            String transcript = response.asTranscription().text();
-                            if (transcript == null || transcript.trim().isEmpty()) {
-                                log.error("No generated text returned");
-                                return ToolResultBlock.error("Failed to transcribe audio.");
+                            // Download audio from URL and convert to base64
+                            String audioBase64;
+                            String mediaType;
+                            try {
+                                mediaType = MediaUtils.determineMediaType(audioUrl);
+                                audioBase64 = MediaUtils.downloadUrlToBase64(audioUrl);
+                            } catch (IOException e) {
+                                log.error(
+                                        "Failed to download audio from URL: {}", e.getMessage(), e);
+                                return ToolResultBlock.error(
+                                        "Failed to download audio: " + e.getMessage());
                             }
-                            return ToolResultBlock.of(TextBlock.builder().text(transcript).build());
+
+                            if (audioBase64 == null || audioBase64.trim().isEmpty()) {
+                                log.error("Failed to convert audio to base64.");
+                                return ToolResultBlock.error("Failed to process audio.");
+                            }
+
+                            // TODO: Implement multipart/form-data upload for
+                            // /v1/audio/transcriptions
+                            // For now, return an error indicating this feature needs multipart
+                            // support
+                            return ToolResultBlock.error(
+                                    "Audio transcription requires multipart/form-data upload, which"
+                                        + " is not yet fully implemented. Please use the OpenAI SDK"
+                                        + " directly for this feature.");
                         })
-                .onErrorResume(
-                        e -> {
-                            log.error("Failed to transcribe audio: {}", e.getMessage(), e);
-                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                .onErrorMap(
+                        ex -> {
+                            log.error("Failed to transcribe audio: {}", ex.getMessage(), ex);
+                            return new RuntimeException(
+                                    "Failed to transcribe audio: " + ex.getMessage(), ex);
                         });
     }
 }

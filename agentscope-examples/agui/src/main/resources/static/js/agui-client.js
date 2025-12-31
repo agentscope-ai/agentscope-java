@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -16,9 +16,9 @@
 
 /**
  * AG-UI Protocol Client
- * 
+ *
  * A minimal JavaScript client for communicating with AG-UI protocol servers.
- * 
+ *
  * @example
  * const client = new AguiClient('/agui/run');
  * await client.run({
@@ -103,7 +103,7 @@ class AguiClient {
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                
+
                 if (done) {
                     console.log('Stream ended, remaining buffer:', buffer);
                     break;
@@ -112,24 +112,24 @@ class AguiClient {
                 const chunk = decoder.decode(value, { stream: true });
                 console.log('Received chunk:', chunk.length, 'bytes');
                 buffer += chunk;
-                
+
                 // Try both \n\n and \r\n\r\n as delimiters
                 let delimiter = '\n\n';
                 let delimiterIndex = buffer.indexOf(delimiter);
-                
+
                 // If \n\n not found, try \r\n\r\n (Windows-style)
                 if (delimiterIndex === -1) {
                     delimiter = '\r\n\r\n';
                     delimiterIndex = buffer.indexOf(delimiter);
                 }
-                
+
                 // Process complete SSE messages
                 while (delimiterIndex !== -1) {
                     const message = buffer.substring(0, delimiterIndex);
                     buffer = buffer.substring(delimiterIndex + delimiter.length);
-                    
+
                     console.log('Processing SSE message:', message.substring(0, 100));
-                    
+
                     // Process each line in the message
                     const lines = message.split(/\r?\n/);
                     for (const line of lines) {
@@ -146,7 +146,7 @@ class AguiClient {
                             }
                         }
                     }
-                    
+
                     // Check for next delimiter
                     delimiterIndex = buffer.indexOf('\n\n');
                     if (delimiterIndex === -1) {

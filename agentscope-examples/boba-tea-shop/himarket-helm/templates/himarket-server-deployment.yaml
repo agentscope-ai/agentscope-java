@@ -1,7 +1,7 @@
-# Copyright 2024-2025 the original author or authors.
+# Copyright 2024-2026 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# You may not use this file except in compliance with the License.
+# you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -59,10 +59,10 @@ spec:
               echo "Target: mysql-headless-svc:3306"
               echo "User: {{ .Values.mysql.auth.username }}"
               echo ""
-              
+
               RETRY=0
               MAX_RETRY=90
-              
+
               # Phase 1: Wait for port to open
               echo "[Phase 1] Waiting for MySQL port to be open..."
               until mysqladmin ping -h mysql-headless-svc --silent 2>/dev/null; do
@@ -76,7 +76,7 @@ spec:
               done
               echo "[✓] MySQL port is open"
               echo ""
-              
+
               # Phase 2: Wait for successful connection and query (ensure initialization is complete)
               echo "[Phase 2] Waiting for MySQL to accept connections..."
               RETRY=0
@@ -93,11 +93,11 @@ spec:
               done
               echo "[✓] Phase 2 passed: Basic query succeeded"
               echo ""
-              
+
               # Phase 3: Wait for permissions to fully take effect (simulate actual application connection pattern)
               echo "[Phase 3] Waiting for permissions to fully stabilize..."
               echo "This ensures the grant tables are fully loaded and cached."
-              
+
               # Execute multiple connections to ensure permission cache is loaded
               for i in 1 2 3 4 5; do
                 echo "[$(date +'%H:%M:%S')] Testing connection stability (${i}/5)..."
@@ -111,12 +111,12 @@ spec:
                   sleep 1
                 fi
               done
-              
+
               # Final wait for 5 seconds to let MySQL permission system fully stabilize
               echo ""
               echo "[Phase 4] Final stabilization wait (5 seconds)..."
               sleep 5
-              
+
               echo ""
               echo "[✓] MySQL is fully ready with stable permissions!"
               echo "=========================================="
@@ -147,7 +147,7 @@ spec:
             value: {{ .Values.autoInit.developer.password | quote }}
           - name: PORTAL_NAME
             value: {{ .Values.autoInit.portal.name | quote }}
-          
+
           # Nacos configuration
           - name: REGISTER_NACOS
             value: {{ .Values.nacos.enabled | quote }}
@@ -173,7 +173,7 @@ spec:
             value: {{ .Values.nacos.secretKey | quote }}
           {{- end }}
           {{- end }}
-          
+
           # Gateway configuration
           - name: REGISTER_GATEWAY
             value: {{ .Values.gateway.enabled | quote }}
@@ -198,7 +198,7 @@ spec:
             value: {{ .Values.gateway.apig.secretKey | quote }}
           {{- end }}
           {{- end }}
-          
+
           # MCP configuration
           - name: IMPORT_MCP_TO_NACOS
             value: {{ .Values.mcp.importToNacos | quote }}
@@ -206,7 +206,7 @@ spec:
             value: {{ .Values.mcp.publishToHimarket | quote }}
           - name: MCP_JSON_FILE
             value: {{ .Values.mcp.jsonFile | quote }}
-          
+
           envFrom:
             - configMapRef:
                 name: himarket-server        # Non-sensitive configuration

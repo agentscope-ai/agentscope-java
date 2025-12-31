@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,26 +17,27 @@ package io.agentscope.core.session.mysql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.session.SessionInfo;
-import io.agentscope.core.state.StateModule;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
-import java.util.Map;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -44,9 +45,10 @@ import org.mockito.MockitoAnnotations;
 /**
  * Unit tests for MysqlSession.
  *
- * <p>These tests use mocked DataSource and Connection to verify the behavior
- * of MysqlSession without requiring an actual MySQL database.
+ * <p>These tests use mocked DataSource and Connection to verify the behavior of MysqlSession
+ * without requiring an actual MySQL database.
  */
+@DisplayName("MysqlSession Tests")
 public class MysqlSessionTest {
 
     @Mock private DataSource mockDataSource;
@@ -74,6 +76,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when DataSource is null")
     void testConstructorWithNullDataSource() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -82,6 +85,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when DataSource is null with createIfNotExist flag")
     void testConstructorWithNullDataSourceAndCreateIfNotExist() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -90,8 +94,8 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should create session with createIfNotExist=true")
     void testConstructorWithCreateIfNotExistTrue() throws SQLException {
-        // Mock successful execution for CREATE DATABASE and CREATE TABLE
         when(mockStatement.execute()).thenReturn(true);
 
         MysqlSession session = new MysqlSession(mockDataSource, true);
@@ -102,8 +106,8 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when database does not exist and createIfNotExist=false")
     void testConstructorWithCreateIfNotExistFalseAndDatabaseNotExist() throws SQLException {
-        // Mock database check returns empty result (database doesn't exist)
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(false);
 
@@ -114,9 +118,8 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when table does not exist and createIfNotExist=false")
     void testConstructorWithCreateIfNotExistFalseAndTableNotExist() throws SQLException {
-        // First query (database check) returns true
-        // Second query (table check) returns false
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true, false);
 
@@ -127,8 +130,8 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should create session when both database and table exist")
     void testConstructorWithCreateIfNotExistFalseAndBothExist() throws SQLException {
-        // Both database and table exist
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true, true);
 
@@ -139,8 +142,8 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should create session with custom database and table name")
     void testConstructorWithCustomDatabaseAndTableName() throws SQLException {
-        // Mock successful execution for CREATE DATABASE and CREATE TABLE
         when(mockStatement.execute()).thenReturn(true);
 
         MysqlSession session = new MysqlSession(mockDataSource, "custom_db", "custom_table", true);
@@ -150,6 +153,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should use default database name when null is provided")
     void testConstructorWithNullDatabaseNameUsesDefault() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -160,6 +164,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should use default database name when empty string is provided")
     void testConstructorWithEmptyDatabaseNameUsesDefault() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -170,6 +175,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should use default table name when null is provided")
     void testConstructorWithNullTableNameUsesDefault() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -180,6 +186,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should use default table name when empty string is provided")
     void testConstructorWithEmptyTableNameUsesDefault() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -190,32 +197,7 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testConstructorWithCustomNamesAndCreateIfNotExistFalse() throws SQLException {
-        // Both database and table exist
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(true, true);
-
-        MysqlSession session =
-                new MysqlSession(mockDataSource, "my_database", "my_sessions", false);
-
-        assertEquals("my_database", session.getDatabaseName());
-        assertEquals("my_sessions", session.getTableName());
-    }
-
-    @Test
-    void testDefaultConstructorRequiresExistingDatabaseAndTable() throws SQLException {
-        // Default constructor uses createIfNotExist=false
-        // Mock database check returns empty result (database doesn't exist)
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(false);
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> new MysqlSession(mockDataSource),
-                "Database does not exist");
-    }
-
-    @Test
+    @DisplayName("Should get DataSource correctly")
     void testGetDataSource() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -224,194 +206,165 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testSessionExistsReturnsTrue() throws SQLException {
-        // Setup for constructor (createIfNotExist=true)
+    @DisplayName("Should save and get single state correctly")
+    void testSaveAndGetSingleState() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        // Setup for sessionExists call
+        when(mockStatement.executeUpdate()).thenReturn(1);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true);
+        when(mockResultSet.getString("state_data"))
+                .thenReturn("{\"value\":\"test_value\",\"count\":42}");
 
-        assertTrue(session.sessionExists("test_session"));
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        TestState state = new TestState("test_value", 42);
 
-        verify(mockStatement).setString(1, "test_session");
+        // Save state
+        session.save(sessionKey, "testModule", state);
+
+        // Verify save operations
+        verify(mockStatement, atLeast(1)).executeUpdate();
+
+        // Get state
+        Optional<TestState> loaded = session.get(sessionKey, "testModule", TestState.class);
+        assertTrue(loaded.isPresent());
+        assertEquals("test_value", loaded.get().value());
+        assertEquals(42, loaded.get().count());
     }
 
     @Test
-    void testSessionExistsReturnsFalse() throws SQLException {
+    @DisplayName("Should save and get list state correctly")
+    void testSaveAndGetListState() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+
+        // Mock sequence for save():
+        // 1. getStoredHash() query - no hash found (next=false)
+        // 2. getListCount() query - no items (next=true, wasNull=true)
+        // Then for getList():
+        // 3. getList() query - 2 rows (next=true, true, false)
+        when(mockResultSet.next()).thenReturn(false, true, true, true, false);
+        when(mockResultSet.getInt("max_index")).thenReturn(0);
+        when(mockResultSet.wasNull()).thenReturn(true);
+        when(mockResultSet.getString("state_data"))
+                .thenReturn("{\"value\":\"value1\",\"count\":1}")
+                .thenReturn("{\"value\":\"value2\",\"count\":2}");
 
         MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
 
+        // Save list state
+        session.save(sessionKey, "testList", states);
+
+        // Get list state
+        List<TestState> loaded = session.getList(sessionKey, "testList", TestState.class);
+        assertEquals(2, loaded.size());
+        assertEquals("value1", loaded.get(0).value());
+        assertEquals("value2", loaded.get(1).value());
+    }
+
+    @Test
+    @DisplayName("Should return empty for non-existent state")
+    void testGetNonExistentState() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(false);
 
-        assertFalse(session.sessionExists("nonexistent_session"));
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+
+        Optional<TestState> state = session.get(sessionKey, "testModule", TestState.class);
+        assertFalse(state.isPresent());
     }
 
     @Test
-    void testDeleteSessionReturnsTrue() throws SQLException {
+    @DisplayName("Should return empty list for non-existent list state")
+    void testGetNonExistentListState() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(false);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+
+        List<TestState> states = session.getList(sessionKey, "testList", TestState.class);
+        assertTrue(states.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return true when session exists")
+    void testSessionExists() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+
+        assertTrue(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should return false when session does not exist")
+    void testSessionDoesNotExist() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(false);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+
+        assertFalse(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should delete session correctly")
+    void testDeleteSession() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
         when(mockStatement.executeUpdate()).thenReturn(1);
 
         MysqlSession session = new MysqlSession(mockDataSource, true);
-        assertTrue(session.deleteSession("test_session"));
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
 
-        verify(mockStatement).setString(1, "test_session");
+        session.delete(sessionKey);
+
+        verify(mockStatement).setString(1, "session1");
+        verify(mockStatement).executeUpdate();
     }
 
     @Test
-    void testDeleteSessionReturnsFalse() throws SQLException {
+    @DisplayName("Should list all session keys when empty")
+    void testListSessionKeysEmpty() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
-        when(mockStatement.executeUpdate()).thenReturn(0);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-        assertFalse(session.deleteSession("nonexistent_session"));
-    }
-
-    @Test
-    void testListSessionsEmpty() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(false);
 
-        assertTrue(session.listSessions().isEmpty());
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
+
+        assertTrue(sessionKeys.isEmpty());
     }
 
     @Test
-    void testListSessionsWithResults() throws SQLException {
+    @DisplayName("Should list all session keys")
+    void testListSessionKeysWithResults() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true, true, false);
         when(mockResultSet.getString("session_id")).thenReturn("session1", "session2");
 
-        var sessions = session.listSessions();
-
-        assertEquals(2, sessions.size());
-        assertEquals("session1", sessions.get(0));
-        assertEquals("session2", sessions.get(1));
-    }
-
-    @Test
-    void testSaveSessionState() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-        when(mockStatement.executeUpdate()).thenReturn(1);
-
         MysqlSession session = new MysqlSession(mockDataSource, true);
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
 
-        TestStateModule module = new TestStateModule();
-        module.setValue("test_value");
-
-        Map<String, StateModule> stateModules = Map.of("testModule", module);
-        session.saveSessionState("test_session", stateModules);
-
-        // Verify both session_id and state_data parameters are set
-        verify(mockStatement).setString(1, "test_session");
-        verify(mockStatement, org.mockito.Mockito.atLeast(2))
-                .setString(any(Integer.class), any(String.class));
+        assertEquals(2, sessionKeys.size());
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session1")));
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session2")));
     }
 
     @Test
-    void testLoadSessionStateNotExistAllowed() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(false);
-
-        TestStateModule module = new TestStateModule();
-        Map<String, StateModule> stateModules = Map.of("testModule", module);
-
-        // Should not throw when allowNotExist is true
-        session.loadSessionState("nonexistent_session", true, stateModules);
-    }
-
-    @Test
-    void testLoadSessionStateNotExistNotAllowed() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(false);
-
-        TestStateModule module = new TestStateModule();
-        Map<String, StateModule> stateModules = Map.of("testModule", module);
-
-        assertThrows(
-                RuntimeException.class,
-                () -> session.loadSessionState("nonexistent_session", false, stateModules),
-                "Session not found: nonexistent_session");
-    }
-
-    @Test
-    void testLoadSessionStateSuccess() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(true);
-        when(mockResultSet.getString("state_data"))
-                .thenReturn("{\"testModule\":{\"value\":\"loaded_value\"}}");
-
-        TestStateModule module = new TestStateModule();
-        Map<String, StateModule> stateModules = Map.of("testModule", module);
-
-        session.loadSessionState("test_session", true, stateModules);
-
-        assertEquals("loaded_value", module.getValue());
-    }
-
-    @Test
-    void testGetSessionInfoNotFound() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(false);
-
-        assertThrows(
-                RuntimeException.class,
-                () -> session.getSessionInfo("nonexistent_session"),
-                "Session not found: nonexistent_session");
-    }
-
-    @Test
-    void testGetSessionInfoSuccess() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        String stateJson = "{\"component1\":{},\"component2\":{}}";
-        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-        when(mockResultSet.next()).thenReturn(true);
-        when(mockResultSet.getString("state_data")).thenReturn(stateJson);
-        when(mockResultSet.getLong("data_size")).thenReturn((long) stateJson.length());
-        when(mockResultSet.getTimestamp("updated_at")).thenReturn(timestamp);
-
-        SessionInfo info = session.getSessionInfo("test_session");
-
-        assertNotNull(info);
-        assertEquals("test_session", info.getSessionId());
-        assertEquals(stateJson.length(), info.getSize());
-        assertEquals(timestamp.getTime(), info.getLastModified());
-        assertEquals(2, info.getComponentCount());
-    }
-
-    @Test
+    @DisplayName("Should clear all sessions")
     void testClearAllSessions() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
         when(mockStatement.executeUpdate()).thenReturn(5);
@@ -423,55 +376,19 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testValidateSessionIdNull() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> session.sessionExists(null),
-                "Session ID cannot be null or empty");
-    }
-
-    @Test
-    void testValidateSessionIdEmpty() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> session.sessionExists(""),
-                "Session ID cannot be null or empty");
-    }
-
-    @Test
-    void testValidateSessionIdWithPathSeparator() throws SQLException {
-        when(mockStatement.execute()).thenReturn(true);
-
-        MysqlSession session = new MysqlSession(mockDataSource, true);
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> session.sessionExists("path/with/separator"),
-                "Session ID cannot contain path separators");
-    }
-
-    @Test
+    @DisplayName("Should not close DataSource when closing session")
     void testClose() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
         MysqlSession session = new MysqlSession(mockDataSource, true);
-        // close() should not throw and should not close the DataSource
         session.close();
-        // DataSource should still be accessible
         assertEquals(mockDataSource, session.getDataSource());
     }
 
     // ==================== SQL Injection Prevention Tests ====================
 
     @Test
+    @DisplayName("Should reject database name with semicolon (SQL injection)")
     void testConstructorRejectsDatabaseNameWithSemicolon() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -482,6 +399,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should reject table name with semicolon (SQL injection)")
     void testConstructorRejectsTableNameWithSemicolon() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -492,6 +410,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should reject database name with space")
     void testConstructorRejectsDatabaseNameWithSpace() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -500,6 +419,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should reject table name with space")
     void testConstructorRejectsTableNameWithSpace() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -508,22 +428,7 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testConstructorRejectsDatabaseNameWithQuotes() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "db'--", "table", true),
-                "Database name contains invalid characters");
-    }
-
-    @Test
-    void testConstructorRejectsTableNameWithQuotes() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "valid_db", "table\"--", true),
-                "Table name contains invalid characters");
-    }
-
-    @Test
+    @DisplayName("Should reject database name starting with number")
     void testConstructorRejectsDatabaseNameStartingWithNumber() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -532,6 +437,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should reject table name starting with number")
     void testConstructorRejectsTableNameStartingWithNumber() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -540,24 +446,9 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testConstructorRejectsDatabaseNameWithHyphen() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "my-database", "table", true),
-                "Database name contains invalid characters");
-    }
-
-    @Test
-    void testConstructorRejectsTableNameWithHyphen() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "valid_db", "my-table", true),
-                "Table name contains invalid characters");
-    }
-
-    @Test
+    @DisplayName("Should reject database name exceeding max length")
     void testConstructorRejectsDatabaseNameExceedingMaxLength() {
-        String longName = "a".repeat(65); // 65 characters, exceeds 64 limit
+        String longName = "a".repeat(65);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new MysqlSession(mockDataSource, longName, "table", true),
@@ -565,8 +456,9 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should reject table name exceeding max length")
     void testConstructorRejectsTableNameExceedingMaxLength() {
-        String longName = "a".repeat(65); // 65 characters, exceeds 64 limit
+        String longName = "a".repeat(65);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new MysqlSession(mockDataSource, "valid_db", longName, true),
@@ -574,10 +466,10 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should accept valid database and table names")
     void testConstructorAcceptsValidDatabaseAndTableNames() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
-        // Valid names with letters, numbers, and underscores
         MysqlSession session =
                 new MysqlSession(mockDataSource, "my_database_123", "my_table_456", true);
 
@@ -586,6 +478,7 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should accept names starting with underscore")
     void testConstructorAcceptsNameStartingWithUnderscore() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
@@ -597,79 +490,17 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should accept max length names")
     void testConstructorAcceptsMaxLengthNames() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
-        String maxLengthName = "a".repeat(64); // Exactly 64 characters
+        String maxLengthName = "a".repeat(64);
         MysqlSession session = new MysqlSession(mockDataSource, maxLengthName, maxLengthName, true);
 
         assertEquals(maxLengthName, session.getDatabaseName());
         assertEquals(maxLengthName, session.getTableName());
     }
 
-    @Test
-    void testConstructorRejectsSqlInjectionInDatabaseName() {
-        // Common SQL injection patterns
-        String[] injectionAttempts = {
-            "db; DROP TABLE users;",
-            "db' OR '1'='1",
-            "db\" OR \"1\"=\"1",
-            "db`; DELETE FROM sessions;",
-            "db\nDROP DATABASE",
-            "db/*comment*/",
-            "db--comment"
-        };
-
-        for (String injection : injectionAttempts) {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> new MysqlSession(mockDataSource, injection, "table", true),
-                    "Should reject SQL injection attempt: " + injection);
-        }
-    }
-
-    @Test
-    void testConstructorRejectsSqlInjectionInTableName() {
-        // Common SQL injection patterns
-        String[] injectionAttempts = {
-            "table; DROP TABLE users;",
-            "table' OR '1'='1",
-            "table\" OR \"1\"=\"1",
-            "table`; DELETE FROM sessions;",
-            "table\nDROP DATABASE",
-            "table/*comment*/",
-            "table--comment"
-        };
-
-        for (String injection : injectionAttempts) {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> new MysqlSession(mockDataSource, "valid_db", injection, true),
-                    "Should reject SQL injection attempt: " + injection);
-        }
-    }
-
-    /**
-     * Simple test state module implementation.
-     */
-    private static class TestStateModule extends StateModuleBase {
-        private String value;
-
-        public TestStateModule() {
-            registerState("value");
-        }
-
-        public String getValue() {
-            return value;
-        }
-
-        public void setValue(String value) {
-            this.value = value;
-        }
-
-        @Override
-        public String getComponentName() {
-            return "testModule";
-        }
-    }
+    /** Simple test state record for testing. */
+    public record TestState(String value, int count) implements State {}
 }

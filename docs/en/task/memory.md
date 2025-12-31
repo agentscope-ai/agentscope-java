@@ -193,17 +193,24 @@ Configure long-term memory working mode in ReActAgent:
 
 Long-term memory implementation based on [Mem0](https://mem0.ai/).
 
-**Usage Example**:
+#### Background
+
+The OpenAPI interfaces provided by self-hosted Mem0 and Platform Mem0 are inconsistent (different endpoint paths and response formats). `Mem0LongTermMemory` internally provides a compatibility adapter mechanism. By specifying the Mem0 deployment type through the `apiType` parameter, it automatically selects the correct API endpoints and response parsing methods.
+
+#### Usage Examples
+
+**Platform Mem0 (default)**:
 
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 
+// Using Platform Mem0 (default, no need to specify apiType)
 Mem0LongTermMemory longTermMemory = Mem0LongTermMemory.builder()
         .agentName("SmartAssistant")
         .userId("user-001")
-        .apiBaseUrl(mem0BaseUrl)
+        .apiBaseUrl("https://api.mem0.ai")
         .apiKey(System.getenv("MEM0_API_KEY"))
         .build();
 
@@ -215,14 +222,60 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
+**Self-hosted Mem0**:
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.mem0.Mem0ApiType;
+import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
+
+// Using self-hosted Mem0, need to specify apiType as Mem0ApiType.SELF_HOSTED
+Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
+        .agentName("SmartAssistant")
+        .userId("user-001")
+        .apiBaseUrl("http://localhost:8000")  // Self-hosted Mem0 service address
+        .apiKey(System.getenv("MEM0_API_KEY"))  // Optional, depends on self-hosted service config
+        .apiType(Mem0ApiType.SELF_HOSTED)  // Specify as self-hosted Mem0
+        .build();
+
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .longTermMemory(selfHostedMemory)
+        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+        .build();
+```
+
+**Configuration Notes**:
+
+- `apiType`: Optional parameter to specify Mem0 deployment type
+  - `Mem0ApiType.PLATFORM` (default): Uses Platform Mem0 API endpoints
+  - `Mem0ApiType.SELF_HOSTED`: Uses self-hosted Mem0 API endpoints
+- `apiBaseUrl`: Base URL of the Mem0 service
+  - Platform Mem0: Usually `https://api.mem0.ai`
+  - Self-hosted Mem0: Usually `http://localhost:8000` or your server address
+- `apiKey`: API key (optional)
+  - Platform Mem0: Required
+  - Self-hosted Mem0: Depends on your service configuration, may not be needed
+
 **Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **Run Example**:
 
 ```bash
-# Requires MEM0_API_KEY environment variable
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.Mem0Example"
+# Platform Mem0 (default)
+export MEM0_API_KEY=your_api_key
+export MEM0_API_BASE_URL=https://api.mem0.ai  # Optional, defaults to this value
+cd agentscope-examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
+
+# Self-hosted Mem0
+export MEM0_API_KEY=your_api_key  # Optional, depends on service configuration
+export MEM0_API_BASE_URL=http://localhost:8000
+export MEM0_API_TYPE=self-hosted
+cd agentscope-examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 ```
 
 ### ReMeLongTermMemory

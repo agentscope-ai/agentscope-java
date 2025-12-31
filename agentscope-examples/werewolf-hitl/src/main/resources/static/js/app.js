@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -472,12 +472,12 @@ async function fetchAndRevealRoles() {
         if (!response.ok) return;
 
         const events = await response.json();
-        
+
         // Find GAME_INIT event which contains full player info with roles
         const initEvent = events.find(e => e.type === 'GAME_INIT');
         if (initEvent && initEvent.data && initEvent.data.players) {
             const fullPlayerInfo = initEvent.data.players;
-            
+
             // Update local players array with role info
             fullPlayerInfo.forEach(info => {
                 const player = players.find(p => p.name === info.name);
@@ -487,7 +487,7 @@ async function fetchAndRevealRoles() {
                     player.roleSymbol = info.roleSymbol;
                 }
             });
-            
+
             // Re-render with revealed roles
             revealAllRoles();
         }
@@ -501,7 +501,7 @@ function revealAllRoles() {
         const card = document.getElementById(`player-${player.name}`);
         if (card) {
             const roleSpan = card.querySelector('.player-role');
-            
+
             // Update role text and style
             const roleName = getRoleName(player.role) || player.roleDisplay || '???';
             const roleClass = player.role ? player.role.toLowerCase() : 'hidden';
@@ -594,8 +594,8 @@ function handleReplayEvent(event) {
             addLog(`═══ ${t('round') || '回合'} ${data.round} - ${data.phase === 'night' ? '🌙' : '☀️'} ${phaseText} ═══`, 'system');
             break;
         case 'PLAYER_SPEAK':
-            const contextLabel = data.context === 'werewolf_discussion' 
-                ? `[🐺 ${t('werewolfDiscussion') || '狼人密谋'}]` 
+            const contextLabel = data.context === 'werewolf_discussion'
+                ? `[🐺 ${t('werewolfDiscussion') || '狼人密谋'}]`
                 : `[${t('speak') || '发言'}]`;
             addLog(`<span class="speaker">[${data.player}]</span> ${contextLabel}: ${data.content}`, 'speak');
             break;
@@ -624,8 +624,8 @@ function handleReplayEvent(event) {
             addLog(data.message, 'system');
             break;
         case 'GAME_END':
-            const winnerText = data.winner === 'villagers' 
-                ? (t('villagersWin') || '🎉 村民阵营获胜！') 
+            const winnerText = data.winner === 'villagers'
+                ? (t('villagersWin') || '🎉 村民阵营获胜！')
                 : (t('werewolvesWin') || '🐺 狼人阵营获胜！');
             addLog(`${t('gameEnd') || '游戏结束'} - ${winnerText} ${data.reason}`, 'system');
             break;

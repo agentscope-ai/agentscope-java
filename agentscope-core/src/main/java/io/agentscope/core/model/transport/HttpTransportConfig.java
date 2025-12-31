@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,6 +39,7 @@ public class HttpTransportConfig {
     private final Duration writeTimeout;
     private final int maxIdleConnections;
     private final Duration keepAliveDuration;
+    private final boolean ignoreSsl;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -46,6 +47,7 @@ public class HttpTransportConfig {
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
         this.keepAliveDuration = builder.keepAliveDuration;
+        this.ignoreSsl = builder.ignoreSsl;
     }
 
     /**
@@ -94,6 +96,19 @@ public class HttpTransportConfig {
     }
 
     /**
+     * Get whether SSL certificate verification should be ignored.
+     *
+     * <p><b>Warning:</b> Setting this to true disables SSL certificate verification,
+     * which makes the connection vulnerable to man-in-the-middle attacks.
+     * This should only be used for testing or with trusted self-signed certificates.
+     *
+     * @return true to ignore SSL certificate verification, false otherwise
+     */
+    public boolean isIgnoreSsl() {
+        return ignoreSsl;
+    }
+
+    /**
      * Create a new builder for HttpTransportConfig.
      *
      * @return a new Builder instance
@@ -120,6 +135,7 @@ public class HttpTransportConfig {
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
+        private boolean ignoreSsl = false;
 
         /**
          * Set the connect timeout.
@@ -173,6 +189,21 @@ public class HttpTransportConfig {
          */
         public Builder keepAliveDuration(Duration keepAliveDuration) {
             this.keepAliveDuration = keepAliveDuration;
+            return this;
+        }
+
+        /**
+         * Set whether to ignore SSL certificate verification.
+         *
+         * <p><b>Warning:</b> Setting this to true disables SSL certificate verification,
+         * which makes the connection vulnerable to man-in-the-middle attacks.
+         * This should only be used for testing or with trusted self-signed certificates.
+         *
+         * @param ignoreSsl true to ignore SSL certificate verification, false otherwise
+         * @return this builder
+         */
+        public Builder ignoreSsl(boolean ignoreSsl) {
+            this.ignoreSsl = ignoreSsl;
             return this;
         }
 
