@@ -168,6 +168,53 @@ class JsonSessionNewApiTest {
             List<Msg> loaded = session.getList(sessionKey, "empty_list", Msg.class);
             assertTrue(loaded.isEmpty());
         }
+
+        @Test
+        @DisplayName("Should handle list modification (hash change detection)")
+        void testListModification() {
+            // Initial save
+            List<Msg> messages = new ArrayList<>();
+            messages.add(createUserMsg("Message 1"));
+            messages.add(createUserMsg("Message 2"));
+            messages.add(createUserMsg("Message 3"));
+            session.save(sessionKey, "memory_messages", messages);
+
+            // Modify a message in the middle
+            messages.set(1, createUserMsg("Modified Message 2"));
+            session.save(sessionKey, "memory_messages", messages);
+
+            // Verify the modification is persisted
+            List<Msg> loaded = session.getList(sessionKey, "memory_messages", Msg.class);
+            assertEquals(3, loaded.size());
+            assertEquals("Message 1", getTextContent(loaded.get(0)));
+            assertEquals("Modified Message 2", getTextContent(loaded.get(1)));
+            assertEquals("Message 3", getTextContent(loaded.get(2)));
+        }
+
+        @Test
+        @DisplayName("Should handle list shrinking (hash change detection)")
+        void testListShrinking() {
+            // Initial save with 5 messages
+            List<Msg> messages = new ArrayList<>();
+            messages.add(createUserMsg("Message 1"));
+            messages.add(createUserMsg("Message 2"));
+            messages.add(createUserMsg("Message 3"));
+            messages.add(createUserMsg("Message 4"));
+            messages.add(createUserMsg("Message 5"));
+            session.save(sessionKey, "memory_messages", messages);
+
+            // Remove some messages
+            messages.remove(4);
+            messages.remove(3);
+            session.save(sessionKey, "memory_messages", messages);
+
+            // Verify the shrinking is persisted
+            List<Msg> loaded = session.getList(sessionKey, "memory_messages", Msg.class);
+            assertEquals(3, loaded.size());
+            assertEquals("Message 1", getTextContent(loaded.get(0)));
+            assertEquals("Message 2", getTextContent(loaded.get(1)));
+            assertEquals("Message 3", getTextContent(loaded.get(2)));
+        }
     }
 
     @Nested

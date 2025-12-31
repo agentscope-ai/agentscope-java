@@ -111,10 +111,16 @@ public class JsonSession implements Session {
     }
 
     /**
-     * Save a list of state values to a JSONL file (incremental append).
+     * Save a list of state values to a JSONL file with hash-based change detection.
      *
-     * <p>Only new elements (beyond what's already persisted) are appended to the file. This enables
-     * efficient incremental storage for large lists like message histories.
+     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
+     *
+     * <ul>
+     *   <li>If the hash changes (list was modified), the entire file is rewritten
+     *   <li>If the list shrinks, the entire file is rewritten
+     *   <li>If the list only grows (append-only), only new items are appended
+     *   <li>If nothing changes, the operation is skipped
+     * </ul>
      *
      * @param sessionKey the session identifier
      * @param key the state key (e.g., "memory_messages")
@@ -123,33 +129,88 @@ public class JsonSession implements Session {
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
         Path file = getListPath(sessionKey, key);
+        Path hashFile = getHashPath(sessionKey, key);
         ensureDirectoryExists(file.getParent());
 
         try {
+            // Compute current hash
+            String currentHash = ListHashUtil.computeHash(values);
+
+            // Read stored hash (may be null if file doesn't exist)
+            String storedHash = readHashFile(hashFile);
+
             // Get the count of already stored items
             long existingCount = countLines(file);
 
-            // Only append new elements
-            if (values.size() > existingCount) {
+            // Determine if full rewrite is needed
+            boolean needsFullRewrite =
+                    ListHashUtil.needsFullRewrite(
+                            currentHash, storedHash, values.size(), (int) existingCount);
+
+            if (needsFullRewrite) {
+                // Full rewrite: delete existing file and write all items
+                rewriteEntireList(file, values);
+            } else if (values.size() > existingCount) {
+                // Incremental append: only write new items
                 List<? extends State> newItems = values.subList((int) existingCount, values.size());
-
-                // Append mode - write each item as a JSON line
-                try (BufferedWriter writer =
-                        Files.newBufferedWriter(
-                                file,
-                                StandardCharsets.UTF_8,
-                                StandardOpenOption.CREATE,
-                                StandardOpenOption.APPEND)) {
-
-                    for (State item : newItems) {
-                        String json = objectMapper.writeValueAsString(item);
-                        writer.write(json);
-                        writer.newLine();
-                    }
-                }
+                appendToList(file, newItems);
             }
+            // else: no change, skip writing
+
+            // Update hash file
+            writeHashFile(hashFile, currentHash);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        }
+    }
+
+    /**
+     * Rewrite the entire list file with all values.
+     *
+     * @param file the file to write to
+     * @param values the values to write
+     * @throws IOException if writing fails
+     */
+    private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
+        // Delete existing file if it exists
+        Files.deleteIfExists(file);
+
+        // Write all items
+        try (BufferedWriter writer =
+                Files.newBufferedWriter(
+                        file,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE)) {
+
+            for (State item : values) {
+                String json = objectMapper.writeValueAsString(item);
+                writer.write(json);
+                writer.newLine();
+            }
+        }
+    }
+
+    /**
+     * Append items to an existing list file.
+     *
+     * @param file the file to append to
+     * @param items the items to append
+     * @throws IOException if writing fails
+     */
+    private void appendToList(Path file, List<? extends State> items) throws IOException {
+        try (BufferedWriter writer =
+                Files.newBufferedWriter(
+                        file,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND)) {
+
+            for (State item : items) {
+                String json = objectMapper.writeValueAsString(item);
+                writer.write(json);
+                writer.newLine();
+            }
         }
     }
 
@@ -305,6 +366,46 @@ public class JsonSession implements Session {
      */
     private Path getListPath(SessionKey sessionKey, String key) {
         return getSessionDir(sessionKey).resolve(key + ".jsonl");
+    }
+
+    /**
+     * Get the file path for a list hash file.
+     *
+     * @param sessionKey the session key
+     * @param key the state key
+     * @return Path to the hash file ({sessionDir}/{key}.hash)
+     */
+    private Path getHashPath(SessionKey sessionKey, String key) {
+        return getSessionDir(sessionKey).resolve(key + ".hash");
+    }
+
+    /**
+     * Read the stored hash from a hash file.
+     *
+     * @param hashFile the hash file path
+     * @return the stored hash, or null if file doesn't exist
+     */
+    private String readHashFile(Path hashFile) {
+        if (!Files.exists(hashFile)) {
+            return null;
+        }
+        try {
+            return Files.readString(hashFile, StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            // If we can't read the hash, treat as no hash (will trigger full rewrite)
+            return null;
+        }
+    }
+
+    /**
+     * Write a hash value to a hash file.
+     *
+     * @param hashFile the hash file path
+     * @param hash the hash value to write
+     * @throws IOException if writing fails
+     */
+    private void writeHashFile(Path hashFile, String hash) throws IOException {
+        Files.writeString(hashFile, hash, StandardCharsets.UTF_8);
     }
 
     /**

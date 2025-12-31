@@ -16,6 +16,7 @@
 package io.agentscope.core.session.mysql;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
@@ -70,6 +71,9 @@ public class MysqlSession implements Session {
 
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
+
+    /** Suffix for hash storage keys. */
+    private static final String HASH_KEY_SUFFIX = ":_hash";
 
     /** item_index value for single state values. */
     private static final int SINGLE_STATE_INDEX = 0;
@@ -306,6 +310,22 @@ public class MysqlSession implements Session {
         }
     }
 
+    /**
+     * Save a list of state values with hash-based change detection.
+     *
+     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
+     *
+     * <ul>
+     *   <li>If the hash changes (list was modified), all existing items are deleted and rewritten
+     *   <li>If the list shrinks, all existing items are deleted and rewritten
+     *   <li>If the list only grows (append-only), only new items are inserted
+     *   <li>If nothing changes, the operation is skipped
+     * </ul>
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the list of state values to save
+     */
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
         String sessionId = sessionKey.toIdentifier();
@@ -316,38 +336,172 @@ public class MysqlSession implements Session {
             return;
         }
 
+        String hashKey = key + HASH_KEY_SUFFIX;
+
         try (Connection conn = dataSource.getConnection()) {
-            // Get existing count (max index + 1)
+            // Compute current hash
+            String currentHash = ListHashUtil.computeHash(values);
+
+            // Get stored hash
+            String storedHash = getStoredHash(conn, sessionId, hashKey);
+
+            // Get existing count
             int existingCount = getListCount(conn, sessionId, key);
 
-            // Only process new items
-            if (values.size() > existingCount) {
-                List<? extends State> newItems = values.subList(existingCount, values.size());
+            // Determine if full rewrite is needed
+            boolean needsFullRewrite =
+                    ListHashUtil.needsFullRewrite(
+                            currentHash, storedHash, values.size(), existingCount);
 
-                // Batch insert new items
-                String insertSql =
-                        "INSERT INTO "
-                                + getFullTableName()
-                                + " (session_id, state_key, item_index, state_data)"
-                                + " VALUES (?, ?, ?, ?)";
-
-                try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
-                    int index = existingCount;
-                    for (State item : newItems) {
-                        String json = objectMapper.writeValueAsString(item);
-                        stmt.setString(1, sessionId);
-                        stmt.setString(2, key);
-                        stmt.setInt(3, index);
-                        stmt.setString(4, json);
-                        stmt.addBatch();
-                        index++;
-                    }
-                    stmt.executeBatch();
+            if (needsFullRewrite) {
+                // Transaction: delete all + insert all
+                conn.setAutoCommit(false);
+                try {
+                    deleteListItems(conn, sessionId, key);
+                    insertAllItems(conn, sessionId, key, values);
+                    saveHash(conn, sessionId, hashKey, currentHash);
+                    conn.commit();
+                } catch (Exception e) {
+                    conn.rollback();
+                    throw e;
+                } finally {
+                    conn.setAutoCommit(true);
                 }
+            } else if (values.size() > existingCount) {
+                // Incremental append
+                List<? extends State> newItems = values.subList(existingCount, values.size());
+                insertItems(conn, sessionId, key, newItems, existingCount);
+                saveHash(conn, sessionId, hashKey, currentHash);
             }
+            // else: no change, skip
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        }
+    }
+
+    /**
+     * Get stored hash value for a list.
+     *
+     * @param conn database connection
+     * @param sessionId session identifier
+     * @param hashKey the hash key (e.g., "memory_messages:_hash")
+     * @return the stored hash, or null if not found
+     */
+    private String getStoredHash(Connection conn, String sessionId, String hashKey)
+            throws SQLException {
+        String selectSql =
+                "SELECT state_data FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(selectSql)) {
+            stmt.setString(1, sessionId);
+            stmt.setString(2, hashKey);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("state_data");
+                }
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Save hash value for a list.
+     *
+     * @param conn database connection
+     * @param sessionId session identifier
+     * @param hashKey the hash key
+     * @param hash the hash value to save
+     */
+    private void saveHash(Connection conn, String sessionId, String hashKey, String hash)
+            throws SQLException {
+        String upsertSql =
+                "INSERT INTO "
+                        + getFullTableName()
+                        + " (session_id, state_key, item_index, state_data)"
+                        + " VALUES (?, ?, ?, ?)"
+                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
+            stmt.setString(1, sessionId);
+            stmt.setString(2, hashKey);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
+            stmt.setString(4, hash);
+            stmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Delete all items for a list state.
+     *
+     * @param conn database connection
+     * @param sessionId session identifier
+     * @param key the state key
+     */
+    private void deleteListItems(Connection conn, String sessionId, String key)
+            throws SQLException {
+        String deleteSql =
+                "DELETE FROM " + getFullTableName() + " WHERE session_id = ? AND state_key = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
+            stmt.setString(1, sessionId);
+            stmt.setString(2, key);
+            stmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Insert all items for a list state.
+     *
+     * @param conn database connection
+     * @param sessionId session identifier
+     * @param key the state key
+     * @param values the values to insert
+     */
+    private void insertAllItems(
+            Connection conn, String sessionId, String key, List<? extends State> values)
+            throws Exception {
+        insertItems(conn, sessionId, key, values, 0);
+    }
+
+    /**
+     * Insert items for a list state starting at a given index.
+     *
+     * @param conn database connection
+     * @param sessionId session identifier
+     * @param key the state key
+     * @param items the items to insert
+     * @param startIndex the starting index for item_index
+     */
+    private void insertItems(
+            Connection conn,
+            String sessionId,
+            String key,
+            List<? extends State> items,
+            int startIndex)
+            throws Exception {
+        String insertSql =
+                "INSERT INTO "
+                        + getFullTableName()
+                        + " (session_id, state_key, item_index, state_data)"
+                        + " VALUES (?, ?, ?, ?)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+            int index = startIndex;
+            for (State item : items) {
+                String json = objectMapper.writeValueAsString(item);
+                stmt.setString(1, sessionId);
+                stmt.setString(2, key);
+                stmt.setInt(3, index);
+                stmt.setString(4, json);
+                stmt.addBatch();
+                index++;
+            }
+            stmt.executeBatch();
         }
     }
 

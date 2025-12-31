@@ -1737,6 +1737,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 sessionKey,
                 "autoContextMemory_originalMessages",
                 new ArrayList<>(originalMemoryStorage));
+
+        // Save offload context (critical for reload functionality)
+        if (!offloadContext.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_offloadContext",
+                    new OffloadContextState(new HashMap<>(offloadContext)));
+        }
     }
 
     /**
@@ -1758,5 +1766,13 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 session.getList(sessionKey, "autoContextMemory_originalMessages", Msg.class);
         originalMemoryStorage.clear();
         originalMemoryStorage.addAll(loadedOriginal);
+
+        // Load offload context
+        session.get(sessionKey, "autoContextMemory_offloadContext", OffloadContextState.class)
+                .ifPresent(
+                        state -> {
+                            offloadContext.clear();
+                            offloadContext.putAll(state.offloadContext());
+                        });
     }
 }

@@ -16,6 +16,7 @@
 package io.agentscope.core.session.redis.jedis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
@@ -54,6 +55,7 @@ public class JedisSession implements Session {
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
     private static final String KEYS_SUFFIX = ":_keys";
     private static final String LIST_SUFFIX = ":list";
+    private static final String HASH_SUFFIX = ":_hash";
 
     private final JedisPool jedisPool;
     private final String keyPrefix;
@@ -96,25 +98,63 @@ public class JedisSession implements Session {
         }
     }
 
+    /**
+     * Save a list of state values with hash-based change detection.
+     *
+     * <p>This method uses hash-based change detection to handle both append-only and mutable lists:
+     *
+     * <ul>
+     *   <li>If the hash changes (list was modified), the Redis list is deleted and recreated
+     *   <li>If the list shrinks, the Redis list is deleted and recreated
+     *   <li>If the list only grows (append-only), only new items are appended
+     *   <li>If nothing changes, the operation is skipped
+     * </ul>
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the list of state values to save
+     */
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
         String sessionId = sessionKey.toIdentifier();
-        String redisKey = getListKey(sessionId, key);
+        String listKey = getListKey(sessionId, key);
+        String hashKey = listKey + HASH_SUFFIX;
         String keysKey = getKeysKey(sessionId);
 
         try (Jedis jedis = jedisPool.getResource()) {
-            // Get current list length to support incremental append
-            long existingCount = jedis.llen(redisKey);
+            // Compute current hash
+            String currentHash = ListHashUtil.computeHash(values);
 
-            // Only append new items
-            if (values.size() > existingCount) {
+            // Get stored hash
+            String storedHash = jedis.get(hashKey);
+
+            // Get current list length
+            long existingCount = jedis.llen(listKey);
+
+            // Determine if full rewrite is needed
+            boolean needsFullRewrite =
+                    ListHashUtil.needsFullRewrite(
+                            currentHash, storedHash, values.size(), (int) existingCount);
+
+            if (needsFullRewrite) {
+                // Delete and recreate the list
+                jedis.del(listKey);
+                for (State item : values) {
+                    String json = objectMapper.writeValueAsString(item);
+                    jedis.rpush(listKey, json);
+                }
+            } else if (values.size() > existingCount) {
+                // Incremental append
                 List<? extends State> newItems = values.subList((int) existingCount, values.size());
-
                 for (State item : newItems) {
                     String json = objectMapper.writeValueAsString(item);
-                    jedis.rpush(redisKey, json);
+                    jedis.rpush(listKey, json);
                 }
             }
+            // else: no change, skip
+
+            // Update hash
+            jedis.set(hashKey, currentHash);
 
             // Track this key in the session's key set
             jedis.sadd(keysKey, key + LIST_SUFFIX);
