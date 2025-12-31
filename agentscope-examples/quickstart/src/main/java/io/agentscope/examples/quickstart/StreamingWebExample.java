@@ -119,6 +119,7 @@ public class StreamingWebExample {
                     StreamOptions.builder()
                             .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
                             .incremental(true)
+                            .includeReasoningResult(false)
                             .build();
 
             // Use stream() API instead of hooks
