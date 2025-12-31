@@ -36,6 +36,8 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Consolidated E2E tests for structured output functionality.
@@ -61,6 +63,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 class StructuredOutputE2ETest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+
+    private final Logger LOG = LoggerFactory.getLogger(this.getClass());
 
     // ==================== Data Structure Definitions ====================
 

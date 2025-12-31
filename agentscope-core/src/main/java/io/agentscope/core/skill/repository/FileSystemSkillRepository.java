@@ -97,18 +97,6 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
                     "Base directory is not a directory: " + this.baseDir);
         }
 
-        // Validate directory is not empty (must contain at least one subdirectory)
-        try (Stream<Path> entries = Files.list(this.baseDir)) {
-            boolean hasSubdirectory = entries.anyMatch(Files::isDirectory);
-            if (!hasSubdirectory) {
-                throw new IllegalArgumentException(
-                        "Base directory is empty (no skill subdirectories found): " + this.baseDir);
-            }
-        } catch (IOException e) {
-            throw new IllegalArgumentException(
-                    "Failed to validate base directory: " + this.baseDir, e);
-        }
-
         logger.info("FileSystemSkillRepository initialized with base directory: {}", this.baseDir);
     }
 
