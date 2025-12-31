@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionInfo;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.State;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -341,7 +340,6 @@ class InMemorySessionManagerTest {
         void shouldCreateManagerWithDefaultConstructor() {
             InMemorySessionManager manager = new InMemorySessionManager();
 
-            assertThat(manager.isPersistenceEnabled()).isFalse();
             assertThat(manager.getSession()).isNull();
             assertThat(manager.getActiveAgentCount()).isZero();
         }
@@ -352,7 +350,6 @@ class InMemorySessionManagerTest {
             Session session = new InMemorySession();
             InMemorySessionManager manager = new InMemorySessionManager(session);
 
-            assertThat(manager.isPersistenceEnabled()).isTrue();
             assertThat(manager.getSession()).isSameAs(session);
         }
 
@@ -361,7 +358,6 @@ class InMemorySessionManagerTest {
         void shouldCreateManagerWithNullSession() {
             InMemorySessionManager manager = new InMemorySessionManager(null);
 
-            assertThat(manager.isPersistenceEnabled()).isFalse();
             assertThat(manager.getSession()).isNull();
         }
 
@@ -372,7 +368,6 @@ class InMemorySessionManagerTest {
             Duration customTtl = Duration.ofHours(1);
             InMemorySessionManager manager = new InMemorySessionManager(session, customTtl);
 
-            assertThat(manager.isPersistenceEnabled()).isTrue();
             assertThat(manager.getSession()).isSameAs(session);
         }
 
@@ -382,7 +377,7 @@ class InMemorySessionManagerTest {
             InMemorySessionManager manager = new InMemorySessionManager(null, null);
 
             // Just verify it's created without error and works
-            assertThat(manager.isPersistenceEnabled()).isFalse();
+            assertThat(manager.getSession()).isNull();
             assertThat(manager.getActiveAgentCount()).isZero();
         }
     }
@@ -441,20 +436,20 @@ class InMemorySessionManagerTest {
     class PersistenceTests {
 
         @Test
-        @DisplayName("Should report persistence enabled when Session is provided")
-        void shouldReportPersistenceEnabledWhenSessionProvided() {
+        @DisplayName("Should have Session when persistence is configured")
+        void shouldHaveSessionWhenPersistenceConfigured() {
             Session session = new InMemorySession();
             InMemorySessionManager manager = new InMemorySessionManager(session);
 
-            assertThat(manager.isPersistenceEnabled()).isTrue();
+            assertThat(manager.getSession()).isNotNull();
         }
 
         @Test
-        @DisplayName("Should report persistence disabled when no Session is provided")
-        void shouldReportPersistenceDisabledWhenNoSessionProvided() {
+        @DisplayName("Should have null Session when no persistence is configured")
+        void shouldHaveNullSessionWhenNoPersistenceConfigured() {
             InMemorySessionManager manager = new InMemorySessionManager();
 
-            assertThat(manager.isPersistenceEnabled()).isFalse();
+            assertThat(manager.getSession()).isNull();
         }
 
         @Test
@@ -796,52 +791,61 @@ class InMemorySessionManagerTest {
 
         private final boolean failOnLoad;
         private final boolean failOnSave;
-        private final Set<String> existingSessions = new HashSet<>();
+        private final Set<String> existingSessionIds = new HashSet<>();
 
         FaultySession(boolean failOnLoad, boolean failOnSave) {
             this.failOnLoad = failOnLoad;
             this.failOnSave = failOnSave;
-            // Pre-populate to make sessionExists return true
-            existingSessions.add("faulty-restore-session");
+            // Pre-populate to make exists return true for faulty-restore-session
+            existingSessionIds.add("faulty-restore-session");
         }
 
         @Override
-        public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
+        public void save(SessionKey sessionKey, String key, State value) {
             if (failOnSave) {
                 throw new RuntimeException("Simulated save failure");
             }
-            existingSessions.add(sessionId);
+            existingSessionIds.add(sessionKey.toIdentifier());
         }
 
         @Override
-        public void loadSessionState(
-                String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
+        public void save(SessionKey sessionKey, String key, List<? extends State> values) {
+            if (failOnSave) {
+                throw new RuntimeException("Simulated save failure");
+            }
+            existingSessionIds.add(sessionKey.toIdentifier());
+        }
+
+        @Override
+        public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
             if (failOnLoad) {
                 throw new RuntimeException("Simulated load failure");
             }
+            return Optional.empty();
         }
 
         @Override
-        public boolean sessionExists(String sessionId) {
-            return existingSessions.contains(sessionId);
-        }
-
-        @Override
-        public boolean deleteSession(String sessionId) {
-            return existingSessions.remove(sessionId);
-        }
-
-        @Override
-        public List<String> listSessions() {
-            return new ArrayList<>(existingSessions);
-        }
-
-        @Override
-        public SessionInfo getSessionInfo(String sessionId) {
-            if (!existingSessions.contains(sessionId)) {
-                return null;
+        public <T extends State> List<T> getList(
+                SessionKey sessionKey, String key, Class<T> itemType) {
+            if (failOnLoad) {
+                throw new RuntimeException("Simulated load failure");
             }
-            return new SessionInfo(sessionId, 0L, System.currentTimeMillis(), 1);
+            return List.of();
+        }
+
+        @Override
+        public boolean exists(SessionKey sessionKey) {
+            return existingSessionIds.contains(sessionKey.toIdentifier());
+        }
+
+        @Override
+        public void delete(SessionKey sessionKey) {
+            existingSessionIds.remove(sessionKey.toIdentifier());
+        }
+
+        @Override
+        public Set<SessionKey> listSessionKeys() {
+            return Set.of();
         }
     }
 }

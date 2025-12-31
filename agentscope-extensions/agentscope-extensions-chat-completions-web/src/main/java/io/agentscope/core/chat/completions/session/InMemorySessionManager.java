@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package io.agentscope.core.chat.completions.session;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.state.SimpleSessionKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -129,12 +129,9 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
         }
 
         // Try to restore state from Session if configured and exists
-        if (session != null && session.sessionExists(key)) {
+        if (session != null && session.exists(SimpleSessionKey.of(key))) {
             try {
-                SessionManager.forSessionId(key)
-                        .withSession(session)
-                        .addComponent(agent)
-                        .loadIfExists();
+                agent.loadFrom(session, key);
                 log.debug("Restored agent state from session: {}", key);
             } catch (Exception e) {
                 log.warn("Failed to restore agent state for session: {}", key, e);
@@ -169,10 +166,7 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
             return;
         }
         try {
-            SessionManager.forSessionId(sessionId)
-                    .withSession(session)
-                    .addComponent(agent)
-                    .saveSession();
+            agent.saveTo(session, sessionId);
             log.debug("Saved agent state for session: {}", sessionId);
         } catch (Exception e) {
             log.warn("Failed to save agent state for session: {}", sessionId, e);
@@ -211,15 +205,6 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
      */
     public int getActiveAgentCount() {
         return agents.size();
-    }
-
-    /**
-     * Check if persistence is enabled.
-     *
-     * @return true if a Session is configured for state persistence
-     */
-    public boolean isPersistenceEnabled() {
-        return session != null;
     }
 
     /**
