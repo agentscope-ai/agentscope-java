@@ -4,7 +4,7 @@
 
 AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它们在指定的时间或时间间隔运行。调度器模块采用可扩展的架构设计，支持多种调度实现。
 
-*注：**当前版本暂且仅包含基于 XXL-Job 的实现**，适用于分布式任务调度。*
+*注：当前版本包含基于 **XXL-Job**（分布式）和 **Quartz**（单机/集群）的实现。*
 
 ## 核心特性
 
@@ -43,8 +43,8 @@ AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它�
        ┌───────────┼───────────┐
        ▼           ▼           ▼
 ┌──────────┐ ┌──────────────┐ ┌──────────┐
-│ XXL-Job  │ │ Spring Task  │ │  Other   │
-│    ✅    │ │      🔜       │ │    🔜    │
+│ XXL-Job  │ │    Quartz    │ │  Other   │
+│    ✅    │ │      ✅      │ │    🔜    │
 └──────────┘ └──────────────┘ └──────────┘
 
 ✅ 已实现  🔜 规划中
@@ -139,6 +139,55 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
   
 ｜ 查看Agent执行日志，其中会包含Agent每一次运行时与模型交互产生的事件日志反馈  
 ![Agent运行日志](images/agent-task-log_zh.png) 
+
+### 3. 基本使用（Quartz 实现）
+
+**步骤 1.** 初始化 Quartz 调度器：
+
+```java
+// 创建 Quartz 调度器实例（内置默认配置）
+AgentScheduler scheduler = QuartzAgentScheduler.builder()
+        .autoStart(true)
+        .build();
+```
+
+**步骤 2.** 定义 Agent 并配置调度策略：
+
+```java
+// 1. 创建模型配置
+ModelConfig modelConfig = DashScopeModelConfig.builder()
+    .apiKey(apiKey)
+    .modelName("qwen-plus")
+    .build();
+
+// 2. 创建 Agent 配置
+AgentConfig agentConfig = AgentConfig.builder()
+    .name("MyLocalAgent")
+    .modelConfig(modelConfig)
+    .sysPrompt("You are a helpful assistant")
+    .build();
+
+// 3. 配置调度策略（例如：每5秒执行一次）
+ScheduleConfig scheduleConfig = ScheduleConfig.builder()
+    .scheduleMode(ScheduleMode.FIXED_RATE)
+    .fixedRate(5000L) // 5000ms
+    .build();
+
+// 4. 注册任务
+ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
+```
+
+**步骤 3.** 管理任务：
+
+```java
+// 暂停、恢复、取消
+scheduler.pause("MyLocalAgent");
+scheduler.resume("MyLocalAgent");
+scheduler.cancel("MyLocalAgent");
+
+// 关闭调度器
+scheduler.shutdown();
+``` 
 
 ### 特定调度器实现要求
 

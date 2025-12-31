@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,6 +25,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
@@ -184,10 +185,9 @@ public class MediaUtils {
      * @throws IOException If the resource read failed
      */
     public static InputStream urlToInputStream(String url) throws IOException {
-        Path path = Path.of(url);
-        if (Files.exists(path)) {
+        if (isFileExists(url)) {
             // Treat as local file
-            return Files.newInputStream(path);
+            return Files.newInputStream(Path.of(url));
         } else {
             // Treat as web URL
             return URI.create(url).toURL().openStream();
@@ -363,11 +363,18 @@ public class MediaUtils {
 
     /**
      * Check if a file exists.
-     * @param path a local file path
-     * @return true: exists, false: not exists
+     * @param path a local file path or URL.
+     * @return true: exists, false: not exists or path is invalid
      */
     public static boolean isFileExists(String path) {
-        return Files.exists(Path.of(path));
+        if (!isLocalFile(path)) {
+            return false;
+        }
+        try {
+            return Files.exists(Path.of(path));
+        } catch (InvalidPathException e) {
+            return false;
+        }
     }
 
     /**
