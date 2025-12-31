@@ -93,7 +93,7 @@ class SpringInMemorySessionManagerTest {
             SpringInMemorySessionManager manager = new SpringInMemorySessionManager();
 
             assertThat(manager).isNotNull();
-            assertThat(manager).isInstanceOf(ChatCompletionsSessionManager.class);
+            assertThat(manager).isInstanceOf(SpringChatCompletionsSessionManager.class);
         }
 
         @Test
@@ -227,9 +227,9 @@ class SpringInMemorySessionManagerTest {
     class InterfaceImplementationTests {
 
         @Test
-        @DisplayName("Should implement ChatCompletionsSessionManager interface")
-        void shouldImplementChatCompletionsSessionManagerInterface() {
-            assertThat(sessionManager).isInstanceOf(ChatCompletionsSessionManager.class);
+        @DisplayName("Should implement SpringChatCompletionsSessionManager interface")
+        void shouldImplementSpringChatCompletionsSessionManagerInterface() {
+            assertThat(sessionManager).isInstanceOf(SpringChatCompletionsSessionManager.class);
         }
 
         @Test

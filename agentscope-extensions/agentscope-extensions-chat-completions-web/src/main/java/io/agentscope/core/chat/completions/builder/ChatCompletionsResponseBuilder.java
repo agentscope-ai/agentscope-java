@@ -37,7 +37,8 @@ public class ChatCompletionsResponseBuilder {
      * @param request The original request
      * @param reply The agent's reply message
      * @param requestId The request ID for tracking
-     * @return The chat completion response
+     * @return A {@link ChatCompletionsResponse} containing the agent's reply with finish reason
+     *     "stop"
      */
     public ChatCompletionsResponse buildResponse(
             ChatCompletionsRequest request, Msg reply, String requestId) {
@@ -64,7 +65,8 @@ public class ChatCompletionsResponseBuilder {
      * @param request The original request
      * @param error The error that occurred
      * @param requestId The request ID for tracking
-     * @return An error response
+     * @return A {@link ChatCompletionsResponse} containing the error message with finish reason
+     *     "error"
      */
     public ChatCompletionsResponse buildErrorResponse(
             ChatCompletionsRequest request, Throwable error, String requestId) {
@@ -88,7 +90,8 @@ public class ChatCompletionsResponseBuilder {
      * Extract text content from a Msg safely.
      *
      * @param msg The message to extract text from
-     * @return The text content, or empty string if not found
+     * @return The text content as a {@link String}, or an empty string if the message is null or
+     *     contains no text
      */
     public String extractTextContent(Msg msg) {
         if (msg == null) {

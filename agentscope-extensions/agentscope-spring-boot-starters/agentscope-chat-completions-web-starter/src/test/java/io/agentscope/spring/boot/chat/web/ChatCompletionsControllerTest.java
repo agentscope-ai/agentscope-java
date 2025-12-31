@@ -32,7 +32,7 @@ import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
+import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,7 +56,7 @@ class ChatCompletionsControllerTest {
 
     private ChatCompletionsController controller;
     private ObjectProvider<ReActAgent> agentProvider;
-    private ChatCompletionsSessionManager sessionManager;
+    private SpringChatCompletionsSessionManager sessionManager;
     private ChatMessageConverter messageConverter;
     private ChatCompletionsResponseBuilder responseBuilder;
     private ChatCompletionsStreamingService streamingService;
@@ -65,7 +65,7 @@ class ChatCompletionsControllerTest {
     @BeforeEach
     void setUp() {
         agentProvider = mock(ObjectProvider.class);
-        sessionManager = mock(ChatCompletionsSessionManager.class);
+        sessionManager = mock(SpringChatCompletionsSessionManager.class);
         messageConverter = mock(ChatMessageConverter.class);
         responseBuilder = mock(ChatCompletionsResponseBuilder.class);
         streamingService = mock(ChatCompletionsStreamingService.class);

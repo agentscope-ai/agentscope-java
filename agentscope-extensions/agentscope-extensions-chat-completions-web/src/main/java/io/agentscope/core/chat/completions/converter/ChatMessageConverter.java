@@ -37,14 +37,16 @@ public class ChatMessageConverter {
     private static final Logger log = LoggerFactory.getLogger(ChatMessageConverter.class);
 
     /**
-     * Convert ChatMessage list to Msg list, supporting full conversation history.
+     * Converts a list of {@link ChatMessage} DTOs to framework internal {@link Msg} objects,
+     * supporting full conversation history.
      *
      * <p>This method converts HTTP request DTOs (ChatMessage with String role) to framework
      * internal objects (Msg with MsgRole enum). Supported roles: user, assistant, system, tool.
      *
-     * @param chatMessages The chat messages from the request
-     * @return List of Msg objects
-     * @throws IllegalArgumentException if an unsupported role is encountered
+     * @param chatMessages The chat messages from the HTTP request to convert
+     * @return A list of converted {@link Msg} objects; returns an empty list if input is null or
+     *     empty
+     * @throws IllegalArgumentException if an unsupported role is encountered in any message
      */
     public List<Msg> convertMessages(List<ChatMessage> chatMessages) {
         if (chatMessages == null || chatMessages.isEmpty()) {

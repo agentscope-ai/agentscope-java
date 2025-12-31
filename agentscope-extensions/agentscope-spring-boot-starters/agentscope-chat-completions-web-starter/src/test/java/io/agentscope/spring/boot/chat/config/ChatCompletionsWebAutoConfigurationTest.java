@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
+import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.junit.jupiter.api.Test;
@@ -51,7 +51,7 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldCreateDefaultBeansWhenEnabled() {
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
+                    assertThat(context).hasSingleBean(SpringChatCompletionsSessionManager.class);
                     assertThat(context).hasSingleBean(ChatMessageConverter.class);
                     assertThat(context).hasSingleBean(ChatCompletionsResponseBuilder.class);
                     assertThat(context).hasSingleBean(ChatCompletionsStreamingService.class);
@@ -63,8 +63,8 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldCreateInMemorySessionManagerByDefault() {
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
-                    assertThat(context.getBean(ChatCompletionsSessionManager.class))
+                    assertThat(context).hasSingleBean(SpringChatCompletionsSessionManager.class);
+                    assertThat(context.getBean(SpringChatCompletionsSessionManager.class))
                             .isInstanceOf(
                                     io.agentscope.spring.boot.chat.session
                                             .SpringInMemorySessionManager.class);
@@ -77,8 +77,9 @@ class ChatCompletionsWebAutoConfigurationTest {
                 .withPropertyValues("agentscope.chat-completions.session-manager.type=in-memory")
                 .run(
                         context -> {
-                            assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
-                            assertThat(context.getBean(ChatCompletionsSessionManager.class))
+                            assertThat(context)
+                                    .hasSingleBean(SpringChatCompletionsSessionManager.class);
+                            assertThat(context.getBean(SpringChatCompletionsSessionManager.class))
                                     .isInstanceOf(
                                             io.agentscope.spring.boot.chat.session
                                                     .SpringInMemorySessionManager.class);
@@ -89,8 +90,8 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldBindSessionManagerTypeProperty() {
         // Note: Setting type to "redis" will prevent inMemorySessionManager bean creation,
         // but we can still verify the property binding by providing a custom session manager
-        ChatCompletionsSessionManager customManager =
-                new ChatCompletionsSessionManager() {
+        SpringChatCompletionsSessionManager customManager =
+                new SpringChatCompletionsSessionManager() {
                     @Override
                     public ReActAgent getOrCreateAgent(
                             String sessionId,
@@ -109,7 +110,7 @@ class ChatCompletionsWebAutoConfigurationTest {
 
         contextRunner
                 .withPropertyValues("agentscope.chat-completions.session-manager.type=redis")
-                .withBean(ChatCompletionsSessionManager.class, () -> customManager)
+                .withBean(SpringChatCompletionsSessionManager.class, () -> customManager)
                 .run(
                         context -> {
                             assertThat(context).hasSingleBean(ChatCompletionsProperties.class);
@@ -121,8 +122,8 @@ class ChatCompletionsWebAutoConfigurationTest {
 
     @Test
     void shouldUseCustomSessionManagerWhenProvided() {
-        ChatCompletionsSessionManager customManager =
-                new ChatCompletionsSessionManager() {
+        SpringChatCompletionsSessionManager customManager =
+                new SpringChatCompletionsSessionManager() {
                     @Override
                     public ReActAgent getOrCreateAgent(
                             String sessionId,
@@ -140,11 +141,12 @@ class ChatCompletionsWebAutoConfigurationTest {
                 };
 
         contextRunner
-                .withBean(ChatCompletionsSessionManager.class, () -> customManager)
+                .withBean(SpringChatCompletionsSessionManager.class, () -> customManager)
                 .run(
                         context -> {
-                            assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
-                            assertThat(context.getBean(ChatCompletionsSessionManager.class))
+                            assertThat(context)
+                                    .hasSingleBean(SpringChatCompletionsSessionManager.class);
+                            assertThat(context.getBean(SpringChatCompletionsSessionManager.class))
                                     .isSameAs(customManager);
                         });
     }

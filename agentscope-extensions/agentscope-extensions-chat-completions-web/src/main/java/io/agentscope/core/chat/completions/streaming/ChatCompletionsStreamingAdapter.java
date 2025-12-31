@@ -42,12 +42,16 @@ public class ChatCompletionsStreamingAdapter<T> {
     private final BiFunction<Throwable, String, T> errorEventFactory;
 
     /**
-     * Constructs a new ChatCompletionsStreamingAdapter.
+     * Constructs a new {@code ChatCompletionsStreamingAdapter} with the specified components
+     * for converting agent events to framework-specific streaming events.
      *
-     * @param responseBuilder Builder for extracting text content from messages
-     * @param eventConverter Function to convert agent events to streaming events
-     * @param doneEventFactory Function to create done event
-     * @param errorEventFactory Function to create error event (takes Throwable and requestId)
+     * <p>This adapter is generic to support different streaming formats (e.g., SSE for Spring,
+     * Multi for Quarkus).
+     *
+     * @param responseBuilder Builder for extracting text content from agent messages
+     * @param eventConverter Function to convert agent events to streaming events of type T
+     * @param doneEventFactory Function to create the completion event with the given requestId
+     * @param errorEventFactory Function to create an error event from a Throwable and requestId
      */
     public ChatCompletionsStreamingAdapter(
             ChatCompletionsResponseBuilder responseBuilder,
@@ -70,7 +74,8 @@ public class ChatCompletionsStreamingAdapter<T> {
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
      * @param requestId The request ID for tracking
-     * @return Flux of streaming events
+     * @return A {@link Flux} of streaming events of type T containing text deltas,
+     *     followed by a completion event when the stream ends
      */
     public Flux<T> stream(ReActAgent agent, List<Msg> messages, String requestId) {
         StreamOptions options =
@@ -110,8 +115,8 @@ public class ChatCompletionsStreamingAdapter<T> {
      * Create an error streaming event.
      *
      * @param error The error that occurred
-     * @param requestId The request ID
-     * @return The error streaming event
+     * @param requestId The request ID for tracking
+     * @return A streaming event of type T representing the error, containing the error message
      */
     public T createErrorEvent(Throwable error, String requestId) {
         return errorEventFactory.apply(error, requestId);

@@ -18,7 +18,7 @@ package io.agentscope.spring.boot.chat.config;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
+import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.session.SpringInMemorySessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
@@ -53,6 +53,9 @@ public class ChatCompletionsWebAutoConfiguration {
      *
      * <p>Users can provide their own implementation by creating a bean of type
      * {@link ChatMessageConverter}.
+     *
+     * @return A new {@link ChatMessageConverter} instance for converting HTTP DTOs to framework
+     *     messages
      */
     @Bean
     @ConditionalOnMissingBean
@@ -65,6 +68,9 @@ public class ChatCompletionsWebAutoConfiguration {
      *
      * <p>Users can provide their own implementation by creating a bean of type
      * {@link ChatCompletionsResponseBuilder}.
+     *
+     * @return A new {@link ChatCompletionsResponseBuilder} instance for building chat completion
+     *     responses
      */
     @Bean
     @ConditionalOnMissingBean
@@ -77,22 +83,25 @@ public class ChatCompletionsWebAutoConfiguration {
      *
      * <p>This bean is created when:
      * <ul>
-     *   <li>No existing {@link ChatCompletionsSessionManager} bean exists</li>
+     *   <li>No existing {@link SpringChatCompletionsSessionManager} bean exists</li>
      *   <li>The session manager type is "in-memory" (default) or not specified</li>
      * </ul>
      *
      * <p>Users can provide their own implementation by creating a bean of type
-     * {@link ChatCompletionsSessionManager}, or configure a different type via
+     * {@link SpringChatCompletionsSessionManager}, or configure a different type via
      * {@code agentscope.chat-completions.session-manager.type}.
+     *
+     * @return A new {@link SpringInMemorySessionManager} instance for managing session-scoped
+     *     agents in memory
      */
     @Bean
-    @ConditionalOnMissingBean(ChatCompletionsSessionManager.class)
+    @ConditionalOnMissingBean(SpringChatCompletionsSessionManager.class)
     @ConditionalOnProperty(
             prefix = "agentscope.chat-completions.session-manager",
             name = "type",
             havingValue = "in-memory",
             matchIfMissing = true)
-    public ChatCompletionsSessionManager inMemorySessionManager() {
+    public SpringChatCompletionsSessionManager inMemorySessionManager() {
         return new SpringInMemorySessionManager();
     }
 
@@ -107,12 +116,19 @@ public class ChatCompletionsWebAutoConfiguration {
      *   <li>No existing {@link ChatCompletionsController} bean exists</li>
      *   <li>The property {@code agentscope.chat-completions.enabled} is {@code true} (default)</li>
      * </ul>
+     *
+     * @param agentProvider Provider for creating ReActAgent instances
+     * @param sessionManager Manager for session-scoped agents
+     * @param messageConverter Converter for HTTP DTOs to framework messages
+     * @param responseBuilder Builder for response objects
+     * @param streamingService Service for streaming responses
+     * @return The configured ChatCompletionsController bean
      */
     @Bean
     @ConditionalOnMissingBean
     public ChatCompletionsController chatCompletionsController(
             ObjectProvider<ReActAgent> agentProvider,
-            ChatCompletionsSessionManager sessionManager,
+            SpringChatCompletionsSessionManager sessionManager,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {

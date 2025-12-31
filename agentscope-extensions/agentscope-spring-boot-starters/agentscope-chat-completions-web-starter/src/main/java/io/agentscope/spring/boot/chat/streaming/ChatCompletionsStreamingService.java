@@ -40,9 +40,10 @@ public class ChatCompletionsStreamingService {
     private final ChatCompletionsStreamingAdapter<ServerSentEvent<String>> adapter;
 
     /**
-     * Constructs a new ChatCompletionsStreamingService.
+     * Constructs a new {@code ChatCompletionsStreamingService} and initializes the underlying
+     * streaming adapter using the provided {@link ChatCompletionsResponseBuilder}.
      *
-     * @param responseBuilder Builder for extracting text content from messages
+     * @param responseBuilder The builder used to extract text content from agent messages
      */
     public ChatCompletionsStreamingService(ChatCompletionsResponseBuilder responseBuilder) {
         this.responseBuilder = responseBuilder;
@@ -64,7 +65,8 @@ public class ChatCompletionsStreamingService {
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
      * @param requestId The request ID for tracking
-     * @return Flux of Server-Sent Events
+     * @return A {@link Flux} of {@link ServerSentEvent} objects containing text deltas,
+     *     followed by a "done" event when the stream completes
      */
     public Flux<ServerSentEvent<String>> streamAsSse(
             ReActAgent agent, List<Msg> messages, String requestId) {
@@ -109,8 +111,8 @@ public class ChatCompletionsStreamingService {
      * Create an error SSE event.
      *
      * @param error The error that occurred
-     * @param requestId The request ID
-     * @return The error SSE event
+     * @param requestId The request ID for tracking
+     * @return A {@link ServerSentEvent} with event type "error" containing the error message
      */
     public ServerSentEvent<String> createErrorSseEvent(Throwable error, String requestId) {
         String errorMessage = error != null ? error.getMessage() : "Unknown error occurred";

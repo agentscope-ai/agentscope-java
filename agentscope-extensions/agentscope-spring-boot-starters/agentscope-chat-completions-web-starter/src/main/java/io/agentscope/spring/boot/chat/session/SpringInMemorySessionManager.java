@@ -20,13 +20,13 @@ import io.agentscope.core.chat.completions.session.InMemorySessionManager;
 import java.util.function.Supplier;
 
 /**
- * Spring Boot implementation of {@link ChatCompletionsSessionManager} using in-memory storage.
+ * Spring Boot implementation of {@link SpringChatCompletionsSessionManager} using in-memory storage.
  *
  * <p>This is a Spring-specific implementation that delegates to the core
  * {@link InMemorySessionManager}. It implements the Spring interface which provides
  * ObjectProvider support via default methods.
  */
-public class SpringInMemorySessionManager implements ChatCompletionsSessionManager {
+public class SpringInMemorySessionManager implements SpringChatCompletionsSessionManager {
 
     private final InMemorySessionManager delegate;
 

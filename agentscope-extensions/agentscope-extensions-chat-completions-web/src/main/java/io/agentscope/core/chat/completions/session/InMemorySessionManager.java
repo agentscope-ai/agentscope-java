@@ -38,6 +38,20 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
 
+    /**
+     * Returns an existing non-expired {@link ReActAgent} for the given session or creates a new
+     * one if none exists or the previous one has expired.
+     *
+     * <p>If the sessionId is {@code null} or blank, a new random UUID is generated as the session
+     * identifier. The session TTL is reset each time the agent is accessed.
+     *
+     * @param sessionId the session identifier; if {@code null} or blank, a new identifier is
+     *     generated
+     * @param agentSupplier the supplier used to create a new {@link ReActAgent} when required
+     * @return the existing or newly created {@link ReActAgent} associated with the session
+     * @throws IllegalStateException if the agentSupplier returns null
+     * @throws RuntimeException if an error occurs during agent creation
+     */
     @Override
     public ReActAgent getOrCreateAgent(String sessionId, Supplier<ReActAgent> agentSupplier) {
         try {

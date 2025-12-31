@@ -21,7 +21,7 @@ import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.message.Msg;
-import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
+import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -63,7 +63,7 @@ public class ChatCompletionsController {
     private static final Logger log = LoggerFactory.getLogger(ChatCompletionsController.class);
 
     private final ObjectProvider<ReActAgent> agentProvider;
-    private final ChatCompletionsSessionManager sessionManager;
+    private final SpringChatCompletionsSessionManager sessionManager;
     private final ChatMessageConverter messageConverter;
     private final ChatCompletionsResponseBuilder responseBuilder;
     private final ChatCompletionsStreamingService streamingService;
@@ -79,7 +79,7 @@ public class ChatCompletionsController {
      */
     public ChatCompletionsController(
             ObjectProvider<ReActAgent> agentProvider,
-            ChatCompletionsSessionManager sessionManager,
+            SpringChatCompletionsSessionManager sessionManager,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
@@ -105,7 +105,7 @@ public class ChatCompletionsController {
      * Non-streaming chat completion endpoint.
      *
      * @param request The chat completion request
-     * @return Mono containing the chat completion response
+     * @return A {@link Mono} containing the {@link ChatCompletionsResponse} with the agent's reply
      */
     @PostMapping(
             value = "${agentscope.chat-completions.base-path:/v1/chat/completions}",
@@ -167,6 +167,9 @@ public class ChatCompletionsController {
                                         responseBuilder.buildErrorResponse(
                                                 request, error, requestId));
                             });
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.error("Error processing request: requestId={}", requestId, e);
+            return Mono.error(e);
         } catch (Exception e) {
             log.error("Error creating agent or processing request: requestId={}", requestId, e);
             return Mono.error(new RuntimeException("Failed to process request", e));
@@ -177,7 +180,8 @@ public class ChatCompletionsController {
      * Streaming chat completion endpoint.
      *
      * @param request The chat completion request
-     * @return Flux of Server-Sent Events
+     * @return A {@link Flux} of {@link ServerSentEvent} containing text deltas and completion
+     *     events
      */
     @PostMapping(
             value = "${agentscope.chat-completions.base-path:/v1/chat/completions}",
@@ -214,6 +218,9 @@ public class ChatCompletionsController {
                                 return Flux.just(
                                         streamingService.createErrorSseEvent(error, requestId));
                             });
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.error("Error processing streaming request: requestId={}", requestId, e);
+            return Flux.error(e);
         } catch (Exception e) {
             log.error(
                     "Error creating agent or processing streaming request: requestId={}",
