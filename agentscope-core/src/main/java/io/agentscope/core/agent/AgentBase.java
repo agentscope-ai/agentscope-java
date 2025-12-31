@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -217,6 +218,37 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Process multiple input messages and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
+     *
+     * @param msgs Input messages
+     * @param schema com.fasterxml.jackson.databind.JsonNode instance defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
+        if (!running.compareAndSet(false, true) && checkRunning) {
+            return Mono.error(
+                    new IllegalStateException(
+                            "Agent is still running, please wait for it to finish"));
+        }
+        resetInterruptFlag();
+
+        return TracerRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(m -> doCall(m, schema))
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))))
+                .doFinally(signalType -> running.set(false));
+    }
+
+    /**
      * Internal implementation for processing multiple input messages.
      * Subclasses must implement their specific logic here.
      *
@@ -238,6 +270,21 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return Mono.error(
                 new UnsupportedOperationException(
                         "Structured output not supported by " + getClass().getSimpleName()));
+    }
+
+    /**
+     * Internal implementation for processing multiple messages with structured output.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param msgs Input messages
+     * @param outputSchema com.fasterxml.jackson.databind.JsonNode instance defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + outputSchema.asText()));
     }
 
     public static void addSystemHook(Hook hook) {
