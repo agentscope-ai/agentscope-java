@@ -28,6 +28,7 @@ import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -89,8 +90,21 @@ public class Msg implements State {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
+        this.content =
+                Objects.nonNull(content)
+                        ? content.stream().filter(Objects::nonNull).toList()
+                        : List.of();
+        this.metadata = new HashMap<>();
+        if (Objects.nonNull(metadata)) {
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (Objects.isNull(key) || Objects.isNull(value)) {
+                    continue;
+                }
+                this.metadata.put(key, value);
+            }
+        }
         this.timestamp = timestamp;
     }
 
