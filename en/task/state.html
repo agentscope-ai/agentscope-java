@@ -417,51 +417,85 @@
 <h1>State<a class="headerlink" href="#state" title="Link to this heading">¶</a></h1>
 <p>State provides serialization and deserialization capabilities for component state, serving as the foundation for Session persistence.</p>
 <hr class="docutils" />
-<section id="core-interface">
-<h2>Core Interface<a class="headerlink" href="#core-interface" title="Link to this heading">¶</a></h2>
+<section id="core-interfaces">
+<h2>Core Interfaces<a class="headerlink" href="#core-interfaces" title="Link to this heading">¶</a></h2>
+<section id="statemodule-interface">
+<h3>StateModule Interface<a class="headerlink" href="#statemodule-interface" title="Link to this heading">¶</a></h3>
 <p>All state-aware components implement the <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> interface:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">();</span><span class="w">                           </span><span class="c1">// Export state</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">);</span><span class="w">  </span><span class="c1">// Import state</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">();</span><span class="w">                                 </span><span class="c1">// Component name</span>
+<span class="w">    </span><span class="c1">// Save state to Session</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">saveTo</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Load state from Session</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadFrom</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Load state from Session (if exists), returns whether loading succeeded</span>
+<span class="w">    </span><span class="k">default</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="nf">loadIfExists</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>Built-in support</strong>: <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>, <code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code>, <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code>, <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code>, etc. all implement this interface.</p>
+<p><strong>Built-in support</strong>: <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>, <code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code>, <code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code>, etc. all implement this interface.</p>
+</section>
+<section id="state-interface">
+<h3>State Interface<a class="headerlink" href="#state-interface" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">State</span></code> is a marker interface that identifies objects that can be stored by Session:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">State</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Marker interface, no methods to implement</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 </section>
 <hr class="docutils" />
 <section id="usage">
 <h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
-<section id="recommended-use-session-api">
-<h3>Recommended: Use Session API<a class="headerlink" href="#recommended-use-session-api" title="Link to this heading">¶</a></h3>
-<p>For most scenarios, use the high-level <span class="xref myst">Session</span> API which handles serialization and storage automatically:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+<section id="recommended-use-agent-s-saveto-loadfrom">
+<h3>Recommended: Use Agent’s saveTo/loadFrom<a class="headerlink" href="#recommended-use-agent-s-saveto-loadfrom" title="Link to this heading">¶</a></h3>
+<p>For most scenarios, call the state management methods directly on Agent:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
 
-<span class="c1">// Load</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+<span class="c1">// Create Session</span>
+<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">));</span>
+
+<span class="c1">// Save</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// Load (silently skip if doesn&#39;t exist)</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// Load (throw exception if doesn&#39;t exist)</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
-<section id="advanced-manual-state-management">
-<h3>Advanced: Manual State Management<a class="headerlink" href="#advanced-manual-state-management" title="Link to this heading">¶</a></h3>
-<p>For custom serialization or integration with existing storage systems, use the low-level API directly:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Export state</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stateDict</span><span class="p">();</span>
+<section id="direct-session-api-usage">
+<h3>Direct Session API Usage<a class="headerlink" href="#direct-session-api-usage" title="Link to this heading">¶</a></h3>
+<p>Session provides type-safe state storage API:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SimpleSessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.State</span><span class="p">;</span>
 
-<span class="c1">// Serialize (any format)</span>
-<span class="n">ObjectMapper</span><span class="w"> </span><span class="n">mapper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="p">();</span>
-<span class="n">String</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">writeValueAsString</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+<span class="c1">// Define state class</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">UserPreferences</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">theme</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">language</span><span class="p">)</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">State</span><span class="w"> </span><span class="p">{}</span>
 
-<span class="c1">// Deserialize and restore</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">readValue</span><span class="p">(</span><span class="n">json</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadStateDict</span><span class="p">(</span><span class="n">loaded</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="c1">// Save single state</span>
+<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;preferences&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserPreferences</span><span class="p">(</span><span class="s">&quot;dark&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;en&quot;</span><span class="p">));</span>
+
+<span class="c1">// Get single state</span>
+<span class="n">Optional</span><span class="o">&lt;</span><span class="n">UserPreferences</span><span class="o">&gt;</span><span class="w"> </span><span class="n">prefs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;preferences&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">UserPreferences</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+
+<span class="c1">// Save state list</span>
+<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;history&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">msg1State</span><span class="p">,</span><span class="w"> </span><span class="n">msg2State</span><span class="p">));</span>
+
+<span class="c1">// Get state list</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MsgState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;history&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MsgState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -470,24 +504,47 @@
 <section id="custom-components">
 <h2>Custom Components<a class="headerlink" href="#custom-components" title="Link to this heading">¶</a></h2>
 <p>Implement <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> to enable persistence for custom components:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MyComponent</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.State</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.StateModule</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MyComponent</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">data</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">counter</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Define component&#39;s state class</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">MyState</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">counter</span><span class="p">)</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">State</span><span class="w"> </span><span class="p">{}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">saveTo</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MyState</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">counter</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadFrom</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">ifPresent</span><span class="p">(</span><span class="n">state</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">this</span><span class="p">.</span><span class="na">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">data</span><span class="p">();</span>
+<span class="w">                </span><span class="k">this</span><span class="p">.</span><span class="na">counter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">counter</span><span class="p">();</span>
+<span class="w">            </span><span class="p">});</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="sessionkey">
+<h2>SessionKey<a class="headerlink" href="#sessionkey" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> identifies a session. <code class="docutils literal notranslate"><span class="pre">SimpleSessionKey</span></code> is the common implementation:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SimpleSessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+
+<span class="c1">// Create SessionKey</span>
+<span class="n">SessionKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// Get session ID</span>
+<span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">((</span><span class="n">SimpleSessionKey</span><span class="p">)</span><span class="w"> </span><span class="n">key</span><span class="p">).</span><span class="na">sessionId</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -495,7 +552,7 @@
 <section id="related-documentation">
 <h2>Related Documentation<a class="headerlink" href="#related-documentation" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><span class="xref myst">Session</span> - High-level session management API</p></li>
+<li><p><span class="xref myst">Session</span> - Session management API</p></li>
 <li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> - Memory management</p></li>
 </ul>
 </section>
@@ -590,13 +647,18 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">State</a><ul>
-<li><a class="reference internal" href="#core-interface">Core Interface</a></li>
+<li><a class="reference internal" href="#core-interfaces">Core Interfaces</a><ul>
+<li><a class="reference internal" href="#statemodule-interface">StateModule Interface</a></li>
+<li><a class="reference internal" href="#state-interface">State Interface</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#usage">Usage</a><ul>
-<li><a class="reference internal" href="#recommended-use-session-api">Recommended: Use Session API</a></li>
-<li><a class="reference internal" href="#advanced-manual-state-management">Advanced: Manual State Management</a></li>
+<li><a class="reference internal" href="#recommended-use-agent-s-saveto-loadfrom">Recommended: Use Agent’s saveTo/loadFrom</a></li>
+<li><a class="reference internal" href="#direct-session-api-usage">Direct Session API Usage</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#custom-components">Custom Components</a></li>
+<li><a class="reference internal" href="#sessionkey">SessionKey</a></li>
 <li><a class="reference internal" href="#related-documentation">Related Documentation</a></li>
 </ul>
 </li>

@@ -419,49 +419,83 @@
 <hr class="docutils" />
 <section id="id1">
 <h2>核心接口<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<section id="statemodule">
+<h3>StateModule 接口<a class="headerlink" href="#statemodule" title="Link to this heading">¶</a></h3>
 <p>所有支持状态管理的组件都实现 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 接口：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">();</span><span class="w">                           </span><span class="c1">// 导出状态</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">);</span><span class="w">  </span><span class="c1">// 导入状态</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">();</span><span class="w">                                 </span><span class="c1">// 组件名称</span>
+<span class="w">    </span><span class="c1">// 保存状态到 Session</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">saveTo</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// 从 Session 加载状态</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadFrom</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// 从 Session 加载状态（如存在），返回是否成功加载</span>
+<span class="w">    </span><span class="k">default</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="nf">loadIfExists</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">session</span><span class="p">.</span><span class="na">exists</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>内置支持</strong>：<code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>、<code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code>、<code class="docutils literal notranslate"><span class="pre">Toolkit</span></code>、<code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> 等均已实现此接口。</p>
+<p><strong>内置支持</strong>：<code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>、<code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code>、<code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> 等均已实现此接口。</p>
 </section>
-<hr class="docutils" />
 <section id="id2">
-<h2>使用方式<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<section id="session-api">
-<h3>推荐：使用 Session API<a class="headerlink" href="#session-api" title="Link to this heading">¶</a></h3>
-<p>大多数场景建议使用 <a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> 高级 API，自动处理序列化和存储：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 保存</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
-
-<span class="c1">// 加载</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+<h3>State 接口<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">State</span></code> 是一个标记接口，用于标识可以被 Session 存储的状态对象：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">State</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 标记接口，无需实现任何方法</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 </section>
+</section>
+<hr class="docutils" />
 <section id="id3">
-<h3>高级：手动状态管理<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>需要自定义序列化或与现有存储集成时，可直接使用底层 API：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 导出状态</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stateDict</span><span class="p">();</span>
+<h2>使用方式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="agent-saveto-loadfrom">
+<h3>推荐：使用 Agent 的 saveTo/loadFrom<a class="headerlink" href="#agent-saveto-loadfrom" title="Link to this heading">¶</a></h3>
+<p>大多数场景建议直接调用 Agent 的状态管理方法：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
 
-<span class="c1">// 序列化（可用任意格式）</span>
-<span class="n">ObjectMapper</span><span class="w"> </span><span class="n">mapper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="p">();</span>
-<span class="n">String</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">writeValueAsString</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+<span class="c1">// 创建 Session</span>
+<span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">));</span>
 
-<span class="c1">// 反序列化并恢复</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">readValue</span><span class="p">(</span><span class="n">json</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadStateDict</span><span class="p">(</span><span class="n">loaded</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="c1">// 保存</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">saveTo</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// 加载（会话不存在时静默跳过）</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// 加载（会话不存在时抛异常）</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">loadFrom</span><span class="p">(</span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="session-api">
+<h3>直接使用 Session API<a class="headerlink" href="#session-api" title="Link to this heading">¶</a></h3>
+<p>Session 提供类型安全的状态存储 API：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SimpleSessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.State</span><span class="p">;</span>
+
+<span class="c1">// 定义状态类</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">UserPreferences</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">theme</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">language</span><span class="p">)</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">State</span><span class="w"> </span><span class="p">{}</span>
+
+<span class="c1">// 保存单个状态</span>
+<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;preferences&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">UserPreferences</span><span class="p">(</span><span class="s">&quot;dark&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;zh&quot;</span><span class="p">));</span>
+
+<span class="c1">// 获取单个状态</span>
+<span class="n">Optional</span><span class="o">&lt;</span><span class="n">UserPreferences</span><span class="o">&gt;</span><span class="w"> </span><span class="n">prefs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;preferences&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">UserPreferences</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+
+<span class="c1">// 保存状态列表</span>
+<span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;history&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">msg1State</span><span class="p">,</span><span class="w"> </span><span class="n">msg2State</span><span class="p">));</span>
+
+<span class="c1">// 获取状态列表</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">MsgState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">getList</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;history&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MsgState</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
@@ -470,24 +504,47 @@
 <section id="id4">
 <h2>自定义组件<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p>实现 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 接口使自定义组件支持持久化：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MyComponent</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.Session</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.State</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.StateModule</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MyComponent</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">data</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">counter</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// 定义组件的状态类</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">MyState</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">counter</span><span class="p">)</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">State</span><span class="w"> </span><span class="p">{}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="p">);</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">saveTo</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">session</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">MyState</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">counter</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadFrom</span><span class="p">(</span><span class="n">Session</span><span class="w"> </span><span class="n">session</span><span class="p">,</span><span class="w"> </span><span class="n">SessionKey</span><span class="w"> </span><span class="n">sessionKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">session</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">sessionKey</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MyState</span><span class="p">.</span><span class="na">class</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">ifPresent</span><span class="p">(</span><span class="n">state</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">this</span><span class="p">.</span><span class="na">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">data</span><span class="p">();</span>
+<span class="w">                </span><span class="k">this</span><span class="p">.</span><span class="na">counter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">counter</span><span class="p">();</span>
+<span class="w">            </span><span class="p">});</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="sessionkey">
+<h2>SessionKey<a class="headerlink" href="#sessionkey" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">SessionKey</span></code> 用于标识会话，<code class="docutils literal notranslate"><span class="pre">SimpleSessionKey</span></code> 是常用的实现：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SimpleSessionKey</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.state.SessionKey</span><span class="p">;</span>
+
+<span class="c1">// 创建 SessionKey</span>
+<span class="n">SessionKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleSessionKey</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">);</span>
+
+<span class="c1">// 获取 session ID</span>
+<span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">((</span><span class="n">SimpleSessionKey</span><span class="p">)</span><span class="w"> </span><span class="n">key</span><span class="p">).</span><span class="na">sessionId</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -495,7 +552,7 @@
 <section id="id5">
 <h2>相关文档<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> - 高级会话管理 API</p></li>
+<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> - 会话管理 API</p></li>
 <li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> - 记忆管理</p></li>
 </ul>
 </section>
@@ -590,13 +647,18 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">State（状态管理）</a><ul>
-<li><a class="reference internal" href="#id1">核心接口</a></li>
-<li><a class="reference internal" href="#id2">使用方式</a><ul>
-<li><a class="reference internal" href="#session-api">推荐：使用 Session API</a></li>
-<li><a class="reference internal" href="#id3">高级：手动状态管理</a></li>
+<li><a class="reference internal" href="#id1">核心接口</a><ul>
+<li><a class="reference internal" href="#statemodule">StateModule 接口</a></li>
+<li><a class="reference internal" href="#id2">State 接口</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id3">使用方式</a><ul>
+<li><a class="reference internal" href="#agent-saveto-loadfrom">推荐：使用 Agent 的 saveTo/loadFrom</a></li>
+<li><a class="reference internal" href="#session-api">直接使用 Session API</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id4">自定义组件</a></li>
+<li><a class="reference internal" href="#sessionkey">SessionKey</a></li>
 <li><a class="reference internal" href="#id5">相关文档</a></li>
 </ul>
 </li>
