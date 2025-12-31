@@ -59,9 +59,7 @@ public class AutoMemoryExample {
                 Mem0LongTermMemory.builder()
                         .apiKey(ExampleUtils.getMem0ApiKey())
                         .userId("example-user") // Use a placeholder user ID for example code
-                        .apiBaseUrl("http://127.0.0.1:8888")
-                        // .apiBaseUrl("https://api.mem0.ai");
-                        .apiType("self-hosted");
+                        .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
                 AutoContextConfig.builder().tokenRatio(0.4).lastKeep(20).build();
