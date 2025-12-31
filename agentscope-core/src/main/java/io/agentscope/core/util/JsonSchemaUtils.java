@@ -129,7 +129,7 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
-            return objectMapper.convertValue(schema, new TypeReference<>() {});
+            return OBJECT_MAPPER.convertValue(schema, new TypeReference<>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for schema", e);
         }
