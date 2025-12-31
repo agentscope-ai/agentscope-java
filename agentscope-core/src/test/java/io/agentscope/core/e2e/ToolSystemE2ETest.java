@@ -58,6 +58,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Tool System E2E Tests (Consolidated)")
 class ToolSystemE2ETest {
 
+    // Extended timeout for multi-tool tests: multiple sequential tool calls + streaming can take
+    // time
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
 
     @ParameterizedTest

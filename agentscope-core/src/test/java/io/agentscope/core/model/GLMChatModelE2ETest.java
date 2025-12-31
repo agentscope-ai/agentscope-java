@@ -106,11 +106,11 @@ class GLMChatModelE2ETest {
                     if (modelName == null || modelName.isEmpty()) {
                         // Try common OpenRouter GLM model names
                         String[] openRouterGLMModels = {
-                            "z-ai/glm-4.6", // GLM 4.6
-                            "z-ai/glm-4.5-air", // GLM 4.5 Air
-                            "z-ai/glm-4.5v", // GLM 4.5V
-                            "z-ai/glm-4", // GLM 4
-                            "z-ai/glm-3-turbo" // GLM 3 Turbo
+                            "zhipu/glm-4.6", // GLM 4.6
+                            "zhipu/glm-4.5-air", // GLM 4.5 Air
+                            "zhipu/glm-4.5v", // GLM 4.5V
+                            "zhipu/glm-4", // GLM 4
+                            "zhipu/glm-3-turbo" // GLM 3 Turbo
                         };
                         // Use first model as default, will try others if needed
                         modelName = openRouterGLMModels[0];
