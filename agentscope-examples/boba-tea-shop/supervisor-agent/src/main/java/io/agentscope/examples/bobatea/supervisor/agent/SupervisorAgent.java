@@ -23,7 +23,6 @@ import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.session.mysql.MysqlSession;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.bobatea.supervisor.tools.A2aAgentTools;
@@ -80,14 +79,10 @@ public class SupervisorAgent {
                 AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
         // Use AutoContextMemory, support context auto compression
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, model);
+        MysqlSession mysqlSession =
+                new MysqlSession(dataSource, System.getenv("DB_NAME"), null, true);
         ReActAgent agent = createAgent(toolkit, memory);
-        SessionManager sessionManager =
-                SessionManager.forSessionId(sessionId)
-                        .withSession(
-                                new MysqlSession(dataSource, System.getenv("DB_NAME"), null, true))
-                        .addComponent(memory)
-                        .addComponent(toolkit);
-        loadSession(sessionManager, sessionId);
+        agent.loadIfExists(mysqlSession, sessionId);
         return agent.stream(msg)
                 .doFinally(
                         signalType -> {
@@ -95,7 +90,7 @@ public class SupervisorAgent {
                                     "Stream terminated with signal: {}, saving session: {}",
                                     signalType,
                                     sessionId);
-                            sessionManager.saveSession();
+                            agent.saveTo(mysqlSession, sessionId);
                         });
     }
 
@@ -115,14 +110,5 @@ public class SupervisorAgent {
                         .memory(memory)
                         .build();
         return agent;
-    }
-
-    private static void loadSession(SessionManager sessionManager, String sessionId) {
-        if (sessionManager.sessionExists()) {
-            // Load existing session
-            sessionManager.loadIfExists();
-        } else {
-            logger.info("✓ New session created: {}\n", sessionId);
-        }
     }
 }

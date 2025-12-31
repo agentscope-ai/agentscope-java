@@ -54,8 +54,13 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
+import io.agentscope.core.state.AgentMetaState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StatePersistence;
+import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
@@ -133,6 +138,7 @@ public class ReActAgent extends AgentBase {
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
+    private final StatePersistence statePersistence;
 
     // ==================== Internal Components ====================
 
@@ -159,11 +165,86 @@ public class ReActAgent extends AgentBase {
         this.structuredOutputReminder = builder.structuredOutputReminder;
         this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
+        this.statePersistence =
+                builder.statePersistence != null
+                        ? builder.statePersistence
+                        : StatePersistence.all();
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
+    }
 
-        addNestedModule("memory", this.memory);
+    // ==================== New StateModule API ====================
+
+    /**
+     * Save agent state to the session using the new API.
+     *
+     * <p>This method saves the state of all managed components according to the StatePersistence
+     * configuration:
+     *
+     * <ul>
+     *   <li>Agent metadata (always saved)
+     *   <li>Memory messages (if memoryManaged is true)
+     *   <li>Toolkit activeGroups (if toolkitManaged is true)
+     *   <li>PlanNotebook state (if planNotebookManaged is true)
+     * </ul>
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        // Save agent metadata
+        session.save(
+                sessionKey,
+                "agent_meta",
+                new AgentMetaState(getAgentId(), getName(), getDescription(), sysPrompt));
+
+        // Save memory if managed
+        if (statePersistence.memoryManaged()) {
+            memory.saveTo(session, sessionKey);
+        }
+
+        // Save toolkit activeGroups if managed
+        if (statePersistence.toolkitManaged() && toolkit != null) {
+            session.save(
+                    sessionKey,
+                    "toolkit_activeGroups",
+                    new ToolkitState(toolkit.getActiveGroups()));
+        }
+
+        // Save PlanNotebook if managed
+        if (statePersistence.planNotebookManaged() && planNotebook != null) {
+            planNotebook.saveTo(session, sessionKey);
+        }
+    }
+
+    /**
+     * Load agent state from the session using the new API.
+     *
+     * <p>This method loads the state of all managed components according to the StatePersistence
+     * configuration.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        // Load memory if managed
+        if (statePersistence.memoryManaged()) {
+            memory.loadFrom(session, sessionKey);
+        }
+
+        // Load toolkit activeGroups if managed
+        if (statePersistence.toolkitManaged() && toolkit != null) {
+            session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
+                    .ifPresent(state -> toolkit.setActiveGroups(state.activeGroups()));
+        }
+
+        // Load PlanNotebook if managed
+        if (statePersistence.planNotebookManaged() && planNotebook != null) {
+            planNotebook.loadFrom(session, sessionKey);
+        }
     }
 
     // ==================== Protected API ====================
@@ -838,6 +919,9 @@ public class ReActAgent extends AgentBase {
         private LongTermMemory longTermMemory;
         private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
 
+        // State persistence configuration
+        private StatePersistence statePersistence;
+
         // RAG configuration
         private final List<Knowledge> knowledgeBases = new ArrayList<>();
         private RAGMode ragMode = RAGMode.GENERIC;
@@ -1077,6 +1161,33 @@ public class ReActAgent extends AgentBase {
          */
         public Builder longTermMemoryMode(LongTermMemoryMode mode) {
             this.longTermMemoryMode = mode;
+            return this;
+        }
+
+        /**
+         * Sets the state persistence configuration.
+         *
+         * <p>Use this to control which components' state is managed by the agent during
+         * saveTo/loadFrom operations. By default, all components are managed.
+         *
+         * <p>Example usage:
+         *
+         * <pre>{@code
+         * ReActAgent agent = ReActAgent.builder()
+         *     .name("assistant")
+         *     .model(model)
+         *     .statePersistence(StatePersistence.builder()
+         *         .planNotebookManaged(false)  // Let user manage PlanNotebook separately
+         *         .build())
+         *     .build();
+         * }</pre>
+         *
+         * @param statePersistence The state persistence configuration
+         * @return This builder instance for method chaining
+         * @see StatePersistence
+         */
+        public Builder statePersistence(StatePersistence statePersistence) {
+            this.statePersistence = statePersistence;
             return this;
         }
 

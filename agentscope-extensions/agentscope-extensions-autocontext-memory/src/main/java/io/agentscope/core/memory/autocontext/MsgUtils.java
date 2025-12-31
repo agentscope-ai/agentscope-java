@@ -48,7 +48,7 @@ import java.util.stream.Collectors;
  *
  * <p><b>Usage:</b>
  * These methods are primarily used by {@link AutoContextMemory} for state persistence through
- * {@link io.agentscope.core.state.StateModuleBase}. The serialized format preserves all ContentBlock
+ * the session API. The serialized format preserves all ContentBlock
  * type information using Jackson's polymorphic type handling.
  */
 public class MsgUtils {

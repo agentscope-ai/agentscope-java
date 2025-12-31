@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.state.State;
 import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
@@ -49,7 +50,7 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Msg {
+public class Msg implements State {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());

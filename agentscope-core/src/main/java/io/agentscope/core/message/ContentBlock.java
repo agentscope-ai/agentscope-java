@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.agentscope.core.state.State;
 
 /**
  * Base sealed class for all content blocks in messages.
@@ -50,7 +51,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
     @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result")
 })
-public sealed class ContentBlock
+public sealed class ContentBlock implements State
         permits TextBlock,
                 ImageBlock,
                 AudioBlock,
