@@ -15,6 +15,15 @@
  */
 package io.agentscope.core.memory.autocontext;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -27,13 +36,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.StateModuleBase;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -71,6 +73,10 @@ import reactor.core.publisher.Mono;
  * </ul>
  */
 public class AutoContextMemory extends StateModuleBase implements Memory, ContextOffLoader {
+
+    private final java.util.concurrent.atomic.AtomicBoolean compressionRunning =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
 
@@ -134,129 +140,95 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 MsgUtils::deserializeToCompressionEventList);
     }
 
-    @Override
-    public void addMessage(Msg message) {
-        workingMemoryStorage.add(message);
-        originalMemoryStorage.add(message);
+@Override
+public void addMessage(Msg message) {
+    workingMemoryStorage.add(message);
+    originalMemoryStorage.add(message);
+
+    // Trigger compression asynchronously AFTER message is added
+    compressIfNeededAsync();
+}
+
+
+  @Override
+public List<Msg> getMessages() {
+    // IMPORTANT:
+    // getMessages must be read-only and non-blocking.
+    // Compression is triggered asynchronously via AutoContextHook (PostCall).
+    return new ArrayList<>(workingMemoryStorage);
+}
+
+void compressIfNeeded() {
+    List<Msg> rawMessages = workingMemoryStorage;
+
+    boolean msgCountReached =
+            rawMessages.size() >= autoContextConfig.msgThreshold;
+    int calculateToken = TokenCounterUtil.calculateToken(rawMessages);
+    int thresholdToken =
+            (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
+
+    if (!msgCountReached && calculateToken < thresholdToken) {
+        return;
     }
 
-    @Override
-    public List<Msg> getMessages() {
-        List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
+    log.info(
+            "Async compression triggered - msgCount: {}/{}, tokenCount: {}/{}",
+            rawMessages.size(),
+            autoContextConfig.msgThreshold,
+            calculateToken,
+            thresholdToken
+    );
 
-        // Check if compression is needed
-        boolean msgCountReached = currentContextMessages.size() >= autoContextConfig.msgThreshold;
-        int calculateToken = TokenCounterUtil.calculateToken(currentContextMessages);
-        int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
-        boolean tokenCounterReached = calculateToken >= thresholdToken;
+    boolean compressed = false;
 
-        if (!msgCountReached && !tokenCounterReached) {
-            return new ArrayList<>(workingMemoryStorage);
-        }
-
-        // Compression triggered - log threshold information
-        log.info(
-                "Compression triggered - msgCount: {}/{}, tokenCount: {}/{}",
-                currentContextMessages.size(),
-                autoContextConfig.msgThreshold,
-                calculateToken,
-                thresholdToken);
-
-        // Strategy 1: Compress previous round tool invocations
-        log.info("Strategy 1: Checking for previous round tool invocations to compress");
-        int toolIters = 5;
-        boolean toolCompressed = false;
-        int compressionCount = 0;
-        while (toolIters > 0) {
-            toolIters--;
-            List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
-            Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
-            if (toolMsgIndices != null) {
-                summaryToolsMessages(currentMsgs, toolMsgIndices);
-                replaceWorkingMessage(currentMsgs);
-                toolCompressed = true;
-                compressionCount++;
-            } else {
-                break;
-            }
-        }
-        if (toolCompressed) {
-            log.info(
-                    "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
-            return new ArrayList<>(workingMemoryStorage);
-        } else {
-            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
-        }
-
-        // Strategy 2: Offload previous round large messages (with lastKeep protection)
-        log.info(
-                "Strategy 2: Checking for previous round large messages (with lastKeep"
-                        + " protection)");
-        boolean hasOffloadedLastKeep = offloadingLargePayload(currentContextMessages, true);
-        if (hasOffloadedLastKeep) {
-            log.info(
-                    "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
-                            + " protection)");
-            return replaceWorkingMessage(currentContextMessages);
-        } else {
-            log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
-        }
-
-        // Strategy 3: Offload previous round large messages (without lastKeep protection)
-        log.info(
-                "Strategy 3: Checking for previous round large messages (without lastKeep"
-                        + " protection)");
-        boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
-        if (hasOffloaded) {
-            log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
-            return replaceWorkingMessage(currentContextMessages);
-        } else {
-            log.info("Strategy 3: SKIPPED - No large messages found");
-        }
-
-        // Strategy 4: Summarize previous round conversations
-        log.info("Strategy 4: Checking for previous round conversations to summarize");
-        boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
-        if (hasSummarized) {
-            log.info("Strategy 4: APPLIED - Summarized previous round conversations");
-            return replaceWorkingMessage(currentContextMessages);
-        } else {
-            log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
-        }
-
-        // Strategy 5: Summarize and offload current round large messages
-        log.info("Strategy 5: Checking for current round large messages to summarize");
-        boolean currentRoundLargeSummarized =
-                summaryCurrentRoundLargeMessages(currentContextMessages);
-        if (currentRoundLargeSummarized) {
-            log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
-            return replaceWorkingMessage(currentContextMessages);
-        } else {
-            log.info("Strategy 5: SKIPPED - No current round large messages found");
-        }
-
-        // Strategy 6: Summarize current round messages
-        log.info("Strategy 6: Checking for current round messages to summarize");
-        boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
-        if (currentRoundSummarized) {
-            log.info("Strategy 6: APPLIED - Summarized current round messages");
-            return replaceWorkingMessage(currentContextMessages);
-        } else {
-            log.info("Strategy 6: SKIPPED - No current round messages to summarize");
-        }
-
-        log.warn("All compression strategies exhausted but context still exceeds threshold");
-        return new ArrayList<>(workingMemoryStorage);
+    Pair<Integer, Integer> toolMsgIndices =
+            extractPrevToolMsgsForCompress(rawMessages, autoContextConfig.getLastKeep());
+    if (toolMsgIndices != null) {
+        summaryToolsMessages(rawMessages, toolMsgIndices);
+        compressed = true;
     }
 
-    private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
-        workingMemoryStorage.clear();
-        for (Msg msg : newMessages) {
-            workingMemoryStorage.add(msg);
-        }
-        return new ArrayList<>(workingMemoryStorage);
+    if (!compressed) {
+        compressed = offloadingLargePayload(rawMessages, true);
     }
+
+    if (!compressed) {
+        compressed = offloadingLargePayload(rawMessages, false);
+    }
+
+    if (!compressed) {
+        compressed = summaryPreviousRoundMessages(rawMessages);
+    }
+
+    if (!compressed) {
+        compressed = summaryCurrentRoundLargeMessages(rawMessages);
+    }
+
+    if (!compressed) {
+        summaryCurrentRoundMessages(rawMessages);
+    }
+}
+
+
+
+void compressIfNeededAsync() {
+    if (!compressionRunning.compareAndSet(false, true)) {
+        return;
+    }
+
+    reactor.core.scheduler.Schedulers.boundedElastic()
+            .schedule(() -> {
+                try {
+                    compressIfNeeded();
+                } catch (Exception e) {
+                    log.error("Async compression failed", e);
+                } finally {
+                    compressionRunning.set(false);
+                }
+            });
+}
+
+
 
     /**
      * Records a compression event that occurred during context management.
