@@ -40,22 +40,6 @@ public class ChatCompletionsProperties {
     /** Base path for the chat completions endpoint. */
     private String basePath = "/v1/chat/completions";
 
-    /** Session manager configuration. */
-    private SessionManager sessionManager = new SessionManager();
-
-    public static class SessionManager {
-        /** Session manager type: in-memory (default), redis, mysql, etc. */
-        private String type = "in-memory";
-
-        public String getType() {
-            return type;
-        }
-
-        public void setType(String type) {
-            this.type = type;
-        }
-    }
-
     public boolean isEnabled() {
         return enabled;
     }
@@ -72,11 +56,4 @@ public class ChatCompletionsProperties {
         this.basePath = basePath;
     }
 
-    public SessionManager getSessionManager() {
-        return sessionManager;
-    }
-
-    public void setSessionManager(SessionManager sessionManager) {
-        this.sessionManager = sessionManager;
-    }
 }

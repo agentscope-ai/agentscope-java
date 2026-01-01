@@ -53,18 +53,6 @@ class ChatCompletionsPropertiesTest {
         void shouldHaveBasePathDefaultToV1ChatCompletions() {
             assertThat(properties.getBasePath()).isEqualTo("/v1/chat/completions");
         }
-
-        @Test
-        @DisplayName("Should have sessionManager default instance")
-        void shouldHaveSessionManagerDefaultInstance() {
-            assertThat(properties.getSessionManager()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("Should have sessionManager.type default to in-memory")
-        void shouldHaveSessionManagerTypeDefaultToInMemory() {
-            assertThat(properties.getSessionManager().getType()).isEqualTo("in-memory");
-        }
     }
 
     @Nested
@@ -118,82 +106,4 @@ class ChatCompletionsPropertiesTest {
         }
     }
 
-    @Nested
-    @DisplayName("SessionManager Property Tests")
-    class SessionManagerPropertyTests {
-
-        @Test
-        @DisplayName("Should set sessionManager to custom instance")
-        void shouldSetSessionManagerToCustomInstance() {
-            ChatCompletionsProperties.SessionManager customManager =
-                    new ChatCompletionsProperties.SessionManager();
-            customManager.setType("redis");
-
-            properties.setSessionManager(customManager);
-
-            assertThat(properties.getSessionManager()).isSameAs(customManager);
-            assertThat(properties.getSessionManager().getType()).isEqualTo("redis");
-        }
-
-        @Test
-        @DisplayName("Should set sessionManager.type to redis")
-        void shouldSetSessionManagerTypeToRedis() {
-            properties.getSessionManager().setType("redis");
-
-            assertThat(properties.getSessionManager().getType()).isEqualTo("redis");
-        }
-
-        @Test
-        @DisplayName("Should set sessionManager.type to mysql")
-        void shouldSetSessionManagerTypeToMysql() {
-            properties.getSessionManager().setType("mysql");
-
-            assertThat(properties.getSessionManager().getType()).isEqualTo("mysql");
-        }
-
-        @Test
-        @DisplayName("Should set sessionManager.type to custom value")
-        void shouldSetSessionManagerTypeToCustomValue() {
-            String customType = "custom-session-manager";
-            properties.getSessionManager().setType(customType);
-
-            assertThat(properties.getSessionManager().getType()).isEqualTo(customType);
-        }
-
-        @Test
-        @DisplayName("Should set sessionManager.type to null")
-        void shouldSetSessionManagerTypeToNull() {
-            properties.getSessionManager().setType(null);
-
-            assertThat(properties.getSessionManager().getType()).isNull();
-        }
-    }
-
-    @Nested
-    @DisplayName("SessionManager Inner Class Tests")
-    class SessionManagerInnerClassTests {
-
-        @Test
-        @DisplayName("Should create SessionManager instance")
-        void shouldCreateSessionManagerInstance() {
-            ChatCompletionsProperties.SessionManager manager =
-                    new ChatCompletionsProperties.SessionManager();
-
-            assertThat(manager).isNotNull();
-            assertThat(manager.getType()).isEqualTo("in-memory");
-        }
-
-        @Test
-        @DisplayName("Should get and set type")
-        void shouldGetAndSetType() {
-            ChatCompletionsProperties.SessionManager manager =
-                    new ChatCompletionsProperties.SessionManager();
-
-            manager.setType("test-type");
-            assertThat(manager.getType()).isEqualTo("test-type");
-
-            manager.setType("another-type");
-            assertThat(manager.getType()).isEqualTo("another-type");
-        }
-    }
 }
