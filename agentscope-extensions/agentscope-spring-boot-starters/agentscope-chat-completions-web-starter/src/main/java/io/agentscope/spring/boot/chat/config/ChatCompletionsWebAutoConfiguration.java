@@ -18,11 +18,10 @@ package io.agentscope.spring.boot.chat.config;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.core.chat.completions.session.InMemorySessionManager;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
-import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
-import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -36,8 +35,12 @@ import org.springframework.context.annotation.ComponentScan;
 /**
  * Auto-configuration for exposing a Chat Completions style HTTP API.
  *
- * <p>This configuration assumes that the core {@code agentscope-spring-boot-starter} is already
- * on the classpath and has configured a prototype-scoped {@link ReActAgent} bean.
+ * <p>This configuration assumes that the core {@code agentscope-spring-boot-starter} is already on
+ * the classpath and has configured a prototype-scoped {@link ReActAgent} bean.
+ *
+ * <p><b>Simplified Design:</b> This configuration uses {@link ChatCompletionsAgentService} in the
+ * service layer to manage agent lifecycle and state persistence, creating a new prototype-scoped
+ * agent for each request and loading/saving state from/to the configured {@link Session}.
  */
 @AutoConfiguration
 @ComponentScan(basePackages = "io.agentscope.spring.boot.chat")
@@ -89,28 +92,31 @@ public class ChatCompletionsWebAutoConfiguration {
     }
 
     /**
-     * Create the session manager bean using core {@link InMemorySessionManager}.
+     * Create the agent service bean for managing agent lifecycle and state.
      *
-     * <p>This bean bridges Spring's {@link ObjectProvider} for prototype-scoped ReActAgent with the
-     * core session manager. Uses the injected {@link Session} bean for agent state management.
+     * <p>This service:
+     *
+     * <ul>
+     *   <li>Creates a new prototype-scoped agent for each request via {@link ObjectProvider}
+     *   <li>Loads agent state from {@link Session} if the session exists
+     *   <li>Saves agent state to {@link Session} after request completes
+     * </ul>
      *
      * @param agentProvider Provider for creating new ReActAgent instances (prototype-scoped)
-     * @param session The Session bean for state storage (injected via Spring)
-     * @return A {@link SpringChatCompletionsSessionManager} that delegates to
-     *     {@link InMemorySessionManager}
+     * @param session The Session bean for state storage
+     * @return A new {@link ChatCompletionsAgentService} instance
      */
     @Bean
-    @ConditionalOnMissingBean(SpringChatCompletionsSessionManager.class)
-    public SpringChatCompletionsSessionManager sessionManager(
+    @ConditionalOnMissingBean
+    public ChatCompletionsAgentService chatCompletionsAgentService(
             ObjectProvider<ReActAgent> agentProvider, Session session) {
-        InMemorySessionManager delegate = new InMemorySessionManager(session);
-        return sessionId -> delegate.getOrCreateAgent(sessionId, agentProvider::getObject);
+        return new ChatCompletionsAgentService(agentProvider, session);
     }
 
     /**
      * Create the chat completions controller bean.
      *
-     * @param sessionManager Manager for session-scoped agents
+     * @param agentService Service for managing agent lifecycle and state persistence
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
@@ -119,11 +125,11 @@ public class ChatCompletionsWebAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ChatCompletionsController chatCompletionsController(
-            SpringChatCompletionsSessionManager sessionManager,
+            ChatCompletionsAgentService agentService,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
         return new ChatCompletionsController(
-                sessionManager, messageConverter, responseBuilder, streamingService);
+                agentService, messageConverter, responseBuilder, streamingService);
     }
 }

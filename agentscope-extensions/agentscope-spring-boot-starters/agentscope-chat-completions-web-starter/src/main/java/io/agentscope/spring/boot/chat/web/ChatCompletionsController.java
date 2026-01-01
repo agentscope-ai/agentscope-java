@@ -21,8 +21,8 @@ import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.message.Msg;
-import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
-import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -43,16 +43,18 @@ import reactor.core.publisher.Mono;
  * <p>This controller delegates business logic to service classes:
  *
  * <ul>
- *   <li>{@link ChatMessageConverter} - Converts HTTP DTOs to framework messages</li>
- *   <li>{@link ChatCompletionsResponseBuilder} - Builds response objects</li>
- *   <li>{@link ChatCompletionsStreamingService} - Handles streaming responses</li>
+ *   <li>{@link ChatCompletionsAgentService} - Manages agent lifecycle and state persistence
+ *   <li>{@link ChatMessageConverter} - Converts HTTP DTOs to framework messages
+ *   <li>{@link ChatCompletionsResponseBuilder} - Builds response objects
+ *   <li>{@link ChatCompletionsStreamingService} - Handles streaming responses
  * </ul>
  *
  * <p>Features:
  *
  * <ul>
- *   <li>Non-streaming JSON response compatible with OpenAI-style chat completions</li>
- *   <li>SSE streaming when client accepts {@code text/event-stream}</li>
+ *   <li>Non-streaming JSON response compatible with OpenAI-style chat completions
+ *   <li>SSE streaming when client accepts {@code text/event-stream}
+ *   <li>Automatic state persistence after each request via Session
  * </ul>
  */
 @RestController
@@ -61,7 +63,7 @@ public class ChatCompletionsController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatCompletionsController.class);
 
-    private final SpringChatCompletionsSessionManager sessionManager;
+    private final ChatCompletionsAgentService agentService;
     private final ChatMessageConverter messageConverter;
     private final ChatCompletionsResponseBuilder responseBuilder;
     private final ChatCompletionsStreamingService streamingService;
@@ -69,17 +71,17 @@ public class ChatCompletionsController {
     /**
      * Constructs a new ChatCompletionsController.
      *
-     * @param sessionManager Manager for session-scoped agents (handles agent creation internally)
+     * @param agentService Service for managing agent lifecycle and state persistence
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
      */
     public ChatCompletionsController(
-            SpringChatCompletionsSessionManager sessionManager,
+            ChatCompletionsAgentService agentService,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
-        this.sessionManager = sessionManager;
+        this.agentService = agentService;
         this.messageConverter = messageConverter;
         this.responseBuilder = responseBuilder;
         this.streamingService = streamingService;
@@ -98,11 +100,13 @@ public class ChatCompletionsController {
     public Mono<ChatCompletionsResponse> createCompletion(
             @Valid @RequestBody ChatCompletionsRequest request) {
         String requestId = UUID.randomUUID().toString();
+        String sessionId = agentService.resolveSessionId(request.getSessionId());
+
         log.debug(
                 "Processing chat completion request: requestId={}, sessionId={}, messageCount={},"
                         + " stream={}",
                 requestId,
-                request.getSessionId(),
+                sessionId,
                 request.getMessages() != null ? request.getMessages().size() : 0,
                 request.getStream());
 
@@ -118,7 +122,7 @@ public class ChatCompletionsController {
         }
 
         try {
-            ReActAgent agent = sessionManager.getAgent(request.getSessionId());
+            ReActAgent agent = agentService.getAgent(sessionId);
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {
@@ -136,8 +140,13 @@ public class ChatCompletionsController {
                                                 + " sessionId={}",
                                         requestId,
                                         duration,
-                                        request.getSessionId());
+                                        sessionId);
                                 return responseBuilder.buildResponse(request, reply, requestId);
+                            })
+                    .doFinally(
+                            signal -> {
+                                // Save agent state after request completes (success or error)
+                                agentService.saveAgentState(sessionId, agent);
                             })
                     .onErrorResume(
                             error -> {
@@ -145,7 +154,7 @@ public class ChatCompletionsController {
                                         "Error processing chat completion request: requestId={},"
                                                 + " sessionId={}",
                                         requestId,
-                                        request.getSessionId(),
+                                        sessionId,
                                         error);
                                 return Mono.just(
                                         responseBuilder.buildErrorResponse(
@@ -174,15 +183,17 @@ public class ChatCompletionsController {
     public Flux<ServerSentEvent<String>> createCompletionStream(
             @Valid @RequestBody ChatCompletionsRequest request) {
         String requestId = UUID.randomUUID().toString();
+        String sessionId = agentService.resolveSessionId(request.getSessionId());
+
         log.debug(
                 "Processing streaming chat completion request: requestId={}, sessionId={},"
                         + " messageCount={}",
                 requestId,
-                request.getSessionId(),
+                sessionId,
                 request.getMessages() != null ? request.getMessages().size() : 0);
 
         try {
-            ReActAgent agent = sessionManager.getAgent(request.getSessionId());
+            ReActAgent agent = agentService.getAgent(sessionId);
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {
@@ -192,12 +203,17 @@ public class ChatCompletionsController {
 
             return streamingService
                     .streamAsSse(agent, messages, requestId)
+                    .doFinally(
+                            signal -> {
+                                // Save agent state after streaming completes
+                                agentService.saveAgentState(sessionId, agent);
+                            })
                     .onErrorResume(
                             error -> {
                                 log.error(
                                         "Error in streaming response: requestId={}, sessionId={}",
                                         requestId,
-                                        request.getSessionId(),
+                                        sessionId,
                                         error);
                                 return Flux.just(
                                         streamingService.createErrorSseEvent(error, requestId));

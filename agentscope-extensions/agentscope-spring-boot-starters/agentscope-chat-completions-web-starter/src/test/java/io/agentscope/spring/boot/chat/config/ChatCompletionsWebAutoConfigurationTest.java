@@ -16,14 +16,17 @@
 package io.agentscope.spring.boot.chat.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
-import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
+import io.agentscope.core.session.Session;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
@@ -51,38 +54,59 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldCreateDefaultBeansWhenEnabled() {
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasSingleBean(SpringChatCompletionsSessionManager.class);
+                    assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
                     assertThat(context).hasSingleBean(ChatMessageConverter.class);
                     assertThat(context).hasSingleBean(ChatCompletionsResponseBuilder.class);
                     assertThat(context).hasSingleBean(ChatCompletionsStreamingService.class);
                     assertThat(context).hasSingleBean(ChatCompletionsController.class);
+                    assertThat(context).hasSingleBean(Session.class);
                 });
     }
 
     @Test
-    void shouldCreateSessionManagerByDefault() {
+    void shouldCreateAgentServiceWithSessionSupport() {
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasSingleBean(SpringChatCompletionsSessionManager.class);
-                    // The session manager is created as a lambda, so we just verify it exists
-                    SpringChatCompletionsSessionManager manager =
-                            context.getBean(SpringChatCompletionsSessionManager.class);
-                    assertThat(manager).isNotNull();
+                    assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
+                    ChatCompletionsAgentService agentService =
+                            context.getBean(ChatCompletionsAgentService.class);
+                    assertThat(agentService).isNotNull();
+
+                    // Test that resolveSessionId works
+                    String resolved = agentService.resolveSessionId(null);
+                    assertThat(resolved).isNotNull().isNotEmpty();
+
+                    // Test that resolveSessionId returns the same ID if provided
+                    String customId = "custom-session-id";
+                    assertThat(agentService.resolveSessionId(customId)).isEqualTo(customId);
+
+                    // Test that session is available
+                    assertThat(agentService.getSession()).isNotNull();
                 });
     }
 
     @Test
-    void shouldUseCustomSessionManagerWhenProvided() {
-        SpringChatCompletionsSessionManager customManager = sessionId -> null;
+    void shouldUseCustomAgentServiceWhenProvided() {
+        // Create mock objects for the constructor
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ReActAgent> mockAgentProvider = mock(ObjectProvider.class);
+        Session mockSession = mock(Session.class);
+
+        ChatCompletionsAgentService customService =
+                new ChatCompletionsAgentService(mockAgentProvider, mockSession) {
+                    @Override
+                    public ReActAgent getAgent(String sessionId) {
+                        return null;
+                    }
+                };
 
         contextRunner
-                .withBean(SpringChatCompletionsSessionManager.class, () -> customManager)
+                .withBean(ChatCompletionsAgentService.class, () -> customService)
                 .run(
                         context -> {
-                            assertThat(context)
-                                    .hasSingleBean(SpringChatCompletionsSessionManager.class);
-                            assertThat(context.getBean(SpringChatCompletionsSessionManager.class))
-                                    .isSameAs(customManager);
+                            assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
+                            assertThat(context.getBean(ChatCompletionsAgentService.class))
+                                    .isSameAs(customService);
                         });
     }
 

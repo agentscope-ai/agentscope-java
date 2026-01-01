@@ -32,8 +32,8 @@ import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.spring.boot.chat.session.SpringChatCompletionsSessionManager;
-import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,7 +54,7 @@ import reactor.test.StepVerifier;
 class ChatCompletionsControllerTest {
 
     private ChatCompletionsController controller;
-    private SpringChatCompletionsSessionManager sessionManager;
+    private ChatCompletionsAgentService agentService;
     private ChatMessageConverter messageConverter;
     private ChatCompletionsResponseBuilder responseBuilder;
     private ChatCompletionsStreamingService streamingService;
@@ -62,7 +62,7 @@ class ChatCompletionsControllerTest {
 
     @BeforeEach
     void setUp() {
-        sessionManager = mock(SpringChatCompletionsSessionManager.class);
+        agentService = mock(ChatCompletionsAgentService.class);
         messageConverter = mock(ChatMessageConverter.class);
         responseBuilder = mock(ChatCompletionsResponseBuilder.class);
         streamingService = mock(ChatCompletionsStreamingService.class);
@@ -70,7 +70,11 @@ class ChatCompletionsControllerTest {
 
         controller =
                 new ChatCompletionsController(
-                        sessionManager, messageConverter, responseBuilder, streamingService);
+                        agentService, messageConverter, responseBuilder, streamingService);
+
+        // Default: resolveSessionId returns the input or a generated ID
+        when(agentService.resolveSessionId(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        when(agentService.resolveSessionId(null)).thenReturn("generated-session-id");
     }
 
     @Nested
@@ -96,7 +100,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsResponse expectedResponse = new ChatCompletionsResponse();
             expectedResponse.setId("response-id");
 
-            when(sessionManager.getAgent("test-session")).thenReturn(mockAgent);
+            when(agentService.getAgent("test-session")).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
             when(mockAgent.call(anyList())).thenReturn(Mono.just(replyMsg));
             when(responseBuilder.buildResponse(any(), any(), anyString()))
@@ -106,10 +110,37 @@ class ChatCompletionsControllerTest {
 
             StepVerifier.create(result).expectNext(expectedResponse).verifyComplete();
 
-            verify(sessionManager).getAgent(eq("test-session"));
+            verify(agentService).getAgent(eq("test-session"));
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(mockAgent).call(eq(convertedMessages));
             verify(responseBuilder).buildResponse(eq(request), eq(replyMsg), anyString());
+            // Verify state is saved after request completes
+            verify(agentService).saveAgentState(eq("test-session"), eq(mockAgent));
+        }
+
+        @Test
+        @DisplayName("Should save agent state even on error")
+        void shouldSaveAgentStateEvenOnError() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setSessionId("test-session");
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(false);
+
+            List<Msg> convertedMessages = List.of(mock(Msg.class));
+
+            when(agentService.getAgent("test-session")).thenReturn(mockAgent);
+            when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
+            when(mockAgent.call(anyList())).thenReturn(Mono.error(new RuntimeException("Error")));
+            when(responseBuilder.buildErrorResponse(any(), any(), anyString()))
+                    .thenReturn(new ChatCompletionsResponse());
+
+            Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
+
+            StepVerifier.create(result).expectNextCount(1).verifyComplete();
+
+            // Verify state is saved even when error occurs
+            verify(agentService).saveAgentState(eq("test-session"), eq(mockAgent));
         }
 
         @Test
@@ -136,7 +167,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of());
 
-            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
+            when(agentService.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
 
             Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
@@ -172,7 +203,7 @@ class ChatCompletionsControllerTest {
             ServerSentEvent<String> sseEvent =
                     ServerSentEvent.<String>builder().data("Hi!").build();
 
-            when(sessionManager.getAgent("test-session")).thenReturn(mockAgent);
+            when(agentService.getAgent("test-session")).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
             when(streamingService.streamAsSse(any(), anyList(), anyString()))
                     .thenReturn(Flux.just(sseEvent));
@@ -181,9 +212,11 @@ class ChatCompletionsControllerTest {
 
             StepVerifier.create(result).expectNext(sseEvent).verifyComplete();
 
-            verify(sessionManager).getAgent(eq("test-session"));
+            verify(agentService).getAgent(eq("test-session"));
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(streamingService).streamAsSse(eq(mockAgent), eq(convertedMessages), anyString());
+            // Verify state is saved after streaming completes
+            verify(agentService).saveAgentState(eq("test-session"), eq(mockAgent));
         }
 
         @Test
@@ -192,7 +225,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of());
 
-            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
+            when(agentService.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
 
             Flux<ServerSentEvent<String>> result = controller.createCompletionStream(request);
@@ -215,7 +248,7 @@ class ChatCompletionsControllerTest {
             ServerSentEvent<String> errorEvent =
                     ServerSentEvent.<String>builder().data("Error").build();
 
-            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
+            when(agentService.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
             when(streamingService.streamAsSse(any(), anyList(), anyString()))
                     .thenReturn(Flux.error(error));

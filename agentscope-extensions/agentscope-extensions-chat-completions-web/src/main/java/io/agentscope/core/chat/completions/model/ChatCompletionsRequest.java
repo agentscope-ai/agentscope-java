@@ -26,7 +26,7 @@ public class ChatCompletionsRequest {
     /** Conversation history, in order. The last user message is typically the question. */
     private List<ChatMessage> messages;
 
-    /** Optional session identifier for stateful conversations. */
+    /** Optional session identifier for stateful agents. */
     private String sessionId;
 
     /** Whether to stream responses via Server-Sent Events (SSE). */

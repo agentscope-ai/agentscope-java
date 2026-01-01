@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.streaming;
+package io.agentscope.spring.boot.chat.service;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
@@ -22,7 +22,7 @@ import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAda
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 /**
@@ -33,7 +33,7 @@ import reactor.core.publisher.Flux;
  *
  * <p>This component is automatically discovered by Spring Boot's component scanning.
  */
-@Component
+@Service
 public class ChatCompletionsStreamingService {
 
     private final ChatCompletionsResponseBuilder responseBuilder;

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 server:
-  port: 8080
+  port: 8089
 
 logging:
   level:
