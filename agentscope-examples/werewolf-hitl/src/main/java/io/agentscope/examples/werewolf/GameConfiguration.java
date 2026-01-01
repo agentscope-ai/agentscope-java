@@ -26,6 +26,9 @@ public class GameConfiguration {
     private int witchCount;
     private int hunterCount;
 
+    /** Maximum allowed total player count to prevent unreasonable configurations. */
+    public static final int MAX_TOTAL_PLAYERS = 50;
+
     /**
      * Creates a configuration with default counts (total 9 players).
      * Defaults: 3 villagers, 3 werewolves, 1 seer, 1 witch, 1 hunter.
@@ -158,15 +161,32 @@ public class GameConfiguration {
 
     /**
      * Validate the configuration values.
+     * Ensures role counts are within reasonable bounds and total players are capped.
+     *
+     * Validation rules:
+     * - villagerCount >= 0
+     * - werewolfCount >= 1
+     * - seerCount >= 0
+     * - witchCount >= 0
+     * - hunterCount >= 0
+     * - getTotalPlayerCount() between 4 and MAX_TOTAL_PLAYERS (inclusive)
+     * - No individual role count may exceed MAX_TOTAL_PLAYERS
+     * - Each role count must not exceed the remaining capacity when combined (implicitly covered by total check)
      *
      * @return true if configuration is valid; false otherwise
      */
     public boolean isValid() {
-        return villagerCount >= 0
-                && werewolfCount >= 1
-                && seerCount >= 0
-                && witchCount >= 0
-                && hunterCount >= 0
-                && getTotalPlayerCount() >= 4; // Minimum 4 players required
+        // Basic minimum constraints
+        if (villagerCount < 0 || werewolfCount < 1 || seerCount < 0 || witchCount < 0 || hunterCount < 0) {
+            return false;
+        }
+        // Per-role upper bound constraints
+        if (villagerCount > MAX_TOTAL_PLAYERS || werewolfCount > MAX_TOTAL_PLAYERS ||
+                seerCount > MAX_TOTAL_PLAYERS || witchCount > MAX_TOTAL_PLAYERS || hunterCount > MAX_TOTAL_PLAYERS) {
+            return false;
+        }
+        // Total player count constraints
+        int total = getTotalPlayerCount();
+        return total >= 4 && total <= MAX_TOTAL_PLAYERS;
     }
 }
