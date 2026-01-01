@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,133 +15,106 @@
  */
 package io.agentscope.core.state;
 
-import java.util.Map;
-import java.util.function.Function;
+import io.agentscope.core.session.Session;
 
 /**
  * Interface for all stateful components in AgentScope.
  *
- * This interface provides state serialization and deserialization capabilities
- * for components that need to persist and restore their internal state. Components
- * that implement this interface can have their state saved to and restored from
- * external storage through the session management system.
+ * <p>This interface provides state serialization and deserialization capabilities for components
+ * that need to persist and restore their internal state. Components that implement this interface
+ * can have their state saved to and restored from external storage through the session management
+ * system.
  *
- * Key features:
- * - Hierarchical state management (StateModules can contain other StateModules)
- * - Custom serialization support for complex objects
- * - Automatic nested state collection and restoration
- * - Manual attribute registration with custom serialization functions
+ * <p>Use {@link #saveTo(Session, String)} and {@link #loadFrom(Session, String)} for direct session
+ * interaction with simple string session IDs.
+ *
+ * <p>Example usage:
+ *
+ * <pre>{@code
+ * Session session = new JsonSession(Path.of("sessions"));
+ *
+ * // Load state if exists
+ * agent.loadIfExists(session, "user_123");
+ *
+ * // ... use agent ...
+ *
+ * // Save state
+ * agent.saveTo(session, "user_123");
+ * }</pre>
  */
 public interface StateModule {
 
     /**
-     * Get the state map containing all stateful data.
+     * Save state to the session.
      *
-     * This method recursively collects state from nested StateModules and
-     * registered attributes, returning a map that can be serialized to JSON
-     * or other storage formats.
+     * <p>Components should implement this method to persist their state using the Session's save
+     * methods.
      *
-     * @return Map containing all state data
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
      */
-    Map<String, Object> stateDict();
-
-    /**
-     * Load state from a map, restoring the component to a previous state.
-     *
-     * This method recursively restores state to nested StateModules and
-     * registered attributes from the provided state map.
-     *
-     * @param stateDict Map containing state data to restore
-     * @param strict Whether to enforce strict loading (fail on missing keys)
-     * @throws IllegalArgumentException if strict=true and required state is missing
-     */
-    void loadStateDict(Map<String, Object> stateDict, boolean strict);
-
-    /**
-     * Load state from a map with default strict mode (true).
-     *
-     * @param stateDict Map containing state data to restore
-     * @throws IllegalArgumentException if stateDict is null or contains invalid data
-     */
-    default void loadStateDict(Map<String, Object> stateDict) {
-        loadStateDict(stateDict, true);
+    default void saveTo(Session session, SessionKey sessionKey) {
+        // Default implementation is a no-op
+        // Subclasses should override this method to implement state saving
     }
 
     /**
-     * Register an attribute for state tracking with optional custom serialization.
+     * Save state to the session using a string session ID.
      *
-     * This method allows manual registration of attributes that should be included
-     * in the state map. Custom serialization functions can be provided for
-     * complex objects that don't have natural JSON representation.
-     *
-     * @param attributeName Name of the attribute to register
-     * @param toJsonFunction Optional function to convert attribute to JSON-serializable form (null for default)
-     * @param fromJsonFunction Optional function to restore attribute from JSON form (null for default)
-     * @throws IllegalArgumentException if attributeName is null or empty
+     * @param session the session to save state to
+     * @param sessionId the session identifier as a string
      */
-    void registerState(
-            String attributeName,
-            Function<Object, Object> toJsonFunction,
-            Function<Object, Object> fromJsonFunction);
-
-    /**
-     * Register an attribute for state tracking with default serialization.
-     *
-     * @param attributeName Name of the attribute to register
-     * @throws IllegalArgumentException if attributeName is null or empty
-     */
-    default void registerState(String attributeName) {
-        registerState(attributeName, null, null);
+    default void saveTo(Session session, String sessionId) {
+        saveTo(session, SimpleSessionKey.of(sessionId));
     }
 
     /**
-     * Get the list of manually registered attribute names.
+     * Load state from the session.
      *
-     * @return Array of registered attribute names
+     * <p>Components should implement this method to restore their state using the Session's get
+     * methods.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
      */
-    String[] getRegisteredAttributes();
+    default void loadFrom(Session session, SessionKey sessionKey) {
+        // Default implementation is a no-op
+        // Subclasses should override this method to implement state loading
+    }
 
     /**
-     * Check if an attribute is registered for state tracking.
+     * Load state from the session using a string session ID.
      *
-     * @param attributeName Name of the attribute to check
-     * @return true if the attribute is registered
-     * @throws IllegalArgumentException if attributeName is null
+     * @param session the session to load state from
+     * @param sessionId the session identifier as a string
      */
-    default boolean isAttributeRegistered(String attributeName) {
-        String[] registered = getRegisteredAttributes();
-        for (String attr : registered) {
-            if (attr.equals(attributeName)) {
-                return true;
-            }
+    default void loadFrom(Session session, String sessionId) {
+        loadFrom(session, SimpleSessionKey.of(sessionId));
+    }
+
+    /**
+     * Load state from the session if it exists.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     * @return true if the session existed and state was loaded, false otherwise
+     */
+    default boolean loadIfExists(Session session, SessionKey sessionKey) {
+        if (session.exists(sessionKey)) {
+            loadFrom(session, sessionKey);
+            return true;
         }
         return false;
     }
 
     /**
-     * Unregister an attribute from state tracking.
+     * Load state from the session if it exists using a string session ID.
      *
-     * @param attributeName Name of the attribute to unregister
-     * @return true if the attribute was registered and removed
-     * @throws IllegalArgumentException if attributeName is null
+     * @param session the session to load state from
+     * @param sessionId the session identifier as a string
+     * @return true if the session existed and state was loaded, false otherwise
      */
-    boolean unregisterState(String attributeName);
-
-    /**
-     * Clear all registered attributes.
-     */
-    void clearRegisteredState();
-
-    /**
-     * Get the component name for session management.
-     *
-     * This method allows components to specify their name when used in session
-     * management. By default, components can return null to use automatic naming
-     * based on class name.
-     *
-     * @return Component name or null to use default naming
-     */
-    default String getComponentName() {
-        return null;
+    default boolean loadIfExists(Session session, String sessionId) {
+        return loadIfExists(session, SimpleSessionKey.of(sessionId));
     }
 }

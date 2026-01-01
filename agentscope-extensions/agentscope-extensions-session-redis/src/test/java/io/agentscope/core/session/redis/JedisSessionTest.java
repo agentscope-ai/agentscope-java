@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,29 +20,31 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.session.redis.jedis.JedisSession;
-import io.agentscope.core.state.StateModule;
-import java.util.HashMap;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Unit tests for {@link JedisSession}.
  */
+@DisplayName("JedisSession Tests")
 class JedisSessionTest {
 
     private JedisPool jedisPool;
@@ -55,6 +57,7 @@ class JedisSessionTest {
     }
 
     @Test
+    @DisplayName("Should build session with valid arguments")
     void testBuilderWithValidArguments() {
         JedisSession session =
                 JedisSession.builder()
@@ -65,6 +68,7 @@ class JedisSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when building with empty prefix")
     void testBuilderWithEmptyPrefix() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -72,204 +76,193 @@ class JedisSessionTest {
     }
 
     @Test
-    void testSaveSessionStateStoresJsonAndMeta() {
+    @DisplayName("Should save and get single state correctly")
+    void testSaveAndGetSingleState() {
         when(jedisPool.getResource()).thenReturn(jedis);
 
-        StateModule module1 = mock(StateModule.class);
-        StateModule module2 = mock(StateModule.class);
-
-        Map<String, Object> state1 = new HashMap<>();
-        state1.put("key1", "value1");
-        Map<String, Object> state2 = new HashMap<>();
-        state2.put("key2", 42);
-
-        when(module1.stateDict()).thenReturn(state1);
-        when(module2.stateDict()).thenReturn(state2);
-
-        Map<String, StateModule> modules = new HashMap<>();
-        modules.put("module1", module1);
-        modules.put("module2", module2);
+        String stateJson = "{\"value\":\"test_value\",\"count\":42}";
+        when(jedis.get("agentscope:session:session1:testModule")).thenReturn(stateJson);
 
         JedisSession session =
                 JedisSession.builder()
                         .jedisPool(jedisPool)
                         .keyPrefix("agentscope:session:")
                         .build();
-        session.saveSessionState("session1", modules);
 
-        verify(jedisPool).getResource();
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        TestState state = new TestState("test_value", 42);
+
+        // Save state
+        session.save(sessionKey, "testModule", state);
+
+        // Verify save operations
         verify(jedis).set(anyString(), anyString());
-        verify(jedis).hset(anyString(), anyMap());
+        verify(jedis).sadd("agentscope:session:session1:_keys", "testModule");
+
+        // Get state
+        Optional<TestState> loaded = session.get(sessionKey, "testModule", TestState.class);
+        assertTrue(loaded.isPresent());
+        assertEquals("test_value", loaded.get().value());
+        assertEquals(42, loaded.get().count());
     }
 
     @Test
-    void testLoadSessionStateRestoresModules() throws Exception {
-        String json =
-                """
-                {
-                  "module1": { "key1": "value1" },
-                  "module2": { "key2": 42 }
-                }
-                """;
-
+    @DisplayName("Should save and get list state correctly")
+    void testSaveAndGetListState() {
         when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.get("agentscope:session:session1")).thenReturn(json);
-
-        StateModule module1 = mock(StateModule.class);
-        StateModule module2 = mock(StateModule.class);
-
-        Map<String, StateModule> modules = new HashMap<>();
-        modules.put("module1", module1);
-        modules.put("module2", module2);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        session.loadSessionState("session1", false, modules);
-
-        verify(module1).loadStateDict(anyMap(), org.mockito.ArgumentMatchers.eq(false));
-        verify(module2).loadStateDict(anyMap(), org.mockito.ArgumentMatchers.eq(false));
-    }
-
-    @Test
-    void testLoadSessionStateAllowNotExistTrue() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.get("agentscope:session:missing")).thenReturn(null);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        session.loadSessionState("missing", true, Map.of());
-    }
-
-    @Test
-    void testLoadSessionStateAllowNotExistFalse() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.get("agentscope:session:missing")).thenReturn(null);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertThrows(
-                RuntimeException.class, () -> session.loadSessionState("missing", false, Map.of()));
-    }
-
-    @Test
-    void testSessionExists() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.exists("agentscope:session:session1")).thenReturn(true);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertTrue(session.sessionExists("session1"));
-    }
-
-    @Test
-    void testSessionDoesNotExist() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.exists("agentscope:session:session1")).thenReturn(false);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertFalse(session.sessionExists("session1"));
-    }
-
-    @Test
-    void testDeleteSession() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.del("agentscope:session:session1", "agentscope:session:session1:meta"))
-                .thenReturn(2L);
-
-        JedisSession session =
-                JedisSession.builder()
-                        .jedisPool(jedisPool)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertTrue(session.deleteSession("session1"));
-    }
-
-    @Test
-    void testListSessions() {
-        when(jedisPool.getResource()).thenReturn(jedis);
-
-        @SuppressWarnings("unchecked")
-        ScanResult<String> scanResult = mock(ScanResult.class);
-        when(scanResult.getResult())
+        when(jedis.llen("agentscope:session:session1:testList:list")).thenReturn(0L);
+        when(jedis.lrange("agentscope:session:session1:testList:list", 0, -1))
                 .thenReturn(
                         List.of(
-                                "agentscope:session:s1",
-                                "agentscope:session:s2",
-                                "agentscope:session:s1:meta"));
-        when(scanResult.getCursor()).thenReturn("0");
-
-        when(jedis.scan(anyString())).thenReturn(scanResult);
+                                "{\"value\":\"value1\",\"count\":1}",
+                                "{\"value\":\"value2\",\"count\":2}"));
 
         JedisSession session =
                 JedisSession.builder()
                         .jedisPool(jedisPool)
                         .keyPrefix("agentscope:session:")
                         .build();
-        List<String> sessions = session.listSessions();
 
-        assertEquals(List.of("s1", "s2"), sessions);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
+
+        // Save list state
+        session.save(sessionKey, "testList", states);
+
+        // Verify rpush was called for each item
+        verify(jedis, atLeast(1)).rpush(anyString(), anyString());
+
+        // Get list state
+        List<TestState> loaded = session.getList(sessionKey, "testList", TestState.class);
+        assertEquals(2, loaded.size());
+        assertEquals("value1", loaded.get(0).value());
+        assertEquals("value2", loaded.get(1).value());
     }
 
     @Test
-    void testGetSessionInfo() {
-        String json =
-                """
-                {
-                  "module1": { "key1": "value1" },
-                  "module2": { "key2": 42 }
-                }
-                """;
-
+    @DisplayName("Should return empty for non-existent state")
+    void testGetNonExistentState() {
         when(jedisPool.getResource()).thenReturn(jedis);
-        when(jedis.get("agentscope:session:session1")).thenReturn(json);
-        when(jedis.hget("agentscope:session:session1:meta", "lastModified")).thenReturn("12345");
+        when(jedis.get("agentscope:session:non_existent:testModule")).thenReturn(null);
 
         JedisSession session =
                 JedisSession.builder()
                         .jedisPool(jedisPool)
                         .keyPrefix("agentscope:session:")
                         .build();
-        SessionInfo info = session.getSessionInfo("session1");
 
-        assertEquals("session1", info.getSessionId());
-        assertEquals(json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, info.getSize());
-        assertEquals(2, info.getComponentCount());
-        assertEquals(12345L, info.getLastModified());
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        Optional<TestState> state = session.get(sessionKey, "testModule", TestState.class);
+        assertFalse(state.isPresent());
     }
 
     @Test
+    @DisplayName("Should return empty list for non-existent list state")
+    void testGetNonExistentListState() {
+        when(jedisPool.getResource()).thenReturn(jedis);
+        when(jedis.lrange("agentscope:session:non_existent:testList:list", 0, -1))
+                .thenReturn(List.of());
+
+        JedisSession session =
+                JedisSession.builder()
+                        .jedisPool(jedisPool)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        List<TestState> states = session.getList(sessionKey, "testList", TestState.class);
+        assertTrue(states.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return true when session exists")
+    void testSessionExists() {
+        when(jedisPool.getResource()).thenReturn(jedis);
+        when(jedis.exists("agentscope:session:session1:_keys")).thenReturn(true);
+        when(jedis.scard("agentscope:session:session1:_keys")).thenReturn(2L);
+
+        JedisSession session =
+                JedisSession.builder()
+                        .jedisPool(jedisPool)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        assertTrue(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should return false when session does not exist")
+    void testSessionDoesNotExist() {
+        when(jedisPool.getResource()).thenReturn(jedis);
+        when(jedis.exists("agentscope:session:session1:_keys")).thenReturn(false);
+
+        JedisSession session =
+                JedisSession.builder()
+                        .jedisPool(jedisPool)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        assertFalse(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should delete session correctly")
+    void testDeleteSession() {
+        when(jedisPool.getResource()).thenReturn(jedis);
+
+        Set<String> trackedKeys = new HashSet<>();
+        trackedKeys.add("module1");
+        trackedKeys.add("module2:list");
+        when(jedis.smembers("agentscope:session:session1:_keys")).thenReturn(trackedKeys);
+
+        JedisSession session =
+                JedisSession.builder()
+                        .jedisPool(jedisPool)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        session.delete(sessionKey);
+
+        // Verify del was called with the keys
+        verify(jedis).smembers("agentscope:session:session1:_keys");
+    }
+
+    @Test
+    @DisplayName("Should list all session keys")
+    void testListSessionKeys() {
+        when(jedisPool.getResource()).thenReturn(jedis);
+
+        Set<String> keysKeys = new HashSet<>();
+        keysKeys.add("agentscope:session:session1:_keys");
+        keysKeys.add("agentscope:session:session2:_keys");
+        when(jedis.keys("agentscope:session:*:_keys")).thenReturn(keysKeys);
+
+        JedisSession session =
+                JedisSession.builder()
+                        .jedisPool(jedisPool)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
+        assertEquals(2, sessionKeys.size());
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session1")));
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session2")));
+    }
+
+    @Test
+    @DisplayName("Should clear all sessions")
     void testClearAllSessions() {
         when(jedisPool.getResource()).thenReturn(jedis);
 
-        @SuppressWarnings("unchecked")
-        ScanResult<String> scanResult = mock(ScanResult.class);
-        when(scanResult.getResult())
-                .thenReturn(
-                        List.of(
-                                "agentscope:session:s1",
-                                "agentscope:session:s2",
-                                "agentscope:session:s1:meta",
-                                "agentscope:session:s2:meta"));
-        when(scanResult.getCursor()).thenReturn("0");
-
-        when(jedis.scan(anyString())).thenReturn(scanResult);
-        when(jedis.del(any(String[].class))).thenReturn(4L);
+        Set<String> allKeys = new HashSet<>();
+        allKeys.add("agentscope:session:s1:module1");
+        allKeys.add("agentscope:session:s1:_keys");
+        allKeys.add("agentscope:session:s2:module1");
+        allKeys.add("agentscope:session:s2:_keys");
+        when(jedis.keys("agentscope:session:*")).thenReturn(allKeys);
 
         JedisSession session =
                 JedisSession.builder()
@@ -277,10 +270,11 @@ class JedisSessionTest {
                         .keyPrefix("agentscope:session:")
                         .build();
 
-        StepVerifier.create(session.clearAllSessions()).expectNext(2).verifyComplete();
+        StepVerifier.create(session.clearAllSessions()).expectNext(4).verifyComplete();
     }
 
     @Test
+    @DisplayName("Should close jedis pool when closing session")
     void testCloseShutsDownPool() {
         JedisSession session =
                 JedisSession.builder()
@@ -290,4 +284,7 @@ class JedisSessionTest {
         session.close();
         verify(jedisPool).close();
     }
+
+    /** Simple test state record for testing. */
+    public record TestState(String value, int count) implements State {}
 }

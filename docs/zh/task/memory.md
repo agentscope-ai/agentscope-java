@@ -193,17 +193,24 @@ public interface LongTermMemory {
 
 基于 [Mem0](https://mem0.ai/) 的长期记忆实现。
 
-**使用示例**：
+#### 背景说明
+
+Mem0 的自建部署和 Platform 提供的 OpenAPI 接口不一致（端点路径和响应格式不同）。`Mem0LongTermMemory` 内部提供了兼容适配机制，通过 `apiType` 参数指定 Mem0 部署类型，自动选择正确的 API 端点和响应解析方式。
+
+#### 使用示例
+
+**Platform Mem0（默认）**：
 
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 
+// 使用 Platform Mem0（默认，无需指定 apiType）
 Mem0LongTermMemory longTermMemory = Mem0LongTermMemory.builder()
         .agentName("SmartAssistant")
         .userId("user-001")
-        .apiBaseUrl(mem0BaseUrl)
+        .apiBaseUrl("https://api.mem0.ai")
         .apiKey(System.getenv("MEM0_API_KEY"))
         .build();
 
@@ -215,14 +222,60 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
+**自建 Mem0**：
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.mem0.Mem0ApiType;
+import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
+
+// 使用自建 Mem0，需要指定 apiType 为 Mem0ApiType.SELF_HOSTED
+Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
+        .agentName("SmartAssistant")
+        .userId("user-001")
+        .apiBaseUrl("http://localhost:8000")  // 自建 Mem0 服务地址
+        .apiKey(System.getenv("MEM0_API_KEY"))  // 可选，取决于自建服务配置
+        .apiType(Mem0ApiType.SELF_HOSTED)  // 指定为自建 Mem0
+        .build();
+
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .longTermMemory(selfHostedMemory)
+        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+        .build();
+```
+
+**配置说明**：
+
+- `apiType`：可选参数，指定 Mem0 部署类型
+  - `Mem0ApiType.PLATFORM`（默认）：使用 Platform Mem0 的 API 端点
+  - `Mem0ApiType.SELF_HOSTED`：使用自建 Mem0 的 API 端点
+- `apiBaseUrl`：Mem0 服务的基地址
+  - Platform Mem0：通常为 `https://api.mem0.ai`
+  - 自建 Mem0：通常为 `http://localhost:8000` 或您的服务器地址
+- `apiKey`：API 密钥（可选）
+  - Platform Mem0：必需
+  - 自建 Mem0：取决于您的服务配置，可能不需要
+
 **完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **运行示例**：
 
 ```bash
-# 需要配置 MEM0_API_KEY 环境变量
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.Mem0Example"
+# Platform Mem0（默认）
+export MEM0_API_KEY=your_api_key
+export MEM0_API_BASE_URL=https://api.mem0.ai  # 可选，默认为此值
+cd agentscope-examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
+
+# 自建 Mem0
+export MEM0_API_KEY=your_api_key  # 可选，取决于服务配置
+export MEM0_API_BASE_URL=http://localhost:8000
+export MEM0_API_TYPE=self-hosted
+cd agentscope-examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.Mem0Example"
 ```
 
 ### ReMeLongTermMemory

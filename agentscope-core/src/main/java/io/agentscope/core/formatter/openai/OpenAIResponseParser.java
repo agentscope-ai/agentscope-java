@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,12 +15,18 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionChunk;
-import com.openai.models.chat.completions.ChatCompletionMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
+import io.agentscope.core.formatter.openai.dto.OpenAIError;
+import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIReasoningDetail;
+import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
+import io.agentscope.core.formatter.openai.dto.OpenAIUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -34,8 +40,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Parses OpenAI API responses to AgentScope ChatResponse.
- * Handles both ChatCompletion (non-streaming) and ChatCompletionChunk (streaming).
+ * Parses OpenAI HTTP API responses to AgentScope ChatResponse.
+ * Handles both non-streaming and streaming (chunk) responses using DTO classes.
  */
 public class OpenAIResponseParser {
 
@@ -46,48 +52,67 @@ public class OpenAIResponseParser {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * Safely get prompt token count from usage, returning 0 if null or invalid.
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @return the prompt token count or 0
+     */
+    private long getSafePromptTokens(OpenAIUsage usage) {
+        return usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+    }
+
+    /**
+     * Safely get completion token count from usage, returning 0 if null or invalid.
+     *
+     * @param usage the OpenAI usage object (may be null)
+     * @return the completion token count or 0
+     */
+    private long getSafeCompletionTokens(OpenAIUsage usage) {
+        return usage != null && usage.getCompletionTokens() != null
+                ? usage.getCompletionTokens()
+                : 0;
+    }
+
     public OpenAIResponseParser() {
         this.objectMapper = new ObjectMapper();
     }
 
     /**
-     * Parse OpenAI response (dispatches to appropriate method based on type).
+     * Parse OpenAI response DTO to AgentScope ChatResponse.
      *
-     * @param response OpenAI response object (ChatCompletion or ChatCompletionChunk)
+     * @param response OpenAI response DTO
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */
-    public ChatResponse parseResponse(Object response, Instant startTime) {
-        if (response instanceof ChatCompletion completion) {
-            return parseCompletionResponse(completion, startTime);
-        } else if (response instanceof ChatCompletionChunk chunk) {
-            return parseChunkResponse(chunk, startTime);
+    public ChatResponse parseResponse(OpenAIResponse response, Instant startTime) {
+        if (response.isChunk()) {
+            return parseChunkResponse(response, startTime);
         } else {
-            throw new IllegalArgumentException(
-                    "Unsupported response type: " + response.getClass().getName());
+            return parseCompletionResponse(response, startTime);
         }
     }
 
     /**
      * Parse OpenAI non-streaming response.
      *
-     * @param completion ChatCompletion from OpenAI
+     * @param response OpenAI response DTO
      * @param startTime Request start time
      * @return AgentScope ChatResponse
      */
-    protected ChatResponse parseCompletionResponse(ChatCompletion completion, Instant startTime) {
+    protected ChatResponse parseCompletionResponse(OpenAIResponse response, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String finishReason = null;
 
         try {
             // Parse usage information
-            if (completion.usage().isPresent()) {
-                var openAIUsage = completion.usage().get();
+            if (response.getUsage() != null) {
+                OpenAIUsage openAIUsage = response.getUsage();
                 usage =
                         ChatUsage.builder()
-                                .inputTokens((int) openAIUsage.promptTokens())
-                                .outputTokens((int) openAIUsage.completionTokens())
+                                .inputTokens((int) getSafePromptTokens(openAIUsage))
+                                .outputTokens((int) getSafeCompletionTokens(openAIUsage))
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -95,63 +120,140 @@ public class OpenAIResponseParser {
             }
 
             // Parse response content
-            if (!completion.choices().isEmpty()) {
-                ChatCompletion.Choice choice = completion.choices().get(0);
-                ChatCompletionMessage message = choice.message();
+            OpenAIChoice choice = response.getFirstChoice();
+            if (choice != null) {
+                OpenAIMessage message = choice.getMessage();
+                finishReason = choice.getFinishReason();
 
-                if (choice.finishReason().isValid()) {
-                    finishReason = choice.finishReason().asString();
-                }
+                if (message != null) {
+                    // Order matters! Follow this processing order:
+                    // 1. ThinkingBlock first (reasoning_content)
+                    // 2. Then TextBlock (content)
+                    // 3. Finally ToolUseBlock (tool_calls)
 
-                // Parse text content
-                if (message.content() != null && message.content().isPresent()) {
-                    String textContent = message.content().get();
+                    // Parse reasoning/thinking content (for o1 models)
+                    String reasoningContent = message.getReasoningContent();
+                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
+                        contentBlocks.add(
+                                ThinkingBlock.builder().thinking(reasoningContent).build());
+                    }
+
+                    // Parse reasoning details (OpenRouter/Gemini specific)
+                    Map<String, String> reasoningSignatures = new HashMap<>();
+                    Map<String, OpenAIReasoningDetail> reasoningDetailMap = new HashMap<>();
+                    List<OpenAIReasoningDetail> reasoningDetails = message.getReasoningDetails();
+                    if (reasoningDetails != null) {
+                        for (OpenAIReasoningDetail detail : reasoningDetails) {
+                            if (detail.getId() != null) {
+                                reasoningDetailMap.put(detail.getId(), detail);
+                            }
+                            if ("reasoning.encrypted".equals(detail.getType())
+                                    && detail.getData() != null) {
+                                String signature = detail.getData();
+                                if (detail.getId() != null) {
+                                    reasoningSignatures.put(detail.getId(), signature);
+                                }
+                            }
+                        }
+                    }
+
+                    // Parse text content
+                    String textContent = message.getContentAsString();
                     if (textContent != null && !textContent.isEmpty()) {
                         contentBlocks.add(TextBlock.builder().text(textContent).build());
                     }
-                }
 
-                // Parse tool calls
-                if (message.toolCalls() != null && message.toolCalls().isPresent()) {
-                    var toolCalls = message.toolCalls().get();
-                    log.debug("Tool calls detected in non-stream response: {}", toolCalls.size());
+                    // Parse tool calls
+                    List<OpenAIToolCall> toolCalls = message.getToolCalls();
+                    if (toolCalls != null && !toolCalls.isEmpty()) {
+                        log.debug(
+                                "Tool calls detected in non-stream response: {}", toolCalls.size());
 
-                    for (var toolCall : toolCalls) {
-                        if (toolCall.function().isPresent()) {
-                            try {
-                                var functionToolCall = toolCall.function().get();
-                                var function = functionToolCall.function();
-                                String arguments = function.arguments();
+                        for (OpenAIToolCall toolCall : toolCalls) {
+                            if (toolCall.getFunction() != null) {
+                                try {
+                                    String arguments = toolCall.getFunction().getArguments();
+                                    String name = toolCall.getFunction().getName();
+                                    String toolCallId = toolCall.getId();
+                                    String thoughtSignature = toolCall.getThoughtSignature();
 
-                                log.debug(
-                                        "Non-stream tool call: id={}, name={}, arguments={}",
-                                        functionToolCall.id(),
-                                        function.name(),
-                                        arguments);
+                                    // Try to find signature in reasoning details if not present
+                                    if (thoughtSignature == null && toolCallId != null) {
+                                        thoughtSignature = reasoningSignatures.get(toolCallId);
+                                    }
 
-                                Map<String, Object> argsMap = new HashMap<>();
-                                if (arguments != null && !arguments.isEmpty()) {
-                                    @SuppressWarnings("unchecked")
-                                    Map<String, Object> parsed =
-                                            objectMapper.readValue(arguments, Map.class);
-                                    if (parsed != null) argsMap.putAll(parsed);
+                                    // 防御性检查：确保必要字段不为null
+                                    if (name == null) {
+                                        log.warn("Tool call has null name, skipping");
+                                        continue;
+                                    }
+                                    if (toolCallId == null) {
+                                        toolCallId = "tool_call_" + System.currentTimeMillis();
+                                        log.debug(
+                                                "Tool call has null id, generated: {}", toolCallId);
+                                    }
+                                    if (arguments == null) {
+                                        arguments = "";
+                                    }
+
+                                    log.debug(
+                                            "Non-stream tool call: id={}, name={}, arguments={},"
+                                                    + " signature={}",
+                                            toolCallId,
+                                            name,
+                                            arguments,
+                                            thoughtSignature != null ? "present" : "null");
+
+                                    Map<String, Object> argsMap = new HashMap<>();
+                                    if (!arguments.isEmpty()) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> parsed =
+                                                objectMapper.readValue(arguments, Map.class);
+                                        if (parsed != null) {
+                                            argsMap.putAll(parsed);
+                                        }
+                                    }
+
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    if (thoughtSignature != null) {
+                                        metadata.put(
+                                                ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                thoughtSignature);
+                                    }
+                                    // Store full reasoning detail for OpenRouter Gemini models
+                                    if (toolCallId != null
+                                            && reasoningDetailMap.containsKey(toolCallId)) {
+                                        metadata.put(
+                                                "reasoningDetail",
+                                                reasoningDetailMap.get(toolCallId));
+                                    }
+
+                                    contentBlocks.add(
+                                            ToolUseBlock.builder()
+                                                    .id(toolCallId)
+                                                    .name(name)
+                                                    .input(argsMap)
+                                                    .content(arguments)
+                                                    .metadata(metadata)
+                                                    .build());
+
+                                    log.debug(
+                                            "Parsed tool call: id={}, name={}",
+                                            toolCall.getId(),
+                                            name);
+                                } catch (Exception ex) {
+                                    if (ex instanceof JsonProcessingException) {
+                                        log.warn(
+                                                "Failed to parse tool call arguments due to JSON"
+                                                        + " error: {}",
+                                                ex.getMessage());
+                                    } else {
+                                        log.warn(
+                                                "Failed to parse tool call arguments: {}",
+                                                ex.getMessage(),
+                                                ex);
+                                    }
                                 }
-
-                                contentBlocks.add(
-                                        ToolUseBlock.builder()
-                                                .id(functionToolCall.id())
-                                                .name(function.name())
-                                                .input(argsMap)
-                                                .content(arguments)
-                                                .build());
-
-                                log.debug(
-                                        "Parsed tool call: id={}, name={}",
-                                        functionToolCall.id(),
-                                        function.name());
-                            } catch (Exception ex) {
-                                log.warn(
-                                        "Failed to parse tool call arguments: {}", ex.getMessage());
                             }
                         }
                     }
@@ -166,7 +268,7 @@ public class OpenAIResponseParser {
         }
 
         return ChatResponse.builder()
-                .id(completion.id())
+                .id(response.getId())
                 .content(contentBlocks)
                 .usage(usage)
                 .finishReason(finishReason)
@@ -176,23 +278,44 @@ public class OpenAIResponseParser {
     /**
      * Parse OpenAI streaming response chunk.
      *
-     * @param chunk ChatCompletionChunk from OpenAI
+     * @param response OpenAI chunk response DTO
      * @param startTime Request start time
      * @return AgentScope ChatResponse (or null for malformed chunks)
      */
-    protected ChatResponse parseChunkResponse(ChatCompletionChunk chunk, Instant startTime) {
+    protected ChatResponse parseChunkResponse(OpenAIResponse response, Instant startTime) {
+        // Check for error in streaming response chunk
+        if (response.isError()) {
+            OpenAIError error = response.getError();
+            String errorMessage =
+                    error != null && error.getMessage() != null
+                            ? error.getMessage()
+                            : "Unknown error in streaming response";
+            String errorCode = error != null && error.getCode() != null ? error.getCode() : null;
+            throw new io.agentscope.core.model.exception.OpenAIException(
+                    "OpenAI API error in streaming response: " + errorMessage,
+                    400,
+                    errorCode,
+                    null);
+        }
+
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String finishReason = null;
 
         try {
             // Parse usage information (usually only in the last chunk)
-            if (chunk.usage().isPresent()) {
-                var openAIUsage = chunk.usage().get();
+            if (response.getUsage() != null) {
+                OpenAIUsage openAIUsage = response.getUsage();
                 usage =
                         ChatUsage.builder()
-                                .inputTokens((int) openAIUsage.promptTokens())
-                                .outputTokens((int) openAIUsage.completionTokens())
+                                .inputTokens(
+                                        openAIUsage.getPromptTokens() != null
+                                                ? openAIUsage.getPromptTokens()
+                                                : 0)
+                                .outputTokens(
+                                        openAIUsage.getCompletionTokens() != null
+                                                ? openAIUsage.getCompletionTokens()
+                                                : 0)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -200,95 +323,195 @@ public class OpenAIResponseParser {
             }
 
             // Parse chunk content
-            if (!chunk.choices().isEmpty()) {
-                ChatCompletionChunk.Choice choice = chunk.choices().get(0);
-                ChatCompletionChunk.Choice.Delta delta = choice.delta();
-                if (choice.finishReason().isPresent()) {
-                    finishReason = choice.finishReason().get().asString();
-                }
+            OpenAIChoice choice = response.getFirstChoice();
+            if (choice != null) {
+                OpenAIMessage delta = choice.getDelta();
+                finishReason = choice.getFinishReason();
 
-                // Parse text content
-                if (delta.content() != null && delta.content().isPresent()) {
-                    String textContent = delta.content().get();
+                if (delta != null) {
+                    // Order matters! Follow this processing order:
+                    // 1. ThinkingBlock first (reasoning_content)
+                    // 2. Then TextBlock (content)
+                    // 3. Finally ToolUseBlock (tool_calls)
+
+                    // Parse reasoning/thinking content (for o1 models)
+                    String reasoningContent = delta.getReasoningContent();
+                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
+                        contentBlocks.add(
+                                ThinkingBlock.builder().thinking(reasoningContent).build());
+                    }
+
+                    // Parse reasoning details (OpenRouter/Gemini specific)
+                    Map<String, String> reasoningSignatures = new HashMap<>();
+                    Map<Integer, String> reasoningSignaturesByIndex = new HashMap<>();
+                    List<OpenAIReasoningDetail> reasoningDetails = delta.getReasoningDetails();
+                    if (reasoningDetails != null) {
+                        for (OpenAIReasoningDetail detail : reasoningDetails) {
+                            // Handle encrypted reasoning (thought signature)
+                            if ("reasoning.encrypted".equals(detail.getType())
+                                    && detail.getData() != null) {
+
+                                String signature = detail.getData();
+
+                                if (detail.getId() != null) {
+                                    reasoningSignatures.put(detail.getId(), signature);
+
+                                    // Create a standalone ToolUseBlock for the signature
+                                    // This ensures metadata is preserved even if tool_calls list is
+                                    // empty
+                                    // or if we fail to link them by ID/Index
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    metadata.put(
+                                            ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
+                                    metadata.put("reasoningDetail", detail);
+
+                                    contentBlocks.add(
+                                            ToolUseBlock.builder()
+                                                    .id(detail.getId())
+                                                    .metadata(metadata)
+                                                    .build());
+                                }
+
+                                if (detail.getIndex() != null) {
+                                    reasoningSignaturesByIndex.put(detail.getIndex(), signature);
+                                }
+                            }
+                            // Log text reasoning for debugging
+                            else if ("reasoning.text".equals(detail.getType())) {
+                                log.debug("Received reasoning text: {}", detail.getText());
+                            }
+                        }
+                    }
+
+                    // Parse text content
+                    String textContent = delta.getContentAsString();
                     if (textContent != null && !textContent.isEmpty()) {
                         contentBlocks.add(TextBlock.builder().text(textContent).build());
                     }
-                }
 
-                // Parse tool calls (in streaming, these come incrementally)
-                if (delta.toolCalls() != null && delta.toolCalls().isPresent()) {
-                    var toolCalls = delta.toolCalls().get();
-                    log.debug("Streaming tool calls detected: {}", toolCalls.size());
+                    // Parse tool calls (in streaming, these come incrementally)
+                    List<OpenAIToolCall> toolCalls = delta.getToolCalls();
+                    if (toolCalls != null && !toolCalls.isEmpty()) {
+                        log.debug("Streaming tool calls detected: {}", toolCalls.size());
 
-                    for (var toolCall : toolCalls) {
-                        if (toolCall.function().isPresent()) {
-                            try {
-                                var function = toolCall.function().get();
-                                String toolCallId =
-                                        toolCall.id()
-                                                .orElse("streaming_" + System.currentTimeMillis());
-                                String toolName = function.name().orElse("");
-                                String arguments = function.arguments().orElse("");
+                        for (OpenAIToolCall toolCall : toolCalls) {
+                            if (toolCall.getFunction() != null) {
+                                try {
+                                    String toolCallId = toolCall.getId();
+                                    Integer toolIndex = toolCall.getIndex();
+                                    String toolName = toolCall.getFunction().getName();
+                                    String arguments = toolCall.getFunction().getArguments();
+                                    String thoughtSignature = toolCall.getThoughtSignature();
 
-                                log.debug(
-                                        "Streaming tool call chunk: id={}, name={}, arguments={}",
-                                        toolCallId,
-                                        toolName,
-                                        arguments);
-
-                                // For streaming, we get partial tool calls that need to be
-                                // accumulated
-                                if (!toolName.isEmpty()) {
-                                    // First chunk with complete metadata (has tool name)
-                                    Map<String, Object> argsMap = new HashMap<>();
-
-                                    // Try to parse arguments only if they look complete
-                                    if (!arguments.isEmpty()
-                                            && arguments.trim().startsWith("{")
-                                            && arguments.trim().endsWith("}")) {
-                                        try {
-                                            @SuppressWarnings("unchecked")
-                                            Map<String, Object> parsed =
-                                                    objectMapper.readValue(arguments, Map.class);
-                                            if (parsed != null) argsMap.putAll(parsed);
-                                        } catch (Exception parseEx) {
-                                            log.debug(
-                                                    "Partial arguments in streaming (expected): {}",
-                                                    arguments.length() > 50
-                                                            ? arguments.substring(0, 50) + "..."
-                                                            : arguments);
+                                    // Try to find signature in reasoning details if not present
+                                    if (thoughtSignature == null) {
+                                        if (toolCallId != null) {
+                                            thoughtSignature = reasoningSignatures.get(toolCallId);
+                                        }
+                                        if (thoughtSignature == null && toolIndex != null) {
+                                            thoughtSignature =
+                                                    reasoningSignaturesByIndex.get(toolIndex);
                                         }
                                     }
 
-                                    contentBlocks.add(
-                                            ToolUseBlock.builder()
-                                                    .id(toolCallId)
-                                                    .name(toolName)
-                                                    .input(argsMap)
-                                                    .content(
-                                                            arguments) // Store raw for accumulation
-                                                    .build());
+                                    if (toolCallId == null) {
+                                        toolCallId = "streaming_" + System.currentTimeMillis();
+                                    }
+                                    if (toolName == null) {
+                                        toolName = "";
+                                    }
+                                    if (arguments == null) {
+                                        arguments = "";
+                                    }
+
                                     log.debug(
-                                            "Added streaming tool call chunk: id={}, name={}",
+                                            "Streaming tool call chunk: id={}, name={},"
+                                                    + " arguments={}, signature={}",
                                             toolCallId,
-                                            toolName);
-                                } else if (!arguments.isEmpty()) {
-                                    // Subsequent chunks with only argument fragments
-                                    contentBlocks.add(
-                                            ToolUseBlock.builder()
-                                                    .id("") // Empty ID
-                                                    .name(FRAGMENT_PLACEHOLDER)
-                                                    .input(new HashMap<>())
-                                                    .content(arguments)
-                                                    .build());
-                                    log.debug(
-                                            "Added argument fragment: {}",
-                                            arguments.substring(
-                                                    0, Math.min(30, arguments.length())));
+                                            toolName,
+                                            arguments,
+                                            thoughtSignature != null ? "present" : "null");
+
+                                    // For streaming, we get partial tool calls that need to be
+                                    // accumulated
+                                    if (!toolName.isEmpty()) {
+                                        // First chunk with complete metadata (has tool name)
+                                        Map<String, Object> argsMap = new HashMap<>();
+
+                                        // Try to parse arguments only if they look complete
+                                        if (!arguments.isEmpty()
+                                                && arguments.trim().startsWith("{")
+                                                && arguments.trim().endsWith("}")) {
+                                            try {
+                                                @SuppressWarnings("unchecked")
+                                                Map<String, Object> parsed =
+                                                        objectMapper.readValue(
+                                                                arguments, Map.class);
+                                                if (parsed != null) {
+                                                    argsMap.putAll(parsed);
+                                                }
+                                            } catch (Exception parseEx) {
+                                                log.debug(
+                                                        "Partial arguments in streaming (expected):"
+                                                                + " {}",
+                                                        arguments.length() > 50
+                                                                ? arguments.substring(0, 50) + "..."
+                                                                : arguments);
+                                            }
+                                        }
+
+                                        Map<String, Object> metadata = new HashMap<>();
+                                        if (thoughtSignature != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                    thoughtSignature);
+                                        }
+
+                                        contentBlocks.add(
+                                                ToolUseBlock.builder()
+                                                        .id(toolCallId)
+                                                        .name(toolName)
+                                                        .input(argsMap)
+                                                        .content(arguments)
+                                                        .metadata(metadata)
+                                                        .build());
+                                        log.debug(
+                                                "Added streaming tool call chunk: id={}, name={}",
+                                                toolCallId,
+                                                toolName);
+                                    } else if (!arguments.isEmpty() || thoughtSignature != null) {
+                                        // Subsequent chunks with only argument fragments or just
+                                        // signature
+                                        Map<String, Object> metadata = new HashMap<>();
+                                        if (thoughtSignature != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                    thoughtSignature);
+                                        }
+
+                                        contentBlocks.add(
+                                                ToolUseBlock.builder()
+                                                        .id("")
+                                                        .name(FRAGMENT_PLACEHOLDER)
+                                                        .input(new HashMap<>())
+                                                        .content(arguments)
+                                                        .metadata(metadata)
+                                                        .build());
+                                        if (!arguments.isEmpty()) {
+                                            log.debug(
+                                                    "Added argument fragment: {}",
+                                                    arguments.substring(
+                                                            0, Math.min(30, arguments.length())));
+                                        }
+                                        if (thoughtSignature != null) {
+                                            log.debug("Added thought signature fragment");
+                                        }
+                                    }
+                                } catch (Exception ex) {
+                                    log.warn(
+                                            "Failed to parse streaming tool call: {}",
+                                            ex.getMessage());
                                 }
-                            } catch (Exception ex) {
-                                log.warn(
-                                        "Failed to parse streaming tool call: {}", ex.getMessage());
                             }
                         }
                     }
@@ -302,7 +525,7 @@ public class OpenAIResponseParser {
         }
 
         return ChatResponse.builder()
-                .id(chunk.id())
+                .id(response.getId())
                 .content(contentBlocks)
                 .usage(usage)
                 .finishReason(finishReason)

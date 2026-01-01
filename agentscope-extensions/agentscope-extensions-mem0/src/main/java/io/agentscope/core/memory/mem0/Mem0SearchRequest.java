@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -77,6 +77,10 @@ public class Mem0SearchRequest {
     /** Project ID (optional). */
     @JsonProperty("project_id")
     private String projectId;
+
+    /** User identifier for filtering memories (optional). */
+    @JsonProperty("user_id")
+    private String userId;
 
     /** Default constructor for Jackson. */
     public Mem0SearchRequest() {
@@ -175,6 +179,18 @@ public class Mem0SearchRequest {
         this.projectId = projectId;
     }
 
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+        // Automatically sync to filters if set
+        if (userId != null && filters != null) {
+            filters.put("user_id", userId);
+        }
+    }
+
     /**
      * Creates a new builder for Mem0SearchRequest.
      *
@@ -197,6 +213,7 @@ public class Mem0SearchRequest {
         private Double threshold;
         private String orgId;
         private String projectId;
+        private String userId;
 
         public Builder query(String query) {
             this.query = query;
@@ -227,12 +244,15 @@ public class Mem0SearchRequest {
         }
 
         /**
-         * Convenience method to add user_id to filters.
+         * Sets the user identifier.
+         *
+         * <p>This method sets the userId field and also adds it to filters for v2 API compatibility.
          *
          * @param userId The user identifier
          * @return This builder
          */
         public Builder userId(String userId) {
+            this.userId = userId;
             if (userId != null) {
                 this.filters.put("user_id", userId);
             }
@@ -331,6 +351,10 @@ public class Mem0SearchRequest {
             request.setThreshold(threshold);
             request.setOrgId(orgId);
             request.setProjectId(projectId);
+            // Set userId after filters to ensure it's synced
+            if (userId != null) {
+                request.setUserId(userId);
+            }
             return request;
         }
     }

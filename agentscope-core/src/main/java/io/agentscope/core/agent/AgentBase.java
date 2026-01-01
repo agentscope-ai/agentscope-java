@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -22,7 +23,7 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModule.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -52,7 +53,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>AgentBase provides infrastructure (hooks, subscriptions, interrupt, state) but not domain
  *       logic</li>
  *   <li>Memory management is delegated to concrete agents that need it (e.g., ReActAgent)</li>
- *   <li>State management is inherited from StateModuleBase</li>
+ *   <li>State management implements StateModule interface</li>
  *   <li>Interrupt mechanism uses reactive patterns: subclasses call checkInterruptedAsync()
  *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
  *   <li>Observe pattern: agents can receive messages without generating a reply</li>
@@ -83,7 +84,7 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
-public abstract class AgentBase extends StateModuleBase implements Agent {
+public abstract class AgentBase implements StateModule, Agent {
 
     private final String agentId;
     private final String name;
@@ -126,18 +127,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
-        super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
-
-        // Register basic agent state
-        registerState("id", obj -> this.agentId, obj -> obj);
-        registerState("name", obj -> this.name, obj -> obj);
-        registerState("description", obj -> this.description, obj -> obj);
     }
 
     @Override
@@ -217,6 +212,37 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Process multiple input messages and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
+     *
+     * @param msgs Input messages
+     * @param schema com.fasterxml.jackson.databind.JsonNode instance defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
+        if (!running.compareAndSet(false, true) && checkRunning) {
+            return Mono.error(
+                    new IllegalStateException(
+                            "Agent is still running, please wait for it to finish"));
+        }
+        resetInterruptFlag();
+
+        return TracerRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(m -> doCall(m, schema))
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))))
+                .doFinally(signalType -> running.set(false));
+    }
+
+    /**
      * Internal implementation for processing multiple input messages.
      * Subclasses must implement their specific logic here.
      *
@@ -238,6 +264,21 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return Mono.error(
                 new UnsupportedOperationException(
                         "Structured output not supported by " + getClass().getSimpleName()));
+    }
+
+    /**
+     * Internal implementation for processing multiple messages with structured output.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param msgs Input messages
+     * @param outputSchema com.fasterxml.jackson.databind.JsonNode instance defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + outputSchema.asText()));
     }
 
     public static void addSystemHook(Hook hook) {
@@ -638,12 +679,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                             })
                                     .subscribe(
                                             finalMsg -> {
-                                                Event finalEvent =
-                                                        new Event(
-                                                                EventType.AGENT_RESULT,
-                                                                finalMsg,
-                                                                true);
-                                                sink.next(finalEvent);
+                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
+                                                    Event finalEvent =
+                                                            new Event(
+                                                                    EventType.AGENT_RESULT,
+                                                                    finalMsg,
+                                                                    true);
+                                                    sink.next(finalEvent);
+                                                }
 
                                                 // Complete the stream
                                                 sink.complete();
@@ -657,15 +700,5 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
-    }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "agent" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "agent";
     }
 }

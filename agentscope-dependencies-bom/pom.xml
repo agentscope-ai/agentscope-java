@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -44,7 +44,7 @@
     <licenses>
         <license>
             <name>Apache 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.5-SNAPSHOT</revision>
+        <revision>1.0.6-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -82,21 +82,24 @@
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.10</milvus.version>
+        <milvus.version>2.6.11</milvus.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.5.0</mysql.version>
         <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
-        <redisson.version>4.0.0</redisson.version>
+        <redisson.version>4.1.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.1</xxl-job.version>
+        <quartz.version>2.3.2</quartz.version>
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
+        <nacos-client.version>3.1.1</nacos-client.version>
+
 
         <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -337,6 +340,13 @@
                 <version>${xxl-job.version}</version>
             </dependency>
 
+            <!-- Quartz Core -->
+            <dependency>
+                <groupId>org.quartz-scheduler</groupId>
+                <artifactId>quartz</artifactId>
+                <version>${quartz.version}</version>
+            </dependency>
+
             <!-- Spring WebFlux for AG-UI support -->
             <dependency>
                 <groupId>org.springframework</groupId>
@@ -349,6 +359,13 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-autoconfigure</artifactId>
                 <version>${spring-boot.version}</version>
+            </dependency>
+
+            <!-- Nacos dependencies -->
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos-client.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

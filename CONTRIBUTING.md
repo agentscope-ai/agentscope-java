@@ -110,7 +110,7 @@ Please update the docs/llm/agentscope-llm-guide.md file to add content about [Fe
 Context:
 - Feature location: [package path/class name]
 - Main purpose: [brief description]
-- Version requirement: [minimum version, e.g., 1.0.4+]
+- Version requirement: [minimum version, e.g., 1.0.5+]
 - Related API changes: [if any]
 - Dependencies: [other features it depends on, if any]
 

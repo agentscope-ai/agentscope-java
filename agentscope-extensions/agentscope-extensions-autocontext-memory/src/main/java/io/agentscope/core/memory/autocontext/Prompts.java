@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -141,7 +141,7 @@ public class Prompts {
     // Strategy 6: Current Round Message Compression
     // ============================================================================
 
-    /** Prompt for compressing current round messages. */
+    /** Prompt for compressing current round messages (main instruction, without character count requirement). */
     public static final String CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT =
             "You are an expert content compression specialist. Your task is to compress and"
                 + " summarize the following current round messages (tool calls and results).\n"
@@ -150,12 +150,7 @@ public class Prompts {
                 + " CONSERVATIVE when compressing. Preserve as much content as possible, as this"
                 + " information is actively being used in the current conversation.\n"
                 + "\n"
-                + "COMPRESSION REQUIREMENT:\n"
-                + "The original content contains approximately %d characters. You MUST compress it"
-                + " to approximately %d characters (%.0f%% of original). This is a STRICT"
-                + " requirement.\n"
-                + "\n"
-                + "Compression principles (for %.0f%% compression rate):\n"
+                + "Compression principles:\n"
                 + "    - Preserve all critical information, key details, and important context\n"
                 + "    - Retain tool names, IDs, and important parameters\n"
                 + "    - Keep key results, outcomes, and status information\n"
@@ -182,4 +177,19 @@ public class Prompts {
                 + " state changes, etc.), pay extra attention to preserve detailed information"
                 + " about what was written, modified, or changed, including file paths, content"
                 + " summaries, and modification results";
+
+    /**
+     * Character count requirement template for current round message compression.
+     * This should be placed after the message list end marker.
+     * Format parameters: %d (originalCharCount), %d (targetCharCount), %.0f (compressionRatioPercent), %.0f (compressionRatioPercent).
+     */
+    public static final String CURRENT_ROUND_MESSAGE_COMPRESS_CHAR_REQUIREMENT =
+            "\n"
+                + "COMPRESSION REQUIREMENT:\n"
+                + "The original content contains approximately %d characters. You MUST compress it"
+                + " to approximately %d characters (%.0f%% of original). This is a STRICT"
+                + " requirement.\n"
+                + "\n"
+                + "Please ensure your output meets this character limit while following the"
+                + " compression principles above.";
 }

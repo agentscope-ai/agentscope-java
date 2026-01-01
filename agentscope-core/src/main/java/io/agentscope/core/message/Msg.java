@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,13 +19,16 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.state.State;
 import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,7 +50,7 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Msg {
+public class Msg implements State {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
@@ -87,8 +90,21 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
+        this.content =
+                Objects.nonNull(content)
+                        ? content.stream().filter(Objects::nonNull).toList()
+                        : List.of();
+        this.metadata = new HashMap<>();
+        if (Objects.nonNull(metadata)) {
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (Objects.isNull(key) || Objects.isNull(value)) {
+                    continue;
+                }
+                this.metadata.put(key, value);
+            }
+        }
         this.timestamp = timestamp;
     }
 
@@ -260,6 +276,75 @@ public class Msg {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
                             + targetClass.getSimpleName()
+                            + ". Ensure the target class has appropriate fields matching metadata"
+                            + " keys.",
+                    e);
+        }
+    }
+
+    /**
+     * Extract structured data from message metadata and convert it to the java.util.Map.
+     *
+     * <p>This method is useful when the message contains structured input from a user agent
+     * or structured output from an LLM. support for using dynamic schema processing
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * String json = """
+     *         {
+     *                 						 "type": "object",
+     *                 						 "properties": {
+     *                 						   "productName": {
+     *                 							 "type": "string"
+     *                 						                                              },
+     *                 						   "features": {
+     *                 							 "type": "array",
+     *                 							 "items": {
+     *                 							   "type": "string"                                             *                                           }
+     *                 						   },
+     *                 						   "pricing": {
+     *                 							 "type": "object",
+     *                 							 "properties": {
+     *                 							   "amount": {
+     *                                                  e": "number"
+     *                 							   },
+     *                 							   "currency": {
+     *                                                  e": "string"
+     *                                             }
+     *                                           }
+     *                 						   },
+     *                 						   "ratings": {
+     *                 							 "type": "object",
+     *                 							 "additionalProperties": {
+     *                                                   e": "integer"
+     *                                           }
+     *                                         }
+     *                                       }
+     *                 					   }
+     *         """;
+     *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
+     *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
+     *   Map<String, Object> structuredData = msg.getStructuredData(false);
+     * }</pre>
+     *
+     * @return The copied metadata
+     * @throws IllegalStateException if no metadata exists
+     */
+    @Transient
+    @JsonIgnore
+    public Map<String, Object> getStructuredData(boolean mutable) {
+        if (metadata == null || metadata.isEmpty()) {
+            throw new IllegalStateException(
+                    "No structured data in message. Use hasStructuredData() to check first.");
+        }
+        if (mutable) {
+            return metadata;
+        }
+        try {
+            return OBJECT_MAPPER.convertValue(metadata, new TypeReference<>() {});
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to convert metadata to "
                             + ". Ensure the target class has appropriate fields matching metadata"
                             + " keys.",
                     e);

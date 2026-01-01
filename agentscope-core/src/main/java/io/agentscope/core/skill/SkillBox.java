@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.Tool;
@@ -32,7 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
-public class SkillBox extends StateModuleBase {
+public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
@@ -461,34 +461,29 @@ public class SkillBox extends StateModuleBase {
             }
             skillBox.registerSkill(skill);
 
-            if (toolObject != null || agentTool != null || mcpClientWrapper != null) {
+            if (toolObject != null
+                    || agentTool != null
+                    || mcpClientWrapper != null
+                    || subAgentProvider != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
-                    throw new IllegalStateException("Must call toolkit() before apply()");
+                    throw new IllegalStateException(
+                            "Must bind toolkit or call toolkit() before apply()");
                 }
                 String skillToolGroup = skill.getSkillId() + "_skill_tools";
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
-                Toolkit.ToolRegistration toolRegistration =
-                        toolkit.registration()
-                                .group(skillToolGroup)
-                                .presetParameters(presetParameters)
-                                .extendedModel(extendedModel)
-                                .enableTools(enableTools)
-                                .disableTools(disableTools);
-                if (toolObject != null) {
-                    toolRegistration.tool(toolObject);
-                }
-                if (agentTool != null) {
-                    toolRegistration.agentTool(agentTool);
-                }
-                if (mcpClientWrapper != null) {
-                    toolRegistration.mcpClient(mcpClientWrapper);
-                }
-                if (subAgentProvider != null) {
-                    toolRegistration.subAgent(subAgentProvider, subAgentConfig);
-                }
-                toolRegistration.apply();
+                toolkit.registration()
+                        .group(skillToolGroup)
+                        .presetParameters(presetParameters)
+                        .extendedModel(extendedModel)
+                        .enableTools(enableTools)
+                        .disableTools(disableTools)
+                        .agentTool(agentTool)
+                        .tool(toolObject)
+                        .mcpClient(mcpClientWrapper)
+                        .subAgent(subAgentProvider, subAgentConfig)
+                        .apply();
             }
         }
     }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,20 +17,19 @@ package io.agentscope.core.session.mysql.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.session.mysql.MysqlSession;
-import io.agentscope.core.state.StateModule;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
@@ -45,8 +44,8 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
  * End-to-end tests for {@link MysqlSession} using an in-memory H2 database in MySQL compatibility
  * mode.
  *
- * <p>This makes the E2E tests runnable in CI without provisioning a real MySQL instance and
- * without requiring any environment variables.
+ * <p>This makes the E2E tests runnable in CI without provisioning a real MySQL instance and without
+ * requiring any environment variables.
  */
 @Tag("e2e")
 @Execution(ExecutionMode.CONCURRENT)
@@ -75,13 +74,11 @@ class MysqlSessionE2ETest {
     }
 
     @Test
-    @DisplayName("Smoke: auto-create database/table + save/load/list/info/delete flow")
+    @DisplayName("Smoke: auto-create database/table + save/load/list/delete flow")
     void testMysqlSessionEndToEndFlow() {
         System.out.println("\n=== Test: MysqlSession E2E Flow ===");
 
         dataSource = createH2DataSource();
-        // H2 folds unquoted identifiers to upper-case. Keep schema/table names upper-case so that
-        // INFORMATION_SCHEMA lookups in MysqlSession match exactly.
         String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
         String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
         createdSchemaName = schemaName;
@@ -89,49 +86,43 @@ class MysqlSessionE2ETest {
         initSchemaAndTable(dataSource, schemaName, tableName);
         MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
 
-        // Prepare state modules
-        TestStateModule moduleA = new TestStateModule("moduleA");
-        TestStateModule moduleB = new TestStateModule("moduleB");
-        moduleA.setValue("hello");
-        moduleB.setValue("world");
+        // Prepare test states
+        TestState stateA = new TestState("hello", 1);
+        TestState stateB = new TestState("world", 2);
 
-        String sessionId = "mysql_e2e_session_" + UUID.randomUUID();
-        Map<String, StateModule> modules = Map.of("moduleA", moduleA, "moduleB", moduleB);
+        String sessionIdStr = "mysql_e2e_session_" + UUID.randomUUID();
+        SessionKey sessionKey = SimpleSessionKey.of(sessionIdStr);
 
-        // Save
-        session.saveSessionState(sessionId, modules);
-        assertTrue(session.sessionExists(sessionId));
+        // Save single states
+        session.save(sessionKey, "moduleA", stateA);
+        session.save(sessionKey, "moduleB", stateB);
+        assertTrue(session.exists(sessionKey));
 
-        // Load into fresh modules
-        TestStateModule loadedA = new TestStateModule("moduleA");
-        TestStateModule loadedB = new TestStateModule("moduleB");
-        session.loadSessionState(sessionId, false, Map.of("moduleA", loadedA, "moduleB", loadedB));
+        // Load states
+        Optional<TestState> loadedA = session.get(sessionKey, "moduleA", TestState.class);
+        Optional<TestState> loadedB = session.get(sessionKey, "moduleB", TestState.class);
 
-        assertEquals("hello", loadedA.getValue());
-        assertEquals("world", loadedB.getValue());
+        assertTrue(loadedA.isPresent());
+        assertTrue(loadedB.isPresent());
+        assertEquals("hello", loadedA.get().value());
+        assertEquals("world", loadedB.get().value());
+        assertEquals(1, loadedA.get().count());
+        assertEquals(2, loadedB.get().count());
 
-        // listSessions
-        List<String> sessions = session.listSessions();
-        assertTrue(sessions.contains(sessionId), "listSessions should contain saved session id");
+        // listSessionKeys
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
+        assertTrue(
+                sessionKeys.contains(sessionKey), "listSessionKeys should contain saved session");
 
-        // getSessionInfo
-        SessionInfo info = session.getSessionInfo(sessionId);
-        assertNotNull(info);
-        assertEquals(sessionId, info.getSessionId());
-        assertTrue(info.getSize() > 0, "SessionInfo.size should be > 0");
-        assertEquals(2, info.getComponentCount(), "Should contain 2 components");
-        assertTrue(info.getLastModified() > 0, "SessionInfo.lastModified should be > 0");
-
-        // deleteSession
-        assertTrue(session.deleteSession(sessionId));
-        assertFalse(session.sessionExists(sessionId));
-        assertFalse(session.deleteSession(sessionId), "Delete again should return false");
+        // delete session
+        session.delete(sessionKey);
+        assertFalse(session.exists(sessionKey));
     }
 
     @Test
-    @DisplayName("allowNotExist=true should silently ignore missing session")
-    void testLoadAllowNotExistTrue() {
-        System.out.println("\n=== Test: allowNotExist=true ===");
+    @DisplayName("Save and load list state correctly")
+    void testSaveAndLoadListState() {
+        System.out.println("\n=== Test: Save and Load List State ===");
 
         dataSource = createH2DataSource();
         String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
@@ -141,10 +132,66 @@ class MysqlSessionE2ETest {
         initSchemaAndTable(dataSource, schemaName, tableName);
         MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
 
-        TestStateModule module = new TestStateModule("moduleA");
-        session.loadSessionState("missing_" + UUID.randomUUID(), true, Map.of("moduleA", module));
-        // Should not throw, and module should remain default
-        assertNull(module.getValue());
+        String sessionIdStr = "mysql_e2e_list_" + UUID.randomUUID();
+        SessionKey sessionKey = SimpleSessionKey.of(sessionIdStr);
+
+        // Save list state
+        List<TestState> states = List.of(new TestState("item1", 1), new TestState("item2", 2));
+        session.save(sessionKey, "stateList", states);
+
+        // Load list state
+        List<TestState> loaded = session.getList(sessionKey, "stateList", TestState.class);
+        assertEquals(2, loaded.size());
+        assertEquals("item1", loaded.get(0).value());
+        assertEquals("item2", loaded.get(1).value());
+
+        // Add more items incrementally
+        List<TestState> moreStates =
+                List.of(
+                        new TestState("item1", 1),
+                        new TestState("item2", 2),
+                        new TestState("item3", 3));
+        session.save(sessionKey, "stateList", moreStates);
+
+        // Verify all items
+        List<TestState> allLoaded = session.getList(sessionKey, "stateList", TestState.class);
+        assertEquals(3, allLoaded.size());
+        assertEquals("item3", allLoaded.get(2).value());
+    }
+
+    @Test
+    @DisplayName("Session does not exist should return false")
+    void testSessionNotExists() {
+        System.out.println("\n=== Test: Session Not Exists ===");
+
+        dataSource = createH2DataSource();
+        String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
+        String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
+        createdSchemaName = schemaName;
+
+        initSchemaAndTable(dataSource, schemaName, tableName);
+        MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
+
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent_" + UUID.randomUUID());
+        assertFalse(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Get non-existent state should return empty")
+    void testGetNonExistentState() {
+        System.out.println("\n=== Test: Get Non-Existent State ===");
+
+        dataSource = createH2DataSource();
+        String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
+        String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
+        createdSchemaName = schemaName;
+
+        initSchemaAndTable(dataSource, schemaName, tableName);
+        MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
+
+        SessionKey sessionKey = SimpleSessionKey.of("missing_" + UUID.randomUUID());
+        Optional<TestState> result = session.get(sessionKey, "moduleA", TestState.class);
+        assertFalse(result.isPresent());
     }
 
     @Test
@@ -156,7 +203,6 @@ class MysqlSessionE2ETest {
         String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E_MISSING").toUpperCase();
         String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS_MISSING").toUpperCase();
 
-        // Do not set createdSchemaName because we didn't create it; cleanup not needed.
         assertThrows(
                 IllegalStateException.class,
                 () -> new MysqlSession(dataSource, schemaName, tableName, false));
@@ -171,20 +217,16 @@ class MysqlSessionE2ETest {
         return ds;
     }
 
-    /**
-     * Generates a safe MySQL identifier (letters/numbers/underscore) and keeps it <= 64 chars.
-     */
+    /** Generates a safe MySQL identifier (letters/numbers/underscore) and keeps it <= 64 chars. */
     private static String generateSafeIdentifier(String prefix) {
         String suffix = UUID.randomUUID().toString().replace("-", "_");
         String raw = prefix + "_" + suffix;
-        // Ensure first char is a letter or underscore
         if (!Character.isLetter(raw.charAt(0)) && raw.charAt(0) != '_') {
             raw = "_" + raw;
         }
         if (raw.length() > 64) {
             raw = raw.substring(0, 64);
         }
-        // Avoid trailing underscore-only truncation weirdness
         raw = raw.replaceAll("_+$", "_e2e");
         if (raw.length() > 64) {
             raw = raw.substring(0, 64);
@@ -199,42 +241,24 @@ class MysqlSessionE2ETest {
             stmt.execute("CREATE SCHEMA IF NOT EXISTS " + schemaName);
             stmt.execute("SET SCHEMA " + schemaName);
             stmt.execute("DROP TABLE IF EXISTS " + tableName);
-            // Keep DDL compatible with H2 while still exercising MysqlSession's DML (including
-            // "ON DUPLICATE KEY UPDATE") in MySQL mode.
+            // Table structure with item_index for incremental list storage
             stmt.execute(
                     "CREATE TABLE "
                             + tableName
                             + " ("
-                            + "session_id VARCHAR(255) PRIMARY KEY, "
-                            + "state_data TEXT NOT NULL, "
+                            + "session_id VARCHAR(255) NOT NULL, "
+                            + "state_key VARCHAR(255) NOT NULL, "
+                            + "item_index INT NOT NULL DEFAULT 0, "
+                            + "state_data LONGTEXT NOT NULL, "
                             + "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-                            + "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                            + "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                            + "PRIMARY KEY (session_id, state_key, item_index)"
                             + ")");
         } catch (SQLException e) {
             throw new RuntimeException("Failed to init schema/table for H2 e2e", e);
         }
     }
 
-    private static class TestStateModule extends StateModuleBase {
-        private final String componentName;
-        private String value;
-
-        TestStateModule(String componentName) {
-            this.componentName = componentName;
-            registerState("value");
-        }
-
-        @Override
-        public String getComponentName() {
-            return componentName;
-        }
-
-        public String getValue() {
-            return value;
-        }
-
-        public void setValue(String value) {
-            this.value = value;
-        }
-    }
+    /** Simple test state record for testing. */
+    public record TestState(String value, int count) implements State {}
 }

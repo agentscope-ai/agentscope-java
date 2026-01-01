@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,13 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.dialect.Dialects;
+import com.networknt.schema.serialization.DefaultNodeReader;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -35,6 +41,7 @@ import io.agentscope.core.util.MessageUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -67,6 +74,7 @@ public class StructuredOutputHandler {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final Class<?> targetClass;
+    private final JsonNode schemaDesc;
     private final Toolkit toolkit;
     private final Memory memory;
     private final String agentName;
@@ -80,6 +88,7 @@ public class StructuredOutputHandler {
      * Create a structured output handler.
      *
      * @param targetClass The target class for structured output
+     * @param schemaDesc  The json schema for structured output
      * @param toolkit The toolkit for tool registration
      * @param memory The memory for checkpoint management
      * @param agentName The agent name for message creation
@@ -87,11 +96,13 @@ public class StructuredOutputHandler {
      */
     public StructuredOutputHandler(
             Class<?> targetClass,
+            JsonNode schemaDesc,
             Toolkit toolkit,
             Memory memory,
             String agentName,
             StructuredOutputReminder reminder) {
         this.targetClass = targetClass;
+        this.schemaDesc = schemaDesc;
         this.toolkit = toolkit;
         this.memory = memory;
         this.agentName = agentName;
@@ -105,7 +116,18 @@ public class StructuredOutputHandler {
      * Registers temporary tool for structured output generation.
      */
     public void prepare() {
-        Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
+        if (Objects.isNull(targetClass) && Objects.isNull(schemaDesc)) {
+            throw new IllegalStateException(
+                    "Can not prepare,because targetClass and schemaDesc both not exists");
+        }
+        if (Objects.nonNull(targetClass) && Objects.nonNull(schemaDesc)) {
+            throw new IllegalStateException(
+                    "Can not prepare,because targetClass and schemaDesc both exists");
+        }
+        Map<String, Object> jsonSchema =
+                Objects.nonNull(targetClass)
+                        ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
+                        : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
 
@@ -270,9 +292,38 @@ public class StructuredOutputHandler {
                         () -> {
                             Object responseData = param.getInput().get("response");
 
-                            if (targetClass != null && responseData != null) {
+                            if ((targetClass != null || schemaDesc != null)
+                                    && responseData != null) {
                                 try {
-                                    OBJECT_MAPPER.convertValue(responseData, targetClass);
+                                    if (Objects.nonNull(targetClass)) {
+                                        OBJECT_MAPPER.convertValue(responseData, targetClass);
+                                    } else {
+                                        SchemaRegistry schemaRegistry =
+                                                SchemaRegistry.withDialect(
+                                                        Dialects.getDraft202012(),
+                                                        builder ->
+                                                                builder.nodeReader(
+                                                                        DefaultNodeReader.Builder
+                                                                                ::locationAware));
+                                        com.networknt.schema.Schema schema =
+                                                schemaRegistry.getSchema(schemaDesc);
+                                        List<Error> errors =
+                                                schema.validate(
+                                                        OBJECT_MAPPER.writeValueAsString(
+                                                                responseData),
+                                                        InputFormat.JSON,
+                                                        executionContext ->
+                                                                executionContext.executionConfig(
+                                                                        executionConfig ->
+                                                                                executionConfig
+                                                                                        .formatAssertionsEnabled(
+                                                                                                true)));
+                                        if (Objects.nonNull(errors) && !errors.isEmpty()) {
+                                            StringBuilder err = new StringBuilder();
+                                            errors.forEach(e -> err.append(e.getMessage()));
+                                            throw new RuntimeException(err.toString());
+                                        }
+                                    }
                                 } catch (Exception e) {
                                     String simplifiedError = simplifyValidationError(e);
                                     String errorMsg =
@@ -472,15 +523,21 @@ public class StructuredOutputHandler {
                 assistantMsgIndex,
                 toolMsgIndex);
 
-        // Delete from higher index first to avoid index shifting issues
-        memory.deleteMessage(toolMsgIndex);
-        memory.deleteMessage(assistantMsgIndex);
+        // Remove all messages from the first generate_response call to the end
+        // This handles cases where the model retried multiple times, leaving multiple
+        // intermediate ASSISTANT/TOOL message pairs in memory
+        int messagesToDelete = currentSize - assistantMsgIndex;
+        for (int i = 0; i < messagesToDelete; i++) {
+            memory.deleteMessage(
+                    assistantMsgIndex); // Always delete at same index after each removal
+        }
 
         memory.addMessage(finalResponseMsg);
 
         log.debug(
-                "Cleanup complete. Memory now has {} messages (was {})",
+                "Cleanup complete. Memory now has {} messages (was {}, deleted {})",
                 memory.getMessages().size(),
-                currentSize);
+                currentSize,
+                messagesToDelete);
     }
 }
