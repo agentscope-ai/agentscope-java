@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,11 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.PlanState;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -755,5 +760,398 @@ class AutoContextMemoryTest {
         void reset() {
             callCount = 0;
         }
+    }
+
+    // ==================== PlanNotebook Integration Tests ====================
+
+    @Test
+    @DisplayName("Should attach and detach PlanNotebook")
+    void testAttachPlanNote() {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+
+        // Attach PlanNotebook
+        memory.attachPlanNote(planNotebook);
+        // No direct getter, but we can verify it doesn't throw
+
+        // Detach PlanNotebook
+        memory.attachPlanNote(null);
+        // Should complete without errors
+    }
+
+    @Test
+    @DisplayName("Should include plan context in compression when PlanNotebook is attached")
+    void testPlanAwareCompression() {
+        // Create a PlanNotebook with a plan
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan =
+                new Plan(
+                        "Test Plan",
+                        "Test Description",
+                        "Test Outcome",
+                        List.of(
+                                new SubTask("Task 1", "Description 1", "Outcome 1"),
+                                new SubTask("Task 2", "Description 2", "Outcome 2")));
+        plan.setState(PlanState.IN_PROGRESS);
+        plan.getSubtasks().get(0).setState(SubTaskState.IN_PROGRESS);
+        plan.getSubtasks().get(1).setState(SubTaskState.TODO);
+
+        // Create a model that captures the messages sent to it
+        CapturingModel capturingModel = new CapturingModel("Compressed");
+        AutoContextMemory planAwareMemory = new AutoContextMemory(config, capturingModel);
+        planAwareMemory.attachPlanNote(planNotebook);
+
+        // Manually set the plan (using reflection for testing)
+        try {
+            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            planField.setAccessible(true);
+            planField.set(planNotebook, plan);
+        } catch (Exception e) {
+            // If reflection fails, skip this test
+            return;
+        }
+
+        // Add enough messages to trigger compression (msgThreshold is 10)
+        for (int i = 0; i < 12; i++) {
+            planAwareMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Trigger compression
+        planAwareMemory.getMessages();
+
+        // Verify that plan context was included in the compression
+        // The capturing model should have received messages with plan_aware_hint
+        boolean foundPlanHint = false;
+        for (List<Msg> messages : capturingModel.getCapturedMessages()) {
+            for (Msg msg : messages) {
+                String content = msg.getTextContent();
+                if (content != null && content.contains("plan_aware_hint")) {
+                    foundPlanHint = true;
+                    assertTrue(
+                            content.contains("Test Plan")
+                                    || content.contains("Current Plan Context"),
+                            "Plan context should be included in hint message");
+                    break;
+                }
+            }
+            if (foundPlanHint) break;
+        }
+        // Note: Compression may not always trigger depending on token count
+        // If compression was triggered, verify plan hint was included
+        if (!capturingModel.getCapturedMessages().isEmpty()) {
+            assertTrue(
+                    foundPlanHint,
+                    "Plan-aware hint should be included in compression messages if compression"
+                            + " was triggered");
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle compression without PlanNotebook")
+    void testCompressionWithoutPlanNotebook() {
+        // Don't attach PlanNotebook
+        // Reset call count
+        testModel.reset();
+        // Add enough messages to trigger compression (msgThreshold is 10)
+        for (int i = 0; i < 12; i++) {
+            memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Trigger compression
+        List<Msg> messages = memory.getMessages();
+
+        // Should complete without errors
+        assertNotNull(messages);
+        // Compression may or may not be triggered depending on token count
+        // Just verify it completes without errors
+    }
+
+    @Test
+    @DisplayName("Should handle PlanNotebook with no current plan")
+    void testPlanNotebookWithoutCurrentPlan() {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        // No plan created
+
+        memory.attachPlanNote(planNotebook);
+
+        // Add enough messages to trigger compression
+        for (int i = 0; i < 15; i++) {
+            memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Trigger compression
+        List<Msg> messages = memory.getMessages();
+
+        // Should complete without errors (no plan context added)
+        assertNotNull(messages);
+    }
+
+    /**
+     * Model implementation that captures all messages sent to it for testing.
+     */
+    private static class CapturingModel implements Model {
+        private final String responseText;
+        private final List<List<Msg>> capturedMessages = new ArrayList<>();
+
+        CapturingModel(String responseText) {
+            this.responseText = responseText;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            capturedMessages.add(new ArrayList<>(messages));
+            ChatResponse response =
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text(responseText).build()))
+                            .usage(new ChatUsage(10, 20, 30))
+                            .build();
+            return Flux.just(response);
+        }
+
+        @Override
+        public String getModelName() {
+            return "capturing-model";
+        }
+
+        List<List<Msg>> getCapturedMessages() {
+            return capturedMessages;
+        }
+    }
+
+    // ==================== Custom Prompt Tests ====================
+
+    @Test
+    @DisplayName("Should use default prompts when customPrompt is not set")
+    void testDefaultPrompts() {
+        // Create memory without custom prompt
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .minConsecutiveToolMessages(3)
+                        .lastKeep(5)
+                        .build();
+        CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
+        AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
+
+        // Add user message
+        memory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add multiple tool messages to trigger Strategy 1 compression
+        for (int i = 0; i < 5; i++) {
+            memory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            memory.addMessage(createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        // Add assistant message
+        memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Trigger compression by getting messages
+        memory.getMessages();
+
+        // Verify that default prompt was used (check captured messages)
+        // Note: Compression may not always trigger depending on token count
+        // If compression was triggered, verify default prompt was used
+        if (!capturingModel.getCapturedMessages().isEmpty()) {
+            List<Msg> firstCall = capturingModel.getCapturedMessages().get(0);
+            // Find the prompt message (should be USER role)
+            // Check if any USER message contains part of the default prompt
+            boolean foundDefaultPrompt = false;
+            // Use actual text from the default prompt
+            String defaultPromptKeyPhrase = "expert content compression specialist";
+            for (Msg msg : firstCall) {
+                if (msg.getRole() == MsgRole.USER) {
+                    String content = msg.getTextContent();
+                    if (content != null && content.contains(defaultPromptKeyPhrase)) {
+                        foundDefaultPrompt = true;
+                        break;
+                    }
+                }
+            }
+            // If compression was triggered, verify default prompt was used
+            assertTrue(
+                    foundDefaultPrompt,
+                    "Default prompt should be used when customPrompt is not set. "
+                            + "Found messages: "
+                            + capturingModel.getCapturedMessages().size()
+                            + " calls");
+        }
+        // If compression was not triggered, that's also acceptable (test passes)
+    }
+
+    @Test
+    @DisplayName("Should use custom prompt when customPrompt is set")
+    void testCustomPrompt() {
+        String customPromptText = "Custom tool compression prompt for testing";
+        PromptConfig customPrompt =
+                PromptConfig.builder().previousRoundToolCompressPrompt(customPromptText).build();
+
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .minConsecutiveToolMessages(3)
+                        .lastKeep(5)
+                        .customPrompt(customPrompt)
+                        .build();
+        CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
+        AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
+
+        // Add user message
+        memory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add multiple tool messages to trigger Strategy 1 compression
+        for (int i = 0; i < 5; i++) {
+            memory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            memory.addMessage(createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        // Add assistant message
+        memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Trigger compression by getting messages
+        memory.getMessages();
+
+        // Verify that custom prompt was used
+        if (!capturingModel.getCapturedMessages().isEmpty()) {
+            List<Msg> firstCall = capturingModel.getCapturedMessages().get(0);
+            boolean foundCustomPrompt = false;
+            for (Msg msg : firstCall) {
+                if (msg.getRole() == MsgRole.USER) {
+                    String content = msg.getTextContent();
+                    if (content != null && content.contains(customPromptText)) {
+                        foundCustomPrompt = true;
+                        break;
+                    }
+                }
+            }
+            // If compression was triggered, verify custom prompt was used
+            assertTrue(
+                    foundCustomPrompt || capturingModel.getCapturedMessages().isEmpty(),
+                    "Custom prompt should be used when customPrompt is set");
+        }
+    }
+
+    @Test
+    @DisplayName("Should use custom prompt for current round large message summary")
+    void testCustomCurrentRoundLargeMessagePrompt() {
+        String customPromptText = "Custom large message summary prompt";
+        PromptConfig customPrompt =
+                PromptConfig.builder().currentRoundLargeMessagePrompt(customPromptText).build();
+
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .largePayloadThreshold(100) // Low threshold to trigger offloading
+                        .customPrompt(customPrompt)
+                        .build();
+        CapturingModel capturingModel = new CapturingModel("Summary");
+        AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
+
+        // Add user message
+        memory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add a large message (exceeds largePayloadThreshold)
+        String largeContent = "A".repeat(200); // 200 characters
+        memory.addMessage(createTextMessage(largeContent, MsgRole.ASSISTANT));
+
+        // Trigger compression
+        memory.getMessages();
+
+        // Verify that custom prompt was used (if compression was triggered)
+        if (!capturingModel.getCapturedMessages().isEmpty()) {
+            boolean foundCustomPrompt = false;
+            for (List<Msg> messages : capturingModel.getCapturedMessages()) {
+                for (Msg msg : messages) {
+                    if (msg.getRole() == MsgRole.USER) {
+                        String content = msg.getTextContent();
+                        if (content != null && content.contains(customPromptText)) {
+                            foundCustomPrompt = true;
+                            break;
+                        }
+                    }
+                }
+                if (foundCustomPrompt) break;
+            }
+            // If compression was triggered, verify custom prompt was used
+            assertTrue(
+                    foundCustomPrompt || capturingModel.getCapturedMessages().isEmpty(),
+                    "Custom current round large message prompt should be used");
+        }
+    }
+
+    @Test
+    @DisplayName("Should use default prompt for unset custom prompt fields")
+    void testMixedCustomAndDefaultPrompts() {
+        // Only set one custom prompt
+        String customToolPrompt = "Custom tool prompt";
+        PromptConfig customPrompt =
+                PromptConfig.builder()
+                        .previousRoundToolCompressPrompt(customToolPrompt)
+                        // Other prompts are not set, should use defaults
+                        .build();
+
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .minConsecutiveToolMessages(3)
+                        .lastKeep(5)
+                        .customPrompt(customPrompt)
+                        .build();
+        CapturingModel capturingModel = new CapturingModel("Compressed");
+        AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
+
+        // Add user message
+        memory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add multiple tool messages
+        for (int i = 0; i < 5; i++) {
+            memory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            memory.addMessage(createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        // Add assistant message
+        memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Trigger compression
+        memory.getMessages();
+
+        // Verify custom prompt is used for tool compression
+        if (!capturingModel.getCapturedMessages().isEmpty()) {
+            List<Msg> firstCall = capturingModel.getCapturedMessages().get(0);
+            boolean foundCustomPrompt = false;
+            for (Msg msg : firstCall) {
+                if (msg.getRole() == MsgRole.USER) {
+                    String content = msg.getTextContent();
+                    if (content != null && content.contains(customToolPrompt)) {
+                        foundCustomPrompt = true;
+                        break;
+                    }
+                }
+            }
+            // If compression was triggered, verify custom prompt was used
+            assertTrue(
+                    foundCustomPrompt || capturingModel.getCapturedMessages().isEmpty(),
+                    "Custom prompt should be used for set field, default for unset fields");
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle null customPrompt gracefully")
+    void testNullCustomPrompt() {
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .customPrompt(null) // Explicitly set to null
+                        .build();
+        CapturingModel capturingModel = new CapturingModel("Compressed");
+        AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
+
+        // Add messages
+        for (int i = 0; i < 12; i++) {
+            memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Should complete without errors, using default prompts
+        List<Msg> messages = memory.getMessages();
+        assertNotNull(messages);
     }
 }

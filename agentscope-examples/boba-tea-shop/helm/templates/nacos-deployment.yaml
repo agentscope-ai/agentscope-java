@@ -1,0 +1,130 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- if .Values.nacos.deployEnabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nacos-server
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: nacos-server
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nacos-server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: nacos-server
+    spec:
+      containers:
+        - name: nacos-server
+          image: {{ .Values.image.registry }}/nacos-server:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: main
+              containerPort: 8848
+              protocol: TCP
+            - name: grpc
+              containerPort: 9848
+              protocol: TCP
+          env:
+            - name: PREFER_HOST_MODE
+              value: "hostname"
+            - name: MODE
+              value: "standalone"
+            - name: NACOS_AUTH_IDENTITY_KEY
+              value: "serverIdentity"
+            - name: NACOS_AUTH_IDENTITY_VALUE
+              value: "security"
+            - name: NACOS_AUTH_TOKEN
+              value: "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
+            - name: TZ
+              value: "Asia/Shanghai"
+          livenessProbe:
+            tcpSocket:
+              port: 8848
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 8848
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+      securityContext: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nacos-server
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: nacos-server
+spec:
+  type: ClusterIP
+  ports:
+    - name: main
+      port: 8848
+      targetPort: 8848
+      protocol: TCP
+    - name: grpc
+      port: 9848
+      targetPort: 9848
+      protocol: TCP
+  selector:
+    app: nacos-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nacos-server-console
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: nacos-server
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: nacos-server
+{{- end }}
+

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.agentscope.core.agent;
 
 import java.util.Arrays;
@@ -24,6 +25,16 @@ import java.util.Set;
  *
  * <p>Controls which event types to receive and how streaming content is delivered.
  *
+ * <p><b>Reasoning filtering (Issue #265):</b>
+ * Some streaming backends emit both:
+ * <ul>
+ *   <li><b>Reasoning chunks</b>: incremental deltas during the reasoning process</li>
+ *   <li><b>Reasoning result</b>: the final consolidated reasoning output</li>
+ * </ul>
+ *
+ * <p>Use {@link #isIncludeReasoningChunk()} and {@link #isIncludeReasoningResult()} to filter
+ * these reasoning-related emissions when {@link EventType#REASONING} is enabled.
+ *
  * <p><b>Example usage:</b>
  *
  * <pre>{@code
@@ -33,11 +44,12 @@ import java.util.Set;
  *     .incremental(true)
  *     .build();
  *
- * // All events including final result, cumulative mode
+ * // Reasoning events, but hide intermediate deltas and only keep the final reasoning result
  * StreamOptions options = StreamOptions.builder()
- *     .eventTypes(EventType.ALL)
- *     .includeAgentResult(true)
- *     .incremental(false)
+ *     .eventTypes(EventType.REASONING)
+ *     .includeReasoningChunk(false)
+ *     .includeReasoningResult(true)
+ *     .incremental(true)
  *     .build();
  *
  * // Multiple specific types
@@ -53,6 +65,22 @@ public class StreamOptions {
     private final boolean incremental;
 
     /**
+     * Whether to include the incremental delta of the reasoning process during streaming.
+     * <p>
+     * If false, intermediate reasoning chunk emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeReasoningChunk;
+
+    /**
+     * Whether to include the final consolidated reasoning output in the response.
+     * <p>
+     * If false, final reasoning result emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeReasoningResult;
+
+    /**
      * Private constructor called by the builder.
      *
      * @param builder The builder containing configuration values
@@ -60,10 +88,12 @@ public class StreamOptions {
     private StreamOptions(Builder builder) {
         this.eventTypes = builder.eventTypes;
         this.incremental = builder.incremental;
+        this.includeReasoningChunk = builder.includeReasoningChunk;
+        this.includeReasoningResult = builder.includeReasoningResult;
     }
 
     /**
-     * Default options: All event types (except AGENT_RESULT), incremental mode.
+     * Default options: All event types, incremental mode, include both reasoning chunk and reasoning result.
      *
      * @return StreamOptions with default configuration
      */
@@ -83,8 +113,7 @@ public class StreamOptions {
     /**
      * Get the set of event types that should be streamed.
      *
-     * <p>If the set contains {@link EventType#ALL}, all event types (except AGENT_RESULT unless
-     * explicitly opted-in) will be streamed.
+     * <p>If the set contains {@link EventType#ALL}, all event types will be streamed.
      *
      * @return The set of event types to stream
      */
@@ -105,6 +134,28 @@ public class StreamOptions {
     }
 
     /**
+     * Whether reasoning "chunk" emissions should be included.
+     *
+     * <p>Reasoning chunks are the incremental delta of the reasoning process during streaming.</p>
+     *
+     * @return true if reasoning chunks should be included
+     */
+    public boolean isIncludeReasoningChunk() {
+        return includeReasoningChunk;
+    }
+
+    /**
+     * Whether the final reasoning result should be included.
+     *
+     * <p>The reasoning result is the final consolidated reasoning output in the response.</p>
+     *
+     * @return true if the final reasoning result should be included
+     */
+    public boolean isIncludeReasoningResult() {
+        return includeReasoningResult;
+    }
+
+    /**
      * Check if a specific event type should be streamed.
      *
      * @param type The event type to check
@@ -114,10 +165,27 @@ public class StreamOptions {
         return eventTypes.contains(EventType.ALL) || eventTypes.contains(type);
     }
 
+    /**
+     * Convenience method for stream implementations to decide whether to emit a reasoning subtype.
+     *
+     * <p><b>TODO (Issue #265):</b> Thread these flags through the stream event mapping layer where
+     * reasoning events are converted into Flux emissions (e.g., when distinguishing chunk vs result).
+     *
+     * @param isChunk true if the reasoning emission is an incremental chunk, false if it is the final result
+     * @return true if this reasoning emission should be included
+     */
+    public boolean shouldIncludeReasoningEmission(boolean isChunk) {
+        return isChunk ? includeReasoningChunk : includeReasoningResult;
+    }
+
     /** Builder for {@link StreamOptions}. */
     public static class Builder {
         private Set<EventType> eventTypes = EnumSet.of(EventType.ALL);
         private boolean incremental = true;
+
+        // Defaults are "true" to preserve existing behavior.
+        private boolean includeReasoningChunk = true;
+        private boolean includeReasoningResult = true;
 
         /**
          * Set which event types to stream.
@@ -147,6 +215,34 @@ public class StreamOptions {
          */
         public Builder incremental(boolean incremental) {
             this.incremental = incremental;
+            return this;
+        }
+
+        /**
+         * Include or exclude incremental reasoning chunk emissions.
+         *
+         * <p>When {@link EventType#REASONING} is enabled, some providers emit reasoning deltas (chunks)
+         * as the model thinks. Set to false to hide these.</p>
+         *
+         * @param includeReasoningChunk true to include chunk emissions, false to filter them out
+         * @return this builder
+         */
+        public Builder includeReasoningChunk(boolean includeReasoningChunk) {
+            this.includeReasoningChunk = includeReasoningChunk;
+            return this;
+        }
+
+        /**
+         * Include or exclude the final consolidated reasoning result emission.
+         *
+         * <p>When {@link EventType#REASONING} is enabled, some providers emit a final reasoning result.
+         * Set to false to hide it.</p>
+         *
+         * @param includeReasoningResult true to include the final reasoning result, false to filter it out
+         * @return this builder
+         */
+        public Builder includeReasoningResult(boolean includeReasoningResult) {
+            this.includeReasoningResult = includeReasoningResult;
             return this;
         }
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -26,13 +26,14 @@
     </parent>
 
     <artifactId>agentscope-extensions-scheduler</artifactId>
-    <name>AgentScope Java - Scheduler</name>
+    <name>AgentScope Java - Extensions - Scheduler</name>
     <description>Scheduler integration for AgentScope Java</description>
     <packaging>pom</packaging>
 
     <modules>
         <module>agentscope-extensions-scheduler-common</module>
         <module>agentscope-extensions-scheduler-xxl-job</module>
+        <module>agentscope-extensions-scheduler-quartz</module>
     </modules>
 
 </project>

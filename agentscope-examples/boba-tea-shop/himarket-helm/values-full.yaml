@@ -1,0 +1,105 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Full deployment configuration
+# Includes HiMarket Server + Admin + Frontend + MySQL + Nacos + Gateway + MCP
+# Use case: Production environment, full feature demonstration
+
+# Image pull secrets
+imagePullSecrets:
+  - name: agentscope
+
+# Server image configuration (customizable)
+server:
+  image:
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: latest
+
+# Use built-in MySQL
+mysql:
+  enabled: true
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    tag: "latest"
+  auth:
+    rootPassword: himarket-prod-password-change-me
+  persistence:
+    size: 20Gi  # Larger capacity for production environment
+    storageClass: "alicloud-disk-essd"
+
+# Register Nacos instance
+nacos:
+  enabled: true
+  name: nacos-prod
+  serverUrl: http://nacos:8848
+  username: nacos
+  password: nacos
+
+  # Commercial Nacos configuration (optional)
+  # serverUrl: mse-xxx.nacos-ans.mse.aliyuncs.com:8848
+  # accessKey: LTAI5t...
+  # secretKey: xxx...
+
+# Register gateway instance
+gateway:
+  enabled: true
+  type: HIGRESS
+  name: higress-prod
+  higress:
+    url: http://higress-console:8080
+    username: admin
+    password: admin
+
+  # Alibaba Cloud AI Gateway configuration (optional)
+  # type: APIG_AI
+  # apig:
+  #   region: cn-hangzhou
+  #   accessKey: LTAI5t...
+  #   secretKey: xxx...
+
+# MCP configuration
+mcp:
+  importToNacos: true       # Import MCP to Nacos
+  publishToHimarket: true   # Publish MCP to HiMarket
+  # Using 5 built-in MCP Servers:
+  # - context7 (documentation query)
+  # - git (Git operations)
+  # - Time (timezone conversion)
+  # - memory (knowledge graph)
+  # - fetch (web page scraping)
+
+# HiMarket auto-initialization configuration
+autoInit:
+  enabled: true
+  delay: 15  # Increased delay for production environment
+  frontendUrl: http://himarket-frontend:3000
+  admin:
+    username: admin
+    password: admin-prod-password-change-me
+  developer:
+    username: demo
+    password: demo-prod-password-change-me
+  portal:
+    name: production
+
+# Resource configuration (production environment)
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+

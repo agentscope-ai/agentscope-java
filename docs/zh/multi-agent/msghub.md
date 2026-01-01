@@ -56,7 +56,7 @@ import io.agentscope.core.pipeline.MsgHub;
 // 创建模型，使用 MultiAgentFormatter
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .formatter(new DashScopeMultiAgentFormatter())
         .build();
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -187,18 +187,9 @@ public class McpToolExample {
             builder.header("Authorization", "Bearer " + token);
         }
 
-        System.out.print("\nConnecting to MCP server...");
+        configureQueryParams(builder);
 
-        try {
-            McpClientWrapper client = builder.buildAsync().block();
-            System.out.println(" Connected!\n");
-            return client;
-
-        } catch (Exception e) {
-            System.err.println(" Failed to connect");
-            System.err.println("Error: " + e.getMessage());
-            throw e;
-        }
+        return buildAndConnect(builder);
     }
 
     private static McpClientWrapper configureHttpMcp() throws Exception {
@@ -212,15 +203,61 @@ public class McpToolExample {
             return configureStdioMcp();
         }
 
+        McpClientBuilder builder = McpClientBuilder.create("mcp").streamableHttpTransport(url);
+
+        System.out.print("Add API key header? (y/n): ");
+        if (reader.readLine().trim().equalsIgnoreCase("y")) {
+            System.out.print("API Key: ");
+            String apiKey = reader.readLine().trim();
+            builder.header("X-API-Key", apiKey);
+        }
+
+        configureQueryParams(builder);
+
+        return buildAndConnect(builder);
+    }
+
+    /**
+     * Configures query parameters for the MCP client builder interactively.
+     *
+     * @param builder the MCP client builder to configure
+     * @throws Exception if an I/O error occurs
+     */
+    private static void configureQueryParams(McpClientBuilder builder) throws Exception {
+        System.out.print("Add query parameters? (y/n): ");
+        if (!reader.readLine().trim().equalsIgnoreCase("y")) {
+            return;
+        }
+
+        System.out.println("Enter query parameters (format: key=value, empty line to finish):");
+        while (true) {
+            System.out.print("  > ");
+            String param = reader.readLine().trim();
+            if (param.isEmpty()) {
+                break;
+            }
+            String[] parts = param.split("=", 2);
+            if (parts.length == 2) {
+                builder.queryParam(parts[0].trim(), parts[1].trim());
+                System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
+            } else {
+                System.out.println("    Invalid format, use: key=value");
+            }
+        }
+    }
+
+    /**
+     * Builds and connects to the MCP server.
+     *
+     * @param builder the configured MCP client builder
+     * @return the connected MCP client wrapper
+     * @throws Exception if connection fails
+     */
+    private static McpClientWrapper buildAndConnect(McpClientBuilder builder) throws Exception {
         System.out.print("\nConnecting to MCP server...");
 
         try {
-            McpClientWrapper client =
-                    McpClientBuilder.create("mcp")
-                            .streamableHttpTransport(url)
-                            .buildAsync()
-                            .block();
-
+            McpClientWrapper client = builder.buildAsync().block();
             System.out.println(" Connected!\n");
             return client;
 

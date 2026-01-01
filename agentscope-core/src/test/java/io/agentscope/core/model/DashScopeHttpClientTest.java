@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 /**
@@ -425,6 +426,42 @@ class DashScopeHttpClientTest {
         RecordedRequest recorded = mockServer.takeRequest();
         assertEquals("stream-value", recorded.getHeader("X-Stream-Header"));
         assertEquals("enable", recorded.getHeader("X-DashScope-SSE"));
+    }
+
+    @Test
+    void testStreamErrorHandling() {
+        String errorCode = "InvalidParameter";
+        String errorMessage =
+                "<400> InternalError.Algo.InvalidParameter: This model does not support"
+                        + " enable_search.";
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                "data: {\"code\":\""
+                                        + errorCode
+                                        + "\",\"message\":\""
+                                        + errorMessage
+                                        + "\",\"request_id\":\"request_id_123\"}")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        additionalHeaders.put("X-Stream-Header", "stream-value");
+
+        Flux<DashScopeResponse> response = client.stream(request, additionalHeaders, null, null);
+        StepVerifier.create(response)
+                .expectErrorMatches(
+                        e ->
+                                (e
+                                                instanceof
+                                                DashScopeHttpClient.DashScopeHttpException
+                                                        dashScopeHttpException)
+                                        && dashScopeHttpException.getErrorCode().equals(errorCode)
+                                        && dashScopeHttpException
+                                                .getMessage()
+                                                .equals("DashScope API error: " + errorMessage))
+                .verify();
     }
 
     @Test

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
@@ -61,6 +62,26 @@ public class JsonSchemaUtils {
             return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
+     * This method is suitable for structured output scenarios where complex nested
+     * objects
+     * need to be converted to JSON Schema format.
+     *
+     * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
+     * @return JSON Schema as a Map
+     * @throws RuntimeException if schema generation fails due to reflection errors,
+     *                          Jackson configuration issues, or other processing
+     *                          errors
+     */
+    public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
+        try {
+            return objectMapper.convertValue(schema, new TypeReference<>() {});
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate JSON schema for schema", e);
         }
     }
 

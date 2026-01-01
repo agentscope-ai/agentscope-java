@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -37,6 +37,12 @@ public class MessageConstants {
 
         public static final String TYPE_TOOL_RESULT = "tool_result";
     }
+
+    public static final String SOURCE_NAME_METADATA_KEY = "_agentscope_msg_source";
+
+    public static final String MSG_ID_METADATA_KEY = "_agentscope_msg_id";
+
+    public static final String BLOCK_TYPE_METADATA_KEY = "_agentscope_block_type";
 
     public static final String TOOL_NAME_METADATA_KEY = "_agentscope_tool_name";
 

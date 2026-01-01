@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -35,6 +37,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +61,7 @@ class StructuredOutputHandlerToolChoiceTest {
         handler =
                 new StructuredOutputHandler(
                         TestResponse.class,
+                        null,
                         toolkit,
                         memory,
                         "TestAgent",
@@ -339,6 +343,7 @@ class StructuredOutputHandlerToolChoiceTest {
         handler =
                 new StructuredOutputHandler(
                         TestResponse.class,
+                        null,
                         toolkit,
                         memory,
                         "TestAgent",
@@ -349,5 +354,37 @@ class StructuredOutputHandlerToolChoiceTest {
         // After cleanup and re-prepare, should not force on first round
         GenerateOptions optionsAfterCleanup = handler.createOptionsWithForcedTool(null);
         assertNull(optionsAfterCleanup);
+    }
+
+    @Test
+    void testTargetClassAndSchemaDescBothNull() {
+        StructuredOutputHandler handler =
+                new StructuredOutputHandler(
+                        null,
+                        null,
+                        toolkit,
+                        memory,
+                        "TestAgent",
+                        StructuredOutputReminder.TOOL_CHOICE);
+        Assertions.assertThrowsExactly(
+                IllegalStateException.class,
+                handler::prepare,
+                "Can not prepare,because targetClass and schemaDesc both not exists");
+    }
+
+    @Test
+    void testTargetClassAndSchemaDescBothNotNull() throws JsonProcessingException {
+        StructuredOutputHandler handler =
+                new StructuredOutputHandler(
+                        Object.class,
+                        new ObjectMapper().readTree("{}"),
+                        toolkit,
+                        memory,
+                        "TestAgent",
+                        StructuredOutputReminder.TOOL_CHOICE);
+        Assertions.assertThrowsExactly(
+                IllegalStateException.class,
+                handler::prepare,
+                "Can not prepare,because targetClass and schemaDesc both exists");
     }
 }

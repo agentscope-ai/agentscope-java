@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.agent.utils;
 
 import io.a2a.client.ClientEvent;
 import io.a2a.util.Utils;
+import io.agentscope.core.agent.Event;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import java.util.List;
@@ -27,6 +28,19 @@ import org.slf4j.Logger;
  * A2A agent logger util.
  */
 public class LoggerUtil {
+
+    /**
+     * Logs detail information of AgentScope events output from Agent.
+     *
+     * @param logger The Logger instance used for logging
+     * @param event The event object to be logged from AgentScope Agent.
+     */
+    public static void logAgentEventDetail(Logger logger, Event event) {
+        if (logger.isDebugEnabled()) {
+            debug(logger, "Event: {}", event);
+            logTextMsgDetail(logger, List.of(event.getMessage()));
+        }
+    }
 
     /**
      * Logs detailed information of A2A client events to the log

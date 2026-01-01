@@ -50,3 +50,8 @@ CLAUDE.md
 
 ##Log
 logs/
+
+## boba-tea-shop example
+**/boba-tea-shop/supervisor-agent/**/static/
+**/boba-tea-shop/**/node_modules/
+**/boba-tea-shop/**/dist/

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
@@ -67,7 +66,7 @@ import reactor.core.publisher.Mono;
  *   <li>MCP (Model Context Protocol) client support for external tool providers</li>
  * </ul>
  */
-public class Toolkit extends StateModuleBase {
+public class Toolkit {
 
     private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
 
@@ -116,22 +115,6 @@ public class Toolkit extends StateModuleBase {
         } else {
             this.executor = new ParallelToolExecutor(this);
         }
-
-        // Register state management for activeGroups with custom serialization
-        // Since we don't have an activeGroups field, we provide functions to get/set from
-        // groupManager
-        registerState(
-                "activeGroups",
-                obj -> groupManager.getActiveGroups(), // toJson: get from groupManager
-                obj -> {
-                    // fromJson: set to groupManager
-                    if (obj instanceof List) {
-                        @SuppressWarnings("unchecked")
-                        List<String> groups = (List<String>) obj;
-                        groupManager.setActiveGroups(groups);
-                    }
-                    return obj;
-                });
     }
 
     /**
@@ -609,6 +592,17 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Set the active tool groups.
+     *
+     * <p>This method is typically called by ReActAgent when restoring state from a session.
+     *
+     * @param groups List of group names to set as active
+     */
+    public void setActiveGroups(List<String> groups) {
+        groupManager.setActiveGroups(groups);
+    }
+
+    /**
      * Get a tool group by name.
      *
      * @param groupName Name of the tool group
@@ -657,16 +651,6 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Get the component name for session management.
-     *
-     * @return "toolkit" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "toolkit";
-    }
-
-    /**
      * Fluent builder for registering tools with optional configuration.
      *
      * <p>This builder provides a clear, type-safe way to register tools with various options
@@ -696,13 +680,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration tool(Object toolObject) {
-            if (this.agentTool != null
-                    || this.mcpClientWrapper != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.toolObject = toolObject;
             return this;
         }
@@ -714,13 +691,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration agentTool(AgentTool agentTool) {
-            if (this.toolObject != null
-                    || this.mcpClientWrapper != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.agentTool = agentTool;
             return this;
         }
@@ -732,13 +702,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            if (this.toolObject != null
-                    || this.agentTool != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.mcpClientWrapper = mcpClientWrapper;
             return this;
         }
@@ -808,13 +771,6 @@ public class Toolkit extends StateModuleBase {
          * @see SubAgentConfig#defaults()
          */
         public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
-            if (this.toolObject != null
-                    || this.agentTool != null
-                    || this.mcpClientWrapper != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.subAgentProvider = provider;
             this.subAgentConfig = config;
             return this;
@@ -893,9 +849,27 @@ public class Toolkit extends StateModuleBase {
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient() or subAgent() was set
+         * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or subAgent().
          */
         public void apply() {
+            int toolCount = 0;
+            if (toolObject != null) toolCount++;
+            if (agentTool != null) toolCount++;
+            if (mcpClientWrapper != null) toolCount++;
+            if (subAgentProvider != null) toolCount++;
+
+            if (toolCount == 0) {
+                throw new IllegalStateException(
+                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
+                                + " apply()");
+            }
+            if (toolCount > 1) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+
             if (toolObject != null) {
                 toolkit.registerTool(toolObject, groupName, extendedModel, presetParameters);
             } else if (agentTool != null) {
@@ -917,10 +891,6 @@ public class Toolkit extends StateModuleBase {
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
                 toolkit.registerAgentTool(subAgentTool, groupName, extendedModel, null, null);
-            } else {
-                throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
-                                + " apply()");
             }
         }
     }

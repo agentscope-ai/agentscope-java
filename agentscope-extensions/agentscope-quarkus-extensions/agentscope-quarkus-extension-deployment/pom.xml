@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -29,18 +29,24 @@
     <description>AgentScope Quarkus Extension - Deployment</description>
 
     <dependencies>
+        <!-- AgentScope Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Runtime Module -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-quarkus-extension</artifactId>
-            <version>${revision}</version>
         </dependency>
 
-        <!-- Core AgentScope (needed for reflection registration) -->
+        <!-- AgentScope -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- Quarkus Deployment -->

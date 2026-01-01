@@ -1,6 +1,6 @@
-# MCP（模型上下文协议）
+# MCP (Model Context Protocol)
 
-AgentScope Java 提供对模型上下文协议（MCP）的完整支持，使智能体能够连接到外部工具服务器并使用 MCP 生态系统中的工具。
+AgentScope Java 提供对 MCP (Model Context Protocol) 的完整支持，使智能体能够连接到外部工具服务器并使用 MCP 生态系统中的工具。
 
 ## 什么是 MCP？
 
@@ -10,30 +10,6 @@ MCP 是用于将 AI 应用程序连接到外部数据源和工具的标准协议
 - **外部工具服务器**：连接到专门的服务（文件系统、git、数据库等）
 - **生态系统集成**：使用不断增长的 MCP 生态系统中的工具
 - **灵活的传输**：支持 StdIO、SSE 和 HTTP 传输
-
-## 前置条件
-
-### Maven 依赖
-
-要使用 MCP 功能，您需要在项目中添加 MCP SDK 依赖：
-
-```xml
-<dependency>
-    <groupId>io.modelcontextprotocol.sdk</groupId>
-    <artifactId>mcp</artifactId>
-    <version>0.14.1</version>
-</dependency>
-```
-
-**注意**：MCP SDK 不会自动包含在 AgentScope 中。您必须显式地将其添加到 `pom.xml` 中。
-
-### Gradle 依赖
-
-对于 Gradle 项目：
-
-```gradle
-implementation 'io.modelcontextprotocol.sdk:mcp:0.14.1'
-```
 
 ## 传输类型
 
@@ -119,6 +95,7 @@ McpClientWrapper customClient = McpClientBuilder.create("custom-mcp")
 McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
         .sseTransport("https://mcp.example.com/sse")
         .header("Authorization", "Bearer " + apiToken)
+        .queryParam("queryKey", "queryValue")
         .timeout(Duration.ofSeconds(60))
         .buildAsync()
         .block();
@@ -132,6 +109,7 @@ McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -216,6 +194,36 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
+### Query 参数
+
+为 HTTP 传输添加 URL 查询参数：
+
+```java
+// 单个参数
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
+        .buildAsync()
+        .block();
+
+// 批量参数
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
+        .buildAsync()
+        .block();
+
+// 与 URL 中已有参数合并（额外参数优先）
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?version=v1")
+        .queryParam("queryKey", "queryValue")  // 最终: ?version=v1&queryKey=queryValue
+        .buildAsync()
+        .block();
+```
+
+> **注意**：Query 参数仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被忽略。
+
 ### 同步 vs 异步客户端
 
 ```java
@@ -248,13 +256,67 @@ System.out.println("可用工具: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
+## Higress AI Gateway 集成
+
+AgentScope 提供了 Higress AI Gateway 扩展，支持通过 Higress 网关统一访问 MCP 工具，并利用语义检索能力自动选择最合适的工具。
+
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### 基本使用
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. 创建 Higress MCP 客户端
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
+        .buildAsync()
+        .block();
+
+// 2. 注册到 HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+```
+
+### 启用语义工具搜索
+
+使用 `toolSearch()` 方法启用语义搜索，Higress 会自动选择与查询最相关的工具：
+
+```java
+// 启用工具搜索，返回最相关的 5 个工具
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("查询天气和地图信息", 5)  // query 和 topK
+        .buildAsync()
+        .block();
+```
+
+### Higress 示例
+
+查看完整的 Higress 示例：
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+
 ## 完整示例
 
 查看完整的 MCP 示例：
-- `examples/src/main/java/io/agentscope/examples/McpToolExample.java`
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 运行示例：
 ```bash
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
+cd agentscope-examples/quickstart
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```

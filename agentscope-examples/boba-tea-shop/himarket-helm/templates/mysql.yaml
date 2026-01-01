@@ -1,0 +1,227 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- if .Values.mysql.enabled }}
+{{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace "mysql-secret") }}
+{{- $rootPassword := "" }}
+{{- $userPassword := "" }}
+{{- if $existingSecret }}
+  {{- $rootPassword = (index $existingSecret.data "MYSQL_ROOT_PASSWORD" | b64dec) }}
+  {{- $userPassword = (index $existingSecret.data "MYSQL_PASSWORD" | b64dec) }}
+{{- else }}
+  {{- if .Values.mysql.auth.rootPassword }}
+    {{- $rootPassword = .Values.mysql.auth.rootPassword }}
+  {{- else }}
+    {{- $rootPassword = randAlphaNum 16 }}
+  {{- end }}
+  {{- if .Values.mysql.auth.password }}
+    {{- $userPassword = .Values.mysql.auth.password }}
+  {{- else }}
+    {{- $userPassword = randAlphaNum 16 }}
+  {{- end }}
+{{- end }}
+---
+# MySQL Init ConfigMap - Ensure user can connect from any IP
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-config
+  labels:
+    app: mysql
+data:
+  # 01-init-user.sql: Execute immediately after database creation to ensure correct user permissions
+  01-init-user.sql: |
+    -- Delete user with localhost restriction if exists
+    DROP USER IF EXISTS '{{ .Values.mysql.auth.username }}'@'localhost';
+
+    -- Ensure user can connect from any host
+    CREATE USER IF NOT EXISTS '{{ .Values.mysql.auth.username }}'@'%' IDENTIFIED BY '{{ $userPassword }}';
+
+    -- Grant all privileges
+    GRANT ALL PRIVILEGES ON {{ .Values.mysql.auth.database }}.* TO '{{ .Values.mysql.auth.username }}'@'%';
+
+    -- Flush privileges immediately (multiple flushes to ensure effectiveness)
+    FLUSH PRIVILEGES;
+    FLUSH PRIVILEGES;
+
+    -- Force reload grant tables
+    FLUSH TABLES;
+
+    -- Flush privileges again
+    FLUSH PRIVILEGES;
+
+    -- Verify user creation successful
+    SELECT CONCAT('User created: ', User, '@', Host) AS Status
+    FROM mysql.user
+    WHERE User = '{{ .Values.mysql.auth.username }}';
+
+    -- Verify privileges granted
+    SHOW GRANTS FOR '{{ .Values.mysql.auth.username }}'@'%';
+
+---
+# MySQL Secret: Store sensitive database credentials (auto-generate random password)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: {{ $rootPassword | quote }}
+  MYSQL_DATABASE: {{ .Values.mysql.auth.database | quote }}
+  MYSQL_USER: {{ .Values.mysql.auth.username | quote }}
+  MYSQL_PASSWORD: {{ $userPassword | quote }}
+
+---
+# HiMarket Server Secret: Application-specific sensitive configuration (using the same password)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: himarket-server-secret
+  labels:
+    app: himarket-server
+type: Opaque
+stringData:
+  # Use the same MySQL password variable to ensure consistency
+  DB_HOST: "mysql-headless-svc"
+  DB_PORT: "3306"
+  DB_NAME: {{ .Values.mysql.auth.database | quote }}
+  DB_USERNAME: {{ .Values.mysql.auth.username | quote }}
+  DB_PASSWORD: {{ $userPassword | quote }}
+
+---
+# MySQL Headless Service: Provide stable network domain for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless-svc
+spec:
+  ports:
+    - port: 3306
+      name: mysql
+  clusterIP: None
+  selector:
+    app: mysql
+
+---
+# MySQL External Service: Expose database for external access (optional)
+{{- if .Values.mysql.service.external.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-external-svc
+spec:
+  type: {{ .Values.mysql.service.external.type }}
+  ports:
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP
+  selector:
+    app: mysql
+{{- end }}
+
+---
+# MySQL StatefulSet: Deploy MySQL application
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  replicas: {{ .Values.mysql.replicaCount }}
+  selector:
+    matchLabels:
+      app: mysql
+  serviceName: "mysql-headless-svc"
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      serviceAccountName: {{ include "himarket.serviceAccountName" . }}
+      containers:
+        - name: mysql
+          {{- if .Values.mysql.image.hub }}
+          image: "{{ .Values.mysql.image.hub }}/{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          {{- else }}
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          {{- end }}
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
+          ports:
+            - containerPort: 3306
+              name: mysql
+          envFrom:
+            - secretRef:
+                name: mysql-secret
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: mysql-init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          {{- with .Values.mysql.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Health check
+          livenessProbe:
+            exec:
+              command:
+                - mysqladmin
+                - ping
+                - -h
+                - localhost
+                - -u{{ .Values.mysql.auth.username }}
+                - -p{{ $userPassword }}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - mysql
+                - -h
+                - localhost
+                - -u{{ .Values.mysql.auth.username }}
+                - -p{{ $userPassword }}
+                - -e
+                - "SELECT 1"
+            initialDelaySeconds: 10
+            periodSeconds: 2
+            timeoutSeconds: 5
+            successThreshold: 2
+            failureThreshold: 3
+      volumes:
+        - name: mysql-init-scripts
+          configMap:
+            name: mysql-init-config
+
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes:
+          - {{ .Values.mysql.persistence.accessMode }}
+        resources:
+          requests:
+            storage: {{ .Values.mysql.persistence.size }}
+        {{- if .Values.mysql.persistence.storageClass }}
+        {{- if (eq "-" .Values.mysql.persistence.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: {{ .Values.mysql.persistence.storageClass | quote }}
+        {{- end }}
+        {{- end }}
+{{- end }}

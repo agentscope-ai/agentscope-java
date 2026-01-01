@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHandler;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
@@ -53,6 +54,13 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillHook;
+import io.agentscope.core.state.AgentMetaState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StatePersistence;
+import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
@@ -130,6 +138,7 @@ public class ReActAgent extends AgentBase {
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
+    private final StatePersistence statePersistence;
 
     // ==================== Internal Components ====================
 
@@ -156,11 +165,86 @@ public class ReActAgent extends AgentBase {
         this.structuredOutputReminder = builder.structuredOutputReminder;
         this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
+        this.statePersistence =
+                builder.statePersistence != null
+                        ? builder.statePersistence
+                        : StatePersistence.all();
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
+    }
 
-        addNestedModule("memory", this.memory);
+    // ==================== New StateModule API ====================
+
+    /**
+     * Save agent state to the session using the new API.
+     *
+     * <p>This method saves the state of all managed components according to the StatePersistence
+     * configuration:
+     *
+     * <ul>
+     *   <li>Agent metadata (always saved)
+     *   <li>Memory messages (if memoryManaged is true)
+     *   <li>Toolkit activeGroups (if toolkitManaged is true)
+     *   <li>PlanNotebook state (if planNotebookManaged is true)
+     * </ul>
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        // Save agent metadata
+        session.save(
+                sessionKey,
+                "agent_meta",
+                new AgentMetaState(getAgentId(), getName(), getDescription(), sysPrompt));
+
+        // Save memory if managed
+        if (statePersistence.memoryManaged()) {
+            memory.saveTo(session, sessionKey);
+        }
+
+        // Save toolkit activeGroups if managed
+        if (statePersistence.toolkitManaged() && toolkit != null) {
+            session.save(
+                    sessionKey,
+                    "toolkit_activeGroups",
+                    new ToolkitState(toolkit.getActiveGroups()));
+        }
+
+        // Save PlanNotebook if managed
+        if (statePersistence.planNotebookManaged() && planNotebook != null) {
+            planNotebook.saveTo(session, sessionKey);
+        }
+    }
+
+    /**
+     * Load agent state from the session using the new API.
+     *
+     * <p>This method loads the state of all managed components according to the StatePersistence
+     * configuration.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        // Load memory if managed
+        if (statePersistence.memoryManaged()) {
+            memory.loadFrom(session, sessionKey);
+        }
+
+        // Load toolkit activeGroups if managed
+        if (statePersistence.toolkitManaged() && toolkit != null) {
+            session.get(sessionKey, "toolkit_activeGroups", ToolkitState.class)
+                    .ifPresent(state -> toolkit.setActiveGroups(state.activeGroups()));
+        }
+
+        // Load PlanNotebook if managed
+        if (statePersistence.planNotebookManaged() && planNotebook != null) {
+            planNotebook.loadFrom(session, sessionKey);
+        }
     }
 
     // ==================== Protected API ====================
@@ -182,10 +266,38 @@ public class ReActAgent extends AgentBase {
         StructuredOutputHandler handler =
                 new StructuredOutputHandler(
                         structuredOutputClass,
+                        null,
                         toolkit,
                         memory,
                         getName(),
                         structuredOutputReminder);
+
+        return Mono.defer(
+                () -> {
+                    // Set current handler for internal hook access
+                    this.currentStructuredOutputHandler.set(handler);
+
+                    handler.prepare();
+                    return executeReActLoop(handler)
+                            .flatMap(result -> Mono.just(handler.extractFinalResult()))
+                            .doFinally(
+                                    signal -> {
+                                        handler.cleanup();
+                                        // Clear current handler reference
+                                        this.currentStructuredOutputHandler.set(null);
+                                    });
+                });
+    }
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        if (msgs != null && !msgs.isEmpty()) {
+            msgs.forEach(memory::addMessage);
+        }
+
+        StructuredOutputHandler handler =
+                new StructuredOutputHandler(
+                        null, outputSchema, toolkit, memory, getName(), structuredOutputReminder);
 
         return Mono.defer(
                 () -> {
@@ -800,11 +912,15 @@ public class ReActAgent extends AgentBase {
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
         private PlanNotebook planNotebook;
+        private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
 
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
         private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
+
+        // State persistence configuration
+        private StatePersistence statePersistence;
 
         // RAG configuration
         private final List<Knowledge> knowledgeBases = new ArrayList<>();
@@ -998,6 +1114,22 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the skill box for this agent.
+         *
+         * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
+         * <ul>
+         *   <li>Skill loader tools will be automatically registered to the toolkit</li>
+         *   <li>A skill hook will be added to inject skill prompts and manage skill activation</li>
+         * </ul>
+         * @param skillBox The skill box to use for this agent
+         * @return This builder instance for method chaining
+         */
+        public Builder skillBox(SkillBox skillBox) {
+            this.skillBox = skillBox;
+            return this;
+        }
+
+        /**
          * Sets the long-term memory for this agent.
          *
          * <p>Long-term memory enables the agent to remember information across sessions.
@@ -1029,6 +1161,33 @@ public class ReActAgent extends AgentBase {
          */
         public Builder longTermMemoryMode(LongTermMemoryMode mode) {
             this.longTermMemoryMode = mode;
+            return this;
+        }
+
+        /**
+         * Sets the state persistence configuration.
+         *
+         * <p>Use this to control which components' state is managed by the agent during
+         * saveTo/loadFrom operations. By default, all components are managed.
+         *
+         * <p>Example usage:
+         *
+         * <pre>{@code
+         * ReActAgent agent = ReActAgent.builder()
+         *     .name("assistant")
+         *     .model(model)
+         *     .statePersistence(StatePersistence.builder()
+         *         .planNotebookManaged(false)  // Let user manage PlanNotebook separately
+         *         .build())
+         *     .build();
+         * }</pre>
+         *
+         * @param statePersistence The state persistence configuration
+         * @return This builder instance for method chaining
+         * @see StatePersistence
+         */
+        public Builder statePersistence(StatePersistence statePersistence) {
+            this.statePersistence = statePersistence;
             return this;
         }
 
@@ -1150,6 +1309,11 @@ public class ReActAgent extends AgentBase {
             // Configure PlanNotebook if provided
             if (planNotebook != null) {
                 configurePlan();
+            }
+
+            // Configure SkillBox if provided
+            if (skillBox != null) {
+                configureSkillBox();
             }
 
             // If using PROMPT mode, we need to add the internal reminder hook
@@ -1336,6 +1500,23 @@ public class ReActAgent extends AgentBase {
                     };
 
             hooks.add(planHintHook);
+        }
+
+        /**
+         * Configures SkillBox integration.
+         *
+         * <p>This method automatically:
+         * <ul>
+         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         * </ul>
+         */
+        private void configureSkillBox() {
+            skillBox.bindToolkit(toolkit);
+            // Register skill loader tools to toolkit
+            toolkit.registerTool(skillBox);
+
+            hooks.add(new SkillHook(skillBox));
         }
     }
 }

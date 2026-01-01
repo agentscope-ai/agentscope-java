@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
     <description>Example application demonstrating AgentScope with Quarkus</description>
 
     <properties>
-        <quarkus.version>3.30.4</quarkus.version>
+        <quarkus.version>3.30.5</quarkus.version>
         <!-- Skip tests by default for example projects (requires API keys) -->
         <skipExampleTests>true</skipExampleTests>
     </properties>
@@ -49,11 +49,16 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- AgentScope Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+
         <!-- AgentScope Quarkus Extension (includes auto-configuration) -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-quarkus-extension</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- Quarkus REST -->

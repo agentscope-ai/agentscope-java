@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -181,7 +181,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         // .../agentscope_XXX.wav)
         // with a placeholder to allow comparison
         return json.replaceAll(
-                "(The returned (audio|image|video) can be found at: )[^\\\\\"]+", "$1<TEMP_FILE>");
+                "(The returned (audio|image|video) can be found at: )[^\"]+", "$1<TEMP_FILE>");
     }
 
     /**

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,6 +36,21 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.PlanState;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StateModule;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -72,7 +87,7 @@ import reactor.core.publisher.Mono;
  *   <li>Original Memory Storage: Stores complete, uncompressed message history</li>
  * </ul>
  */
-public class AutoContextMemory extends StateModuleBase implements Memory, ContextOffLoader {
+public class AutoContextMemory implements StateModule, Memory, ContextOffLoader {
 
     private final java.util.concurrent.atomic.AtomicBoolean compressionRunning =
         new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -114,6 +129,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     private Model model;
 
     /**
+     * Optional PlanNotebook instance for plan-aware compression.
+     * When provided, compression prompts will be adjusted based on current plan state
+     * to preserve plan-related information.
+     *
+     * <p>Note: This field is set via {@link #attachPlanNote(PlanNotebook)} method,
+     * typically called after ReActAgent is created and has a PlanNotebook instance.
+     */
+    private PlanNotebook planNotebook;
+
+    /**
+     * Custom prompt configuration from AutoContextConfig.
+     * If null, default prompts from {@link Prompts} will be used.
+     */
+    private final PromptConfig customPrompt;
+
+    /**
      * Creates a new AutoContextMemory instance with the specified configuration and model.
      *
      * @param autoContextConfig the configuration for auto context management
@@ -122,22 +153,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public AutoContextMemory(AutoContextConfig autoContextConfig, Model model) {
         this.model = model;
         this.autoContextConfig = autoContextConfig;
+        this.customPrompt = autoContextConfig.getCustomPrompt();
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
         compressionEvents = new ArrayList<>();
-        registerState(
-                "workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
-        registerState(
-                "originalMemoryStorage",
-                MsgUtils::serializeMsgList,
-                MsgUtils::deserializeToMsgList);
-        registerState(
-                "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
-        registerState(
-                "compressionEvents",
-                MsgUtils::serializeCompressionEventList,
-                MsgUtils::deserializeToCompressionEventList);
     }
 
 @Override
@@ -477,12 +497,8 @@ void compressIfNeededAsync() {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_LARGE_MESSAGE_FORMAT;
         String offloadHint =
-                offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
-                        : "";
+                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -492,8 +508,8 @@ void compressIfNeededAsync() {
                         .content(
                                 TextBlock.builder()
                                         .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START)
+                                                PromptProvider.getCurrentRoundLargeMessagePrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.add(message);
@@ -503,11 +519,11 @@ void compressIfNeededAsync() {
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -545,7 +561,7 @@ void compressIfNeededAsync() {
                         TextBlock.builder()
                                 .text(
                                         String.format(
-                                                summaryContentFormat,
+                                                "<compressed_large_message>%s</compressed_large_message>%s",
                                                 block != null ? block.getTextContent() : "",
                                                 offloadHint))
                                 .build())
@@ -578,6 +594,7 @@ void compressIfNeededAsync() {
         offloadContext.put(uuid, messages);
     }
 
+    @Override
     public List<Msg> reload(String uuid) {
         List<Msg> messages = offloadContext.get(uuid);
         return messages != null ? messages : new ArrayList<>();
@@ -607,45 +624,51 @@ void compressIfNeededAsync() {
         int compressionRatioPercent = (int) Math.round(compressionRatio * 100);
         int targetCharCount = (int) Math.round(originalCharCount * compressionRatio);
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_FORMAT;
         String offloadHint =
-                offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
-                        : "";
+                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
 
-        // Build prompts with character count information
-        String promptStart =
+        // Build character count requirement message
+        String charRequirement =
                 String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START,
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_CHAR_REQUIREMENT,
                         originalCharCount,
                         targetCharCount,
                         (double) compressionRatioPercent,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        targetCharCount);
-        String promptEnd =
-                String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_END,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        originalCharCount,
-                        targetCharCount);
+                        (double) compressionRatioPercent);
 
         List<Msg> newMessages = new ArrayList<>();
+        // First message: main compression prompt (without character count requirement)
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptStart).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                PromptProvider.getCurrentRoundCompressPrompt(
+                                                        customPrompt))
+                                        .build())
                         .build());
         newMessages.addAll(messages);
+        // Message list end marker
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptEnd).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
+                                        .build())
                         .build());
+        // Character count requirement (placed after message list end)
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text(charRequirement).build())
+                        .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -680,6 +703,9 @@ void compressIfNeededAsync() {
         if (offloadUuid != null) {
             compressMeta.put("offloaduuid", offloadUuid);
         }
+        // Mark this as a compressed current round message to avoid being treated as a real
+        // assistant response
+        compressMeta.put("compressed_current_round", true);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
         if (block != null && block.getChatUsage() != null) {
@@ -692,11 +718,7 @@ void compressIfNeededAsync() {
                 .name("assistant")
                 .content(
                         TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : "",
-                                                offloadHint))
+                                .text((block != null ? block.getTextContent() : "") + offloadHint)
                                 .build())
                 .metadata(metadata)
                 .build();
@@ -926,9 +948,7 @@ void compressIfNeededAsync() {
         String summaryContentFormat =
                 Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT
                         + (offloadUuid != null
-                                ? String.format(
-                                        Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_OFFLOAD_HINT,
-                                        offloadUuid)
+                                ? String.format(Prompts.OFFLOAD_HINT, offloadUuid)
                                 : "");
 
         List<Msg> newMessages = new ArrayList<>();
@@ -939,8 +959,8 @@ void compressIfNeededAsync() {
                         .content(
                                 TextBlock.builder()
                                         .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START)
+                                                PromptProvider.getPreviousRoundSummaryPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.addAll(messages);
@@ -950,11 +970,11 @@ void compressIfNeededAsync() {
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -1090,7 +1110,7 @@ void compressIfNeededAsync() {
                                     + "..."
                             : textContent;
 
-            String offloadHint = String.format(Prompts.LARGE_MESSAGE_OFFLOAD_FORMAT, preview, uuid);
+            String offloadHint = preview + "\n" + String.format(Prompts.OFFLOAD_HINT, uuid);
 
             // Build metadata with compression information
             // Note: This method only offloads without LLM compression, so tokens are 0
@@ -1319,11 +1339,9 @@ void compressIfNeededAsync() {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("tool_compress");
         String compressContentFormat =
-                Prompts.COMPRESSED_TOOL_INVOCATION_FORMAT
+                Prompts.PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT
                         + ((offloadUUid != null)
-                                ? String.format(
-                                        Prompts.COMPRESSED_TOOL_INVOCATION_OFFLOAD_HINT,
-                                        offloadUUid)
+                                ? String.format(Prompts.OFFLOAD_HINT, offloadUUid)
                                 : "");
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -1332,7 +1350,9 @@ void compressIfNeededAsync() {
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_START)
+                                        .text(
+                                                PromptProvider.getPreviousRoundToolCompressPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.addAll(messages);
@@ -1342,9 +1362,11 @@ void compressIfNeededAsync() {
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
         Msg block =
                 model.stream(newMessages, null, options)
                         .concatMap(chunk -> processChunk(chunk, context))
@@ -1400,6 +1422,164 @@ void compressIfNeededAsync() {
     public void clear() {
         workingMemoryStorage.clear();
         originalMemoryStorage.clear();
+    }
+
+    /**
+     * Attaches a PlanNotebook instance to enable plan-aware compression.
+     *
+     * <p>This method should be called after the ReActAgent is created and has a PlanNotebook.
+     * When a PlanNotebook is attached, compression operations will automatically include
+     * plan context information to preserve plan-related information during compression.
+     *
+     * <p>This method can be called multiple times to update or replace the PlanNotebook.
+     * Passing null will detach the current PlanNotebook and disable plan-aware compression.
+     *
+     * @param planNotebook the PlanNotebook instance to attach, or null to detach
+     */
+    public void attachPlanNote(PlanNotebook planNotebook) {
+        this.planNotebook = planNotebook;
+        if (planNotebook != null) {
+            log.debug("PlanNotebook attached to AutoContextMemory for plan-aware compression");
+        } else {
+            log.debug("PlanNotebook detached from AutoContextMemory");
+        }
+    }
+
+    /**
+     * Gets the current plan state information for compression context.
+     *
+     * <p>This method generates a generic plan-aware hint message that is fixed to be placed
+     * <b>after</b> the messages that need to be compressed. The content uses "above messages"
+     * terminology to refer to the messages that appear before this hint in the message list.
+     *
+     * @return Plan state information as a formatted string, or null if no plan is active
+     */
+    private String getPlanStateContext() {
+        if (planNotebook == null) {
+            return null;
+        }
+
+        Plan currentPlan = planNotebook.getCurrentPlan();
+        if (currentPlan == null) {
+            return null;
+        }
+
+        // Build plan state information (as hint message content)
+        StringBuilder planContext = new StringBuilder();
+        planContext.append("=== Current Plan Context ===\n");
+        planContext.append("Plan Name: ").append(currentPlan.getName()).append("\n");
+        planContext.append("Plan State: ").append(currentPlan.getState().getValue()).append("\n");
+        planContext.append("Description: ").append(currentPlan.getDescription()).append("\n");
+        planContext
+                .append("Expected Outcome: ")
+                .append(currentPlan.getExpectedOutcome())
+                .append("\n");
+
+        List<SubTask> subtasks = currentPlan.getSubtasks();
+        if (subtasks != null && !subtasks.isEmpty()) {
+            planContext.append("\nSubtasks:\n");
+            for (int i = 0; i < subtasks.size(); i++) {
+                SubTask subtask = subtasks.get(i);
+                planContext.append(
+                        String.format(
+                                "  [%d] %s - State: %s\n",
+                                i + 1, subtask.getName(), subtask.getState().getValue()));
+                if (subtask.getState() == SubTaskState.IN_PROGRESS) {
+                    planContext.append(
+                            "    ⚠️ Currently in progress - preserve related information\n");
+                } else if (subtask.getState() == SubTaskState.DONE
+                        && subtask.getOutcome() != null) {
+                    planContext.append("    ✅ Outcome: ").append(subtask.getOutcome()).append("\n");
+                }
+            }
+        }
+
+        planContext.append("\n=== Compression Guidelines ===\n");
+        planContext.append("When compressing the above messages, prioritize information that:\n");
+        planContext.append("1. Is directly related to the current plan and its subtasks\n");
+        planContext.append("2. Supports the execution of in-progress subtasks\n");
+        planContext.append("3. Contains outcomes or results from completed subtasks\n");
+        planContext.append("4. Provides context for upcoming TODO subtasks\n");
+        planContext.append("5. Includes plan-related tool calls and their results\n");
+
+        // Provide more specific guidance based on plan state
+        if (currentPlan.getState() == PlanState.IN_PROGRESS) {
+            planContext.append("\nSpecifically:\n");
+            planContext.append("- Preserve all information related to active subtasks\n");
+            planContext.append("- Keep detailed results from tools used in plan execution\n");
+            planContext.append("- Maintain context that helps track plan progress\n");
+        }
+
+        // Count tasks by state
+        long inProgressCount =
+                subtasks != null
+                        ? subtasks.stream()
+                                .filter(st -> st.getState() == SubTaskState.IN_PROGRESS)
+                                .count()
+                        : 0;
+        long doneCount =
+                subtasks != null
+                        ? subtasks.stream().filter(st -> st.getState() == SubTaskState.DONE).count()
+                        : 0;
+
+        if (inProgressCount > 0) {
+            planContext.append(
+                    String.format(
+                            "- Currently %d subtask(s) in progress - preserve all related"
+                                    + " context\n",
+                            inProgressCount));
+        }
+
+        if (doneCount > 0) {
+            planContext.append(
+                    String.format(
+                            "- %d subtask(s) completed - preserve their outcomes and results\n",
+                            doneCount));
+        }
+
+        return planContext.toString();
+    }
+
+    /**
+     * Creates a hint message containing plan context information for compression.
+     *
+     * <p>This hint message is placed <b>after</b> the compression scope marker
+     * (COMPRESSION_MESSAGE_LIST_END) at the end of the message list. This placement leverages the
+     * model's attention mechanism (recency effect), ensuring compression guidelines are fresh in the
+     * model's context during generation.
+     *
+     * @return A USER message containing plan context, or null if no plan is active
+     */
+    private Msg createPlanAwareHintMessage() {
+        String planContext = getPlanStateContext();
+        if (planContext == null) {
+            return null;
+        }
+
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("user")
+                .content(
+                        TextBlock.builder()
+                                .text("<plan_aware_hint>\n" + planContext + "\n</plan_aware_hint>")
+                                .build())
+                .build();
+    }
+
+    /**
+     * Adds plan-aware hint message to the message list if a plan is active.
+     *
+     * <p>This method creates and adds a plan-aware hint message to the provided message list if
+     * there is an active plan. The hint message is added at the end of the list to leverage the
+     * recency effect of the model's attention mechanism.
+     *
+     * @param newMessages the message list to which the hint message should be added
+     */
+    private void addPlanAwareHintIfNeeded(List<Msg> newMessages) {
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
     }
 
     /**
@@ -1515,5 +1695,64 @@ void compressIfNeededAsync() {
      */
     public List<CompressionEvent> getCompressionEvents() {
         return compressionEvents;
+    }
+
+    // ==================== StateModule API ====================
+
+    /**
+     * Save memory state to the session.
+     *
+     * <p>Saves working memory and original memory messages to the session storage.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        session.save(
+                sessionKey,
+                "autoContextMemory_workingMessages",
+                new ArrayList<>(workingMemoryStorage));
+        session.save(
+                sessionKey,
+                "autoContextMemory_originalMessages",
+                new ArrayList<>(originalMemoryStorage));
+
+        // Save offload context (critical for reload functionality)
+        if (!offloadContext.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_offloadContext",
+                    new OffloadContextState(new HashMap<>(offloadContext)));
+        }
+    }
+
+    /**
+     * Load memory state from the session.
+     *
+     * <p>Loads working memory and original memory messages from the session storage.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        List<Msg> loadedWorking =
+                session.getList(sessionKey, "autoContextMemory_workingMessages", Msg.class);
+        workingMemoryStorage.clear();
+        workingMemoryStorage.addAll(loadedWorking);
+
+        List<Msg> loadedOriginal =
+                session.getList(sessionKey, "autoContextMemory_originalMessages", Msg.class);
+        originalMemoryStorage.clear();
+        originalMemoryStorage.addAll(loadedOriginal);
+
+        // Load offload context
+        session.get(sessionKey, "autoContextMemory_offloadContext", OffloadContextState.class)
+                .ifPresent(
+                        state -> {
+                            offloadContext.clear();
+                            offloadContext.putAll(state.offloadContext());
+                        });
     }
 }

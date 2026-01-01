@@ -1,0 +1,88 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# AgentScope Boba Tea Shop - Environment Variables Configuration Example
+# =============================================================================
+#
+# Usage:
+#   1. Copy this file to local-env.sh: cp local-env.example local-env.sh
+#   2. Modify the configuration values in local-env.sh
+#   3. Load environment variables and start: source local-env.sh && ./local-deploy.sh start
+#
+# =============================================================================
+
+# ============================================================================
+# MySQL Configuration (get the following info from your deployed MySQL service)
+# ============================================================================
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_NAME=multi_agent_demo
+export DB_USERNAME=multi_agent_demo
+export DB_PASSWORD=multi_agent_demo@321
+
+# ============================================================================
+# Nacos Configuration (get the following info from your deployed Nacos service)
+# ============================================================================
+export NACOS_SERVER_ADDR=localhost:8848
+export NACOS_NAMESPACE=public
+export NACOS_REGISTER_ENABLED=true
+
+# ============================================================================
+# LLM Model Configuration
+# ============================================================================
+# Model provider: dashscope or openai
+export MODEL_PROVIDER=dashscope
+
+# LLM API Key (⚠️ Required)
+# - If using dashscope, enter your DashScope API Key
+# - If using openai, enter your OpenAI API Key
+export MODEL_API_KEY=your_model_api_key_here
+
+# Model name
+# - dashscope: qwen-max, qwen-plus, qwen-turbo, etc.
+# - openai: gpt-4, gpt-3.5-turbo, etc.
+export MODEL_NAME=qwen-max
+
+# Model base URL (optional, configure when using OpenAI compatible interface)
+# export MODEL_BASE_URL=https://api.openai.com/v1
+
+# ============================================================================
+# Bailian Knowledge Base Configuration (RAG - ⚠️ Required)
+# ============================================================================
+# Alibaba Cloud Access Key ID (for Bailian knowledge base)
+export DASHSCOPE_ACCESS_KEY_ID=your_access_key_id_here
+
+# Alibaba Cloud Access Key Secret
+export DASHSCOPE_ACCESS_KEY_SECRET=your_access_key_secret_here
+
+# Bailian Workspace ID
+export DASHSCOPE_WORKSPACE_ID=your_workspace_id_here
+
+# Bailian knowledge base index ID
+export DASHSCOPE_INDEX_ID=your_index_id_here
+
+# ============================================================================
+# Mem0 Memory Service Configuration (⚠️ Required)
+# ============================================================================
+export MEM0_API_KEY=your_mem0_api_key_here
+
+# ============================================================================
+# Service Port Configuration (Optional - default values are fine)
+# ============================================================================
+# export BUSINESS_MCP_SERVER_PORT=10002
+# export CONSULT_SUB_AGENT_PORT=10005
+# export BUSINESS_SUB_AGENT_PORT=10006
+# export SUPERVISOR_AGENT_PORT=10008  # Frontend and API access through this port
+

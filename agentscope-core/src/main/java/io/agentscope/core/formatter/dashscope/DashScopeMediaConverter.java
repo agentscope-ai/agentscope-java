@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -58,14 +58,7 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             MediaUtils.validateImageExtension(url);
-
-            if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol
-                return MediaUtils.toFileProtocolUrl(url);
-            } else {
-                // Remote URL: use directly
-                return url;
-            }
+            return MediaUtils.urlToProtocolUrl(url);
 
         } else if (source instanceof Base64Source base64Source) {
             // Base64 source: construct data URL
@@ -114,14 +107,7 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             MediaUtils.validateVideoExtension(url);
-
-            if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol
-                return MediaUtils.toFileProtocolUrl(url);
-            } else {
-                // Remote URL: use directly
-                return url;
-            }
+            return MediaUtils.urlToProtocolUrl(url);
 
         } else if (source instanceof Base64Source base64Source) {
             // Base64 source: construct data URL
@@ -170,14 +156,7 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             // Note: DashScope may not support audio validation like images
-
-            if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol
-                return MediaUtils.toFileProtocolUrl(url);
-            } else {
-                // Remote URL: use directly
-                return url;
-            }
+            return MediaUtils.urlToProtocolUrl(url);
 
         } else if (source instanceof Base64Source base64Source) {
             // Base64 source: construct data URL

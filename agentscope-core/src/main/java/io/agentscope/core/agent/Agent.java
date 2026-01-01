@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -110,6 +111,26 @@ public interface Agent {
     }
 
     /**
+     * Process a single input message with structured model and generate a response.
+     *
+     * <p>The structured model parameter defines the expected structure of output data.
+     * Not support UserAgent
+     *
+     * <p>The structured data will be stored in the returned message's metadata field and can be
+     * extracted using {@link Msg#getStructuredData(boolean mutable)}.
+     *
+     * <p>Default implementation ignores the schemaDesc parameter. Agents that support
+     * structured output should override this method.
+     *
+     * @param msg Input message
+     * @param schemaDesc A com.fasterxml.jackson.databind.JsonNode instance defining the structure (e.g., a com.fasterxml.jackson.databind.JsonNode instance)
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(Msg msg, JsonNode schemaDesc) {
+        return call(msg == null ? List.of() : List.of(msg), schemaDesc);
+    }
+
+    /**
      * Process multiple input messages with structured model and generate a response.
      *
      * <p>The structured model parameter defines the expected structure of input or output data.
@@ -123,6 +144,8 @@ public interface Agent {
      * @return Response message with structured data in metadata
      */
     Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel);
+
+    Mono<Msg> call(List<Msg> msgs, JsonNode schemaDesc);
 
     /**
      * Continue generation with structured model based on current state.

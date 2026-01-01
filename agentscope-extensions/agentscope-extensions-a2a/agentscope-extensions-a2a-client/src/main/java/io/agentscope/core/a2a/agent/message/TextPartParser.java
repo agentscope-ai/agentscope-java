@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -17,7 +17,6 @@
 package io.agentscope.core.a2a.agent.message;
 
 import io.a2a.spec.TextPart;
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -39,10 +38,10 @@ public class TextPartParser implements PartParser<TextPart> {
     private boolean isThinkingBlock(TextPart part) {
         if (null == part.getMetadata()
                 || part.getMetadata().isEmpty()
-                || !part.getMetadata().containsKey(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY)) {
+                || !part.getMetadata().containsKey(MessageConstants.BLOCK_TYPE_METADATA_KEY)) {
             return false;
         }
         return MessageConstants.BlockContent.TYPE_THINKING.equals(
-                part.getMetadata().get(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY));
+                part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
     }
 }

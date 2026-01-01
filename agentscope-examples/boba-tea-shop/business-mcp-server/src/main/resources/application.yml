@@ -1,0 +1,50 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+server:
+  port: 10002
+
+spring:
+  application:
+    name: business-mcp-server
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:multi-agent-demo}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useAffectedRows=true
+    username: ${DB_USERNAME:multi_agent_demo}
+    password: ${DB_PASSWORD:multi_agent_demo@321}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: never
+
+# MyBatis
+mybatis:
+  type-aliases-package: com.alibaba.cloud.ai.order.entity
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Nacos MCP
+agentscope:
+  mcp:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      namespace: ${NACOS_NAMESPACE:public}
+      register:
+        enabled: ${NACOS_REGISTER_ENABLED:true}
+        server-name: business-mcp-server
+        server-version: 0.0.1
+        server-description: Business MCP Server for Cloud Edge Boba Tea Shop, provides order and feedback management tools
+        protocol: sse
+        endpoint-path: /sse

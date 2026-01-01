@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,338 +15,422 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.openai.core.JsonValue;
-import com.openai.models.FunctionDefinition;
-import com.openai.models.FunctionParameters;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionFunctionTool;
-import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
-import com.openai.models.chat.completions.ChatCompletionTool;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
+import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handles tool registration and options application for OpenAI API.
+ * Handles tool registration and options application for OpenAI HTTP API.
  *
- * <p>
- * This class provides utility methods for:
+ * <p>This class provides utility methods for:
  * <ul>
- * <li>Applying generation options to OpenAI request parameters
- * <li>Converting AgentScope tool schemas to OpenAI tool definitions
+ *   <li>Applying generation options to OpenAI request DTOs
+ *   <li>Converting AgentScope tool schemas to OpenAI tool definitions
+ *   <li>Provider-specific tool_choice compatibility handling
  * </ul>
+ *
+ * <p>Provider Compatibility:
+ * <ul>
+ *   <li>OpenAI: Full support (auto, none, required, specific)</li>
+ *   <li>Anthropic: Full support with different format</li>
+ *   <li>Gemini: Partial support (no specific)</li>
+ *   <li>GLM: Limited support (auto only)</li>
+ * </ul>
+ *
+ * @see ProviderCapability
  */
 public class OpenAIToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIToolsHelper.class);
 
     /**
-     * Apply GenerateOptions to OpenAI ChatCompletionCreateParams.Builder.
+     * Apply GenerateOptions to OpenAI request DTO.
      *
-     * @param paramsBuilder  OpenAI request parameters builder
-     * @param options        Generation options to apply
+     * @param request OpenAI request DTO
+     * @param options Generation options to apply
      * @param defaultOptions Default options to use if options parameter is null
-     * @param optionGetter   Function to get option value with fallback
      */
-    @SuppressWarnings("deprecation")
     public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions,
-            Function<Function<GenerateOptions, ?>, ?> optionGetter) {
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
 
-        // Apply each option individually, falling back to defaultOptions if the
-        // specific field is
-        // null
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getTemperature,
-                defaultOptions,
-                paramsBuilder::temperature);
-
-        applyIntegerOption(
-                optionGetter,
-                GenerateOptions::getMaxTokens,
-                defaultOptions,
-                value -> paramsBuilder.maxCompletionTokens(value.longValue()));
-
-        applyDoubleOption(
-                optionGetter, GenerateOptions::getTopP, defaultOptions, paramsBuilder::topP);
-
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getFrequencyPenalty,
-                defaultOptions,
-                paramsBuilder::frequencyPenalty);
-
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getPresencePenalty,
-                defaultOptions,
-                paramsBuilder::presencePenalty);
-
-        // Apply seed parameter
-        applyLongOption(
-                optionGetter,
-                GenerateOptions::getSeed,
-                defaultOptions,
-                val -> {
-                    if (val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
-                        throw new IllegalArgumentException(
-                                "Seed value "
-                                        + val
-                                        + " is out of int range ("
-                                        + Integer.MIN_VALUE
-                                        + " to "
-                                        + Integer.MAX_VALUE
-                                        + ")");
-                    }
-                    paramsBuilder.seed(val.intValue());
-                });
-
-        // Apply additional parameters (merge defaultOptions first, then options to
-        // override)
-        // Apply additional headers
-        applyAdditionalHeaders(
-                paramsBuilder,
-                defaultOptions,
-                ChatCompletionCreateParams.Builder::putAdditionalHeader);
-        applyAdditionalHeaders(
-                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
-
-        // Apply additional body params
-        applyAdditionalBodyParams(
-                paramsBuilder,
-                defaultOptions,
-                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
-        applyAdditionalBodyParams(
-                paramsBuilder,
-                options,
-                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
-
-        // Apply additional query params
-        applyAdditionalQueryParams(
-                paramsBuilder,
-                defaultOptions,
-                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
-        applyAdditionalQueryParams(
-                paramsBuilder,
-                options,
-                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
-    }
-
-    private void applyAdditionalHeaders(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
-        if (opts == null) return;
-        Map<String, String> headers = opts.getAdditionalHeaders();
-        if (headers != null && !headers.isEmpty()) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional headers to OpenAI request", headers.size());
+        // Check if this is a reasoning model (has fixed sampling parameters)
+        // Reasoning models like DeepSeek R1, OpenAI o1 don't accept temperature, top_p, penalties
+        String model = request.getModel();
+        String baseUrl = options != null ? options.getBaseUrl() : null;
+        if (baseUrl == null && defaultOptions != null) {
+            baseUrl = defaultOptions.getBaseUrl();
         }
+        boolean isReasoningModel = ProviderCapability.isReasoningModel(model, baseUrl);
+
+        if (!isReasoningModel) {
+            // Apply temperature
+            Double temperature =
+                    getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
+            if (temperature != null) {
+                request.setTemperature(temperature);
+            }
+
+            // Apply top_p
+            Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
+            if (topP != null) {
+                request.setTopP(topP);
+            }
+
+            // Apply frequency penalty
+            Double frequencyPenalty =
+                    getOptionOrDefault(
+                            options, defaultOptions, GenerateOptions::getFrequencyPenalty);
+            if (frequencyPenalty != null) {
+                request.setFrequencyPenalty(frequencyPenalty);
+            }
+
+            // Apply presence penalty
+            Double presencePenalty =
+                    getOptionOrDefault(
+                            options, defaultOptions, GenerateOptions::getPresencePenalty);
+            if (presencePenalty != null) {
+                request.setPresencePenalty(presencePenalty);
+            }
+        }
+
+        // Apply max tokens (applies to all models including reasoning models)
+        Integer maxTokens =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
+        if (maxTokens != null) {
+            // For reasoning models, only use max_tokens, not max_completion_tokens
+            if (!isReasoningModel) {
+                request.setMaxCompletionTokens(maxTokens);
+            }
+            // Some providers still expect the legacy max_tokens field
+            request.setMaxTokens(maxTokens);
+        } else if (isReasoningModel) {
+            // Reasoning models require max_tokens to be set
+            // DeepSeek R1 has a limit of 4092, use safe default
+            request.setMaxTokens(4000);
+        }
+
+        // Apply seed
+        Long seed = getOptionOrDefault(options, defaultOptions, GenerateOptions::getSeed);
+        if (seed != null) {
+            if (seed < Integer.MIN_VALUE || seed > Integer.MAX_VALUE) {
+                log.warn("Seed value {} is out of Integer range, will be truncated", seed);
+            }
+            request.setSeed(seed.intValue());
+        }
+
+        // Apply additional body params (must be last to allow overriding)
+        applyAdditionalBodyParams(request, defaultOptions);
+        applyAdditionalBodyParams(request, options);
     }
 
-    private void applyAdditionalBodyParams(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, Object> setter) {
+    /**
+     * Apply additional body parameters from GenerateOptions to OpenAI request.
+     * This handles parameters like reasoning_effort that are set via additionalBodyParam().
+     */
+    private void applyAdditionalBodyParams(OpenAIRequest request, GenerateOptions opts) {
         if (opts == null) return;
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                // Map common parameter names to OpenAIRequest setters
+                switch (key) {
+                    case "reasoning_effort":
+                        if (value instanceof String) {
+                            request.setReasoningEffort((String) value);
+                        }
+                        break;
+                    case "include_reasoning":
+                        if (value instanceof Boolean) {
+                            request.setIncludeReasoning((Boolean) value);
+                        }
+                        break;
+                    case "stop":
+                        if (value instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<String> stopList = (List<String>) value;
+                            request.setStop(stopList);
+                        }
+                        break;
+                    case "response_format":
+                        if (value instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> formatMap = (Map<String, Object>) value;
+                            request.setResponseFormat(formatMap);
+                        }
+                        break;
+                    default:
+                        // Add unknown parameters to extraParams
+                        request.addExtraParam(key, value);
+                        log.debug("Additional body parameter '{}' added to extraParams", key);
+                        break;
+                }
             }
             log.debug("Applied {} additional body params to OpenAI request", params.size());
         }
     }
 
-    private void applyAdditionalQueryParams(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
-        if (opts == null) return;
-        Map<String, String> params = opts.getAdditionalQueryParams();
-        if (params != null && !params.isEmpty()) {
-            for (Map.Entry<String, String> entry : params.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional query params to OpenAI request", params.size());
-        }
-    }
-
-    @FunctionalInterface
-    private interface TriConsumer<T, U, V> {
-        void accept(T t, U u, V v);
-    }
-
     /**
-     * Helper method to apply Double option with fallback logic.
+     * Get option value with fallback to default.
      */
-    private void applyDoubleOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Double> accessor,
+    private <T> T getOptionOrDefault(
+            GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Double> setter) {
-        Double value =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
+            java.util.function.Function<GenerateOptions, T> getter) {
+        T value = options != null ? getter.apply(options) : null;
+        if (value == null && defaultOptions != null) {
+            value = getter.apply(defaultOptions);
         }
+        return value;
     }
 
     /**
-     * Helper method to apply Integer option with fallback logic.
-     */
-    private void applyIntegerOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Integer> accessor,
-            GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
-        Integer value =
-                (Integer)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Helper method to apply Long option with fallback logic.
-     */
-    private void applyLongOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Long> accessor,
-            GenerateOptions defaultOptions,
-            java.util.function.Consumer<Long> setter) {
-        Long value =
-                (Long)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Apply tool schemas to OpenAI ChatCompletionCreateParams.Builder.
+     * Convert tool schemas to OpenAI tool list.
      *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param tools         List of tool schemas to apply (may be null or empty)
+     * @param tools List of tool schemas to convert (may be null or empty)
+     * @return List of OpenAI tool DTOs
      */
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
+    public List<OpenAITool> convertTools(List<ToolSchema> tools) {
+        return convertTools(tools, null);
+    }
+
+    /**
+     * Convert tool schemas to OpenAI tool list with provider compatibility handling.
+     *
+     * @param tools List of tool schemas to convert (may be null or empty)
+     * @param capability Provider capability for compatibility adjustments (null for default)
+     * @return List of OpenAI tool DTOs
+     */
+    public List<OpenAITool> convertTools(List<ToolSchema> tools, ProviderCapability capability) {
         if (tools == null || tools.isEmpty()) {
-            return;
+            return null;
         }
+
+        List<OpenAITool> openAITools = new ArrayList<>();
 
         try {
             for (ToolSchema toolSchema : tools) {
-                // Convert ToolSchema to OpenAI ChatCompletionTool
-                // Create function definition first
-                FunctionDefinition.Builder functionBuilder =
-                        FunctionDefinition.builder().name(toolSchema.getName());
+                OpenAIToolFunction.Builder functionBuilder =
+                        OpenAIToolFunction.builder()
+                                .name(toolSchema.getName())
+                                .description(toolSchema.getDescription())
+                                .parameters(toolSchema.getParameters());
 
-                if (toolSchema.getDescription() != null) {
-                    functionBuilder.description(toolSchema.getDescription());
+                // Pass strict field only if provider supports it
+                // GLM does not support the 'strict' parameter
+                if (toolSchema.getStrict() != null
+                        && (capability == null || capability.supportsStrictParameter())) {
+                    functionBuilder.strict(toolSchema.getStrict());
                 }
 
-                // Convert parameters map to proper format for OpenAI
-                if (toolSchema.getParameters() != null) {
-                    // Convert Map<String, Object> to FunctionParameters
-                    FunctionParameters.Builder funcParamsBuilder = FunctionParameters.builder();
-                    for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
-                        funcParamsBuilder.putAdditionalProperty(
-                                entry.getKey(), JsonValue.from(entry.getValue()));
-                    }
-                    functionBuilder.parameters(funcParamsBuilder.build());
-                }
-
-                // Create ChatCompletionFunctionTool
-                ChatCompletionFunctionTool functionTool =
-                        ChatCompletionFunctionTool.builder()
-                                .function(functionBuilder.build())
-                                .build();
-
-                // Create ChatCompletionTool
-                ChatCompletionTool tool = ChatCompletionTool.ofFunction(functionTool);
-                paramsBuilder.addTool(tool);
-
-                log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
+                OpenAIToolFunction function = functionBuilder.build();
+                openAITools.add(OpenAITool.function(function));
+                log.debug(
+                        "Converted tool to OpenAI format: {} (strict: {}, capability: {})",
+                        toolSchema.getName(),
+                        toolSchema.getStrict(),
+                        capability);
             }
-
         } catch (Exception e) {
-            log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
+            log.error("Failed to convert tools to OpenAI format: {}", e.getMessage(), e);
+        }
+
+        return openAITools;
+    }
+
+    /**
+     * Apply tool schemas to OpenAI request DTO.
+     *
+     * @param request OpenAI request DTO
+     * @param tools List of tool schemas to apply (may be null or empty)
+     */
+    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
+        List<OpenAITool> openAITools = convertTools(tools);
+        if (openAITools != null && !openAITools.isEmpty()) {
+            request.setTools(openAITools);
         }
     }
 
     /**
-     * Apply tool choice configuration to OpenAI request parameters.
+     * Apply tool schemas to OpenAI request DTO with provider capability handling.
      *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param toolChoice    Tool choice configuration (null means auto)
+     * @param request OpenAI request DTO
+     * @param tools List of tool schemas to apply (may be null or empty)
+     * @param capability Provider capability for compatibility adjustments
+     */
+    public void applyTools(
+            OpenAIRequest request, List<ToolSchema> tools, ProviderCapability capability) {
+        List<OpenAITool> openAITools = convertTools(tools, capability);
+        if (openAITools != null && !openAITools.isEmpty()) {
+            request.setTools(openAITools);
+        }
+    }
+
+    /**
+     * Apply tool choice configuration to OpenAI request DTO.
+     *
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration (null means auto)
+     */
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        applyToolChoice(request, toolChoice, null, null);
+    }
+
+    /**
+     * Apply tool choice configuration to OpenAI request DTO with provider compatibility handling.
+     *
+     * <p>This method detects the provider from baseUrl and adjusts tool_choice format
+     * or falls back to "auto" when the provider doesn't support certain options.
+     *
+     * <p>Provider behavior:
+     * <ul>
+     *   <li>OpenAI: Full support (auto, none, required, specific)</li>
+     *   <li>Anthropic: Full support with {"type": "tool", "name": "..."} format</li>
+     *   <li>Gemini: auto, none, required (specific degraded to required)</li>
+     *   <li>GLM: auto only (none/required/specific degraded to auto)</li>
+     * </ul>
+     *
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration (null means auto)
+     * @param baseUrl API base URL for provider detection (null for default)
+     * @param modelName Model name for provider detection fallback (null)
      */
     public void applyToolChoice(
-            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
+            OpenAIRequest request, ToolChoice toolChoice, String baseUrl, String modelName) {
+
+        // Only apply tool_choice if tools are present
+        if (request.getTools() == null || request.getTools().isEmpty()) {
+            return;
+        }
+
+        // Detect provider capability
+        ProviderCapability capability = detectProvider(baseUrl, modelName);
+
         if (toolChoice == null || toolChoice instanceof ToolChoice.Auto) {
-            // Default to auto
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
+            request.setToolChoice("auto");
         } else if (toolChoice instanceof ToolChoice.None) {
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.NONE));
+            if (capability.supportsNone()) {
+                request.setToolChoice("none");
+            } else {
+                logProviderFallback("none", capability);
+                request.setToolChoice("auto");
+            }
         } else if (toolChoice instanceof ToolChoice.Required) {
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.REQUIRED));
+            if (capability.supportsRequired()) {
+                request.setToolChoice("required");
+            } else {
+                logProviderFallback("required", capability);
+                request.setToolChoice("auto");
+            }
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            // Force specific tool call using ChatCompletionNamedToolChoice
-            ChatCompletionNamedToolChoice namedToolChoice =
-                    ChatCompletionNamedToolChoice.builder()
-                            .function(
-                                    ChatCompletionNamedToolChoice.Function.builder()
-                                            .name(specific.toolName())
-                                            .build())
-                            .build();
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofNamedToolChoice(namedToolChoice));
+            if (capability.supportsSpecific()) {
+                applySpecificToolChoice(request, specific, capability);
+            } else {
+                logProviderFallback("specific tool choice", capability);
+                // For providers like Gemini, degrade to "required" if supported
+                if (capability.supportsRequired()) {
+                    request.setToolChoice("required");
+                    log.debug("Degraded specific tool_choice to 'required' for {}", capability);
+                } else {
+                    request.setToolChoice("auto");
+                }
+            }
         } else {
             // Fallback to auto for unknown types
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
+            request.setToolChoice("auto");
         }
 
         log.debug(
-                "Applied tool choice: {}",
-                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
+                "Applied tool choice: {} (provider: {})",
+                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto",
+                capability);
+    }
+
+    /**
+     * Detect provider capability from baseUrl and modelName.
+     *
+     * @param baseUrl the base URL
+     * @param modelName the model name
+     * @return the detected provider capability
+     */
+    private ProviderCapability detectProvider(String baseUrl, String modelName) {
+        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
+        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
+            capability = ProviderCapability.fromModelName(modelName);
+        }
+        return capability;
+    }
+
+    /**
+     * Apply specific tool choice with provider-specific formatting.
+     *
+     * @param request the OpenAI request
+     * @param specific the specific tool choice
+     * @param capability the provider capability
+     */
+    private void applySpecificToolChoice(
+            OpenAIRequest request, ToolChoice.Specific specific, ProviderCapability capability) {
+
+        Map<String, Object> namedToolChoice = new HashMap<>();
+
+        switch (capability) {
+            case ANTHROPIC:
+                // Anthropic uses {"type": "tool", "name": "..."}
+                namedToolChoice.put("type", "tool");
+                namedToolChoice.put("name", specific.toolName());
+                break;
+            case OPENAI:
+            case DEEPSEEK:
+            case DASHSCOPE:
+            case UNKNOWN:
+            default:
+                // OpenAI format: {"type": "function", "function": {"name": "..."}}
+                namedToolChoice.put("type", "function");
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", specific.toolName());
+                namedToolChoice.put("function", function);
+                break;
+        }
+
+        request.setToolChoice(namedToolChoice);
+    }
+
+    /**
+     * Log a warning when tool_choice is degraded due to provider limitations.
+     *
+     * @param requestedType the requested tool_choice type
+     * @param capability the provider capability
+     */
+    private void logProviderFallback(String requestedType, ProviderCapability capability) {
+        log.warn(
+                "Provider {} does not support tool_choice='{}', degrading to 'auto'. For reliable"
+                        + " behavior with this provider, avoid using forced tool choice.",
+                capability,
+                requestedType);
+    }
+
+    /**
+     * Apply reasoning effort configuration to OpenAI request DTO.
+     * This is used for o1 and other reasoning models.
+     *
+     * @param request OpenAI request DTO
+     * @param reasoningEffort Reasoning effort level ("low", "medium", "high")
+     */
+    public void applyReasoningEffort(OpenAIRequest request, String reasoningEffort) {
+        if (reasoningEffort != null && !reasoningEffort.isEmpty()) {
+            request.setReasoningEffort(reasoningEffort);
+            log.debug("Applied reasoning effort: {}", reasoningEffort);
+        }
     }
 }

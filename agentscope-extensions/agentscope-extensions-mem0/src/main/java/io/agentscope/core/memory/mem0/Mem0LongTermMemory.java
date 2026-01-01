@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -65,6 +65,14 @@ import reactor.core.publisher.Mono;
  *     .apiBaseUrl("http://localhost:8000")
  *     .build();
  *
+ * // For self-hosted Mem0
+ * Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
+ *     .agentName("Assistant")
+ *     .userName("user_123")
+ *     .apiBaseUrl("http://localhost:8000")
+ *     .apiType(Mem0ApiType.SELF_HOSTED)  // Specify self-hosted API type
+ *     .build();
+ *
  * // Record a message
  * Msg msg = Msg.builder()
  *     .role(MsgRole.USER)
@@ -97,7 +105,8 @@ public class Mem0LongTermMemory implements LongTermMemory {
      * Private constructor - use Builder instead.
      */
     private Mem0LongTermMemory(Builder builder) {
-        this.client = new Mem0Client(builder.apiBaseUrl, builder.apiKey, builder.timeout);
+        Mem0ApiType apiType = builder.apiType != null ? builder.apiType : Mem0ApiType.PLATFORM;
+        this.client = new Mem0Client(builder.apiBaseUrl, builder.apiKey, apiType, builder.timeout);
         this.agentId = builder.agentName;
         this.userId = builder.userId;
         this.runId = builder.runName;
@@ -244,6 +253,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         private String runName;
         private String apiBaseUrl;
         private String apiKey;
+        private Mem0ApiType apiType;
         private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
 
         /**
@@ -310,6 +320,17 @@ public class Mem0LongTermMemory implements LongTermMemory {
          */
         public Builder timeout(java.time.Duration timeout) {
             this.timeout = timeout;
+            return this;
+        }
+
+        /**
+         * Sets the Mem0 API type.
+         *
+         * @param apiType API type enum
+         * @return This builder
+         */
+        public Builder apiType(Mem0ApiType apiType) {
+            this.apiType = apiType;
             return this;
         }
 

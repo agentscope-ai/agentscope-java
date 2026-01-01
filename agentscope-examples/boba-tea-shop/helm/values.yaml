@@ -1,0 +1,114 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ========================================
+# Global Configuration
+# ========================================
+global:
+  # Kubernetes namespace
+  namespace: agentscope
+
+# ========================================
+# Image Configuration
+# ========================================
+image:
+  # Image registry address
+  registry: registry-vpc.cn-hangzhou.aliyuncs.com/agentscope
+  # Image pull policy
+  pullPolicy: Always
+  # Default image tag
+  tag: "1.0.2"
+
+# ========================================
+# Database Configuration (MySQL)
+# ========================================
+mysql:
+  # Whether to deploy MySQL
+  deployEnabled: true
+  # MySQL service hostname (K8s Service name)
+  # If using external MySQL, change to external address
+  host: mysql
+  dbname: multi_agent_demo
+  username: multi_agent_demo
+  password: multi_agent_demo@321
+
+# ========================================
+# Nacos Configuration
+# ========================================
+nacos:
+  # Whether to deploy Nacos Server (if false, use external Nacos)
+  deployEnabled: true
+  # Nacos server address ⚠️ Modify required (use external address when deployEnabled=false)
+  serverAddr: nacos-server:8848
+  # Nacos namespace
+  namespace: public
+  # Whether to enable Nacos registration
+  registerEnabled: true
+
+agentscope:
+  model:
+    provider: dashscope # or openai
+    apiKey: {API_KEY} # never commit actual API key
+    modelName: qwen-max
+#    baseUrl:
+
+# ========================================
+# DashScope RAG Configuration (Bailian RAG)
+# ========================================
+dashscope:
+  # Alibaba Cloud Access Key ID ⚠️ Modify required
+  accessKeyId: {DASHSCOPE_ACCESS_KEY_ID}
+  # Alibaba Cloud Access Key Secret ⚠️ Modify required
+  accessKeySecret: {DASHSCOPE_ACCESS_KEY_SECRET}
+  # DashScope Workspace ID ⚠️ Modify required
+  workspaceId: {DASHSCOPE_WORKSPACE_ID}
+  # DashScope Knowledge Base Index ID ⚠️ Modify required
+  indexId: {DASHSCOPE_INDEX_ID}
+
+# ========================================
+# Mem0 Configuration (Memory Service)
+# ========================================
+mem0:
+  # Mem0 API Key ⚠️ Modify required
+  apiKey: {MEM0_API_KEY}
+
+# ========================================
+# XXL-JOB Task Scheduling Configuration
+# ========================================
+xxlJob:
+  # Whether to enable XXL-JOB
+  enabled: false
+  # XXL-JOB Admin address ⚠️ Modify required
+  admin: http://localhost:28080/xxl-job-admin
+  # Access token ⚠️ Modify required
+  accessToken: default_token
+  # Executor application name
+  appname: multi-agent-demo
+
+# ========================================
+# Service Enable/Disable Switches
+# ========================================
+services:
+  # Supervisor Agent (with frontend)
+  # Frontend static files are served by Spring Boot, accessed via port 10008
+  supervisorAgent:
+    enabled: true
+  # MCP Server
+  businessMcpServer:
+    enabled: true
+  # Sub Agents
+  businessSubAgent:
+    enabled: true
+  consultSubAgent:
+    enabled: true

@@ -40,8 +40,9 @@ AutoContextMemory 实现了 `Memory` 接口，提供自动化的上下文管理�
 - **渐进式压缩策略**: 采用 6 种渐进式压缩策略，从轻量级到重量级
 - **智能摘要**: 使用 LLM 模型智能摘要历史对话
 - **内容卸载**: 将大型内容卸载到外部存储，减少内存使用
-- **工具调用保留**: 在压缩过程中保留工具调用接口信息（名称、参数）
 - **双存储机制**: 工作存储（压缩后）和原始存储（完整历史）
+- **计划感知**: 自动集成 PlanNotebook，根据当前计划状态调整压缩策略，确保压缩过程中保留关键的计划相关信息
+- **Prompt 定制**: 支持根据具体场景和领域定制上下文压缩 prompt，实现针对性的压缩优化
 
 ## 架构设计
 
@@ -57,7 +58,7 @@ AutoContextMemory 使用多存储机制：
 
 ### 压缩策略
 
-系统按以下顺序应用 6 种压缩策略。压缩遵循以下核心原则：
+压缩遵循以下核心原则：
 
 - **当前轮次优先**: 当前轮次的消息重要性高于历史轮次消息，优先保护当前轮次的完整信息
 - **用户交互优先**: 用户输入和 Agent 回复的重要性高于工具调用的输入输出中间结果
@@ -114,6 +115,7 @@ AutoContextMemory 使用多存储机制：
 | `offloadSinglePreview` | int | 200 | 卸载消息的预览长度（字符数） |
 | `minConsecutiveToolMessages` | int | 6 | 压缩所需的最小连续工具消息数量 |
 | `currentRoundCompressionRatio` | double | 0.3 | 当前轮次消息的压缩比例 (0.0-1.0)，默认 30% |
+| `customPrompt` | PromptConfig | null | 定制上下文压缩 prompt 配置（可选，未设置时使用默认 prompt） |
 
 ### 配置示例
 
@@ -134,11 +136,13 @@ AutoContextConfig config = AutoContextConfig.builder()
 
 ### 基本使用
 
+在 `ReActAgent` 中使用 `AutoContextMemory` 时，建议使用 `AutoContextHook` 来自动处理集成设置。该 Hook 会自动完成必要的配置。
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.ContextOffloadTool;
+import io.agentscope.core.memory.autocontext.AutoContextHook;
 import io.agentscope.core.tool.Toolkit;
 
 // 配置
@@ -151,16 +155,115 @@ AutoContextConfig config = AutoContextConfig.builder()
 // 创建内存
 AutoContextMemory memory = new AutoContextMemory(config, model);
 
-// AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(memory));
-
-// 创建 Agent
+// 创建 Agent，使用 AutoContextHook 自动处理集成
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
     .memory(memory)
-    .toolkit(toolkit)
+    .toolkit(new Toolkit())
+    .enablePlan()  // 启用 PlanNotebook 支持（可选，但推荐）
+    .hook(new AutoContextHook())  // 自动注册 ContextOffloadTool 并附加 PlanNotebook
+    .build();
+```
+
+`AutoContextHook` 会自动完成以下操作：
+- 将 `ContextOffloadTool` 注册到 agent 的 toolkit（启用上下文重载功能）
+- 将 agent 的 `PlanNotebook` 附加到 `AutoContextMemory`，实现计划感知压缩（如果启用了 PlanNotebook）
+- 确保 `AutoContextMemory` 与 `ReActAgent` 之间的正确集成
+
+### 定制上下文压缩Prompt
+
+AutoContextMemory 内部采用默认的通用压缩 prompt，这些 prompt 经过精心设计，期望尽量满足大多数业务需求。然而，根据实际场景和业务特点进行压缩 prompt 的定制设计，可能可以带来更优的压缩效果。例如，针对特定领域的工具调用接口，可以明确指导系统保留哪些关键信息、适当丢弃哪些冗余内容，从而在保证信息完整性的同时实现更高的压缩率。
+
+AutoContextMemory 支持定制上下文压缩策略中使用的 prompt，允许针对特定领域和场景进行优化。
+
+#### PromptConfig
+
+`PromptConfig` 类用于配置定制上下文压缩 prompt，所有 prompt 都是可选的。如果未指定，将使用 `Prompts` 类中的默认值。
+
+可配置的 prompt：
+
+| 字段 | 说明 | 对应策略 |
+|------|------|---------|
+| `previousRoundToolCompressPrompt` | 历史轮次工具调用压缩提示词 | 策略 1 |
+| `previousRoundSummaryPrompt` | 历史轮次对话摘要提示词 | 策略 4 |
+| `currentRoundLargeMessagePrompt` | 当前轮次大型消息摘要提示词 | 策略 5 |
+| `currentRoundCompressPrompt` | 当前轮次消息压缩提示词 | 策略 6 |
+
+#### 使用示例
+
+`customPrompt` 是可选的，可以不设置（使用默认 prompt），也可以只设置其中任意个 prompt（未设置的将使用默认值）。
+
+```java
+import io.agentscope.core.memory.autocontext.PromptConfig;
+
+// 方式 1：不设置 customPrompt，使用默认 prompt（向后兼容）
+AutoContextConfig config1 = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .maxToken(64 * 1024)
+    .build();
+
+// 方式 2：只设置部分 prompt，其他使用默认值
+PromptConfig customPrompt2 = PromptConfig.builder()
+    .previousRoundToolCompressPrompt("定制策略1提示词...")
+    // 其他 prompt 未设置，将使用默认值
+    .build();
+AutoContextConfig config2 = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(customPrompt2)
+    .build();
+
+// 方式 3：设置所有 prompt
+PromptConfig customPrompt3 = PromptConfig.builder()
+    .previousRoundToolCompressPrompt("定制策略1提示词...")
+    .previousRoundSummaryPrompt("定制策略4提示词...")
+    .currentRoundLargeMessagePrompt("定制策略5提示词...")
+    .currentRoundCompressPrompt("定制策略6提示词...")
+    .build();
+AutoContextConfig config3 = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(customPrompt3)
+    .build();
+```
+
+**领域特定 Prompt 示例**
+
+**电商订单处理场景（具体工具调用接口示例）**
+
+```java
+// 针对电商订单处理场景的定制 prompt
+// 假设系统中有以下工具：get_order_info, update_order_status, calculate_price, send_notification
+PromptConfig ecommerceCustomPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt(
+        "你是一个电商订单处理助手。请压缩以下工具调用历史，按照以下规则处理：\n" +
+        "\n" +
+        "【必须保留的信息】\n" +
+        "1. get_order_info 工具调用：保留订单号、订单状态、关键商品信息（商品ID、名称、数量、价格）\n" +
+        "2. update_order_status 工具调用：保留订单号、状态变更（从X到Y）、变更时间\n" +
+        "3. calculate_price 工具调用：保留最终计算的总价、优惠金额、运费\n" +
+        "4. send_notification 工具调用：保留通知类型（短信/邮件）、通知对象、通知内容摘要\n" +
+        "\n" +
+        "【可以丢弃的信息】\n" +
+        "1. 详细的商品描述、图片URL等非关键信息\n" +
+        "2. 重复的订单信息查询结果（只保留最后一次查询的关键结果）\n" +
+        "3. 中间计算过程的详细步骤（只保留最终结果）\n" +
+        "4. 通知发送的详细日志和响应内容（只保留发送状态）\n" +
+        "\n" +
+        "请将多个工具调用合并为简洁的摘要，突出订单处理的关键决策点和最终状态。"
+    )
+    .currentRoundCompressPrompt(
+        "当前轮次包含订单处理相关的工具调用。压缩时请遵循以下原则：\n" +
+        "1. 保留所有订单状态变更的关键信息（订单号、状态变化）\n" +
+        "2. 保留价格计算的结果（总价、优惠、实付金额）\n" +
+        "3. 保留通知发送的关键信息（通知类型、发送状态）\n" +
+        "4. 可以简化工具调用的详细参数，但保留核心业务数据\n" +
+        "5. 合并相同订单的多次操作，只保留最终状态和关键中间状态"
+    )
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(ecommerceCustomPrompt)
     .build();
 ```
 
@@ -178,6 +281,7 @@ ReActAgent agent = ReActAgent.builder()
 - `List<Msg> getInteractionMsgs()`: 获取用户-助手交互消息（过滤工具调用）
 - `Map<String, List<Msg>> getOffloadContext()`: 获取卸载上下文映射
 - `List<CompressionEvent> getCompressionEvents()`: 获取所有压缩事件的记录列表
+- `void attachPlanNote(PlanNotebook planNotebook)`: 附加 PlanNotebook 以启用计划感知压缩
 
 #### ContextOffLoader 接口方法
 
@@ -192,6 +296,29 @@ ReActAgent agent = ReActAgent.builder()
 ```java
 @Tool(name = "context_reload", description = "...")
 public List<Msg> reload(@ToolParam(name = "working_context_offload_uuid") String uuid)
+```
+
+### AutoContextHook
+
+一个 `PreCallHook`，用于自动设置 `AutoContextMemory` 与 `ReActAgent` 的集成：
+
+- 自动将 `ContextOffloadTool` 注册到 agent 的 toolkit
+- 自动将 agent 的 `PlanNotebook` 附加到 `AutoContextMemory`，实现计划感知压缩（如果启用了 PlanNotebook）
+- 每个 agent 只执行一次（线程安全）
+
+建议在 `ReActAgent` 中使用 `AutoContextMemory` 时使用此 Hook，以确保正确的集成和自动配置。
+
+使用方法：
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .memory(memory)
+    .toolkit(toolkit)
+    .enablePlan()  // 可选，但推荐启用
+    .hook(new AutoContextHook())  // 自动处理集成设置
+    .build();
 ```
 
 ## 工作原理
@@ -222,29 +349,41 @@ public List<Msg> reload(@ToolParam(name = "working_context_offload_uuid") String
 
 AutoContextMemory 使用预定义的提示词来指导 LLM 进行压缩和摘要。提示词按照压缩策略的渐进顺序组织：
 
-### 策略 1: 工具调用压缩
-- `TOOL_INVOCATION_COMPRESS_PROMPT_START/END`: 工具调用压缩提示
+### 策略 1: 历史轮次工具调用压缩
+- `PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT`: 历史轮次工具调用压缩提示
+  - 用于对历史轮次的工具调用进行独立压缩
   - 保留工具名称、参数和关键结果
   - 对计划相关工具使用最小压缩
+- `COMPRESSION_MESSAGE_LIST_END`: 通用的范围划分标记，表示以上是本次压缩所需要的消息列表
 
 ### 策略 4: 历史对话摘要
-- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START/END`: 历史对话轮次摘要提示
+- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT`: 历史对话轮次摘要提示
   - 保留关键决策和信息
   - 摘要用户-助手对话对
 
 ### 策略 5: 当前轮次大型消息摘要
-- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START/END`: 当前轮次大型消息摘要提示
+- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT`: 当前轮次大型消息摘要提示
   - 针对单个大型消息生成摘要
   - 保留关键信息
 
 ### 策略 6: 当前轮次消息压缩
-- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START/END`: 当前轮次消息压缩提示
+- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT`: 当前轮次消息压缩提示（不包含字符数要求）
   - 支持可配置的压缩比例（`currentRoundCompressionRatio`）
-  - 明确指定目标字符数
+  - 字符数要求会单独作为最后一条消息发送（`CURRENT_ROUND_MESSAGE_COMPRESS_CHAR_REQUIREMENT`）
   - 针对计划相关工具调用提供简洁摘要
   - 强调低压缩率，保留任务相关信息
 
-所有提示词都设计为保留关键信息，同时减少 token 使用。策略 6 的提示词特别优化，通过明确的目标字符数和严格的压缩要求，确保压缩效果符合预期。
+所有提示词都设计为保留关键信息，同时减少 token 使用。策略 6 的提示词与字符数要求分离，字符数要求作为最后一条消息发送，确保模型在生成时能够准确控制输出长度。
+
+### 计划感知压缩
+
+当 `PlanNotebook` 附加到 `AutoContextMemory` 后，压缩过程会变得计划感知：
+
+- **计划上下文集成**: 在压缩过程中，系统会自动将当前计划的状态（计划名称、描述、子任务及其状态）作为提示消息包含进来
+- **智能信息保留**: 压缩提示词会增强计划上下文，指导 LLM 保留与当前计划和活动子任务相关的信息
+- **策略性压缩**: 与进行中或待处理的子任务相关的信息在压缩过程中会被赋予更高的优先级，确保关键的计划相关上下文得以保留
+
+计划感知提示消息会自动插入到压缩提示词中（在最终指令之前），以利用模型的注意力机制，确保压缩指导原则在生成过程中保持在模型的上下文中。
 
 ## 压缩事件追踪
 
@@ -338,16 +477,17 @@ AutoContextMemory 继承自 `StateModuleBase`，支持状态序列化和反序�
 
 ## 最佳实践
 
-1. **合理设置阈值**: 根据模型上下文窗口大小和实际使用场景调整 `maxToken` 和 `tokenRatio`
-2. **保护重要消息**: 使用 `lastKeep` 确保最近的对话不被压缩
-3. **注册重载工具**: 注册 `ContextOffloadTool` 以便 Agent 在需要时访问卸载的详细内容
-4. **监控压缩日志**: 关注日志输出以了解压缩策略的应用情况
-5. **选择合适的模型**: 用于压缩的模型应该具有良好的摘要能力
+1. **使用 AutoContextHook**: 在 `ReActAgent` 中使用 `AutoContextMemory` 时，使用 `AutoContextHook` 来自动处理集成设置，确保 `ContextOffloadTool` 和 `PlanNotebook` 正确配置。
+2. **合理设置阈值**: 根据模型上下文窗口大小和实际使用场景调整 `maxToken` 和 `tokenRatio`
+3. **保护重要消息**: 使用 `lastKeep` 确保最近的对话不被压缩
+4. **启用 PlanNotebook 集成**: 当使用带计划的 `ReActAgent` 时，启用 `PlanNotebook` 支持（`.enablePlan()`）以受益于计划感知压缩
+5. **监控压缩日志**: 关注日志输出以了解压缩策略的应用情况
+6. **选择合适的模型**: 用于压缩的模型应该具有良好的摘要能力
 
 ## 注意事项
 
 1. **LLM 调用**: 压缩过程需要调用 LLM 模型，会产生额外的 API 调用成本。可以通过 `CompressionEvent` 追踪每次压缩的 token 消耗
-2. **异步处理**: 压缩是同步阻塞的，可能会影响响应时间。可以通过 `CompressionEvent` 的 `time` 字段监控压缩耗时
+2. **同步处理**: 压缩是同步阻塞的，可能会影响响应时间。可以通过 `CompressionEvent` 的 `time` 字段监控压缩耗时
 3. **信息丢失**: 压缩可能会丢失一些细节信息，虽然系统尽力保留关键信息。所有原始内容都保存在 `originalMemoryStorage` 中，可以通过 UUID 回溯
 4. **内存使用**: 原始存储、卸载上下文和压缩事件记录会占用额外内存
 5. **压缩事件持久化**: 压缩事件记录会随着状态持久化一起保存，长期运行可能会积累大量事件记录，建议定期清理或归档

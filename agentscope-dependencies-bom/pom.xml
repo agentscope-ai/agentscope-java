@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -44,7 +44,7 @@
     <licenses>
         <license>
             <name>Apache 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
@@ -60,183 +60,220 @@
     </developers>
 
     <properties>
-        <revision>1.0.4-SNAPSHOT</revision>
+        <revision>1.0.6-SNAPSHOT</revision>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
-        <spotless.version>2.46.1</spotless.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+
+        <opentelemetry.version>1.57.0</opentelemetry.version>
+        <okhttp.version>5.3.2</okhttp.version>
+        <reactor-bom.version>2025.0.1</reactor-bom.version>
+        <jackson.version>2.20.1</jackson.version>
+        <mockito.version>5.21.0</mockito.version>
+        <junit-jupiter.version>6.0.1</junit-jupiter.version>
+        <guava.version>33.5.0-jre</guava.version>
+        <google-genai.version>1.32.0</google-genai.version>
+        <dashscope-sdk-java.version>2.22.4</dashscope-sdk-java.version>
+        <bailian.version>2.6.2</bailian.version>
+        <openai-java.version>4.13.0</openai-java.version>
+        <anthropic.version>2.11.1</anthropic.version>
+        <mcp.version>0.17.0</mcp.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <qdrant.version>1.16.2</qdrant.version>
+        <milvus.version>2.6.11</milvus.version>
+        <pdfbox.version>3.0.6</pdfbox.version>
+        <poi.version>5.5.1</poi.version>
+        <socket.io-client.version>2.1.2</socket.io-client.version>
+        <mysql.version>9.5.0</mysql.version>
+        <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
+        <redisson.version>4.1.0</redisson.version>
+        <a2a-client.version>0.3.3.Final</a2a-client.version>
+        <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
+        <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
+        <jedis.version>7.2.0</jedis.version>
+        <xxl-job.version>3.3.1</xxl-job.version>
+        <quartz.version>2.3.2</quartz.version>
+        <spring.version>7.0.2</spring.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
+        <nacos-client.version>3.1.1</nacos-client.version>
+
+
+        <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
-        <flatten-maven-plugin.version>1.5.0</flatten-maven-plugin.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
+        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
+        <google-java-format.version>1.28.0</google-java-format.version>
         <maven.deploy.skip>false</maven.deploy.skip>
-        <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
+        <central.publishing.maven.version>0.9.0</central.publishing.maven.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- OpenTelemetry -->
             <dependency>
                 <groupId>io.opentelemetry</groupId>
                 <artifactId>opentelemetry-bom</artifactId>
-                <version>1.52.0</version>
+                <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
 
+            <!-- OkHttp -->
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-bom</artifactId>
+                <version>${okhttp.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Reactor -->
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-bom</artifactId>
+                <version>${reactor-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Jackson -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Mockito -->
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-bom</artifactId>
+                <version>${mockito.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- JUnit -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit-jupiter.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Google Guava -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>33.4.8-jre</version>
-            </dependency>
-
-            <!-- Reactor Core for Flux/Mono -->
-            <dependency>
-                <groupId>io.projectreactor</groupId>
-                <artifactId>reactor-core</artifactId>
-                <version>3.8.1</version>
+                <version>${guava.version}</version>
             </dependency>
 
             <!-- DashScope Java SDK -->
             <dependency>
                 <groupId>com.alibaba</groupId>
                 <artifactId>dashscope-sdk-java</artifactId>
-                <version>2.22.4</version>
+                <version>${dashscope-sdk-java.version}</version>
             </dependency>
 
             <!-- Alibaba Bailian SDK for Knowledge Base -->
             <dependency>
                 <groupId>com.aliyun</groupId>
                 <artifactId>bailian20231229</artifactId>
-                <version>2.6.1</version>
+                <version>${bailian.version}</version>
             </dependency>
 
             <!-- OpenAI Java SDK -->
             <dependency>
                 <groupId>com.openai</groupId>
                 <artifactId>openai-java</artifactId>
-                <version>4.13.0</version>
+                <version>${openai-java.version}</version>
             </dependency>
 
             <!-- Google Gemini Java SDK -->
             <dependency>
                 <groupId>com.google.genai</groupId>
                 <artifactId>google-genai</artifactId>
-                <version>1.28.0</version>
+                <version>${google-genai.version}</version>
             </dependency>
 
             <!-- Anthropic Java SDK -->
             <dependency>
                 <groupId>com.anthropic</groupId>
                 <artifactId>anthropic-java</artifactId>
-                <version>2.11.1</version>
+                <version>${anthropic.version}</version>
             </dependency>
 
             <!-- Model Context Protocol (MCP) SDK -->
             <dependency>
                 <groupId>io.modelcontextprotocol.sdk</groupId>
                 <artifactId>mcp</artifactId>
-                <version>0.14.1</version>
-            </dependency>
-
-            <!-- Jackson for JSON serialization/deserialization -->
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>2.16.1</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-annotations</artifactId>
-                <version>2.16.1</version>
-            </dependency>
-
-            <!-- Jackson JSON Schema module for structured output -->
-            <dependency>
-                <groupId>com.fasterxml.jackson.module</groupId>
-                <artifactId>jackson-module-jsonSchema</artifactId>
-                <version>2.20.1</version>
+                <version>${mcp.version}</version>
             </dependency>
 
             <!-- SLF4J API -->
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
-                <version>2.0.17</version>
+                <version>${slf4j.version}</version>
             </dependency>
 
             <!-- Qdrant Java SDK -->
             <dependency>
                 <groupId>io.qdrant</groupId>
                 <artifactId>client</artifactId>
-                <version>1.15.0</version>
+                <version>${qdrant.version}</version>
             </dependency>
 
             <!-- Milvus Java SDK -->
             <dependency>
                 <groupId>io.milvus</groupId>
                 <artifactId>milvus-sdk-java</artifactId>
-                <version>2.6.10</version>
+                <version>${milvus.version}</version>
             </dependency>
 
             <!-- Apache PDFBox for PDF document processing -->
             <dependency>
                 <groupId>org.apache.pdfbox</groupId>
                 <artifactId>pdfbox</artifactId>
-                <version>3.0.3</version>
+                <version>${pdfbox.version}</version>
             </dependency>
 
             <!-- Apache POI for Word document processing -->
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
-                <version>5.5.1</version>
-            </dependency>
-
-            <!-- OkHttp for HTTP client -->
-            <dependency>
-                <groupId>com.squareup.okhttp3</groupId>
-                <artifactId>okhttp</artifactId>
-                <version>4.12.0</version>
+                <version>${poi.version}</version>
             </dependency>
 
             <!-- Socket.IO Client for WebSocket communication -->
             <dependency>
                 <groupId>io.socket</groupId>
                 <artifactId>socket.io-client</artifactId>
-                <version>2.1.2</version>
-            </dependency>
-
-            <!-- Spring WebFlux for AG-UI support -->
-            <dependency>
-                <groupId>org.springframework</groupId>
-                <artifactId>spring-webflux</artifactId>
-                <version>6.1.8</version>
-            </dependency>
-
-            <!-- Spring Boot AutoConfiguration -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-autoconfigure</artifactId>
-                <version>4.0.1</version>
+                <version>${socket.io-client.version}</version>
             </dependency>
 
             <!-- MySQL JDBC Driver -->
             <dependency>
                 <groupId>com.mysql</groupId>
                 <artifactId>mysql-connector-j</artifactId>
-                <version>9.5.0</version>
+                <version>${mysql.version}</version>
             </dependency>
 
             <!-- OpenTelemetry -->
             <dependency>
                 <groupId>io.opentelemetry.instrumentation</groupId>
                 <artifactId>opentelemetry-reactor-3.1</artifactId>
-                <version>2.23.0-alpha</version>
+                <version>${opentelemetry-reactor.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.opentelemetry.semconv</groupId>
                 <artifactId>opentelemetry-semconv-incubating</artifactId>
-                <version>1.37.0-alpha</version>
+                <version>${opentelemetry-semconv-incubating.version}</version>
                 <scope>test</scope>
             </dependency>
 
@@ -244,19 +281,19 @@
             <dependency>
                 <groupId>org.redisson</groupId>
                 <artifactId>redisson</artifactId>
-                <version>3.37.0</version>
+                <version>${redisson.version}</version>
             </dependency>
 
             <!-- A2A dependencies -->
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-client</artifactId>
-                <version>0.3.2.Final</version>
+                <version>${a2a-client.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-server-common</artifactId>
-                <version>0.3.3.Final</version>
+                <version>${a2a-server-common.version}</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.eclipse.microprofile.config</groupId>
@@ -267,56 +304,52 @@
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
-                <version>0.3.2.Final</version>
+                <version>${a2a-transport-jsonrpc.version}</version>
             </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->
             <dependency>
                 <groupId>redis.clients</groupId>
                 <artifactId>jedis</artifactId>
-                <version>7.2.0</version>
+                <version>${jedis.version}</version>
             </dependency>
 
-            <!-- Testing dependencies -->
+            <!-- XXL-JOB Core -->
             <dependency>
-                <groupId>io.projectreactor</groupId>
-                <artifactId>reactor-test</artifactId>
-                <version>3.8.1</version>
-                <scope>test</scope>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl-job.version}</version>
             </dependency>
+
+            <!-- Quartz Core -->
             <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-core</artifactId>
-                <version>5.21.0</version>
-                <scope>test</scope>
+                <groupId>org.quartz-scheduler</groupId>
+                <artifactId>quartz</artifactId>
+                <version>${quartz.version}</version>
             </dependency>
+
+            <!-- Spring WebFlux for AG-UI support -->
             <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-junit-jupiter</artifactId>
-                <version>5.21.0</version>
-                <scope>test</scope>
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.junit.jupiter</groupId>
-                        <artifactId>junit-jupiter-api</artifactId>
-                    </exclusion>
-                </exclusions>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webflux</artifactId>
+                <version>${spring.version}</version>
             </dependency>
+
+            <!-- Spring Boot AutoConfiguration -->
             <dependency>
-                <groupId>org.junit.jupiter</groupId>
-                <artifactId>junit-jupiter</artifactId>
-                <version>6.0.1</version>
-                <scope>test</scope>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-autoconfigure</artifactId>
+                <version>${spring-boot.version}</version>
             </dependency>
+
+            <!-- Nacos dependencies -->
             <dependency>
-                <groupId>com.squareup.okhttp3</groupId>
-                <artifactId>mockwebserver</artifactId>
-                <version>4.12.0</version>
-                <scope>test</scope>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos-client.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
-
 
     <distributionManagement>
         <repository>
@@ -366,11 +399,11 @@
                     <!-- define a language-specific format -->
                     <java>
                         <removeUnusedImports />
-                        <removeWildcardImports />
+                        <forbidWildcardImports />
                         <importOrder />
                         <!-- apply a specific flavor of google-java-format and reflow long strings -->
                         <googleJavaFormat>
-                            <version>1.28.0</version>
+                            <version>${google-java-format.version}</version>
                             <style>AOSP</style>
                             <reflowLongStrings>true</reflowLongStrings>
                             <formatJavadoc>false</formatJavadoc>

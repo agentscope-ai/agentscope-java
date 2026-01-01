@@ -37,7 +37,7 @@ public class AgentConfiguration {
                 .sysPrompt("You are a helpful assistant.")
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-plus")
+                        .modelName("qwen3-max")
                         .stream(true)
                         .build())
                 .memory(new InMemoryMemory())
@@ -126,7 +126,7 @@ function App() {
 
 ## Example Project
 
-See complete example at [agentscope-examples/agui](../../examples/agui):
+See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -19,6 +19,7 @@ package io.agentscope.spring.boot.a2a;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
@@ -39,9 +40,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 /**
  * Spring Boot autoconfiguration that exposes A2A beans for AgentScope.
@@ -79,11 +80,13 @@ public class AgentscopeA2aAutoConfiguration {
     public AgentScopeA2aServer agentScopeA2aServer(
             AgentRunner agentRunner,
             A2aAgentCardProperties agentCardProperties,
-            ObjectProvider<ServerProperties> serverPropertiesProvider,
+            A2aCommonProperties commonProperties,
+            Environment environment,
             List<AgentRegistry> agentRegistries) {
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
         builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
-        builder.deploymentProperties(buildDeploymentProperties(serverPropertiesProvider));
+        builder.deploymentProperties(buildDeploymentProperties(environment));
+        builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
         agentRegistries.forEach(builder::withAgentRegistry);
         return builder.build();
     }
@@ -134,19 +137,24 @@ public class AgentscopeA2aAutoConfiguration {
                 .build();
     }
 
-    private DeploymentProperties buildDeploymentProperties(
-            ObjectProvider<ServerProperties> serverPropertiesProvider) {
-        ServerProperties serverProperties = serverPropertiesProvider.getIfAvailable();
-        if (null == serverProperties) {
-            return null;
-        }
+    private DeploymentProperties buildDeploymentProperties(Environment environment) {
         DeploymentProperties.Builder result = new DeploymentProperties.Builder();
-        if (null != serverProperties.getPort()) {
-            result.port(serverProperties.getPort());
-        }
-        if (null != serverProperties.getAddress()) {
-            result.host(serverProperties.getAddress().getHostAddress());
+        Integer defaultServerExportPort =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class, 8080);
+        String defaultServerExportAddress =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
+        result.port(defaultServerExportPort);
+        if (null != defaultServerExportAddress) {
+            result.host(defaultServerExportAddress);
         }
         return result.build();
+    }
+
+    private AgentExecuteProperties buildAgentExecuteProperties(
+            A2aCommonProperties commonProperties) {
+        return AgentExecuteProperties.builder()
+                .completeWithMessage(commonProperties.isCompleteWithMessage())
+                .requireInnerMessage(commonProperties.isRequireInnerMessage())
+                .build();
     }
 }

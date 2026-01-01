@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -53,14 +53,19 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-micronaut-extension</artifactId>
-            <version>${revision}</version>
+        </dependency>
+
+        <!-- AgentScope Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
         </dependency>
 
         <!-- Logging -->
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.3</version>
+            <version>1.5.23</version>
             <scope>runtime</scope>
         </dependency>
     </dependencies>
@@ -71,7 +76,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.6.3</version>
                 <configuration>
                     <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
