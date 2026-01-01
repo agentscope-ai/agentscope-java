@@ -106,7 +106,10 @@ public class WerewolfWebController {
 
         // Validate configuration
         if (!gameConfig.isValid()) {
-            emitter.emitError("Invalid game configuration. Please check player and role counts.");
+            emitter.emitError(
+                    "Invalid game configuration. Total player count must be at least 4, " +
+                            "Werewolf count must be at least 1, and all role counts must be " +
+                            "non-negative integers. Please adjust the player and role counts.");
             emitter.complete();
             return emitter.getPlayerStream()
                     .map(
