@@ -29,14 +29,9 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-kotlin</artifactId>
+    <artifactId>agentscope-extensions-kotlin</artifactId>
     <name>AgentScope Kotlin Coroutine Extensions</name>
     <packaging>jar</packaging>
-
-    <properties>
-        <kotlin.version>1.9.24</kotlin.version>
-        <kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
-    </properties>
 
     <dependencies>
         <!-- AgentScope core -->
@@ -49,14 +44,12 @@
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
-            <version>${kotlin.coroutines.version}</version>
         </dependency>
 
         <!-- Reactor <-> Coroutine bridge -->
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-reactor</artifactId>
-            <version>${kotlin.coroutines.version}</version>
         </dependency>
     </dependencies>
 
@@ -66,22 +59,6 @@
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-maven-plugin</artifactId>
                 <version>${kotlin.version}</version>
-                <executions>
-                    <execution>
-                        <id>compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>test-compile</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>test-compile</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

@@ -105,6 +105,10 @@
         <google-java-format.version>1.28.0</google-java-format.version>
         <maven.deploy.skip>false</maven.deploy.skip>
         <central.publishing.maven.version>0.9.0</central.publishing.maven.version>
+
+        <kotlin.version>1.9.24</kotlin.version>
+<kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
+
     </properties>
 
     <dependencyManagement>
@@ -226,6 +230,20 @@
                 <version>${qdrant.version}</version>
             </dependency>
 
+            <!-- Kotlin Coroutines -->
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-core</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-reactor</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
+
             <!-- Milvus Java SDK -->
             <dependency>
                 <groupId>io.milvus</groupId>
@@ -304,9 +322,10 @@
                 <version>${a2a-transport-jsonrpc.version}</version>
             </dependency>
 
+
             <!-- Jedis client for Redis-based session implementation -->
             <dependency>
-                <groupId>redis.clients</groupId>
+                <groupId>redis.clients</groupId> 
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
             </dependency>
