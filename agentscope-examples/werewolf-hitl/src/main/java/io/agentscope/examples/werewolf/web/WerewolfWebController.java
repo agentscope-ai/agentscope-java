@@ -133,7 +133,8 @@ public class WerewolfWebController {
             }
         }
 
-        WerewolfWebGame game = new WerewolfWebGame(emitter, bundle, userInput, selectedRole, gameConfig);
+        WerewolfWebGame game =
+                new WerewolfWebGame(emitter, bundle, userInput, selectedRole, gameConfig);
 
         // Save references for input and replay
         this.lastGameEmitter = emitter;

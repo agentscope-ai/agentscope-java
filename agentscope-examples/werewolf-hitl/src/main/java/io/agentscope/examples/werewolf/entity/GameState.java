@@ -44,9 +44,7 @@ public class GameState {
     }
 
     private List<Player> findPlayersByRole(Role role) {
-        return allPlayers.stream()
-                .filter(p -> p.getRole() == role)
-                .collect(Collectors.toList());
+        return allPlayers.stream().filter(p -> p.getRole() == role).collect(Collectors.toList());
     }
 
     // Getters

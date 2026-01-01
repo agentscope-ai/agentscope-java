@@ -36,11 +36,7 @@ public class GameConfiguration {
     }
 
     public GameConfiguration(
-            int villagerCount,
-            int werewolfCount,
-            int seerCount,
-            int witchCount,
-            int hunterCount) {
+            int villagerCount, int werewolfCount, int seerCount, int witchCount, int hunterCount) {
         this.villagerCount = villagerCount;
         this.werewolfCount = werewolfCount;
         this.seerCount = seerCount;
@@ -111,4 +107,3 @@ public class GameConfiguration {
                 && getTotalPlayerCount() >= 4; // Minimum 4 players required
     }
 }
-
