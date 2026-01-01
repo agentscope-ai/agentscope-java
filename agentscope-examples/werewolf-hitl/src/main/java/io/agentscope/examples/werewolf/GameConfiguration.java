@@ -26,6 +26,10 @@ public class GameConfiguration {
     private int witchCount;
     private int hunterCount;
 
+    /**
+     * Creates a configuration with default counts (total 9 players).
+     * Defaults: 3 villagers, 3 werewolves, 1 seer, 1 witch, 1 hunter.
+     */
     public GameConfiguration() {
         // Default configuration (9 players)
         this.villagerCount = 3;
@@ -35,6 +39,15 @@ public class GameConfiguration {
         this.hunterCount = 1;
     }
 
+    /**
+     * Creates a configuration with explicit counts for each role.
+     *
+     * @param villagerCount number of villagers (>= 0)
+     * @param werewolfCount number of werewolves (>= 1)
+     * @param seerCount number of seers (>= 0)
+     * @param witchCount number of witches (>= 0)
+     * @param hunterCount number of hunters (>= 0)
+     */
     public GameConfiguration(
             int villagerCount, int werewolfCount, int seerCount, int witchCount, int hunterCount) {
         this.villagerCount = villagerCount;
@@ -44,42 +57,92 @@ public class GameConfiguration {
         this.hunterCount = hunterCount;
     }
 
+    /**
+     * Gets the villager count.
+     *
+     * @return number of villagers
+     */
     public int getVillagerCount() {
         return villagerCount;
     }
 
+    /**
+     * Sets the villager count.
+     *
+     * @param villagerCount number of villagers (>= 0)
+     */
     public void setVillagerCount(int villagerCount) {
         this.villagerCount = villagerCount;
     }
 
+    /**
+     * Gets the werewolf count.
+     *
+     * @return number of werewolves
+     */
     public int getWerewolfCount() {
         return werewolfCount;
     }
 
+    /**
+     * Sets the werewolf count.
+     *
+     * @param werewolfCount number of werewolves (>= 1)
+     */
     public void setWerewolfCount(int werewolfCount) {
         this.werewolfCount = werewolfCount;
     }
 
+    /**
+     * Gets the seer count.
+     *
+     * @return number of seers
+     */
     public int getSeerCount() {
         return seerCount;
     }
 
+    /**
+     * Sets the seer count.
+     *
+     * @param seerCount number of seers (>= 0)
+     */
     public void setSeerCount(int seerCount) {
         this.seerCount = seerCount;
     }
 
+    /**
+     * Gets the witch count.
+     *
+     * @return number of witches
+     */
     public int getWitchCount() {
         return witchCount;
     }
 
+    /**
+     * Sets the witch count.
+     *
+     * @param witchCount number of witches (>= 0)
+     */
     public void setWitchCount(int witchCount) {
         this.witchCount = witchCount;
     }
 
+    /**
+     * Gets the hunter count.
+     *
+     * @return number of hunters
+     */
     public int getHunterCount() {
         return hunterCount;
     }
 
+    /**
+     * Sets the hunter count.
+     *
+     * @param hunterCount number of hunters (>= 0)
+     */
     public void setHunterCount(int hunterCount) {
         this.hunterCount = hunterCount;
     }
@@ -87,16 +150,16 @@ public class GameConfiguration {
     /**
      * Get the total number of players.
      *
-     * @return Total player count
+     * @return total player count
      */
     public int getTotalPlayerCount() {
         return villagerCount + werewolfCount + seerCount + witchCount + hunterCount;
     }
 
     /**
-     * Validate the configuration.
+     * Validate the configuration values.
      *
-     * @return true if configuration is valid, false otherwise
+     * @return true if configuration is valid; false otherwise
      */
     public boolean isValid() {
         return villagerCount >= 0
