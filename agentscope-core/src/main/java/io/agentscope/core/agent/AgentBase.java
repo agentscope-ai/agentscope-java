@@ -25,7 +25,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,12 +91,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    // Cached sorted hooks (invalidated when hooks list changes)
-    private transient volatile List<Hook> cachedSortedHooks;
-    private final AtomicBoolean hooksDirty = new AtomicBoolean(true);
-
     private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
-
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -246,8 +240,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         "Structured output not supported by " + getClass().getSimpleName()));
     }
 
-    // Note: system hooks are applied at agent construction time;
-    // dynamic system hook changes do not affect existing agents.
     public static void addSystemHook(Hook hook) {
         systemHooks.add(hook);
     }
@@ -403,66 +395,22 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Get the list of hooks for this agent.
+     * Protected to allow subclasses to access hooks for custom notification logic.
      *
-     * <p>Returns an immutable snapshot of the internal hook list.
-     * Callers must not attempt to modify the returned list.
-     * To add or remove hooks, use {@link #addHook(Hook)} or
-     * {@link #removeHook(Hook)}.
-     *
-     * <p>This is a breaking change from previous behavior where
-     * callers could mutate the returned list directly.
-     *
-     * @return Immutable list of hooks
+     * @return List of hooks
      */
     public List<Hook> getHooks() {
-        return List.copyOf(hooks);
-    }
-
-    /**
-     * Add a hook to this agent.
-     *
-     * <p>Hooks should generally be added during agent setup,
-     * before execution begins. Modifying hooks during execution
-     * is not thread-safe and may lead to undefined behavior.
-     *
-     * @param hook Hook to add
-     */
-    public void addHook(Hook hook) {
-        hooks.add(hook);
-        hooksDirty.set(true);
-    }
-
-    /**
-     * Remove a hook from this agent.
-     *
-     * <p>Hooks should generally be removed during agent setup.
-     * Modifying hooks during execution is not thread-safe.
-     *
-     * @param hook Hook to remove
-     */
-    public void removeHook(Hook hook) {
-        hooks.remove(hook);
-        hooksDirty.set(true);
+        return hooks;
     }
 
     /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
      *
-     * <p>Results may be cached until the hook list changes.
-     *
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        if (!hooksDirty.get() && cachedSortedHooks != null) {
-            return cachedSortedHooks;
-        }
-
-        List<Hook> sorted = hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
-
-        cachedSortedHooks = sorted;
-        hooksDirty.set(false);
-        return sorted;
+        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
     }
 
     /**
@@ -512,11 +460,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     private Mono<Void> notifyError(Throwable error) {
         ErrorEvent event = new ErrorEvent(this, error);
-        Mono<ErrorEvent> result = Mono.just(event);
-        for (Hook hook : getSortedHooks()) {
-            result = result.flatMap(hook::onEvent);
-        }
-        return result.then();
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
     /**
@@ -682,7 +626,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             StreamingHook streamingHook = new StreamingHook(sink, options);
 
                             // Add temporary hook
-                            addHook(streamingHook);
+                            hooks.add(streamingHook);
 
                             // Execute call and manage hook lifecycle
                             callSupplier
@@ -690,7 +634,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                     .doFinally(
                                             signalType -> {
                                                 // Remove temporary hook
-                                                removeHook(streamingHook);
+                                                hooks.remove(streamingHook);
                                             })
                                     .subscribe(
                                             finalMsg -> {
