@@ -55,5 +55,4 @@ public class ChatCompletionsProperties {
     public void setBasePath(String basePath) {
         this.basePath = basePath;
     }
-
 }

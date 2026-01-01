@@ -105,5 +105,4 @@ class ChatCompletionsPropertiesTest {
             assertThat(properties.getBasePath()).isNull();
         }
     }
-
 }
