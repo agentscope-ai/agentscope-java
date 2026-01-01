@@ -505,43 +505,6 @@ body {
     flex: 1;
 }
 
-.config-input {
-    width: 80px;
-    padding: 6px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #e0e0e0;
-    font-size: 0.9rem;
-    text-align: center;
-}
-
-.config-input:focus {
-    outline: none;
-    border-color: #a855f7;
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.config-total {
-    margin-top: 8px;
-    padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: bold;
-    color: #60a5fa;
-}
-
-.config-total span:first-child {
-    color: #94a3b8;
-}
-
-#config-total-count {
-    font-size: 1.2rem;
-    color: #60a5fa;
-}
-
 /* Status Card */
 .status-card {
     display: flex;
