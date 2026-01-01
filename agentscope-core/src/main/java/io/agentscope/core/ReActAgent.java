@@ -69,6 +69,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -475,15 +476,10 @@ public class ReActAgent extends AgentBase {
      * @return Mono containing the final result message
      */
     private Mono<Msg> acting(int iter, StructuredOutputHandler handler) {
-        List<ToolUseBlock> toolCalls = extractRecentToolCalls();
-
-        return notifyPreActingHooks(toolCalls)
-                .then(toolkit.callTools(toolCalls, toolExecutionConfig, this, toolExecutionContext))
-                .flatMapMany(
-                        results ->
-                                Flux.range(0, toolCalls.size())
-                                        .map(i -> Map.entry(toolCalls.get(i), results.get(i))))
-                .concatMap(entry -> processToolResult(entry.getKey(), entry.getValue()))
+        return notifyPreActingHooks(extractRecentToolCalls())
+                .flatMap(this::executeToolCalls)
+                .flatMapMany(Flux::fromIterable)
+                .concatMap(this::notifyPostActingHook)
                 .last()
                 .flatMap(
                         event -> {
@@ -499,9 +495,29 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Process a single tool result: build message, notify hooks, and add to memory.
+     * Execute tool calls and return paired results.
+     *
+     * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
+     * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
      */
-    private Mono<PostActingEvent> processToolResult(ToolUseBlock toolUse, ToolResultBlock result) {
+    private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
+            List<ToolUseBlock> toolCalls) {
+        return toolkit.callTools(toolCalls, toolExecutionConfig, this, toolExecutionContext)
+                .map(
+                        results ->
+                                IntStream.range(0, toolCalls.size())
+                                        .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
+                                        .toList());
+    }
+
+    /**
+     * Notify PostActingEvent hook for a single tool result, build message and add to memory.
+     */
+    private Mono<PostActingEvent> notifyPostActingHook(
+            Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
+        ToolUseBlock toolUse = entry.getKey();
+        ToolResultBlock result = entry.getValue();
+
         // Build tool result message first so hooks can access it
         Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
 
@@ -509,13 +525,8 @@ public class ReActAgent extends AgentBase {
         PostActingEvent event = new PostActingEvent(this, toolkit, toolUse, result);
         event.setToolResultMsg(toolMsg);
 
-        // Notify hooks
-        return notifyHooks(event)
-                .doOnNext(
-                        e -> {
-                            // Add the (potentially modified) tool result to memory
-                            memory.addMessage(e.getToolResultMsg());
-                        });
+        // Notify hooks and add to memory
+        return notifyHooks(event).doOnNext(e -> memory.addMessage(e.getToolResultMsg()));
     }
 
     /**
@@ -709,10 +720,11 @@ public class ReActAgent extends AgentBase {
         return notifyHooks(new PostReasoningEvent(this, model.getModelName(), null, msg));
     }
 
-    private Mono<Void> notifyPreActingHooks(List<ToolUseBlock> toolCalls) {
+    private Mono<List<ToolUseBlock>> notifyPreActingHooks(List<ToolUseBlock> toolCalls) {
         return Flux.fromIterable(toolCalls)
                 .concatMap(tool -> notifyHooks(new PreActingEvent(this, toolkit, tool)))
-                .then();
+                .map(PreActingEvent::getToolUse)
+                .collectList();
     }
 
     private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
