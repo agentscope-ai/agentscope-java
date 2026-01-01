@@ -177,12 +177,19 @@ public class GameConfiguration {
      */
     public boolean isValid() {
         // Basic minimum constraints
-        if (villagerCount < 0 || werewolfCount < 1 || seerCount < 0 || witchCount < 0 || hunterCount < 0) {
+        if (villagerCount < 0
+                || werewolfCount < 1
+                || seerCount < 0
+                || witchCount < 0
+                || hunterCount < 0) {
             return false;
         }
         // Per-role upper bound constraints
-        if (villagerCount > MAX_TOTAL_PLAYERS || werewolfCount > MAX_TOTAL_PLAYERS ||
-                seerCount > MAX_TOTAL_PLAYERS || witchCount > MAX_TOTAL_PLAYERS || hunterCount > MAX_TOTAL_PLAYERS) {
+        if (villagerCount > MAX_TOTAL_PLAYERS
+                || werewolfCount > MAX_TOTAL_PLAYERS
+                || seerCount > MAX_TOTAL_PLAYERS
+                || witchCount > MAX_TOTAL_PLAYERS
+                || hunterCount > MAX_TOTAL_PLAYERS) {
             return false;
         }
         // Total player count constraints
