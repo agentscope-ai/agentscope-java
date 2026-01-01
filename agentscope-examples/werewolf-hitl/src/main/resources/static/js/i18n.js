@@ -92,7 +92,15 @@ const i18n = {
         configSeer: '预言家数量:',
         configWitch: '女巫数量:',
         configHunter: '猎人数量:',
-        configTotal: '总玩家数:'
+        configTotal: '总玩家数:',
+        configErrorNegativeVillager: '村民数量不能为负数',
+        configErrorMinWerewolf: '狼人数量至少需要1个',
+        configErrorNegativeSeer: '预言家数量不能为负数',
+        configErrorNegativeWitch: '女巫数量不能为负数',
+        configErrorNegativeHunter: '猎人数量不能为负数',
+        configErrorMinPlayers: '总玩家数至少需要4人',
+        configErrorMaxPlayers: '总玩家数不能超过30人',
+        configValidationFailed: '配置验证失败，请检查输入'
     },
     'en-US': {
         title: 'Werewolf - Real-time Battle',
@@ -171,7 +179,15 @@ const i18n = {
         configSeer: 'Seer Count:',
         configWitch: 'Witch Count:',
         configHunter: 'Hunter Count:',
-        configTotal: 'Total Players:'
+        configTotal: 'Total Players:',
+        configErrorNegativeVillager: 'Villager count cannot be negative',
+        configErrorMinWerewolf: 'Werewolf count must be at least 1',
+        configErrorNegativeSeer: 'Seer count cannot be negative',
+        configErrorNegativeWitch: 'Witch count cannot be negative',
+        configErrorNegativeHunter: 'Hunter count cannot be negative',
+        configErrorMinPlayers: 'Total players must be at least 4',
+        configErrorMaxPlayers: 'Total players cannot exceed 30',
+        configValidationFailed: 'Configuration validation failed, please check your input'
     }
 };
 

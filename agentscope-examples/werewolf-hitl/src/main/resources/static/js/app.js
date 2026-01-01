@@ -103,6 +103,63 @@ function selectRoleAndStart(role) {
 }
 
 // ==================== Configuration ====================
+// Configuration validation constants
+const CONFIG_MIN_PLAYERS = 4;
+const CONFIG_MAX_PLAYERS = 30;
+const CONFIG_MIN_WEREWOLVES = 1;
+
+function validateConfig() {
+    const villager = parseInt(document.getElementById('config-villager').value) || 0;
+    const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
+    const seer = parseInt(document.getElementById('config-seer').value) || 0;
+    const witch = parseInt(document.getElementById('config-witch').value) || 0;
+    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
+    const total = villager + werewolf + seer + witch + hunter;
+    
+    const errors = [];
+    
+    // Validate individual role counts
+    if (villager < 0) errors.push(t('configErrorNegativeVillager') || '村民数量不能为负数');
+    if (werewolf < CONFIG_MIN_WEREWOLVES) {
+        errors.push(t('configErrorMinWerewolf') || `狼人数量至少需要${CONFIG_MIN_WEREWOLVES}个`);
+    }
+    if (seer < 0) errors.push(t('configErrorNegativeSeer') || '预言家数量不能为负数');
+    if (witch < 0) errors.push(t('configErrorNegativeWitch') || '女巫数量不能为负数');
+    if (hunter < 0) errors.push(t('configErrorNegativeHunter') || '猎人数量不能为负数');
+    
+    // Validate total player count
+    if (total < CONFIG_MIN_PLAYERS) {
+        errors.push(t('configErrorMinPlayers') || `总玩家数至少需要${CONFIG_MIN_PLAYERS}人`);
+    }
+    if (total > CONFIG_MAX_PLAYERS) {
+        errors.push(t('configErrorMaxPlayers') || `总玩家数不能超过${CONFIG_MAX_PLAYERS}人`);
+    }
+    
+    // Display errors
+    const errorElement = document.getElementById('config-error');
+    const confirmBtn = document.getElementById('config-confirm-btn');
+    
+    if (errors.length > 0) {
+        errorElement.style.display = 'block';
+        errorElement.textContent = errors.join('；');
+        errorElement.className = 'config-error error';
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+        }
+        return false;
+    } else {
+        errorElement.style.display = 'none';
+        errorElement.textContent = '';
+        errorElement.className = 'config-error';
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+        }
+        return true;
+    }
+}
+
 function updateTotalCount() {
     const villager = parseInt(document.getElementById('config-villager').value) || 0;
     const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
@@ -111,9 +168,17 @@ function updateTotalCount() {
     const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
     const total = villager + werewolf + seer + witch + hunter;
     document.getElementById('config-total-count').textContent = total;
+    
+    // Validate and show errors
+    validateConfig();
 }
 
 function getGameConfig() {
+    // Validate before getting config
+    if (!validateConfig()) {
+        return null; // Return null if validation fails
+    }
+    
     const villagerInput = document.getElementById('config-villager').value.trim();
     const werewolfInput = document.getElementById('config-werewolf').value.trim();
     const seerInput = document.getElementById('config-seer').value.trim();
@@ -156,6 +221,14 @@ async function startGame() {
 
     try {
         const configParams = getGameConfig();
+        if (!configParams) {
+            // Validation failed, show error
+            addLog(t('configValidationFailed') || '配置验证失败，请检查输入', 'error');
+            startBtn.disabled = false;
+            startBtn.querySelector('[data-i18n]').textContent = t('startGame');
+            return;
+        }
+        
         const response = await fetch(`/api/game/start?${configParams}`, {
             method: 'POST',
             signal: abortController.signal
@@ -697,6 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (input) {
             input.addEventListener('input', updateTotalCount);
             input.addEventListener('change', updateTotalCount);
+            input.addEventListener('blur', validateConfig);
         } else {
             console.warn('Config input not found:', id);
         }
