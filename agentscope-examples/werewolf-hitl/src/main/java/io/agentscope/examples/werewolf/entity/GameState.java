@@ -24,9 +24,9 @@ import java.util.stream.Collectors;
  */
 public class GameState {
     private final List<Player> allPlayers;
-    private final Player seer;
-    private final Player witch;
-    private final Player hunter;
+    private final List<Player> seers;
+    private final List<Player> witches;
+    private final List<Player> hunters;
 
     private int currentRound;
     private Player lastNightVictim;
@@ -38,13 +38,15 @@ public class GameState {
         this.currentRound = 0;
 
         // Find special role players
-        this.seer = findPlayerByRole(Role.SEER);
-        this.witch = findPlayerByRole(Role.WITCH);
-        this.hunter = findPlayerByRole(Role.HUNTER);
+        this.seers = findPlayersByRole(Role.SEER);
+        this.witches = findPlayersByRole(Role.WITCH);
+        this.hunters = findPlayersByRole(Role.HUNTER);
     }
 
-    private Player findPlayerByRole(Role role) {
-        return allPlayers.stream().filter(p -> p.getRole() == role).findFirst().orElse(null);
+    private List<Player> findPlayersByRole(Role role) {
+        return allPlayers.stream()
+                .filter(p -> p.getRole() == role)
+                .collect(Collectors.toList());
     }
 
     // Getters
@@ -68,16 +70,28 @@ public class GameState {
                 .collect(Collectors.toList());
     }
 
+    public List<Player> getSeers() {
+        return new ArrayList<>(seers);
+    }
+
     public Player getSeer() {
-        return seer;
+        return seers.isEmpty() ? null : seers.get(0);
+    }
+
+    public List<Player> getWitches() {
+        return new ArrayList<>(witches);
     }
 
     public Player getWitch() {
-        return witch;
+        return witches.isEmpty() ? null : witches.get(0);
+    }
+
+    public List<Player> getHunters() {
+        return new ArrayList<>(hunters);
     }
 
     public Player getHunter() {
-        return hunter;
+        return hunters.isEmpty() ? null : hunters.get(0);
     }
 
     public int getCurrentRound() {

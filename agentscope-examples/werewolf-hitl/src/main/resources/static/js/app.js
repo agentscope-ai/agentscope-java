@@ -63,6 +63,22 @@ function getCauseText(cause) {
     return (causeTexts && causeTexts[cause]) || cause;
 }
 
+// ==================== Configuration Modal ====================
+function showConfigModal() {
+    if (gameRunning) return;
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function hideConfigModal() {
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
 // ==================== Role Selection Modal ====================
 function showRoleSelector() {
     if (gameRunning) return;
@@ -86,6 +102,42 @@ function selectRoleAndStart(role) {
     startGame();
 }
 
+// ==================== Configuration ====================
+function updateTotalCount() {
+    const villager = parseInt(document.getElementById('config-villager').value) || 0;
+    const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
+    const seer = parseInt(document.getElementById('config-seer').value) || 0;
+    const witch = parseInt(document.getElementById('config-witch').value) || 0;
+    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
+    const total = villager + werewolf + seer + witch + hunter;
+    document.getElementById('config-total-count').textContent = total;
+}
+
+function getGameConfig() {
+    const villagerInput = document.getElementById('config-villager').value.trim();
+    const werewolfInput = document.getElementById('config-werewolf').value.trim();
+    const seerInput = document.getElementById('config-seer').value.trim();
+    const witchInput = document.getElementById('config-witch').value.trim();
+    const hunterInput = document.getElementById('config-hunter').value.trim();
+    
+    const villager = villagerInput ? parseInt(villagerInput) : NaN;
+    const werewolf = werewolfInput ? parseInt(werewolfInput) : NaN;
+    const seer = seerInput ? parseInt(seerInput) : NaN;
+    const witch = witchInput ? parseInt(witchInput) : NaN;
+    const hunter = hunterInput ? parseInt(hunterInput) : NaN;
+    
+    const params = new URLSearchParams();
+    params.append('lang', currentLanguage);
+    params.append('role', selectedRole);
+    if (!isNaN(villager)) params.append('villagerCount', villager);
+    if (!isNaN(werewolf)) params.append('werewolfCount', werewolf);
+    if (!isNaN(seer)) params.append('seerCount', seer);
+    if (!isNaN(witch)) params.append('witchCount', witch);
+    if (!isNaN(hunter)) params.append('hunterCount', hunter);
+    
+    return params.toString();
+}
+
 // ==================== Game Control ====================
 async function startGame() {
     if (gameRunning) return;
@@ -103,7 +155,8 @@ async function startGame() {
     abortController = new AbortController();
 
     try {
-        const response = await fetch(`/api/game/start?lang=${currentLanguage}&role=${selectedRole}`, {
+        const configParams = getGameConfig();
+        const response = await fetch(`/api/game/start?${configParams}`, {
             method: 'POST',
             signal: abortController.signal
         });
@@ -636,6 +689,19 @@ function handleReplayEvent(event) {
 document.addEventListener('DOMContentLoaded', () => {
     applyTranslations();
     updateLanguageButtons();
+
+    // Initialize configuration inputs
+    const configInputs = ['config-villager', 'config-werewolf', 'config-seer', 'config-witch', 'config-hunter'];
+    configInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', updateTotalCount);
+            input.addEventListener('change', updateTotalCount);
+        } else {
+            console.warn('Config input not found:', id);
+        }
+    });
+    updateTotalCount();
 
     const placeholderNames = t('placeholderNames') || ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
     players = placeholderNames.map(name => ({

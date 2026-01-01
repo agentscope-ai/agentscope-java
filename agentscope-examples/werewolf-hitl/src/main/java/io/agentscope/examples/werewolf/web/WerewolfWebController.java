@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.werewolf.web;
 
+import io.agentscope.examples.werewolf.GameConfiguration;
 import io.agentscope.examples.werewolf.entity.Role;
 import io.agentscope.examples.werewolf.localization.LocalizationBundle;
 import io.agentscope.examples.werewolf.localization.LocalizationFactory;
@@ -75,10 +76,46 @@ public class WerewolfWebController {
     @PostMapping(value = "/start", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<GameEvent>> startGame(
             @RequestParam(name = "lang", defaultValue = "zh-CN") String lang,
-            @RequestParam(name = "role", defaultValue = "RANDOM") String roleChoice) {
+            @RequestParam(name = "role", defaultValue = "RANDOM") String roleChoice,
+            @RequestParam(name = "villagerCount", required = false) Integer villagerCount,
+            @RequestParam(name = "werewolfCount", required = false) Integer werewolfCount,
+            @RequestParam(name = "seerCount", required = false) Integer seerCount,
+            @RequestParam(name = "witchCount", required = false) Integer witchCount,
+            @RequestParam(name = "hunterCount", required = false) Integer hunterCount) {
 
         LocalizationBundle bundle = localizationFactory.createBundle(lang);
         GameEventEmitter emitter = new GameEventEmitter();
+
+        // Create game configuration
+        GameConfiguration gameConfig = new GameConfiguration();
+        if (villagerCount != null) {
+            gameConfig.setVillagerCount(villagerCount);
+        }
+        if (werewolfCount != null) {
+            gameConfig.setWerewolfCount(werewolfCount);
+        }
+        if (seerCount != null) {
+            gameConfig.setSeerCount(seerCount);
+        }
+        if (witchCount != null) {
+            gameConfig.setWitchCount(witchCount);
+        }
+        if (hunterCount != null) {
+            gameConfig.setHunterCount(hunterCount);
+        }
+
+        // Validate configuration
+        if (!gameConfig.isValid()) {
+            emitter.emitError("Invalid game configuration. Please check player and role counts.");
+            emitter.complete();
+            return emitter.getPlayerStream()
+                    .map(
+                            event ->
+                                    ServerSentEvent.<GameEvent>builder()
+                                            .event(event.getType().name().toLowerCase())
+                                            .data(event)
+                                            .build());
+        }
 
         // Check for spectator mode (all AI players)
         boolean isSpectatorMode = "SPECTATOR".equalsIgnoreCase(roleChoice);
@@ -96,7 +133,7 @@ public class WerewolfWebController {
             }
         }
 
-        WerewolfWebGame game = new WerewolfWebGame(emitter, bundle, userInput, selectedRole);
+        WerewolfWebGame game = new WerewolfWebGame(emitter, bundle, userInput, selectedRole, gameConfig);
 
         // Save references for input and replay
         this.lastGameEmitter = emitter;

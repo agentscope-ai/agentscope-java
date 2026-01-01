@@ -264,6 +264,39 @@ body {
     display: flex;
     gap: 10px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.btn-config {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.btn-config:hover:not(:disabled) {
+    background: rgba(168, 85, 247, 0.3);
+    border-color: rgba(168, 85, 247, 0.6);
+    transform: scale(1.02);
+}
+
+.btn-config.active {
+    background: rgba(168, 85, 247, 0.4);
+    border-color: rgba(168, 85, 247, 0.8);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+.btn-config:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Configuration Form in Modal */
+.config-form-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 25px;
+    min-width: 300px;
 }
 
 /* ==================== Role Selection Modal ==================== */
@@ -373,6 +406,116 @@ body {
     border-radius: 16px;
     padding: 20px;
     backdrop-filter: blur(10px);
+}
+
+/* Config Form (used in config modal) */
+.config-form-modal .config-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.config-form-modal .config-row:last-of-type {
+    border-bottom: none;
+}
+
+.config-form-modal .config-row label {
+    color: #e0e0e0;
+    font-size: 1rem;
+    flex: 1;
+    text-align: left;
+}
+
+.config-form-modal .config-input {
+    width: 100px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+    font-size: 1rem;
+    text-align: center;
+}
+
+.config-form-modal .config-input:focus {
+    outline: none;
+    border-color: #a855f7;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+.config-form-modal .config-total {
+    margin-top: 10px;
+    padding-top: 15px;
+    border-top: 2px solid rgba(168, 85, 247, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #60a5fa;
+}
+
+.config-form-modal .config-total span:first-child {
+    color: #94a3b8;
+}
+
+.config-form-modal #config-total-count {
+    font-size: 1.3rem;
+    color: #60a5fa;
+}
+
+.config-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.config-row label {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    flex: 1;
+}
+
+.config-input {
+    width: 80px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: #a855f7;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.config-total {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    color: #60a5fa;
+}
+
+.config-total span:first-child {
+    color: #94a3b8;
+}
+
+#config-total-count {
+    font-size: 1.2rem;
+    color: #60a5fa;
 }
 
 /* Status Card */

@@ -84,7 +84,15 @@ const i18n = {
         spectatorMode: '观战模式',
         spectatorModeActive: '🎬 观战模式已启动，全AI对战中...',
         allAIBattle: '全AI对战中',
-        cancel: '取消'
+        cancel: '取消',
+        confirm: '确认',
+        configTitle: '⚙️ 游戏配置',
+        configVillager: '村民数量:',
+        configWerewolf: '狼人数量:',
+        configSeer: '预言家数量:',
+        configWitch: '女巫数量:',
+        configHunter: '猎人数量:',
+        configTotal: '总玩家数:'
     },
     'en-US': {
         title: 'Werewolf - Real-time Battle',
@@ -155,7 +163,15 @@ const i18n = {
         spectatorMode: 'Spectator Mode',
         spectatorModeActive: '🎬 Spectator mode activated, all AI battle in progress...',
         allAIBattle: 'All AI Battle',
-        cancel: 'Cancel'
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        configTitle: '⚙️ Game Configuration',
+        configVillager: 'Villager Count:',
+        configWerewolf: 'Werewolf Count:',
+        configSeer: 'Seer Count:',
+        configWitch: 'Witch Count:',
+        configHunter: 'Hunter Count:',
+        configTotal: 'Total Players:'
     }
 };
 
