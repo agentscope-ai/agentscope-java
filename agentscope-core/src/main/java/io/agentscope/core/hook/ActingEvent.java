@@ -18,7 +18,6 @@ package io.agentscope.core.hook;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Toolkit;
-import java.util.Objects;
 
 /**
  * Base class for tool execution (acting) related events.
@@ -51,14 +50,13 @@ public abstract sealed class ActingEvent extends HookEvent
      *
      * @param type The event type (must not be null)
      * @param agent The agent instance (must not be null)
-     * @param toolkit The toolkit instance (must not be null)
-     * @param toolUse The tool being executed (must not be null)
-     * @throws NullPointerException if type, agent, toolkit, or toolUse is null
+     * @param toolkit The toolkit instance
+     * @param toolUse The tool being executed (can be null for empty events)
      */
     protected ActingEvent(HookEventType type, Agent agent, Toolkit toolkit, ToolUseBlock toolUse) {
         super(type, agent);
-        this.toolkit = Objects.requireNonNull(toolkit, "toolkit cannot be null");
-        this.toolUse = Objects.requireNonNull(toolUse, "toolUse cannot be null");
+        this.toolkit = toolkit;
+        this.toolUse = toolUse;
     }
 
     /**

@@ -16,10 +16,10 @@
 package io.agentscope.core.hook;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Toolkit;
-import java.util.Objects;
 
 /**
  * Event fired after tool execution completes.
@@ -44,25 +44,27 @@ import java.util.Objects;
  *   <li>Add metadata to results</li>
  *   <li>Handle tool execution errors</li>
  *   <li>Transform result format</li>
+ *   <li>Request to stop the agent for human review via {@link #stopAgent()}</li>
  * </ul>
  */
 public final class PostActingEvent extends ActingEvent {
 
     private ToolResultBlock toolResult;
+    private Msg toolResultMsg;
+    private boolean stopRequested = false;
 
     /**
      * Constructor for PostActingEvent.
      *
      * @param agent The agent instance (must not be null)
      * @param toolkit The toolkit instance (must not be null)
-     * @param toolUse The original tool call (must not be null)
-     * @param toolResult The tool execution result (must not be null)
-     * @throws NullPointerException if agent, toolkit, toolUse, or toolResult is null
+     * @param toolUse The original tool call (can be null for empty events)
+     * @param toolResult The tool execution result (can be null for empty events)
      */
     public PostActingEvent(
             Agent agent, Toolkit toolkit, ToolUseBlock toolUse, ToolResultBlock toolResult) {
         super(HookEventType.POST_ACTING, agent, toolkit, toolUse);
-        this.toolResult = Objects.requireNonNull(toolResult, "toolResult cannot be null");
+        this.toolResult = toolResult;
     }
 
     /**
@@ -77,10 +79,50 @@ public final class PostActingEvent extends ActingEvent {
     /**
      * Modify the tool execution result.
      *
-     * @param toolResult The new tool result (must not be null)
-     * @throws NullPointerException if toolResult is null
+     * @param toolResult The new tool result
      */
     public void setToolResult(ToolResultBlock toolResult) {
-        this.toolResult = Objects.requireNonNull(toolResult, "toolResult cannot be null");
+        this.toolResult = toolResult;
+    }
+
+    /**
+     * Request to stop the agent after this acting phase.
+     *
+     * <p>When called, the agent will return the current message containing the ToolResultBlock
+     * instead of continuing to the next reasoning iteration. The user can then review the
+     * tool execution result and resume execution by calling {@code agent.call()} with no arguments.
+     *
+     * <p>This enables human-in-the-loop scenarios where tool execution results need
+     * user review before the agent continues reasoning.
+     */
+    public void stopAgent() {
+        this.stopRequested = true;
+    }
+
+    /**
+     * Check if a stop has been requested.
+     *
+     * @return true if {@link #stopAgent()} has been called, false otherwise
+     */
+    public boolean isStopRequested() {
+        return stopRequested;
+    }
+
+    /**
+     * Get the tool result message.
+     *
+     * @return The tool result message
+     */
+    public Msg getToolResultMsg() {
+        return toolResultMsg;
+    }
+
+    /**
+     * Set the tool result message.
+     *
+     * @param toolResultMsg The tool result message
+     */
+    public void setToolResultMsg(Msg toolResultMsg) {
+        this.toolResultMsg = toolResultMsg;
     }
 }

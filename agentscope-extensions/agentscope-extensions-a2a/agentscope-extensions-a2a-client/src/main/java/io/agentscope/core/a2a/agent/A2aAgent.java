@@ -107,7 +107,7 @@ public class A2aAgent extends AgentBase {
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
-        getHooks().add(new A2aClientLifecycleHook());
+        addHook(new A2aClientLifecycleHook());
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
 
