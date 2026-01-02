@@ -117,9 +117,7 @@ AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了
 
 1. 打开 Cursor 设置 -> Features -> Docs
 2. 点击 "+ Add new Doc"
-3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
-
-有关其他 AI IDE 的详细设置说明和最佳实践，请参阅[使用 AI 代码助手配合 AgentScope Java](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md)。
+3. 添加 URL：`https://java.agentscope.io/llms-full.txt`
 
 ## 社区
 
