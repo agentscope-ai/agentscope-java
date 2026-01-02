@@ -15,81 +15,44 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.lang.reflect.Type;
-import java.util.List;
 
 /**
  * Converts tool method return values to ToolResultBlock.
- * This class handles serialization of various return types into a format
- * suitable for LLM consumption.
+ * Custom implementations can override conversion logic for specific tools.
+ *
+ * <p>This interface allows users to customize how tool results are converted and presented to LLMs.
+ * Implementations can control JSON serialization, add metadata, filter sensitive data, or compress
+ * large outputs.
+ *
+ * <p><b>Usage Example:</b>
+ * <pre>{@code
+ * public class CustomConverter implements ToolResultConverter {
+ *     @Override
+ *     public ToolResultBlock convert(Object result, Type returnType) {
+ *         // Custom conversion logic
+ *         return ToolResultBlock.of(...);
+ *     }
+ * }
+ *
+ * @Tool(
+ *     name = "my_tool",
+ *     converter = CustomConverter.class
+ * )
+ * public String myTool() { ... }
+ * }</pre>
+ *
+ * @see DefaultToolResultConverter
  */
-class ToolResultConverter {
-
-    private final ObjectMapper objectMapper;
-
-    ToolResultConverter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
+public interface ToolResultConverter {
 
     /**
      * Convert tool call result to ToolResultBlock.
      *
-     * @param result the tool call result
-     * @param returnType the return type of the tool method
-     * @return ToolResultBlock containing the converted result
+     * @param result the tool call result (may be null)
+     * @param returnType the return type of the tool method (may be null)
+     * @return ToolResultBlock containing the converted result (never null)
      */
-    ToolResultBlock convert(Object result, Type returnType) {
-        if (result == null) {
-            return handleNull();
-        }
-
-        if (returnType != null && returnType == Void.TYPE) {
-            return handleVoid();
-        }
-
-        // If result is already a ToolResultBlock, return it directly
-        if (result instanceof ToolResultBlock) {
-            return (ToolResultBlock) result;
-        }
-
-        return serialize(result);
-    }
-
-    /**
-     * Handle null result.
-     *
-     * @return ToolResultBlock with "null" text
-     */
-    private ToolResultBlock handleNull() {
-        return ToolResultBlock.of(List.of(TextBlock.builder().text("null").build()));
-    }
-
-    /**
-     * Handle void return type.
-     *
-     * @return ToolResultBlock with "Done" text
-     */
-    private ToolResultBlock handleVoid() {
-        return ToolResultBlock.of(List.of(TextBlock.builder().text("Done").build()));
-    }
-
-    /**
-     * Serialize result to JSON string.
-     *
-     * @param result the result to serialize
-     * @return ToolResultBlock with JSON string
-     */
-    private ToolResultBlock serialize(Object result) {
-        try {
-            String json = objectMapper.writeValueAsString(result);
-            return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build()));
-        } catch (Exception e) {
-            // Fallback to string representation
-            return ToolResultBlock.of(
-                    List.of(TextBlock.builder().text(String.valueOf(result)).build()));
-        }
-    }
+    ToolResultBlock convert(Object result, Type returnType);
 }

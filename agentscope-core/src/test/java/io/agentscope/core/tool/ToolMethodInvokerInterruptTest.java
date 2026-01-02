@@ -51,7 +51,7 @@ class ToolMethodInvokerInterruptTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        resultConverter = new ToolResultConverter(objectMapper);
+        resultConverter = new DefaultToolResultConverter(objectMapper);
         invoker = new ToolMethodInvoker(objectMapper, resultConverter);
     }
 
