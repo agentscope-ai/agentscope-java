@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.dialect.Dialects;
 import com.networknt.schema.serialization.DefaultNodeReader;
@@ -208,7 +209,7 @@ public class StructuredOutputHandler {
                                                                 builder.nodeReader(
                                                                         DefaultNodeReader.Builder
                                                                                 ::locationAware));
-                                        com.networknt.schema.Schema validationSchema =
+                                        Schema validationSchema =
                                                 schemaRegistry.getSchema(schemaDesc);
                                         List<Error> errors =
                                                 validationSchema.validate(

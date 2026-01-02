@@ -68,6 +68,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.Logger;
@@ -298,11 +299,11 @@ public class ReActAgent extends AgentBase {
         List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
 
         // Get all tool result IDs from memory
-        java.util.Set<String> toolResultIds =
+        Set<String> toolResultIds =
                 memory.getMessages().stream()
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .map(ToolResultBlock::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                        .collect(Collectors.toSet());
 
         // Check if any tool use has no matching result
         return toolUses.stream().anyMatch(tu -> !toolResultIds.contains(tu.getId()));
@@ -671,24 +672,6 @@ public class ReActAgent extends AgentBase {
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
         return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
-    }
-
-    private Mono<Msg> getLastAssistantMessage() {
-        return Mono.fromCallable(
-                () -> {
-                    List<Msg> msgs = memory.getMessages();
-                    for (int i = msgs.size() - 1; i >= 0; i--) {
-                        Msg msg = msgs.get(i);
-                        if (msg.getRole() == MsgRole.ASSISTANT) {
-                            return msg;
-                        }
-                    }
-                    if (!msgs.isEmpty()) {
-                        return msgs.get(msgs.size() - 1);
-                    }
-                    throw new IllegalStateException(
-                            "Reasoning completed but no messages generated");
-                });
     }
 
     private GenerateOptions buildGenerateOptions() {

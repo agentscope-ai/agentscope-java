@@ -159,85 +159,55 @@ public class StructuredOutputHook implements Hook {
         compressMemory();
     }
 
+    /**
+     * Remove structured output related messages from memory.
+     */
     private void compressMemory() {
-        List<Msg> messages = memory.getMessages();
-        List<Msg> compressed = new ArrayList<>();
+        List<Msg> original = new ArrayList<>(memory.getMessages());
+        int originalSize = original.size();
 
-        for (Msg msg : messages) {
-            // Skip assistant messages containing generate_response tool calls
-            if (msg.getRole() == MsgRole.ASSISTANT) {
-                boolean hasGenerateResponse =
-                        msg.getContentBlocks(ToolUseBlock.class).stream()
-                                .anyMatch(tu -> TOOL_NAME.equals(tu.getName()));
-                if (hasGenerateResponse) {
-                    continue;
-                }
-            }
-
-            // Skip generate_response ToolResult messages
-            if (msg.hasContentBlocks(ToolResultBlock.class)) {
-                List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
-                // Check if all tool results are from generate_response
-                boolean allGenerateResponse =
-                        !toolResults.isEmpty()
-                                && toolResults.stream()
-                                        .allMatch(tr -> isGenerateResponseToolResult(tr, messages));
-                if (allGenerateResponse) {
-                    continue;
-                }
-            }
-
-            // Skip reminder messages
-            if (isReminderMessage(msg)) {
-                continue;
-            }
-
-            compressed.add(msg);
-        }
-
-        // Add the final result message
-        if (resultMsg != null) {
-            compressed.add(resultMsg);
-        }
-
-        // Clear and rebuild memory
         memory.clear();
-        compressed.forEach(memory::addMessage);
+        for (Msg msg : original) {
+            if (!isStructuredOutputRelated(msg)) {
+                memory.addMessage(msg);
+            }
+        }
 
         log.debug(
-                "Memory compressed: {} -> {} messages",
-                messages.size(),
-                memory.getMessages().size());
+                "Memory compressed: {} -> {} messages", originalSize, memory.getMessages().size());
     }
 
-    private boolean isGenerateResponseToolResult(ToolResultBlock result, List<Msg> allMessages) {
-        // Check by looking up the corresponding ToolUse by ID
-        String toolResultId = result.getId();
-        if (toolResultId == null) {
-            return false;
+    /**
+     * Check if a message is related to structured output and should be removed.
+     */
+    private boolean isStructuredOutputRelated(Msg msg) {
+        // Reminder messages are marked with metadata
+        if (hasReminderMetadata(msg)) {
+            return true;
         }
 
-        for (Msg msg : allMessages) {
-            if (msg.getRole() == MsgRole.ASSISTANT) {
-                for (ToolUseBlock toolUse : msg.getContentBlocks(ToolUseBlock.class)) {
-                    if (toolResultId.equals(toolUse.getId())
-                            && TOOL_NAME.equals(toolUse.getName())) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        // ToolUse/ToolResult match by tool name
+        return hasGenerateResponseTool(msg);
     }
 
-    private boolean isReminderMessage(Msg msg) {
-        if (msg.getRole() != MsgRole.USER) {
-            return false;
-        }
+    private boolean hasReminderMetadata(Msg msg) {
         Map<String, Object> metadata = msg.getMetadata();
         return metadata != null
                 && Boolean.TRUE.equals(
                         metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER));
+    }
+
+    private boolean hasGenerateResponseTool(Msg msg) {
+        // Check ToolUse
+        if (msg.getContentBlocks(ToolUseBlock.class).stream()
+                .anyMatch(tu -> TOOL_NAME.equals(tu.getName()))) {
+            return true;
+        }
+
+        // Check ToolResult (all must match to avoid removing mixed results)
+        List<ToolResultBlock> results = msg.getContentBlocks(ToolResultBlock.class);
+        return !results.isEmpty()
+                && results.stream().allMatch(tr -> TOOL_NAME.equals(tr.getName()));
     }
 
     private Msg createReminderMessage() {
