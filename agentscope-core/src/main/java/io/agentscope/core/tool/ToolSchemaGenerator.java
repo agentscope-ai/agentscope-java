@@ -19,7 +19,6 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,16 +31,6 @@ import java.util.Set;
  * compatible with OpenAI's function calling API.
  */
 class ToolSchemaGenerator {
-
-    /**
-     * Generate parameter schema for a method.
-     *
-     * @param method the method to generate schema for
-     * @return JSON Schema map in OpenAI format
-     */
-    Map<String, Object> generateParameterSchema(Method method) {
-        return generateParameterSchema(method, Collections.emptySet());
-    }
 
     /**
      * Generate parameter schema for a method with excluded parameters.

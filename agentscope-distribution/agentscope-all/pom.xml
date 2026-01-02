@@ -181,6 +181,12 @@
             <artifactId>jsonschema-generator</artifactId>
         </dependency>
 
+        <!-- Victools JSON Schema Module for Jackson annotations support -->
+        <dependency>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-module-jackson</artifactId>
+        </dependency>
+
         <!-- SLF4J API -->
         <dependency>
             <groupId>org.slf4j</groupId>

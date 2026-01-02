@@ -25,18 +25,32 @@ import com.github.victools.jsonschema.generator.SchemaGenerator;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfig;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
+import com.github.victools.jsonschema.module.jackson.JacksonModule;
+import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import java.lang.reflect.Type;
 import java.util.Map;
 
 /**
  * Utility class for JSON Schema operations.
  *
- * <p>
- * This class provides utility methods for:
+ * <p>This class provides utility methods for:
  * <ul>
- * <li>Generating JSON schemas from Java classes (for structured output)</li>
- * <li>Converting between Maps and typed objects</li>
- * <li>Mapping Java types to JSON Schema types</li>
+ *   <li>Generating JSON schemas from Java classes (for structured output)</li>
+ *   <li>Converting between Maps and typed objects</li>
+ *   <li>Mapping Java types to JSON Schema types</li>
+ * </ul>
+ *
+ * <p>Supports AgentScope annotations:
+ * <ul>
+ *   <li>{@code @ToolParam(description = ...)} - add property description</li>
+ *   <li>{@code @ToolParam(required = ...)} - mark property as required</li>
+ * </ul>
+ *
+ * <p>Supports Jackson annotations:
+ * <ul>
+ *   <li>{@code @JsonProperty(required = ...)} - mark property as required</li>
+ *   <li>{@code @JsonPropertyDescription(...)} - add property description</li>
+ *   <li>{@code @JsonClassDescription(...)} - add class description</li>
  * </ul>
  *
  * @hidden
@@ -47,10 +61,15 @@ public class JsonSchemaUtils {
     private static final SchemaGenerator schemaGenerator;
 
     static {
+        // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
+        JacksonModule jacksonModule =
+                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+
         SchemaGeneratorConfigBuilder configBuilder =
                 new SchemaGeneratorConfigBuilder(
                                 SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
-                        .with(Option.EXTRA_OPEN_API_FORMAT_VALUES)
+                        .with(jacksonModule)
+                        .with(Option.PLAIN_DEFINITION_KEYS)
                         .without(Option.SCHEMA_VERSION_INDICATOR);
         SchemaGeneratorConfig config = configBuilder.build();
         schemaGenerator = new SchemaGenerator(config);
@@ -59,8 +78,7 @@ public class JsonSchemaUtils {
     /**
      * Generate JSON Schema from a Java class.
      * This method is suitable for structured output scenarios where complex nested
-     * objects
-     * need to be converted to JSON Schema format.
+     * objects need to be converted to JSON Schema format.
      *
      * @param clazz The class to generate schema for
      * @return JSON Schema as a Map
@@ -80,8 +98,7 @@ public class JsonSchemaUtils {
     /**
      * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
      * This method is suitable for structured output scenarios where complex nested
-     * objects
-     * need to be converted to JSON Schema format.
+     * objects need to be converted to JSON Schema format.
      *
      * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
      * @return JSON Schema as a Map

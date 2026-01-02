@@ -372,6 +372,13 @@
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
             </dependency>
+
+            <!-- Victools JSON Schema Module for Jackson annotations support -->
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-module-jackson</artifactId>
+                <version>${jsonschema-generator.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
