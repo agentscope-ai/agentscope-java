@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -283,14 +284,14 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         if (responseMsg.getMetadata() != null
                 && responseMsg.getMetadata().containsKey("response")) {
             Object responseData = responseMsg.getMetadata().get("response");
+            // Store structured output under dedicated key to avoid conflicts with other metadata
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
             return Msg.builder()
                     .name(responseMsg.getName())
                     .role(responseMsg.getRole())
                     .content(responseMsg.getContent())
-                    .metadata(
-                            responseData instanceof Map
-                                    ? (Map<String, Object>) responseData
-                                    : Map.of("data", responseData))
+                    .metadata(metadata)
                     .build();
         }
         return responseMsg;

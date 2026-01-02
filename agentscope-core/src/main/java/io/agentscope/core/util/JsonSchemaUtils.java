@@ -17,11 +17,14 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
+import com.github.victools.jsonschema.generator.Option;
+import com.github.victools.jsonschema.generator.OptionPreset;
+import com.github.victools.jsonschema.generator.SchemaGenerator;
+import com.github.victools.jsonschema.generator.SchemaGeneratorConfig;
+import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
+import com.github.victools.jsonschema.generator.SchemaVersion;
 import java.lang.reflect.Type;
 import java.util.Map;
 
@@ -41,8 +44,17 @@ import java.util.Map;
 public class JsonSchemaUtils {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private static final JsonSchemaGenerator schemaGenerator =
-            new JsonSchemaGenerator(objectMapper);
+    private static final SchemaGenerator schemaGenerator;
+
+    static {
+        SchemaGeneratorConfigBuilder configBuilder =
+                new SchemaGeneratorConfigBuilder(
+                                SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
+                        .with(Option.EXTRA_OPEN_API_FORMAT_VALUES)
+                        .without(Option.SCHEMA_VERSION_INDICATOR);
+        SchemaGeneratorConfig config = configBuilder.build();
+        schemaGenerator = new SchemaGenerator(config);
+    }
 
     /**
      * Generate JSON Schema from a Java class.
@@ -53,13 +65,13 @@ public class JsonSchemaUtils {
      * @param clazz The class to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
-     *                          Jackson configuration issues, or other processing
-     *                          errors
+     *                          configuration issues, or other processing errors
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            JsonSchema schema = schemaGenerator.generateSchema(clazz);
-            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            JsonNode schemaNode = schemaGenerator.generateSchema(clazz);
+            return objectMapper.convertValue(
+                    schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
@@ -74,8 +86,7 @@ public class JsonSchemaUtils {
      * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
-     *                          Jackson configuration issues, or other processing
-     *                          errors
+     *                          configuration issues, or other processing errors
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
@@ -93,9 +104,9 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JavaType javaType = objectMapper.constructType(type);
-            JsonSchema schema = schemaGenerator.generateSchema(javaType);
-            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            JsonNode schemaNode = schemaGenerator.generateSchema(type);
+            return objectMapper.convertValue(
+                    schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);

@@ -239,7 +239,7 @@ public class Msg implements State {
     @Transient
     @JsonIgnore
     public boolean hasStructuredData() {
-        return metadata != null && !metadata.isEmpty();
+        return metadata != null && metadata.containsKey(MessageMetadataKeys.STRUCTURED_OUTPUT);
     }
 
     /**
@@ -273,8 +273,15 @@ public class Msg implements State {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
         try {
-            return OBJECT_MAPPER.convertValue(metadata, targetClass);
+            return OBJECT_MAPPER.convertValue(structuredOutput, targetClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
@@ -335,22 +342,31 @@ public class Msg implements State {
      */
     @Transient
     @JsonIgnore
+    @SuppressWarnings("unchecked")
     public Map<String, Object> getStructuredData(boolean mutable) {
         if (metadata == null || metadata.isEmpty()) {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
+        if (!(structuredOutput instanceof Map)) {
+            throw new IllegalStateException(
+                    "Structured output is not a Map. Use getStructuredData(Class<T>) instead.");
+        }
+        Map<String, Object> result = (Map<String, Object>) structuredOutput;
         if (mutable) {
-            return metadata;
+            return result;
         }
         try {
-            return OBJECT_MAPPER.convertValue(metadata, new TypeReference<>() {});
+            return OBJECT_MAPPER.convertValue(result, new TypeReference<>() {});
         } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to convert metadata to "
-                            + ". Ensure the target class has appropriate fields matching metadata"
-                            + " keys.",
-                    e);
+            throw new IllegalArgumentException("Failed to convert structured output to Map.", e);
         }
     }
 

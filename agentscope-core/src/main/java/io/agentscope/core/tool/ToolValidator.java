@@ -43,7 +43,7 @@ public final class ToolValidator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final SchemaRegistry SCHEMA_REGISTRY =
-            SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2019_09);
+            SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
 
     private ToolValidator() {
         // Utility class
