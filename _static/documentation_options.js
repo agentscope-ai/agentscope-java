@@ -5,7 +5,7 @@ const DOCUMENTATION_OPTIONS = {
     BUILDER: 'html',
     FILE_SUFFIX: '.html',
     LINK_SUFFIX: '.html',
-    HAS_SOURCE: false,
+    HAS_SOURCE: true,
     SOURCELINK_SUFFIX: '',
     NAVIGATION_WITH_KEYS: false,
     SHOW_SEARCH_SUMMARY: true,
