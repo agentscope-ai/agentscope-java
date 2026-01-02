@@ -15,12 +15,12 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -42,8 +42,8 @@ import java.util.stream.Collectors;
 public final class ToolValidator {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final JsonSchemaFactory SCHEMA_FACTORY =
-            JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
+    private static final SchemaRegistry SCHEMA_REGISTRY =
+            SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2019_09);
 
     private ToolValidator() {
         // Utility class
@@ -75,20 +75,17 @@ public final class ToolValidator {
         }
 
         try {
-            // Convert schema to JsonNode
-            JsonNode schemaNode = OBJECT_MAPPER.valueToTree(schema);
+            // Convert schema to JSON string
+            String schemaJson = OBJECT_MAPPER.writeValueAsString(schema);
 
-            // Create JsonSchema from the schema node
-            JsonSchema jsonSchema = SCHEMA_FACTORY.getSchema(schemaNode);
+            // Create Schema from the schema string
+            Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
-            // Convert input to JsonNode (handle null input as empty object)
-            JsonNode inputNode =
-                    input == null
-                            ? OBJECT_MAPPER.createObjectNode()
-                            : OBJECT_MAPPER.valueToTree(input);
+            // Convert input to JSON string (handle null input as empty object)
+            String inputJson = input == null ? "{}" : OBJECT_MAPPER.writeValueAsString(input);
 
             // Validate
-            Set<ValidationMessage> errors = jsonSchema.validate(inputNode);
+            List<Error> errors = jsonSchema.validate(inputJson, InputFormat.JSON);
 
             if (errors.isEmpty()) {
                 return null; // Validation passed
@@ -96,9 +93,7 @@ public final class ToolValidator {
 
             // Format error messages
             String errorMessage =
-                    errors.stream()
-                            .map(ValidationMessage::getMessage)
-                            .collect(Collectors.joining("; "));
+                    errors.stream().map(Error::getMessage).collect(Collectors.joining("; "));
 
             return errorMessage;
 
