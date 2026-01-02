@@ -412,10 +412,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             // Separate success and pending results
                             List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                     results.stream()
-                                            .filter(e -> !e.getValue().isPending())
+                                            .filter(e -> !e.getValue().isSuspended())
                                             .toList();
                             List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs =
-                                    results.stream().filter(e -> e.getValue().isPending()).toList();
+                                    results.stream()
+                                            .filter(e -> e.getValue().isSuspended())
+                                            .toList();
 
                             // If no success results to process
                             if (successPairs.isEmpty()) {

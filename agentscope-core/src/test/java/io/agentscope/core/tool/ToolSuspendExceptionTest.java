@@ -59,8 +59,8 @@ class ToolSuspendExceptionTest {
     }
 
     @Test
-    @DisplayName("Should create pending ToolResultBlock from exception")
-    void testPendingToolResultBlock() {
+    @DisplayName("Should create suspended ToolResultBlock from exception")
+    void testSuspendedToolResultBlock() {
         ToolUseBlock toolUse =
                 ToolUseBlock.builder()
                         .id("tool-1")
@@ -70,17 +70,17 @@ class ToolSuspendExceptionTest {
 
         ToolSuspendException exception = new ToolSuspendException("Waiting for API response");
 
-        ToolResultBlock pending = ToolResultBlock.pending(toolUse, exception);
+        ToolResultBlock suspended = ToolResultBlock.suspended(toolUse, exception);
 
-        assertEquals("tool-1", pending.getId());
-        assertEquals("external_api", pending.getName());
-        assertTrue(pending.isPending());
-        assertEquals(1, pending.getOutput().size());
+        assertEquals("tool-1", suspended.getId());
+        assertEquals("external_api", suspended.getName());
+        assertTrue(suspended.isSuspended());
+        assertEquals(1, suspended.getOutput().size());
     }
 
     @Test
-    @DisplayName("Should create pending ToolResultBlock with default message")
-    void testPendingToolResultBlockDefaultMessage() {
+    @DisplayName("Should create suspended ToolResultBlock with default message")
+    void testSuspendedToolResultBlockDefaultMessage() {
         ToolUseBlock toolUse =
                 ToolUseBlock.builder()
                         .id("tool-2")
@@ -88,18 +88,18 @@ class ToolSuspendExceptionTest {
                         .input(Map.of("sql", "SELECT * FROM users"))
                         .build();
 
-        ToolResultBlock pending = ToolResultBlock.pending(toolUse);
+        ToolResultBlock suspended = ToolResultBlock.suspended(toolUse);
 
-        assertEquals("tool-2", pending.getId());
-        assertEquals("database_query", pending.getName());
-        assertTrue(pending.isPending());
+        assertEquals("tool-2", suspended.getId());
+        assertEquals("database_query", suspended.getName());
+        assertTrue(suspended.isSuspended());
     }
 
     @Test
-    @DisplayName("Should correctly identify non-pending result")
-    void testNonPendingResult() {
+    @DisplayName("Should correctly identify non-suspended result")
+    void testNonSuspendedResult() {
         ToolResultBlock normalResult = ToolResultBlock.text("Success");
 
-        assertTrue(!normalResult.isPending());
+        assertTrue(!normalResult.isSuspended());
     }
 }

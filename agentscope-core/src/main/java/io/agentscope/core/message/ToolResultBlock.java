@@ -32,8 +32,8 @@ import java.util.Map;
  */
 public final class ToolResultBlock extends ContentBlock {
 
-    /** Metadata key indicating this result is pending external execution. */
-    public static final String METADATA_PENDING = "agentscope_pending";
+    /** Metadata key indicating this result is suspended for external execution. */
+    public static final String METADATA_SUSPENDED = "agentscope_suspended";
 
     private final String id;
     private final String name;
@@ -111,28 +111,28 @@ public final class ToolResultBlock extends ContentBlock {
     }
 
     /**
-     * Checks if this result is pending external execution.
+     * Checks if this result is suspended for external execution.
      *
-     * <p>A pending result is created when a tool throws {@link ToolSuspendException},
+     * <p>A suspended result is created when a tool throws {@link ToolSuspendException},
      * indicating that the tool execution needs to be handled externally by the user.
      *
-     * @return true if this result is pending, false otherwise
+     * @return true if this result is suspended, false otherwise
      */
-    public boolean isPending() {
-        return Boolean.TRUE.equals(metadata.get(METADATA_PENDING));
+    public boolean isSuspended() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
     }
 
     /**
-     * Creates a pending tool result from a ToolSuspendException.
+     * Creates a suspended tool result from a ToolSuspendException.
      *
      * <p>This method is used by the framework to convert a {@link ToolSuspendException}
-     * into a pending result that will be returned to the user for external execution.
+     * into a suspended result that will be returned to the user for external execution.
      *
      * @param toolUse The tool use block that triggered the exception
      * @param exception The exception thrown by the tool
-     * @return A pending ToolResultBlock
+     * @return A suspended ToolResultBlock
      */
-    public static ToolResultBlock pending(ToolUseBlock toolUse, ToolSuspendException exception) {
+    public static ToolResultBlock suspended(ToolUseBlock toolUse, ToolSuspendException exception) {
         String content =
                 exception.getReason() != null
                         ? exception.getReason()
@@ -141,17 +141,17 @@ public final class ToolResultBlock extends ContentBlock {
                 toolUse.getId(),
                 toolUse.getName(),
                 List.of(TextBlock.builder().text(content).build()),
-                Map.of(METADATA_PENDING, true));
+                Map.of(METADATA_SUSPENDED, true));
     }
 
     /**
-     * Creates a pending tool result with default message.
+     * Creates a suspended tool result with default message.
      *
      * @param toolUse The tool use block that requires external execution
-     * @return A pending ToolResultBlock
+     * @return A suspended ToolResultBlock
      */
-    public static ToolResultBlock pending(ToolUseBlock toolUse) {
-        return pending(toolUse, new ToolSuspendException());
+    public static ToolResultBlock suspended(ToolUseBlock toolUse) {
+        return suspended(toolUse, new ToolSuspendException());
     }
 
     /**

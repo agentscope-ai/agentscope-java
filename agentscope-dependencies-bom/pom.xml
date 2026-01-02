@@ -99,7 +99,7 @@
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
-        <json-schema-validator.version>1.5.7</json-schema-validator.version>
+        <json-schema-validator.version>3.0.0</json-schema-validator.version>
 
 
         <spotless.version>3.1.0</spotless.version>

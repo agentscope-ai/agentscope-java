@@ -190,12 +190,12 @@ class ToolExecutor {
                 .onErrorResume(
                         ToolSuspendException.class,
                         e -> {
-                            // Convert ToolSuspendException to pending result
+                            // Convert ToolSuspendException to suspended result
                             logger.debug(
                                     "Tool '{}' suspended: {}",
                                     toolCall.getName(),
                                     e.getReason() != null ? e.getReason() : "no reason");
-                            return Mono.just(ToolResultBlock.pending(toolCall, e));
+                            return Mono.just(ToolResultBlock.suspended(toolCall, e));
                         })
                 .onErrorResume(
                         e -> {
