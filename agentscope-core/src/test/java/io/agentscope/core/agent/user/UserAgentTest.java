@@ -316,8 +316,14 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData(), "Response should have structured data");
-            assertEquals("value1", ((Map)(response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT))).get("field1"));
-            assertEquals(42, ((Map)(response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT))).get("field2"));
+            assertEquals(
+                    "value1",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("field1"));
+            assertEquals(
+                    42,
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("field2"));
         }
 
         @Test
@@ -340,7 +346,10 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData());
-            assertEquals("yes", ((Map)(response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT))).get("answer"));
+            assertEquals(
+                    "yes",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("answer"));
         }
 
         @Test
@@ -364,7 +373,10 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData());
-            assertEquals("completed", ((Map)(response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT))).get("status"));
+            assertEquals(
+                    "completed",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("status"));
         }
     }
 
@@ -486,7 +498,10 @@ class UserAgentTest {
                             .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
             assertNotNull(response.getMetadata());
-            assertEquals("value", ((Map)(response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT))).get("key"));
+            assertEquals(
+                    "value",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("key"));
         }
 
         @Test
