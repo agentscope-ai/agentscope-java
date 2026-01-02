@@ -19,6 +19,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -157,7 +158,7 @@ public class UserAgent extends AgentBase {
 
         // Add structured input as metadata if present
         if (structuredInput != null && !structuredInput.isEmpty()) {
-            msgBuilder.metadata(structuredInput);
+            msgBuilder.metadata(Map.of(MessageMetadataKeys.STRUCTURED_OUTPUT, structuredInput));
         }
 
         return msgBuilder.build();
