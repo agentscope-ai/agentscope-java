@@ -15,8 +15,12 @@
  */
 package io.agentscope.core.chat.completions.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.session.InMemorySession;
@@ -64,9 +68,9 @@ class ChatCompletionsAgentHelperTest {
             // Then get the agent - it should load the state
             ReActAgent agent = helper.getAgent(sessionId);
 
-            assertThat(agent).isNotNull();
+            assertNotNull(agent);
             // The agent should have loaded state from session
-            assertThat(agent.loadIfExists(session, sessionId)).isTrue();
+            assertTrue(agent.loadIfExists(session, sessionId));
         }
 
         @Test
@@ -76,9 +80,9 @@ class ChatCompletionsAgentHelperTest {
 
             ReActAgent agent = helper.getAgent(sessionId);
 
-            assertThat(agent).isNotNull();
+            assertNotNull(agent);
             // The agent should not have state in session
-            assertThat(agent.loadIfExists(session, sessionId)).isFalse();
+            assertFalse(agent.loadIfExists(session, sessionId));
         }
 
         @Test
@@ -88,9 +92,11 @@ class ChatCompletionsAgentHelperTest {
             ChatCompletionsAgentHelper helperWithNullSupplier =
                     new ChatCompletionsAgentHelper(nullSupplier, session);
 
-            assertThatThrownBy(() -> helperWithNullSupplier.getAgent("test-session"))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("supplier returned null");
+            IllegalStateException exception =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> helperWithNullSupplier.getAgent("test-session"));
+            assertTrue(exception.getMessage().contains("supplier returned null"));
         }
     }
 
@@ -108,7 +114,7 @@ class ChatCompletionsAgentHelperTest {
 
             // Verify state was saved by trying to load it
             ReActAgent newAgent = agentSupplier.get();
-            assertThat(newAgent.loadIfExists(session, sessionId)).isTrue();
+            assertTrue(newAgent.loadIfExists(session, sessionId));
         }
 
         @Test
@@ -122,7 +128,7 @@ class ChatCompletionsAgentHelperTest {
             helper.saveAgentState(sessionId, agent);
 
             // Verify it completed without throwing
-            assertThat(agent).isNotNull();
+            assertNotNull(agent);
         }
     }
 
@@ -137,7 +143,7 @@ class ChatCompletionsAgentHelperTest {
 
             String resolved = helper.resolveSessionId(sessionId);
 
-            assertThat(resolved).isEqualTo(sessionId);
+            assertEquals(sessionId, resolved);
         }
 
         @Test
@@ -145,10 +151,12 @@ class ChatCompletionsAgentHelperTest {
         void shouldGenerateUuidIfNull() {
             String resolved = helper.resolveSessionId(null);
 
-            assertThat(resolved).isNotNull().isNotEmpty();
+            assertNotNull(resolved);
+            assertFalse(resolved.isEmpty());
             // Should be a valid UUID format
-            assertThat(resolved)
-                    .matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+            assertTrue(
+                    resolved.matches(
+                            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"));
         }
 
         @Test
@@ -156,8 +164,9 @@ class ChatCompletionsAgentHelperTest {
         void shouldGenerateUuidIfBlank() {
             String resolved = helper.resolveSessionId("   ");
 
-            assertThat(resolved).isNotNull().isNotEmpty();
-            assertThat(resolved).doesNotContain(" ");
+            assertNotNull(resolved);
+            assertFalse(resolved.isEmpty());
+            assertFalse(resolved.contains(" "));
         }
     }
 
@@ -168,7 +177,7 @@ class ChatCompletionsAgentHelperTest {
         @Test
         @DisplayName("Should return the session")
         void shouldReturnTheSession() {
-            assertThat(helper.getSession()).isSameAs(session);
+            assertSame(session, helper.getSession());
         }
     }
 }
