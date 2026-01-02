@@ -138,7 +138,7 @@ public class HookStopAgentExample {
                 System.out.println("\n⚠️  Agent paused for confirmation");
                 displayPendingToolCalls(response);
 
-                System.out.print("\nConfirm execution? (yes/no/cancel): ");
+                System.out.print("\nConfirm execution? (yes/no): ");
                 String confirmation = scanner.nextLine().trim().toLowerCase();
 
                 if (confirmation.equals("yes") || confirmation.equals("y")) {
@@ -146,12 +146,12 @@ public class HookStopAgentExample {
                     System.out.println("Resuming execution...\n");
                     response = agent.call().block();
                 } else if (confirmation.equals("no") || confirmation.equals("n")) {
-                    // Provide a manual tool result
+                    // Provide a manual tool result for all pending tools
                     System.out.println("Operation cancelled by user.\n");
-                    Msg cancelResult = createCancelledToolResult(response, agent.getName());
+                    Msg cancelResult = createCancelledToolResults(response, agent.getName());
                     response = agent.call(cancelResult).block();
                 } else {
-                    System.out.println("Invalid input. Please enter 'yes', 'no', or 'cancel'.");
+                    System.out.println("Invalid input. Please enter 'yes' or 'no'.");
                     continue;
                 }
             }
@@ -182,27 +182,35 @@ public class HookStopAgentExample {
     }
 
     /**
-     * Create a tool result message indicating the operation was cancelled.
+     * Create tool result messages for all pending tool calls, indicating cancellation.
      */
-    static Msg createCancelledToolResult(Msg toolUseMsg, String agentName) {
+    static Msg createCancelledToolResults(Msg toolUseMsg, String agentName) {
         List<ToolUseBlock> toolCalls = toolUseMsg.getContentBlocks(ToolUseBlock.class);
         if (toolCalls.isEmpty()) {
-            return null;
+            // Return empty tool message if no tool calls (should not happen in normal flow)
+            return Msg.builder().name(agentName).role(MsgRole.TOOL).build();
         }
 
-        ToolUseBlock firstTool = toolCalls.get(0);
+        // Create ToolResultBlock for each pending tool call
+        List<ToolResultBlock> results =
+                toolCalls.stream()
+                        .map(
+                                tool ->
+                                        ToolResultBlock.of(
+                                                tool.getId(),
+                                                tool.getName(),
+                                                TextBlock.builder()
+                                                        .text(
+                                                                "Operation cancelled by user."
+                                                                        + " Please try a different"
+                                                                        + " approach.")
+                                                        .build()))
+                        .toList();
+
         return Msg.builder()
                 .name(agentName)
                 .role(MsgRole.TOOL)
-                .content(
-                        ToolResultBlock.of(
-                                firstTool.getId(),
-                                firstTool.getName(),
-                                TextBlock.builder()
-                                        .text(
-                                                "Operation cancelled by user. Please try a"
-                                                        + " different approach.")
-                                        .build()))
+                .content(results.toArray(new ToolResultBlock[0]))
                 .build();
     }
 
@@ -221,6 +229,9 @@ public class HookStopAgentExample {
         public <T extends HookEvent> Mono<T> onEvent(T event) {
             if (event instanceof PostReasoningEvent postReasoning) {
                 Msg reasoningMsg = postReasoning.getReasoningMessage();
+                if (reasoningMsg == null) {
+                    return Mono.just(event);
+                }
 
                 // Check if any sensitive tools are being called
                 List<ToolUseBlock> toolCalls = reasoningMsg.getContentBlocks(ToolUseBlock.class);
