@@ -160,7 +160,7 @@ public class StructuredOutputHook implements Hook {
     }
 
     /**
-     * Remove structured output related messages from memory.
+     * Remove structured output related messages from memory and add final response.
      */
     private void compressMemory() {
         List<Msg> original = new ArrayList<>(memory.getMessages());
@@ -173,8 +173,37 @@ public class StructuredOutputHook implements Hook {
             }
         }
 
+        // Add the final response message (extracted from resultMsg)
+        if (resultMsg != null) {
+            Msg finalMsg = extractFinalResponseMsg(resultMsg);
+            if (finalMsg != null) {
+                memory.addMessage(finalMsg);
+            }
+        }
+
         log.debug(
                 "Memory compressed: {} -> {} messages", originalSize, memory.getMessages().size());
+    }
+
+    /**
+     * Extract the final response message from the tool result message.
+     *
+     * @param toolResultMsg The tool result message containing the response
+     * @return The final response message, or null if not found
+     */
+    private Msg extractFinalResponseMsg(Msg toolResultMsg) {
+        List<ToolResultBlock> toolResults = toolResultMsg.getContentBlocks(ToolResultBlock.class);
+        for (ToolResultBlock result : toolResults) {
+            if (result.getMetadata() != null
+                    && Boolean.TRUE.equals(result.getMetadata().get("success"))
+                    && result.getMetadata().containsKey("response_msg")) {
+                Object responseMsgObj = result.getMetadata().get("response_msg");
+                if (responseMsgObj instanceof Msg responseMsg) {
+                    return responseMsg;
+                }
+            }
+        }
+        return null;
     }
 
     /**
