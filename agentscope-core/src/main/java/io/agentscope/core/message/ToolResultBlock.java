@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.tool.ToolSuspendException;
 import java.util.List;
 import java.util.Map;
 
@@ -30,6 +31,9 @@ import java.util.Map;
  * Supports metadata for passing additional execution information.
  */
 public final class ToolResultBlock extends ContentBlock {
+
+    /** Metadata key indicating this result is pending external execution. */
+    public static final String METADATA_PENDING = "agentscope_pending";
 
     private final String id;
     private final String name;
@@ -104,6 +108,50 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    /**
+     * Checks if this result is pending external execution.
+     *
+     * <p>A pending result is created when a tool throws {@link ToolSuspendException},
+     * indicating that the tool execution needs to be handled externally by the user.
+     *
+     * @return true if this result is pending, false otherwise
+     */
+    public boolean isPending() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_PENDING));
+    }
+
+    /**
+     * Creates a pending tool result from a ToolSuspendException.
+     *
+     * <p>This method is used by the framework to convert a {@link ToolSuspendException}
+     * into a pending result that will be returned to the user for external execution.
+     *
+     * @param toolUse The tool use block that triggered the exception
+     * @param exception The exception thrown by the tool
+     * @return A pending ToolResultBlock
+     */
+    public static ToolResultBlock pending(ToolUseBlock toolUse, ToolSuspendException exception) {
+        String content =
+                exception.getReason() != null
+                        ? exception.getReason()
+                        : "[Awaiting external execution]";
+        return new ToolResultBlock(
+                toolUse.getId(),
+                toolUse.getName(),
+                List.of(TextBlock.builder().text(content).build()),
+                Map.of(METADATA_PENDING, true));
+    }
+
+    /**
+     * Creates a pending tool result with default message.
+     *
+     * @param toolUse The tool use block that requires external execution
+     * @return A pending ToolResultBlock
+     */
+    public static ToolResultBlock pending(ToolUseBlock toolUse) {
+        return pending(toolUse, new ToolSuspendException());
     }
 
     /**

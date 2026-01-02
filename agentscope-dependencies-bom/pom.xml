@@ -99,6 +99,7 @@
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
+        <json-schema-validator.version>1.5.7</json-schema-validator.version>
 
 
         <spotless.version>3.1.0</spotless.version>
@@ -347,6 +348,13 @@
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
+            </dependency>
+
+            <!-- JSON Schema Validator (networknt) -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

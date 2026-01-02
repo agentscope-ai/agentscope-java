@@ -118,5 +118,11 @@
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp-jvm</artifactId>
         </dependency>
+
+        <!-- JSON Schema Validator for tool input validation -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+        </dependency>
     </dependencies>
 </project>

@@ -18,7 +18,7 @@ package io.agentscope.core.hook;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.util.ToolResultValidator;
+import io.agentscope.core.tool.ToolValidator;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -148,7 +148,7 @@ public final class PostReasoningEvent extends ReasoningEvent {
      * @throws IllegalStateException if ToolResult validation fails
      */
     public void gotoReasoning(List<Msg> msgs) {
-        ToolResultValidator.validate(reasoningMessage, msgs);
+        ToolValidator.validateToolResultMatch(reasoningMessage, msgs);
         this.gotoReasoningMsgs = new ArrayList<>(msgs);
     }
 
