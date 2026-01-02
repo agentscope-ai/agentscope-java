@@ -15,8 +15,9 @@
  */
 package io.agentscope.core.chat.completions.converter;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
@@ -54,9 +55,9 @@ class ChatMessageConverterTest {
             ChatMessage chatMsg = new ChatMessage("user", "Hello");
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(0).getTextContent()).isEqualTo("Hello");
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
+            assertEquals("Hello", result.get(0).getTextContent());
         }
 
         @Test
@@ -65,9 +66,9 @@ class ChatMessageConverterTest {
             ChatMessage chatMsg = new ChatMessage("assistant", "Hi there!");
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.ASSISTANT);
-            assertThat(result.get(0).getTextContent()).isEqualTo("Hi there!");
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.ASSISTANT, result.get(0).getRole());
+            assertEquals("Hi there!", result.get(0).getTextContent());
         }
 
         @Test
@@ -76,9 +77,9 @@ class ChatMessageConverterTest {
             ChatMessage chatMsg = new ChatMessage("system", "You are a helpful assistant");
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.SYSTEM);
-            assertThat(result.get(0).getTextContent()).isEqualTo("You are a helpful assistant");
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.SYSTEM, result.get(0).getRole());
+            assertEquals("You are a helpful assistant", result.get(0).getTextContent());
         }
 
         @Test
@@ -87,9 +88,9 @@ class ChatMessageConverterTest {
             ChatMessage chatMsg = new ChatMessage("tool", "Tool result");
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.TOOL);
-            assertThat(result.get(0).getTextContent()).isEqualTo("Tool result");
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.TOOL, result.get(0).getRole());
+            assertEquals("Tool result", result.get(0).getTextContent());
         }
 
         @Test
@@ -103,10 +104,10 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(chatMessages);
 
-            assertThat(result).hasSize(3);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.SYSTEM);
-            assertThat(result.get(1).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(2).getRole()).isEqualTo(MsgRole.ASSISTANT);
+            assertEquals(3, result.size());
+            assertEquals(MsgRole.SYSTEM, result.get(0).getRole());
+            assertEquals(MsgRole.USER, result.get(1).getRole());
+            assertEquals(MsgRole.ASSISTANT, result.get(2).getRole());
         }
 
         @Test
@@ -120,24 +121,24 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(chatMessages);
 
-            assertThat(result).hasSize(3);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(1).getRole()).isEqualTo(MsgRole.ASSISTANT);
-            assertThat(result.get(2).getRole()).isEqualTo(MsgRole.SYSTEM);
+            assertEquals(3, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
+            assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
+            assertEquals(MsgRole.SYSTEM, result.get(2).getRole());
         }
 
         @Test
         @DisplayName("Should return empty list for null input")
         void shouldReturnEmptyListForNullInput() {
             List<Msg> result = converter.convertMessages(null);
-            assertThat(result).isEmpty();
+            assertTrue(result.isEmpty());
         }
 
         @Test
         @DisplayName("Should return empty list for empty input")
         void shouldReturnEmptyListForEmptyInput() {
             List<Msg> result = converter.convertMessages(List.of());
-            assertThat(result).isEmpty();
+            assertTrue(result.isEmpty());
         }
 
         @Test
@@ -150,9 +151,9 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(chatMessages);
 
-            assertThat(result).hasSize(2);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(1).getRole()).isEqualTo(MsgRole.ASSISTANT);
+            assertEquals(2, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
+            assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
         }
 
         @Test
@@ -164,9 +165,9 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(0).getTextContent()).isEqualTo("Hello");
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
+            assertEquals("Hello", result.get(0).getTextContent());
         }
 
         @Test
@@ -176,8 +177,8 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
         }
 
         @Test
@@ -187,9 +188,9 @@ class ChatMessageConverterTest {
 
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getRole()).isEqualTo(MsgRole.USER);
-            assertThat(result.get(0).getTextContent()).isEmpty();
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.USER, result.get(0).getRole());
+            assertTrue(result.get(0).getTextContent().isEmpty());
         }
 
         @Test
@@ -197,9 +198,11 @@ class ChatMessageConverterTest {
         void shouldThrowExceptionForUnknownRole() {
             ChatMessage chatMsg = new ChatMessage("unknown", "Hello");
 
-            assertThatThrownBy(() -> converter.convertMessages(List.of(chatMsg)))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Unknown message role");
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> converter.convertMessages(List.of(chatMsg)));
+            assertTrue(exception.getMessage().contains("Unknown message role"));
         }
     }
 }

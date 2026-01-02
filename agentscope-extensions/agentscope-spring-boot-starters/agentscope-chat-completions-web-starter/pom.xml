@@ -34,7 +34,6 @@
     <description>Spring Boot starter exposing a Chat Completions style HTTP API for AgentScope agents</description>
 
     <properties>
-        <spring-boot.version>4.0.1</spring-boot.version>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 

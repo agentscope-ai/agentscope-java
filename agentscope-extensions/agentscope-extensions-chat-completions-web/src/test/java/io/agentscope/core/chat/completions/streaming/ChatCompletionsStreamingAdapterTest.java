@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.chat.completions.streaming;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
@@ -172,7 +172,7 @@ class ChatCompletionsStreamingAdapterTest {
 
             String result = adapter.createErrorEvent(error, "request-id");
 
-            assertThat(result).isEqualTo("Error: Test error");
+            assertEquals("Error: Test error", result);
         }
 
         @Test
@@ -180,7 +180,7 @@ class ChatCompletionsStreamingAdapterTest {
         void shouldHandleNullError() {
             String result = adapter.createErrorEvent(null, "request-id");
 
-            assertThat(result).isEqualTo("Error: Unknown");
+            assertEquals("Error: Unknown", result);
         }
     }
 }

@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.chat.completions.builder;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
@@ -63,16 +65,15 @@ class ChatCompletionsResponseBuilderTest {
 
             ChatCompletionsResponse response = builder.buildResponse(request, reply, "test-id");
 
-            assertThat(response).isNotNull();
-            assertThat(response.getId()).isEqualTo("test-id");
-            assertThat(response.getModel()).isEqualTo("test-model");
-            assertThat(response.getCreated()).isPositive();
-            assertThat(response.getChoices()).hasSize(1);
-            assertThat(response.getChoices().get(0).getIndex()).isEqualTo(0);
-            assertThat(response.getChoices().get(0).getFinishReason()).isEqualTo("stop");
-            assertThat(response.getChoices().get(0).getMessage().getRole()).isEqualTo("assistant");
-            assertThat(response.getChoices().get(0).getMessage().getContent())
-                    .isEqualTo("Hi there!");
+            assertNotNull(response);
+            assertEquals("test-id", response.getId());
+            assertEquals("test-model", response.getModel());
+            assertTrue(response.getCreated() > 0);
+            assertEquals(1, response.getChoices().size());
+            assertEquals(0, response.getChoices().get(0).getIndex());
+            assertEquals("stop", response.getChoices().get(0).getFinishReason());
+            assertEquals("assistant", response.getChoices().get(0).getMessage().getRole());
+            assertEquals("Hi there!", response.getChoices().get(0).getMessage().getContent());
         }
 
         @Test
@@ -83,9 +84,9 @@ class ChatCompletionsResponseBuilderTest {
 
             ChatCompletionsResponse response = builder.buildResponse(request, null, "test-id");
 
-            assertThat(response).isNotNull();
-            assertThat(response.getChoices()).hasSize(1);
-            assertThat(response.getChoices().get(0).getMessage().getContent()).isEmpty();
+            assertNotNull(response);
+            assertEquals(1, response.getChoices().size());
+            assertTrue(response.getChoices().get(0).getMessage().getContent().isEmpty());
         }
 
         @Test
@@ -102,8 +103,8 @@ class ChatCompletionsResponseBuilderTest {
 
             ChatCompletionsResponse response = builder.buildResponse(request, reply, "test-id");
 
-            assertThat(response).isNotNull();
-            assertThat(response.getChoices().get(0).getMessage().getContent()).isEmpty();
+            assertNotNull(response);
+            assertTrue(response.getChoices().get(0).getMessage().getContent().isEmpty());
         }
     }
 
@@ -122,16 +123,16 @@ class ChatCompletionsResponseBuilderTest {
             ChatCompletionsResponse response =
                     builder.buildErrorResponse(request, error, "test-id");
 
-            assertThat(response).isNotNull();
-            assertThat(response.getId()).isEqualTo("test-id");
-            assertThat(response.getModel()).isEqualTo("test-model");
-            assertThat(response.getCreated()).isPositive();
-            assertThat(response.getChoices()).hasSize(1);
-            assertThat(response.getChoices().get(0).getIndex()).isEqualTo(0);
-            assertThat(response.getChoices().get(0).getFinishReason()).isEqualTo("error");
-            assertThat(response.getChoices().get(0).getMessage().getContent())
-                    .contains("Error:")
-                    .contains("Test error message");
+            assertNotNull(response);
+            assertEquals("test-id", response.getId());
+            assertEquals("test-model", response.getModel());
+            assertTrue(response.getCreated() > 0);
+            assertEquals(1, response.getChoices().size());
+            assertEquals(0, response.getChoices().get(0).getIndex());
+            assertEquals("error", response.getChoices().get(0).getFinishReason());
+            String content = response.getChoices().get(0).getMessage().getContent();
+            assertTrue(content.contains("Error:"));
+            assertTrue(content.contains("Test error message"));
         }
 
         @Test
@@ -142,9 +143,13 @@ class ChatCompletionsResponseBuilderTest {
 
             ChatCompletionsResponse response = builder.buildErrorResponse(request, null, "test-id");
 
-            assertThat(response).isNotNull();
-            assertThat(response.getChoices().get(0).getMessage().getContent())
-                    .contains("Unknown error occurred");
+            assertNotNull(response);
+            assertTrue(
+                    response.getChoices()
+                            .get(0)
+                            .getMessage()
+                            .getContent()
+                            .contains("Unknown error occurred"));
         }
     }
 
@@ -163,14 +168,14 @@ class ChatCompletionsResponseBuilderTest {
 
             String result = builder.extractTextContent(msg);
 
-            assertThat(result).isEqualTo("Hello world");
+            assertEquals("Hello world", result);
         }
 
         @Test
         @DisplayName("Should return empty string for null message")
         void shouldReturnEmptyStringForNullMessage() {
             String result = builder.extractTextContent(null);
-            assertThat(result).isEmpty();
+            assertTrue(result.isEmpty());
         }
 
         @Test
@@ -180,7 +185,7 @@ class ChatCompletionsResponseBuilderTest {
 
             String result = builder.extractTextContent(msg);
 
-            assertThat(result).isEmpty();
+            assertTrue(result.isEmpty());
         }
     }
 }

@@ -30,7 +30,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
 
 /**
  * Auto-configuration for exposing a Chat Completions style HTTP API.
@@ -43,7 +42,6 @@ import org.springframework.context.annotation.ComponentScan;
  * agent for each request and loading/saving state from/to the configured {@link Session}.
  */
 @AutoConfiguration
-@ComponentScan(basePackages = "io.agentscope.spring.boot.chat")
 @EnableConfigurationProperties(ChatCompletionsProperties.class)
 @ConditionalOnProperty(
         prefix = "agentscope.chat-completions",
@@ -111,6 +109,19 @@ public class ChatCompletionsWebAutoConfiguration {
     public ChatCompletionsAgentService chatCompletionsAgentService(
             ObjectProvider<ReActAgent> agentProvider, Session session) {
         return new ChatCompletionsAgentService(agentProvider, session);
+    }
+
+    /**
+     * Create the streaming service bean.
+     *
+     * @param responseBuilder Builder for extracting text content from agent messages
+     * @return A new {@link ChatCompletionsStreamingService} instance
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ChatCompletionsStreamingService chatCompletionsStreamingService(
+            ChatCompletionsResponseBuilder responseBuilder) {
+        return new ChatCompletionsStreamingService(responseBuilder);
     }
 
     /**
