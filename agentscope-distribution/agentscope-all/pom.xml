@@ -204,6 +204,12 @@
             <groupId>io.modelcontextprotocol.sdk</groupId>
             <artifactId>mcp</artifactId>
         </dependency>
+
+        <!-- JSON Schema Validator for tool input validation -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
