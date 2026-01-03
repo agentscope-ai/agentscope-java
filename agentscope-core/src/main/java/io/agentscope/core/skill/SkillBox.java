@@ -25,6 +25,7 @@ import io.agentscope.core.tool.subagent.SubAgentProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -181,6 +182,14 @@ public class SkillBox implements StateModule {
         skillRegistry.registerSkill(skillId, skill, registered);
 
         logger.info("Registered skill '{}'", skillId);
+    }
+
+    /**
+     * Gets all skill IDs.
+     * @return All skill IDs
+     */
+    public Set<String> getAllSkillIds() {
+        return skillRegistry.getSkillIds();
     }
 
     /**

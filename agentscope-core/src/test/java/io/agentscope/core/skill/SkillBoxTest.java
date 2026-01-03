@@ -209,6 +209,35 @@ class SkillBoxTest {
         assertNotNull(toolkit.getTool("mcp_only_tool"), "MCP tool should be registered");
     }
 
+    @Test
+    @DisplayName("Should return empty set when no skills are registered")
+    void testGetAllSkillIdsWhenEmpty() {
+        var skillIds = skillBox.getAllSkillIds();
+
+        assertNotNull(skillIds, "Skill IDs set should not be null");
+        assertTrue(skillIds.isEmpty(), "Skill IDs set should be empty when no skills registered");
+    }
+
+    @Test
+    @DisplayName("Should return all skill IDs when multiple skills are registered")
+    void testGetAllSkillIdsWithMultipleSkills() {
+        AgentSkill skill1 = new AgentSkill("skill_one", "Skill One", "# Content 1", null);
+        AgentSkill skill2 = new AgentSkill("skill_two", "Skill Two", "# Content 2", null);
+        AgentSkill skill3 = new AgentSkill("skill_three", "Skill Three", "# Content 3", null);
+
+        skillBox.registerSkill(skill1);
+        skillBox.registerSkill(skill2);
+        skillBox.registerSkill(skill3);
+
+        var skillIds = skillBox.getAllSkillIds();
+
+        assertNotNull(skillIds, "Skill IDs set should not be null");
+        assertEquals(3, skillIds.size(), "Should have exactly three skill IDs");
+        assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
+        assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
+        assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+    }
+
     /**
      * Helper method to create a simple test tool.
      */
