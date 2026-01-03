@@ -39,29 +39,27 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 /**
- * Unit tests for ParallelToolExecutor.
+ * Unit tests for ToolExecutor.
  *
  * <p>These tests verify execution paths that invoke the executor itself so regressions in
  * scheduling, ordering, timeout handling, and error propagation are detected.
  */
 @Tag("unit")
-@DisplayName("ParallelToolExecutor Unit Tests")
-class ParallelToolExecutorTest {
+@DisplayName("ToolExecutor Unit Tests")
+class ToolExecutorTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
 
     private Toolkit toolkit;
-    private ParallelToolExecutor executor;
 
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
         toolkit.registerTool(new SampleTools());
-        executor = new ParallelToolExecutor(toolkit);
     }
 
     @Test
-    @DisplayName("Should execute multiple tool calls in parallel")
+    @DisplayName("Should execute multiple tool calls in parallel via Toolkit")
     void shouldExecuteToolsInParallel() {
         ToolUseBlock addCall =
                 ToolUseBlock.builder()
@@ -77,8 +75,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(addCall, concatCall), true, null, null, null)
-                        .block(TIMEOUT);
+                toolkit.callTools(List.of(addCall, concatCall), null, null, null).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return responses for tool calls");
         assertEquals(2, responses.size(), "All tool calls should be executed");
@@ -99,36 +96,6 @@ class ParallelToolExecutorTest {
     }
 
     @Test
-    @DisplayName("Should maintain call order when executing sequentially")
-    void shouldExecuteToolsSequentiallyInOrder() {
-        ToolUseBlock firstCall =
-                ToolUseBlock.builder()
-                        .id("call-1")
-                        .name("add")
-                        .input(Map.of("a", 1, "b", 2))
-                        .build();
-        ToolUseBlock secondCall =
-                ToolUseBlock.builder()
-                        .id("call-2")
-                        .name("concat")
-                        .input(Map.of("str1", "A", "str2", "B"))
-                        .build();
-
-        List<ToolResultBlock> responses =
-                executor.executeTools(List.of(firstCall, secondCall), false, null, null, null)
-                        .block(TIMEOUT);
-
-        assertNotNull(responses, "Sequential execution should return responses");
-        assertEquals(2, responses.size(), "Expected two responses in order");
-        assertEquals("call-1", responses.get(0).getId(), "First response should match first call");
-        assertEquals(
-                "call-2", responses.get(1).getId(), "Second response should match second call");
-        assertEquals("3", extractFirstText(responses.get(0)), "First response payload mismatch");
-        assertEquals(
-                "\"AB\"", extractFirstText(responses.get(1)), "Second response payload mismatch");
-    }
-
-    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         ToolUseBlock errorCall =
@@ -139,7 +106,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(errorCall), true, null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(errorCall), null, null, null).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Single failing call should yield one response");
@@ -149,17 +116,6 @@ class ParallelToolExecutorTest {
                 "Error: Tool execution failed: Tool error: test failure",
                 content,
                 "Error message should be wrapped by executor");
-    }
-
-    @Test
-    @DisplayName("Should expose executor statistics")
-    void shouldExposeExecutorStats() {
-        Map<String, Object> stats = executor.getExecutorStats();
-
-        assertNotNull(stats, "Executor stats should be available");
-        assertTrue(
-                stats.containsKey("executorType") || stats.containsKey("poolSize"),
-                "Stats map should not be empty");
     }
 
     @Test
@@ -203,8 +159,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(interruptedCall), true, null, null, null)
-                        .block(TIMEOUT);
+                toolkit.callTools(List.of(interruptedCall), null, null, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return error response");
         assertEquals(1, responses.size(), "Should have one response");
@@ -271,8 +226,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(call1, call2, call3), true, null, null, null)
-                        .block(TIMEOUT);
+                toolkit.callTools(List.of(call1, call2, call3), null, null, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(3, responses.size(), "Should have three responses");
@@ -352,8 +306,7 @@ class ParallelToolExecutorTest {
                 ToolUseBlock.builder().id("arg").name("illegal_arg_tool").input(Map.of()).build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(npeCall, argCall), true, null, null, null)
-                        .block(TIMEOUT);
+                toolkit.callTools(List.of(npeCall, argCall), null, null, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(2, responses.size(), "Should have two responses");

@@ -38,6 +38,8 @@ parts:
     title: RAG
   - file: en/task/hook
     title: Hook System
+  - file: en/task/hitl
+    title: Human-in-the-Loop
   - file: en/task/memory
     title: Memory Management
   - file: en/task/plan
@@ -56,6 +58,8 @@ parts:
     title: AG-UI Protocol
   - file: en/task/a2a
     title: A2A Protocol
+  - file: en/task/ai-coding
+    title: Coding with AI
 
 - caption: Multi Agent
   chapters:
@@ -93,6 +97,8 @@ parts:
     title: RAG
   - file: zh/task/hook
     title: 钩子系统
+  - file: zh/task/hitl
+    title: Human-in-the-Loop
   - file: zh/task/memory
     title: 记忆管理
   - file: zh/task/plan
@@ -111,6 +117,8 @@ parts:
     title: AG-UI 协议
   - file: zh/task/a2a
     title: A2A 协议
+  - file: zh/task/ai-coding
+    title: 使用 AI 编程
 
 - caption: 多智能体
   chapters:

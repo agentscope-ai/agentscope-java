@@ -15,12 +15,10 @@
  */
 package io.agentscope.core.tool;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,16 +31,6 @@ import java.util.Set;
  * compatible with OpenAI's function calling API.
  */
 class ToolSchemaGenerator {
-
-    /**
-     * Generate parameter schema for a method.
-     *
-     * @param method the method to generate schema for
-     * @return JSON Schema map in OpenAI format
-     */
-    Map<String, Object> generateParameterSchema(Method method) {
-        return generateParameterSchema(method, Collections.emptySet());
-    }
 
     /**
      * Generate parameter schema for a method with excluded parameters.
@@ -66,14 +54,13 @@ class ToolSchemaGenerator {
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
-            // Skip framework parameters like ToolEmitter and Agent - they should not be in
-            // the
-            // schema
-            if (param.getType() == ToolEmitter.class || param.getType() == Agent.class) {
+            // Only include parameters with @ToolParam annotation
+            ToolParam toolParam = param.getAnnotation(ToolParam.class);
+            if (toolParam == null) {
                 continue;
             }
 
-            ParameterInfo info = extractParameterInfo(param);
+            ParameterInfo info = extractParameterInfo(param, toolParam);
 
             // Skip excluded parameters (e.g., preset parameters)
             if (excludeParams != null && excludeParams.contains(info.name)) {
@@ -95,31 +82,24 @@ class ToolSchemaGenerator {
     }
 
     /**
-     * Extract parameter information from a Parameter.
+     * Extract parameter information from a Parameter with @ToolParam annotation.
      *
      * @param param the parameter to extract info from
+     * @param toolParam the @ToolParam annotation
      * @return ParameterInfo containing name, schema, and required flag
      */
-    private ParameterInfo extractParameterInfo(Parameter param) {
-        ToolParam toolParam = param.getAnnotation(ToolParam.class);
+    private ParameterInfo extractParameterInfo(Parameter param, ToolParam toolParam) {
+        String paramName = toolParam.name();
 
-        // Use name from @ToolParam annotation, fallback to reflection-based name
-        String paramName = (toolParam != null) ? toolParam.name() : param.getName();
-
-        // Generate schema using JsonSchemaUtils with full type support (including
-        // generics)
+        // Generate schema using JsonSchemaUtils with full type support (including generics)
         Map<String, Object> paramSchema =
                 JsonSchemaUtils.generateSchemaFromType(param.getParameterizedType());
 
-        boolean required = false;
-        if (toolParam != null) {
-            if (!toolParam.description().isEmpty()) {
-                paramSchema.put("description", toolParam.description());
-            }
-            required = toolParam.required();
+        if (!toolParam.description().isEmpty()) {
+            paramSchema.put("description", toolParam.description());
         }
 
-        return new ParameterInfo(paramName, paramSchema, required);
+        return new ParameterInfo(paramName, paramSchema, toolParam.required());
     }
 
     /**

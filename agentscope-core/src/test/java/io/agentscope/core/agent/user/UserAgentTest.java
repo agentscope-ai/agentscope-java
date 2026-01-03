@@ -28,6 +28,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -315,8 +316,14 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData(), "Response should have structured data");
-            assertEquals("value1", response.getMetadata().get("field1"));
-            assertEquals(42, response.getMetadata().get("field2"));
+            assertEquals(
+                    "value1",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("field1"));
+            assertEquals(
+                    42,
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("field2"));
         }
 
         @Test
@@ -339,7 +346,10 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData());
-            assertEquals("yes", response.getMetadata().get("answer"));
+            assertEquals(
+                    "yes",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("answer"));
         }
 
         @Test
@@ -363,7 +373,10 @@ class UserAgentTest {
 
             assertNotNull(response);
             assertTrue(response.hasStructuredData());
-            assertEquals("completed", response.getMetadata().get("status"));
+            assertEquals(
+                    "completed",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("status"));
         }
     }
 
@@ -485,7 +498,10 @@ class UserAgentTest {
                             .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
             assertNotNull(response.getMetadata());
-            assertEquals("value", response.getMetadata().get("key"));
+            assertEquals(
+                    "value",
+                    ((Map) (response.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT)))
+                            .get("key"));
         }
 
         @Test

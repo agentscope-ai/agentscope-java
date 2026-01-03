@@ -37,7 +37,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Tests for dynamic define json schema in StructuredOutputHandler (deferred forcing mode). */
+/** Tests for dynamic define json schema in StructuredOutputCapableAgent (deferred forcing mode). */
 public class StructuredOutputDynamicDefineTest {
 
     private Toolkit toolkit;

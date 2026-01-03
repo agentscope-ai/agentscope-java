@@ -622,31 +622,6 @@ public abstract class AgentBase implements StateModule, Agent {
     }
 
     /**
-     * Stream execution events in real-time as the agent processes the input.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options) {
-        return stream(List.of(msg), options);
-    }
-
-    /**
-     * Stream execution events in real-time as the agent processes the input with structured output.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @param structuredModel Optional class defining the structure of the output
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
-        return stream(List.of(msg), options, structuredModel);
-    }
-
-    /**
      * Stream with multiple input messages.
      *
      * @param msgs Input messages
