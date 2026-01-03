@@ -445,6 +445,34 @@ public abstract class AgentBase implements StateModule, Agent {
     }
 
     /**
+     * Add a hook to this agent dynamically.
+     *
+     * <p>Hooks can be added during agent execution to provide temporary functionality.
+     * This is commonly used for structured output handling or other short-lived behaviors.
+     *
+     * @param hook The hook to add
+     */
+    protected void addHook(Hook hook) {
+        if (hook != null) {
+            hooks.add(hook);
+        }
+    }
+
+    /**
+     * Remove a hook from this agent dynamically.
+     *
+     * <p>Hooks should be removed when they are no longer needed to avoid memory leaks
+     * and unintended side effects.
+     *
+     * @param hook The hook to remove
+     */
+    protected void removeHook(Hook hook) {
+        if (hook != null) {
+            hooks.remove(hook);
+        }
+    }
+
+    /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
      *

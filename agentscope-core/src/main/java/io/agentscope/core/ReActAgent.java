@@ -18,8 +18,8 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHandler;
+import io.agentscope.core.agent.StructuredOutputHook;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
@@ -41,12 +41,10 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
-import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.GenericRAGHook;
 import io.agentscope.core.rag.Knowledge;
@@ -65,11 +63,14 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
+import io.agentscope.core.util.ToolResultValidator;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -82,11 +83,11 @@ import reactor.core.publisher.Mono;
  * (tool execution) in an iterative loop. The agent alternates between these two phases until it
  * either completes the task or reaches the maximum iteration limit.
  *
- * <p><b>Architecture:</b> The agent is organized into specialized components for maintainability:
+ * <p><b>Key Features:</b>
  * <ul>
- *   <li><b>Core Loop:</b> Manages iteration flow and phase transitions
- *   <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline handle each phase
- *   <li><b>Internal Helpers:</b> HookNotifier for hooks, MessagePreparer for message formatting
+ *   <li><b>Reactive Streaming:</b> Uses Project Reactor for non-blocking execution
+ *   <li><b>Hook System:</b> Extensible hooks for monitoring and intercepting agent execution
+ *   <li><b>HITL Support:</b> Human-in-the-loop via stopAgent() in PostReasoningEvent/PostActingEvent
  *   <li><b>Structured Output:</b> StructuredOutputHandler provides type-safe output generation
  * </ul>
  *
@@ -140,16 +141,6 @@ public class ReActAgent extends AgentBase {
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
 
-    // ==================== Internal Components ====================
-
-    private final HookNotifier hookNotifier;
-    private final MessagePreparer messagePreparer;
-
-    // Current StructuredOutputHandler for internal hook access
-    // Using AtomicReference for proper thread safety in reactive streams context
-    private final AtomicReference<StructuredOutputHandler> currentStructuredOutputHandler =
-            new AtomicReference<>();
-
     // ==================== Constructor ====================
 
     private ReActAgent(Builder builder) {
@@ -169,9 +160,6 @@ public class ReActAgent extends AgentBase {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
-
-        this.hookNotifier = new HookNotifier();
-        this.messagePreparer = new MessagePreparer();
     }
 
     // ==================== New StateModule API ====================
@@ -251,10 +239,74 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        // Check if there are pending tool calls (agent was stopped via HITL)
+        List<Msg> memoryMsgs = memory.getMessages();
+        if (!memoryMsgs.isEmpty()) {
+            Msg last = memoryMsgs.get(memoryMsgs.size() - 1);
+            if (last.getRole() == MsgRole.ASSISTANT && hasPendingToolUse(last)) {
+                return handlePendingToolUse(msgs, last);
+            }
+        }
+
+        // Normal execution: add messages to memory and start the loop
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
-        return executeReActLoop(null);
+        return executeIteration(0, null);
+    }
+
+    /**
+     * Handle the case when there are pending tool calls from a previous stop.
+     *
+     * <p>Uses {@link ToolResultValidator} to validate that input messages contain matching
+     * ToolResult blocks for all pending ToolUse blocks. If validation passes:
+     *
+     * <ul>
+     *   <li>No input (resume): continues with acting phase
+     *   <li>Input with ToolResult: adds to memory and continues to reasoning
+     * </ul>
+     *
+     * @param msgs The input messages (may be null or empty for resume)
+     * @param lastAssistant The last assistant message with pending tool calls
+     * @return Mono containing the result message
+     */
+    private Mono<Msg> handlePendingToolUse(List<Msg> msgs, Msg lastAssistant) {
+        // No arguments: resume execution (continue with acting)
+        if (msgs == null || msgs.isEmpty()) {
+            return acting(0, null);
+        }
+
+        // Validate input messages contain proper ToolResult for pending ToolUse
+        ToolResultValidator.validate(lastAssistant, msgs);
+
+        // Add messages to memory
+        msgs.forEach(memory::addMessage);
+
+        // Continue to reasoning (after user provides ToolResult, we re-enter reasoning)
+        return executeIteration(0, null);
+    }
+
+    /**
+     * Check if the given assistant message has pending tool calls without corresponding results.
+     *
+     * @param msg The assistant message to check
+     * @return true if there are pending tool calls
+     */
+    private boolean hasPendingToolUse(Msg msg) {
+        if (!msg.hasContentBlocks(ToolUseBlock.class)) {
+            return false;
+        }
+        List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
+
+        // Get all tool result IDs from memory
+        Set<String> toolResultIds =
+                memory.getMessages().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .map(ToolResultBlock::getId)
+                        .collect(Collectors.toSet());
+
+        // Check if any tool use has no matching result
+        return toolUses.stream().anyMatch(tu -> !toolResultIds.contains(tu.getId()));
     }
 
     @Override
@@ -263,30 +315,15 @@ public class ReActAgent extends AgentBase {
             msgs.forEach(memory::addMessage);
         }
 
+        // Create handler for tool registration and result extraction
         StructuredOutputHandler handler =
-                new StructuredOutputHandler(
-                        structuredOutputClass,
-                        null,
-                        toolkit,
-                        memory,
-                        getName(),
-                        structuredOutputReminder);
+                new StructuredOutputHandler(structuredOutputClass, null, toolkit, getName());
 
-        return Mono.defer(
-                () -> {
-                    // Set current handler for internal hook access
-                    this.currentStructuredOutputHandler.set(handler);
+        // Create hook for flow control
+        StructuredOutputHook hook =
+                new StructuredOutputHook(structuredOutputReminder, buildGenerateOptions(), memory);
 
-                    handler.prepare();
-                    return executeReActLoop(handler)
-                            .flatMap(result -> Mono.just(handler.extractFinalResult()))
-                            .doFinally(
-                                    signal -> {
-                                        handler.cleanup();
-                                        // Clear current handler reference
-                                        this.currentStructuredOutputHandler.set(null);
-                                    });
-                });
+        return executeWithTemporaryHook(hook, handler);
     }
 
     @Override
@@ -295,133 +332,346 @@ public class ReActAgent extends AgentBase {
             msgs.forEach(memory::addMessage);
         }
 
+        // Create handler for tool registration and result extraction
         StructuredOutputHandler handler =
-                new StructuredOutputHandler(
-                        null, outputSchema, toolkit, memory, getName(), structuredOutputReminder);
+                new StructuredOutputHandler(null, outputSchema, toolkit, getName());
 
+        // Create hook for flow control
+        StructuredOutputHook hook =
+                new StructuredOutputHook(structuredOutputReminder, buildGenerateOptions(), memory);
+
+        return executeWithTemporaryHook(hook, handler);
+    }
+
+    /**
+     * Execute with a temporary hook and handler for structured output.
+     *
+     * @param hook The structured output hook for flow control
+     * @param handler The handler for tool registration and result extraction
+     * @return Mono containing the final structured output message
+     */
+    private Mono<Msg> executeWithTemporaryHook(
+            StructuredOutputHook hook, StructuredOutputHandler handler) {
         return Mono.defer(
                 () -> {
-                    // Set current handler for internal hook access
-                    this.currentStructuredOutputHandler.set(handler);
-
+                    // Register temporary hook
+                    addHook(hook);
+                    // Register temporary tool
                     handler.prepare();
-                    return executeReActLoop(handler)
-                            .flatMap(result -> Mono.just(handler.extractFinalResult()))
+
+                    return executeIteration(0, null)
+                            .flatMap(
+                                    result -> {
+                                        // Extract result from hook's output
+                                        Msg hookResult = hook.getResultMsg();
+                                        if (hookResult != null) {
+                                            return Mono.just(handler.extractResult(hookResult));
+                                        }
+                                        return Mono.just(result);
+                                    })
                             .doFinally(
                                     signal -> {
+                                        // Cleanup: remove hook and unregister tool
+                                        removeHook(hook);
                                         handler.cleanup();
-                                        // Clear current handler reference
-                                        this.currentStructuredOutputHandler.set(null);
                                     });
                 });
     }
 
     // ==================== Core ReAct Loop ====================
 
-    private Mono<Msg> executeReActLoop(StructuredOutputHandler handler) {
-        return executeIteration(0, handler);
+    private Mono<Msg> executeIteration(int iter, StructuredOutputHandler handler) {
+        return reasoning(iter, false, handler);
     }
 
-    private Mono<Msg> executeIteration(int iter, StructuredOutputHandler handler) {
-        if (iter >= maxIters) {
+    /**
+     * Execute the reasoning phase.
+     *
+     * <p>This method streams from the model, accumulates chunks, notifies hooks, and
+     * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
+     *
+     * @param iter Current iteration number
+     * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
+     * @param handler Optional structured output handler
+     * @return Mono containing the final result message
+     */
+    private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters, StructuredOutputHandler handler) {
+        // Check maxIters unless ignoreMaxIters is set
+        if (!ignoreMaxIters && iter >= maxIters) {
             return summarizing(handler);
         }
 
+        ReasoningContext context = new ReasoningContext(getName());
+
         return checkInterruptedAsync()
-                .then(reasoning(handler))
-                .then(Mono.defer(this::checkInterruptedAsync))
-                .then(Mono.defer(() -> actingOrFinish(iter, handler)));
-    }
+                .then(notifyPreReasoningEvent(prepareMessages(handler)))
+                .flatMapMany(
+                        event -> {
+                            GenerateOptions options =
+                                    event.getEffectiveGenerateOptions() != null
+                                            ? event.getEffectiveGenerateOptions()
+                                            : buildGenerateOptions();
+                            return model.stream(
+                                            event.getInputMessages(),
+                                            toolkit.getToolSchemas(),
+                                            options)
+                                    .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk));
+                        })
+                .doOnNext(
+                        chunk -> {
+                            List<Msg> chunkMsgs = context.processChunk(chunk);
+                            // Notify streaming hooks for each chunk message
+                            for (Msg msg : chunkMsgs) {
+                                notifyReasoningChunk(msg, context).subscribe();
+                            }
+                        })
+                .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
+                .flatMap(this::notifyPostReasoning)
+                .flatMap(
+                        event -> {
+                            Msg msg = event.getReasoningMessage();
+                            if (msg != null) {
+                                memory.addMessage(msg);
+                            }
 
-    private Mono<Msg> actingOrFinish(int iter, StructuredOutputHandler handler) {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
+                            // HITL stop
+                            if (event.isStopRequested()) {
+                                return Mono.just(msg);
+                            }
 
-        if (handler != null && recentToolCalls.isEmpty() && handler.needsRetry()) {
-            log.debug("Structured output retry needed (using reminder strategy)");
-            return executeIteration(iter + 1, handler);
-        }
+                            // gotoReasoning requested (e.g., by StructuredOutputHook)
+                            if (event.isGotoReasoningRequested()) {
+                                // Validation already done in PostReasoningEvent.gotoReasoning()
+                                List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
+                                if (gotoMsgs != null) {
+                                    gotoMsgs.forEach(memory::addMessage);
+                                }
+                                // Continue to next iteration, ignoring maxIters for this entry
+                                return reasoning(iter + 1, true, handler);
+                            }
 
-        if (isFinished()) {
-            return getLastAssistantMessage();
-        }
+                            // Check finish conditions
+                            if (isFinished(msg)) {
+                                return Mono.just(msg);
+                            }
 
-        return acting().then(Mono.defer(() -> finishActingOrContinue(iter, handler)));
-    }
-
-    private Mono<Msg> finishActingOrContinue(int iter, StructuredOutputHandler handler) {
-        if (handler != null && handler.isCompleted()) {
-            return getLastAssistantMessage();
-        }
-        return executeIteration(iter + 1, handler);
+                            // Continue to acting
+                            return checkInterruptedAsync().then(acting(iter, handler));
+                        })
+                .switchIfEmpty(
+                        Mono.defer(
+                                () -> {
+                                    // No message was produced
+                                    return Mono.justOrEmpty((Msg) null);
+                                }));
     }
 
     /**
-     * Execute the reasoning phase using pipeline pattern.
+     * Execute the acting phase.
+     *
+     * <p>This method executes tools, notifies hooks for each tool result, and decides
+     * whether to continue iteration or return (HITL stop or structured output completed).
+     *
+     * @param iter Current iteration number
+     * @param handler Optional structured output handler
+     * @return Mono containing the final result message
      */
-    private Mono<Void> reasoning(StructuredOutputHandler handler) {
-        return new ReasoningPipeline(handler).execute();
+    private Mono<Msg> acting(int iter, StructuredOutputHandler handler) {
+        return notifyPreActingHooks(extractRecentToolCalls())
+                .flatMap(this::executeToolCalls)
+                .flatMapMany(Flux::fromIterable)
+                .concatMap(this::notifyPostActingHook)
+                .last()
+                .flatMap(
+                        event -> {
+                            // HITL stop (also triggered by StructuredOutputHook when completed)
+                            if (event.isStopRequested()) {
+                                return Mono.just(event.getToolResultMsg());
+                            }
+
+                            // Continue next iteration
+                            return executeIteration(iter + 1, handler);
+                        })
+                .switchIfEmpty(Mono.defer(() -> executeIteration(iter + 1, handler)));
     }
 
     /**
-     * Execute the acting phase using pipeline pattern.
+     * Execute tool calls and return paired results.
+     *
+     * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
+     * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
      */
-    private Mono<Void> acting() {
-        return new ActingPipeline().execute();
+    private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
+            List<ToolUseBlock> toolCalls) {
+        return toolkit.callTools(toolCalls, toolExecutionConfig, this, toolExecutionContext)
+                .map(
+                        results ->
+                                IntStream.range(0, toolCalls.size())
+                                        .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
+                                        .toList());
     }
 
     /**
-     * Generate summary when max iterations reached using pipeline pattern.
+     * Notify PostActingEvent hook for a single tool result, build message and add to memory.
+     */
+    private Mono<PostActingEvent> notifyPostActingHook(
+            Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
+        ToolUseBlock toolUse = entry.getKey();
+        ToolResultBlock result = entry.getValue();
+
+        // Build tool result message first so hooks can access it
+        Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolUse, getName());
+
+        // Create event with toolResultMsg already set
+        PostActingEvent event = new PostActingEvent(this, toolkit, toolUse, result);
+        event.setToolResultMsg(toolMsg);
+
+        // Notify hooks and add to memory
+        return notifyHooks(event).doOnNext(e -> memory.addMessage(e.getToolResultMsg()));
+    }
+
+    /**
+     * Generate summary when max iterations reached.
      */
     protected Mono<Msg> summarizing(StructuredOutputHandler handler) {
-        return new SummarizingPipeline(handler).execute();
+        if (handler != null) {
+            String errorMsg =
+                    String.format(
+                            "Failed to generate structured output within maximum iterations (%d)."
+                                    + " The model did not call the 'generate_response' function."
+                                    + " Please check your system prompt, model capabilities, or"
+                                    + " increase maxIters.",
+                            maxIters);
+            log.error(errorMsg);
+            return Mono.error(new IllegalStateException(errorMsg));
+        }
+
+        log.debug("Maximum iterations reached. Generating summary...");
+
+        List<Msg> messageList = prepareMessages(null);
+        messageList.add(
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                "You have failed to generate response within the"
+                                                    + " maximum iterations. Now respond directly by"
+                                                    + " summarizing the current situation.")
+                                        .build())
+                        .build());
+
+        return model.stream(messageList, null, buildGenerateOptions())
+                .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                .reduce(
+                        new ReasoningContext(getName()),
+                        (ctx, chunk) -> {
+                            ctx.processChunk(chunk);
+                            return ctx;
+                        })
+                .map(ReasoningContext::buildFinalMessage)
+                .flatMap(
+                        msg -> {
+                            if (msg != null) {
+                                memory.addMessage(msg);
+                                return Mono.just(msg);
+                            }
+                            Msg fallback =
+                                    Msg.builder()
+                                            .name(getName())
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(
+                                                    TextBlock.builder()
+                                                            .text(
+                                                                    String.format(
+                                                                            "Maximum iterations"
+                                                                                + " (%d) reached."
+                                                                                + " Unable to"
+                                                                                + " generate"
+                                                                                + " summary.",
+                                                                            maxIters))
+                                                            .build())
+                                            .build();
+                            memory.addMessage(fallback);
+                            return Mono.just(fallback);
+                        })
+                .onErrorResume(
+                        error -> {
+                            if (error instanceof InterruptedException) {
+                                return Mono.error(error);
+                            }
+                            log.error("Error generating summary", error);
+                            Msg errorMsg =
+                                    Msg.builder()
+                                            .name(getName())
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(
+                                                    TextBlock.builder()
+                                                            .text(
+                                                                    String.format(
+                                                                            "Maximum iterations"
+                                                                                + " (%d) reached."
+                                                                                + " Error"
+                                                                                + " generating"
+                                                                                + " summary: %s",
+                                                                            maxIters,
+                                                                            error.getMessage()))
+                                                            .build())
+                                            .build();
+                            memory.addMessage(errorMsg);
+                            return Mono.just(errorMsg);
+                        });
     }
 
     // ==================== Helper Methods ====================
 
     /**
-     * Extract tool calls from the most recent assistant message.
-     *
-     * <p>Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for the actual
-     * extraction logic.
-     *
-     * @return List of tool use blocks from the last assistant message, or empty list if none found
+     * Prepare messages for model input.
      */
-    private List<ToolUseBlock> extractRecentToolCalls() {
-        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
+    private List<Msg> prepareMessages(StructuredOutputHandler handler) {
+        List<Msg> messages = new ArrayList<>();
+        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+            messages.add(
+                    Msg.builder()
+                            .name("system")
+                            .role(MsgRole.SYSTEM)
+                            .content(TextBlock.builder().text(sysPrompt).build())
+                            .build());
+        }
+        messages.addAll(memory.getMessages());
+        return messages;
     }
 
     /**
-     * Check if the ReAct loop should terminate based on tool calls.
+     * Check if the ReAct loop should terminate.
      *
-     * @return true if no more tools to execute, false if more tools should be called
+     * <p>Note: Structured output retry is now handled by StructuredOutputHook via gotoReasoning().
+     *
+     * @param msg The reasoning message
+     * @return true if should finish, false if should continue to acting
      */
-    private boolean isFinished() {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-
-        if (recentToolCalls.isEmpty()) {
+    private boolean isFinished(Msg msg) {
+        if (msg == null) {
             return true;
         }
 
-        return recentToolCalls.stream()
-                .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
+        List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+
+        // No tool calls - finished
+        if (toolCalls.isEmpty()) {
+            return true;
+        }
+
+        // Has tool calls but none are in toolkit - finished
+        return toolCalls.stream().noneMatch(tc -> toolkit.getTool(tc.getName()) != null);
     }
 
-    private Mono<Msg> getLastAssistantMessage() {
-        return Mono.fromCallable(
-                () -> {
-                    List<Msg> msgs = memory.getMessages();
-                    for (int i = msgs.size() - 1; i >= 0; i--) {
-                        Msg msg = msgs.get(i);
-                        if (msg.getRole() == MsgRole.ASSISTANT) {
-                            return msg;
-                        }
-                    }
-                    if (!msgs.isEmpty()) {
-                        return msgs.get(msgs.size() - 1);
-                    }
-                    throw new IllegalStateException(
-                            "Reasoning completed but no messages generated");
-                });
+    /**
+     * Extract tool calls from the most recent assistant message.
+     */
+    private List<ToolUseBlock> extractRecentToolCalls() {
+        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
     }
 
     private GenerateOptions buildGenerateOptions() {
@@ -430,6 +680,62 @@ public class ReActAgent extends AgentBase {
             builder.executionConfig(modelExecutionConfig);
         }
         return builder.build();
+    }
+
+    // ==================== Hook Notification Methods ====================
+
+    /**
+     * Generic hook notification method.
+     */
+    private <T extends HookEvent> Mono<T> notifyHooks(T event) {
+        Mono<T> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(hook::onEvent);
+        }
+        return result;
+    }
+
+    private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
+        return notifyHooks(new PreReasoningEvent(this, model.getModelName(), null, msgs));
+    }
+
+    private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
+        return notifyHooks(new PostReasoningEvent(this, model.getModelName(), null, msg));
+    }
+
+    private Mono<List<ToolUseBlock>> notifyPreActingHooks(List<ToolUseBlock> toolCalls) {
+        return Flux.fromIterable(toolCalls)
+                .concatMap(tool -> notifyHooks(new PreActingEvent(this, toolkit, tool)))
+                .map(PreActingEvent::getToolUse)
+                .collectList();
+    }
+
+    private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
+        ContentBlock content = chunkMsg.getFirstContentBlock();
+
+        ContentBlock accumulatedContent = null;
+        if (content instanceof TextBlock) {
+            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
+        } else if (content instanceof ThinkingBlock) {
+            accumulatedContent =
+                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
+        }
+
+        if (accumulatedContent != null) {
+            Msg accumulated =
+                    Msg.builder()
+                            .id(chunkMsg.getId())
+                            .name(chunkMsg.getName())
+                            .role(chunkMsg.getRole())
+                            .content(accumulatedContent)
+                            .build();
+            ReasoningChunkEvent event =
+                    new ReasoningChunkEvent(
+                            this, model.getModelName(), null, chunkMsg, accumulated);
+            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+        }
+
+        return Mono.empty();
     }
 
     @Override
@@ -489,409 +795,6 @@ public class ReActAgent extends AgentBase {
 
     public static Builder builder() {
         return new Builder();
-    }
-
-    // ==================== Pipeline Classes ====================
-
-    /**
-     * Pipeline for executing the reasoning phase.
-     * Handles model streaming, chunk processing, and hook notifications.
-     */
-    private class ReasoningPipeline {
-
-        private final StructuredOutputHandler handler;
-        private final ReasoningContext context;
-
-        ReasoningPipeline(StructuredOutputHandler handler) {
-            this.handler = handler;
-            this.context = new ReasoningContext(getName());
-        }
-
-        Mono<Void> execute() {
-            return prepareAndStream()
-                    .onErrorResume(this::handleError)
-                    .then(Mono.defer(this::finalizeReasoningStep));
-        }
-
-        private Mono<Void> prepareAndStream() {
-            List<Msg> messageList = messagePreparer.prepareMessageList(handler);
-
-            // Apply forced tool choice when in structured output mode
-            GenerateOptions options =
-                    handler != null
-                            ? handler.createOptionsWithForcedTool(buildGenerateOptions())
-                            : buildGenerateOptions();
-
-            List<ToolSchema> toolSchemas = toolkit.getToolSchemas();
-
-            return hookNotifier
-                    .notifyPreReasoning(ReActAgent.this, messageList)
-                    .flatMapMany(modifiedMsgs -> model.stream(modifiedMsgs, toolSchemas, options))
-                    .concatMap(this::processChunkWithInterruptCheck)
-                    .then();
-        }
-
-        private Flux<Void> processChunkWithInterruptCheck(ChatResponse chunk) {
-            return checkInterruptedAsync()
-                    .thenReturn(chunk)
-                    .flatMapMany(this::processAndNotifyChunk);
-        }
-
-        private Flux<Void> processAndNotifyChunk(ChatResponse chunk) {
-            List<Msg> msgs = context.processChunk(chunk);
-            return Flux.fromIterable(msgs)
-                    .concatMap(msg -> hookNotifier.notifyStreamingMsg(msg, context));
-        }
-
-        private Mono<Void> handleError(Throwable error) {
-            if (error instanceof InterruptedException) {
-                return finalizeWithInterrupt().then(Mono.error(error));
-            }
-            return Mono.error(error);
-        }
-
-        private Mono<Void> finalizeReasoningStep() {
-            return finalizeReasoning(false);
-        }
-
-        private Mono<Void> finalizeWithInterrupt() {
-            return finalizeReasoning(true);
-        }
-
-        private Mono<Void> finalizeReasoning(boolean wasInterrupted) {
-            return Mono.fromCallable(context::buildFinalMessage)
-                    .flatMap(reasoningMsg -> processFinalMessage(reasoningMsg, wasInterrupted));
-        }
-
-        private Mono<Void> processFinalMessage(Msg reasoningMsg, boolean wasInterrupted) {
-            if (reasoningMsg == null) {
-                return Mono.empty();
-            }
-
-            List<ToolUseBlock> toolBlocks = reasoningMsg.getContentBlocks(ToolUseBlock.class);
-
-            return hookNotifier
-                    .notifyPostReasoning(reasoningMsg)
-                    .flatMap(
-                            modifiedMsg -> {
-                                memory.addMessage(modifiedMsg);
-                                return notifyPreActingHooks(toolBlocks);
-                            });
-        }
-
-        private Mono<Void> notifyPreActingHooks(List<ToolUseBlock> toolBlocks) {
-            return Flux.fromIterable(toolBlocks).concatMap(hookNotifier::notifyPreActing).then();
-        }
-    }
-
-    /**
-     * Pipeline for executing the acting phase.
-     * Handles tool execution and result processing.
-     */
-    private class ActingPipeline {
-
-        Mono<Void> execute() {
-            List<ToolUseBlock> toolCalls = extractRecentToolCalls();
-            if (toolCalls.isEmpty()) {
-                return Mono.empty();
-            }
-
-            toolkit.setChunkCallback(
-                    (toolUse, chunk) -> hookNotifier.notifyActingChunk(toolUse, chunk).subscribe());
-
-            return toolkit.callTools(
-                            toolCalls, toolExecutionConfig, ReActAgent.this, toolExecutionContext)
-                    .flatMapMany(responses -> processToolResults(toolCalls, responses))
-                    .then()
-                    .then(checkInterruptedAsync());
-        }
-
-        private Flux<Void> processToolResults(
-                List<ToolUseBlock> toolCalls, List<ToolResultBlock> responses) {
-            return Flux.range(0, toolCalls.size())
-                    .concatMap(i -> processSingleToolResult(toolCalls.get(i), responses.get(i)));
-        }
-
-        private Mono<Void> processSingleToolResult(ToolUseBlock toolCall, ToolResultBlock result) {
-            return hookNotifier
-                    .notifyPostActing(toolCall, result)
-                    .doOnNext(
-                            processedResult -> {
-                                Msg toolMsg =
-                                        ToolResultMessageBuilder.buildToolResultMsg(
-                                                processedResult, toolCall, getName());
-                                memory.addMessage(toolMsg);
-                            })
-                    .then();
-        }
-    }
-
-    /**
-     * Pipeline for generating summary when max iterations reached.
-     * Handles both structured output failure and normal summarization.
-     */
-    private class SummarizingPipeline {
-
-        private final StructuredOutputHandler handler;
-
-        SummarizingPipeline(StructuredOutputHandler handler) {
-            this.handler = handler;
-        }
-
-        Mono<Msg> execute() {
-            if (handler != null) {
-                return handleStructuredOutputFailure();
-            }
-            return generateSummary();
-        }
-
-        private Mono<Msg> handleStructuredOutputFailure() {
-            String errorMsg =
-                    String.format(
-                            "Failed to generate structured output within maximum iterations (%d)."
-                                + " The model did not call the 'generate_response' function. Please"
-                                + " check your system prompt, model capabilities, or increase"
-                                + " maxIters.",
-                            maxIters);
-            log.error(errorMsg);
-            return Mono.error(new IllegalStateException(errorMsg));
-        }
-
-        private Mono<Msg> generateSummary() {
-            log.debug("Maximum iterations reached. Generating summary...");
-
-            List<Msg> messageList = prepareMessageList();
-            GenerateOptions options = buildGenerateOptions();
-            ReasoningContext context = new ReasoningContext(getName());
-
-            return model.stream(messageList, null, options)
-                    .concatMap(chunk -> processChunk(chunk, context))
-                    .then(Mono.defer(() -> buildSummaryMessage(context)))
-                    .onErrorResume(InterruptedException.class, Mono::error)
-                    .onErrorResume(this::handleSummaryError);
-        }
-
-        private List<Msg> prepareMessageList() {
-            List<Msg> messageList = messagePreparer.prepareMessageList(null);
-            messageList.add(createHintMessage());
-            return messageList;
-        }
-
-        private Msg createHintMessage() {
-            return Msg.builder()
-                    .name("user")
-                    .role(MsgRole.USER)
-                    .content(
-                            TextBlock.builder()
-                                    .text(
-                                            "You have failed to generate response within the"
-                                                    + " maximum iterations. Now respond directly by"
-                                                    + " summarizing the current situation.")
-                                    .build())
-                    .build();
-        }
-
-        private Mono<Msg> processChunk(ChatResponse chunk, ReasoningContext context) {
-            return checkInterruptedAsync()
-                    .thenReturn(chunk)
-                    .doOnNext(context::processChunk)
-                    .then(Mono.empty());
-        }
-
-        private Mono<Msg> buildSummaryMessage(ReasoningContext context) {
-            Msg summaryMsg = context.buildFinalMessage();
-
-            if (summaryMsg != null) {
-                memory.addMessage(summaryMsg);
-                return Mono.just(summaryMsg);
-            }
-
-            return Mono.just(createFallbackMessage());
-        }
-
-        private Msg createFallbackMessage() {
-            Msg errorMsg =
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(
-                                    TextBlock.builder()
-                                            .text(
-                                                    String.format(
-                                                            "Maximum iterations (%d) reached."
-                                                                + " Unable to generate summary.",
-                                                            maxIters))
-                                            .build())
-                            .build();
-            memory.addMessage(errorMsg);
-            return errorMsg;
-        }
-
-        private Mono<Msg> handleSummaryError(Throwable error) {
-            log.error("Error generating summary", error);
-
-            Msg errorMsg =
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(
-                                    TextBlock.builder()
-                                            .text(
-                                                    String.format(
-                                                            "Maximum iterations (%d) reached. Error"
-                                                                    + " generating summary: %s",
-                                                            maxIters, error.getMessage()))
-                                            .build())
-                            .build();
-            memory.addMessage(errorMsg);
-            return Mono.just(errorMsg);
-        }
-    }
-
-    // ==================== Inner Classes ====================
-
-    /**
-     * Injects reminder messages for structured output generation in PROMPT mode.
-     *
-     * <p>This hook automatically adds reminder messages to the model context when the agent
-     * needs prompting to call the structured output tool. It ensures reliable structured output
-     * generation without relying on model tool choice enforcement.
-     */
-    private class InternalStructuredOutputReminderHook implements Hook {
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public <T extends HookEvent> Mono<T> onEvent(T event) {
-            // Use pattern matching to handle PreReasoningEvent
-            if (event instanceof PreReasoningEvent preReasoningEvent) {
-                // Access outer class field through AtomicReference (thread-safe)
-                StructuredOutputHandler handler = currentStructuredOutputHandler.get();
-                if (handler != null && handler.shouldInjectReminder()) {
-                    List<Msg> messages = new ArrayList<>(preReasoningEvent.getInputMessages());
-                    messages.add(handler.createReminderMessage());
-                    preReasoningEvent.setInputMessages(messages);
-                    log.debug("Injected structured output reminder via internal hook");
-                }
-                return Mono.just((T) preReasoningEvent);
-            }
-            // For other event types, just pass through
-            return Mono.just(event);
-        }
-
-        @Override
-        public int priority() {
-            // Use high priority to ensure reminder is injected before other hooks
-            return 50;
-        }
-    }
-
-    /**
-     * Internal component for hook notifications.
-     */
-    private class HookNotifier {
-
-        Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
-            PreReasoningEvent event =
-                    new PreReasoningEvent(agent, model.getModelName(), null, msgs);
-            Mono<PreReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreReasoningEvent::getInputMessages);
-        }
-
-        Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
-            PostReasoningEvent event =
-                    new PostReasoningEvent(
-                            ReActAgent.this, model.getModelName(), null, reasoningMsg);
-            Mono<PostReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostReasoningEvent::getReasoningMessage);
-        }
-
-        Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
-            ReasoningChunkEvent event =
-                    new ReasoningChunkEvent(
-                            ReActAgent.this, model.getModelName(), null, chunk, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
-            PreActingEvent event = new PreActingEvent(ReActAgent.this, toolkit, toolUse);
-            Mono<PreActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreActingEvent::getToolUse);
-        }
-
-        Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-            ActingChunkEvent event = new ActingChunkEvent(ReActAgent.this, toolkit, toolUse, chunk);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        Mono<ToolResultBlock> notifyPostActing(ToolUseBlock toolUse, ToolResultBlock toolResult) {
-            var event = new PostActingEvent(ReActAgent.this, toolkit, toolUse, toolResult);
-            Mono<PostActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostActingEvent::getToolResult);
-        }
-
-        Mono<Void> notifyStreamingMsg(Msg msg, ReasoningContext context) {
-            ContentBlock content = msg.getFirstContentBlock();
-
-            ContentBlock accumulatedContent = null;
-            if (content instanceof TextBlock) {
-                accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-            } else if (content instanceof ThinkingBlock) {
-                accumulatedContent =
-                        ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-            }
-
-            if (accumulatedContent != null) {
-                Msg accumulated =
-                        Msg.builder()
-                                .id(msg.getId())
-                                .name(msg.getName())
-                                .role(msg.getRole())
-                                .content(accumulatedContent)
-                                .build();
-                return notifyReasoningChunk(msg, accumulated);
-            }
-
-            return Mono.empty();
-        }
-    }
-
-    /**
-     * Internal component for message preparation.
-     */
-    private class MessagePreparer {
-
-        List<Msg> prepareMessageList(StructuredOutputHandler handler) {
-            List<Msg> messages = new ArrayList<>();
-
-            addSystemPromptIfNeeded(messages);
-            messages.addAll(memory.getMessages());
-
-            return messages;
-        }
-
-        private void addSystemPromptIfNeeded(List<Msg> messages) {
-            if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-                Msg systemMsg =
-                        Msg.builder()
-                                .name("system")
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text(sysPrompt).build())
-                                .build();
-                messages.add(systemMsg);
-            }
-        }
     }
 
     // ==================== Builder ====================
@@ -1316,42 +1219,7 @@ public class ReActAgent extends AgentBase {
                 configureSkillBox();
             }
 
-            // If using PROMPT mode, we need to add the internal reminder hook
-            // Since InternalStructuredOutputReminderHook is a non-static inner class,
-            // it can only be instantiated after ReActAgent exists. We use a delegating
-            // hook that will be connected to the real internal hook after construction.
-            AtomicReference<Hook> internalHookRef = new AtomicReference<>();
-
-            if (structuredOutputReminder == StructuredOutputReminder.PROMPT) {
-                // Add a delegating hook that forwards to the internal hook
-                Hook delegatingHook =
-                        new Hook() {
-                            @Override
-                            public <T extends HookEvent> Mono<T> onEvent(T event) {
-                                Hook delegate = internalHookRef.get();
-                                if (delegate != null) {
-                                    return delegate.onEvent(event);
-                                }
-                                return Mono.just(event);
-                            }
-
-                            @Override
-                            public int priority() {
-                                return 50; // High priority to inject reminder early
-                            }
-                        };
-                this.hooks.add(delegatingHook);
-            }
-
-            // Create the agent
-            ReActAgent agent = new ReActAgent(this);
-
-            // After agent is created, instantiate the real internal hook and connect it
-            if (structuredOutputReminder == StructuredOutputReminder.PROMPT) {
-                internalHookRef.set(agent.new InternalStructuredOutputReminderHook());
-            }
-
-            return agent;
+            return new ReActAgent(this);
         }
 
         /**

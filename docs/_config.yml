@@ -48,7 +48,18 @@ sphinx:
     - sphinx.ext.napoleon
     - sphinx.ext.intersphinx
     - sphinx.ext.autosummary
+    - sphinx_llms_txt
+    - sphinx_sitemap
   config:
+    # Sitemap Configuration
+    html_baseurl: "https://java.agentscope.io/"
+    sitemap_url_scheme: "{link}"
+    sitemap_show_lastmod: true
+
+    # LLMs.txt Configuration (English only)
+    llms_txt_exclude:
+      - "zh/*"
+
     # API Documentation Configuration
     autosummary_generate: True
     autosummary_imported_members: True
@@ -87,7 +98,7 @@ sphinx:
     html_favicon: logo.svg
     html_show_sphinx: false
     html_last_updated_fmt: "%Y-%m-%d"
-    html_copy_source: false
+    html_copy_source: true
     html_show_sourcelink: false
     templates_path: ["./_templates"]
     html_static_path:
