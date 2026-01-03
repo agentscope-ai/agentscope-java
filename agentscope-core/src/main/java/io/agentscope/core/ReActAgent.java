@@ -1468,7 +1468,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
-            agentToolkit.registerTool(skillBox);
+            skillBox.registerSkillAccessTool();
 
             hooks.add(new SkillHook(skillBox));
         }
