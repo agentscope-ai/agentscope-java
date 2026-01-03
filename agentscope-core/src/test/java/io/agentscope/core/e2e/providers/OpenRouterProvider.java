@@ -231,7 +231,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     })
     public static class Qwen3VL extends OpenRouterProvider {
         public Qwen3VL() {
-            super("qwen/qwen3-vl-32b-instruct", false);
+            super("qwen/qwen3-vl-235b-a22b-instruct", false);
         }
 
         @Override
@@ -251,7 +251,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     })
     public static class Qwen3VLMultiAgent extends OpenRouterProvider {
         public Qwen3VLMultiAgent() {
-            super("qwen/qwen3-vl-32b-instruct", true);
+            super("qwen/qwen3-vl-235b-a22b-instruct", true);
         }
 
         @Override
