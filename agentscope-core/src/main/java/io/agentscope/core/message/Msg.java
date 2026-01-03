@@ -52,6 +52,9 @@ import java.util.stream.Collectors;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Msg implements State {
 
+    /** Metadata key for storing the generate reason. */
+    public static final String METADATA_GENERATE_REASON = "agentscope_generate_reason";
+
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
@@ -236,7 +239,7 @@ public class Msg implements State {
     @Transient
     @JsonIgnore
     public boolean hasStructuredData() {
-        return metadata != null && !metadata.isEmpty();
+        return metadata != null && metadata.containsKey(MessageMetadataKeys.STRUCTURED_OUTPUT);
     }
 
     /**
@@ -270,8 +273,15 @@ public class Msg implements State {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
         try {
-            return OBJECT_MAPPER.convertValue(metadata, targetClass);
+            return OBJECT_MAPPER.convertValue(structuredOutput, targetClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
@@ -332,22 +342,31 @@ public class Msg implements State {
      */
     @Transient
     @JsonIgnore
+    @SuppressWarnings("unchecked")
     public Map<String, Object> getStructuredData(boolean mutable) {
         if (metadata == null || metadata.isEmpty()) {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
+        if (!(structuredOutput instanceof Map)) {
+            throw new IllegalStateException(
+                    "Structured output is not a Map. Use getStructuredData(Class<T>) instead.");
+        }
+        Map<String, Object> result = (Map<String, Object>) structuredOutput;
         if (mutable) {
-            return metadata;
+            return result;
         }
         try {
-            return OBJECT_MAPPER.convertValue(metadata, new TypeReference<>() {});
+            return OBJECT_MAPPER.convertValue(result, new TypeReference<>() {});
         } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to convert metadata to "
-                            + ". Ensure the target class has appropriate fields matching metadata"
-                            + " keys.",
-                    e);
+            throw new IllegalArgumentException("Failed to convert structured output to Map.", e);
         }
     }
 
@@ -398,6 +417,56 @@ public class Msg implements State {
         }
         Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
         return usage instanceof ChatUsage ? (ChatUsage) usage : null;
+    }
+
+    /**
+     * Gets the reason why this message was generated.
+     *
+     * <p>This method helps users understand the context of agent execution:
+     * <ul>
+     *   <li>{@link GenerateReason#MODEL_STOP} - Task completed normally</li>
+     *   <li>{@link GenerateReason#TOOL_SUSPENDED} - External tools need user execution</li>
+     *   <li>{@link GenerateReason#REASONING_STOP_REQUESTED} - HITL stop in reasoning phase</li>
+     *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
+     *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>
+     *   <li>{@link GenerateReason#MAX_ITERATIONS} - Maximum iterations reached</li>
+     * </ul>
+     *
+     * @return The generate reason, defaults to {@link GenerateReason#MODEL_STOP} if not set
+     */
+    @Transient
+    @JsonIgnore
+    public GenerateReason getGenerateReason() {
+        if (metadata == null) {
+            return GenerateReason.MODEL_STOP;
+        }
+        Object reason = metadata.get(METADATA_GENERATE_REASON);
+        if (reason instanceof String s) {
+            try {
+                return GenerateReason.valueOf(s);
+            } catch (IllegalArgumentException e) {
+                return GenerateReason.MODEL_STOP;
+            }
+        }
+        if (reason instanceof GenerateReason gr) {
+            return gr;
+        }
+        return GenerateReason.MODEL_STOP;
+    }
+
+    /**
+     * Creates a new message with the specified generate reason.
+     *
+     * <p>This method returns a new Msg instance with the updated generate reason
+     * stored in metadata. The original message is not modified (immutable).
+     *
+     * @param reason The generate reason to set
+     * @return A new Msg instance with the updated generate reason
+     */
+    public Msg withGenerateReason(GenerateReason reason) {
+        Map<String, Object> newMetadata = new HashMap<>(this.metadata);
+        newMetadata.put(METADATA_GENERATE_REASON, reason.name());
+        return new Msg(this.id, this.name, this.role, this.content, newMetadata, this.timestamp);
     }
 
     public static class Builder {
@@ -521,6 +590,27 @@ public class Msg implements State {
         public Builder timestamp(String timestamp) {
             this.timestamp =
                     timestamp == null ? TIMESTAMP_FORMATTER.format(Instant.now()) : timestamp;
+            return this;
+        }
+
+        /**
+         * Sets the generate reason for this message.
+         *
+         * <p>The generate reason indicates why this message was generated by the agent,
+         * helping users understand the execution context and required follow-up actions.
+         *
+         * @param reason The generate reason
+         * @return This builder for chaining
+         */
+        public Builder generateReason(GenerateReason reason) {
+            if (reason != null) {
+                if (this.metadata == null || this.metadata.isEmpty()) {
+                    this.metadata = new HashMap<>();
+                } else if (!(this.metadata instanceof HashMap)) {
+                    this.metadata = new HashMap<>(this.metadata);
+                }
+                this.metadata.put(METADATA_GENERATE_REASON, reason.name());
+            }
             return this;
         }
 

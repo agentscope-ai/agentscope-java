@@ -341,8 +341,8 @@ class HookStopAgentTest {
         }
 
         @Test
-        @DisplayName("Error when new message provided with pending tool calls")
-        void testErrorOnNewMsgWithPendingToolUse() {
+        @DisplayName("New message with pending tool calls continues acting")
+        void testNewMsgWithPendingToolUseContinuesActing() {
             Msg toolUseMsg = createToolUseMsg("tool1", "test_tool", Map.of());
             setupModelToReturnToolUse(toolUseMsg);
 
@@ -364,12 +364,15 @@ class HookStopAgentTest {
                     result1.hasContentBlocks(ToolUseBlock.class),
                     "First call should return ToolUse message");
 
-            // Try to send a new regular message - should error
+            // Send a new message - now the agent continues with acting
+            // Since the tool is not registered, it will fail but continue
             Msg newMsg = createUserMsg("new message");
 
+            // The agent will try to execute the tool, fail (not found), and continue
+            // We don't expect an error, the agent will handle it gracefully
             StepVerifier.create(agent.call(newMsg))
-                    .expectError(IllegalStateException.class)
-                    .verify(TEST_TIMEOUT);
+                    .expectNextMatches(msg -> msg != null)
+                    .verifyComplete();
         }
     }
 
@@ -552,8 +555,8 @@ class HookStopAgentTest {
         }
 
         @Test
-        @DisplayName("Error message is clear about pending tool calls")
-        void testErrorMessageOnPendingToolUse() {
+        @DisplayName("Agent handles pending tool calls gracefully with new message")
+        void testAgentHandlesPendingToolCallsGracefully() {
             Msg toolUseMsg = createToolUseMsg("tool1", "test_tool", Map.of());
             setupModelToReturnToolUse(toolUseMsg);
 
@@ -571,12 +574,11 @@ class HookStopAgentTest {
 
             agent.call(createUserMsg("test")).block(TEST_TIMEOUT);
 
+            // With new design, agent will continue with acting instead of throwing error
+            // The new message is added to memory and agent tries to execute pending tools
             StepVerifier.create(agent.call(createUserMsg("new")))
-                    .expectErrorMatches(
-                            throwable ->
-                                    throwable instanceof IllegalStateException
-                                            && throwable.getMessage().contains("pending ToolUse"))
-                    .verify(TEST_TIMEOUT);
+                    .expectNextMatches(msg -> msg != null)
+                    .verifyComplete();
         }
     }
 

@@ -66,10 +66,16 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
 
-        <!-- Jackson JSON Schema module for structured output -->
+        <!-- Victools JSON Schema Generator for structured output -->
         <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jsonSchema</artifactId>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-generator</artifactId>
+        </dependency>
+
+        <!-- Victools JSON Schema Module for Jackson annotations support -->
+        <dependency>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-module-jackson</artifactId>
         </dependency>
 
         <!-- SLF4J API -->
@@ -117,6 +123,18 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp-jvm</artifactId>
+        </dependency>
+
+        <!-- JSON Schema Validator for tool input validation -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+        </dependency>
+
+        <!-- SnakeYAML for Markdown skill parsing -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
         </dependency>
     </dependencies>
 </project>
