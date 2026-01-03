@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-25T11:39:34+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
+    <meta property="article:modified_time" content="2026-01-03T05:06:04+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/tool.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -332,6 +332,7 @@
 <li class="toctree-l1"><a class="reference internal" href="agent-skill.html">Agent Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hitl.html">Human-in-the-Loop</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">Memory Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">Planning</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">State Management</a></li>
@@ -341,6 +342,7 @@
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ai-coding.html">Coding with AI</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -364,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-skill.html">智能体技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hitl.html">Human-in-the-Loop</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
@@ -373,6 +376,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/ai-coding.html">使用 AI 编程</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -786,6 +790,75 @@
 </div>
 <p>When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.</p>
 </section>
+<section id="tool-suspend">
+<h2>Tool Suspend<a class="headerlink" href="#tool-suspend" title="Link to this heading">¶</a></h2>
+<p>When a tool throws <code class="docutils literal notranslate"><span class="pre">ToolSuspendException</span></code>, the Agent execution pauses and returns to the caller, allowing external systems to perform the actual execution before resuming.</p>
+<p><strong>Use Cases</strong>:</p>
+<ul class="simple">
+<li><p>Tool requires external system execution (e.g., remote API, user manual operation)</p></li>
+<li><p>Need to asynchronously wait for external results</p></li>
+</ul>
+<p><strong>Usage</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;external_api&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Call external API&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="w"> </span><span class="nf">callExternalApi</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;url&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">url</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Throw exception to suspend execution</span>
+<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ToolSuspendException</span><span class="p">(</span><span class="s">&quot;Awaiting external API response: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">url</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Resume Execution</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// Check if suspended</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getGenerateReason</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">GenerateReason</span><span class="p">.</span><span class="na">TOOL_SUSPENDED</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Get pending tool calls</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pendingTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// After external execution, provide result</span>
+<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">toolResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">toolUse</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">toolUse</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;External execution result&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// Resume execution</span>
+<span class="w">    </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">toolResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="schema-only-tool">
+<h2>Schema Only Tool<a class="headerlink" href="#schema-only-tool" title="Link to this heading">¶</a></h2>
+<p>Register only the tool’s schema (name, description, parameters) without execution logic. When LLM calls this tool, the framework automatically triggers suspension and returns to the caller for execution.</p>
+<p><strong>Use Cases</strong>:</p>
+<ul class="simple">
+<li><p>Tool implemented by external systems (e.g., frontend, other services)</p></li>
+<li><p>Dynamically register third-party tools</p></li>
+</ul>
+<p><strong>Usage</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Method 1: Using ToolSchema</span>
+<span class="n">ToolSchema</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolSchema</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;query_database&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Query external database&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">parameters</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;object&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;properties&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">)),</span>
+<span class="w">        </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerSchema</span><span class="p">(</span><span class="n">schema</span><span class="p">);</span>
+
+<span class="c1">// Method 2: Batch registration</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerSchemas</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">schema1</span><span class="p">,</span><span class="w"> </span><span class="n">schema2</span><span class="p">));</span>
+
+<span class="c1">// Check if it&#39;s an external tool</span>
+<span class="kt">boolean</span><span class="w"> </span><span class="n">isExternal</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">isExternalTool</span><span class="p">(</span><span class="s">&quot;query_database&quot;</span><span class="p">);</span><span class="w">  </span><span class="c1">// true</span>
+</pre></div>
+</div>
+<p>The call flow is the same as Tool Suspend: LLM calls → returns <code class="docutils literal notranslate"><span class="pre">TOOL_SUSPENDED</span></code> → external execution → provide result to resume.</p>
+</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -841,7 +914,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-25</div>
+              Last updated on 2026-01-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -903,6 +976,8 @@
 <li><a class="reference internal" href="#agenttool-interface">AgentTool Interface</a></li>
 <li><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
 <li><a class="reference internal" href="#meta-tools">Meta Tools</a></li>
+<li><a class="reference internal" href="#tool-suspend">Tool Suspend</a></li>
+<li><a class="reference internal" href="#schema-only-tool">Schema Only Tool</a></li>
 </ul>
 </li>
 </ul>

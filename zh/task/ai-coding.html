@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Studio（可视化调试）" href="studio.html"><link rel="prev" title="多模态（Multimodal）" href="multimodal.html">
-        <link rel="canonical" href="https://java.agentscope.io/zh/task/structured-output.html">
+    <meta property="article:modified_time" content="2026-01-03T05:06:04+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Pipeline（管道）" href="../multi-agent/pipeline.html"><link rel="prev" title="A2A (Agent2Agent)" href="a2a.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/task/ai-coding.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>结构化输出（Structured Output） - AgentScope Java</title>
+        <title>使用 AI 编程 - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -372,11 +372,11 @@
 <li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A 协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ai-coding.html">使用 AI 编程</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">使用 AI 编程</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -403,7 +403,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/structured-output.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/ai-coding.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -420,143 +420,112 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="structured-output">
-<h1>结构化输出（Structured Output）<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h1>
-<p>结构化输出让 Agent 生成符合预定义 Schema 的类型化数据，实现从自然语言到结构化数据的可靠转换。</p>
-<hr class="docutils" />
+          <section id="ai">
+<h1>使用 AI 编程<a class="headerlink" href="#ai" title="Link to this heading">¶</a></h1>
+<p>AgentScope Java 文档支持 <a class="reference external" href="https://llmstxt.org/"><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code> 标准</a>，让 AI 编程助手能够理解框架文档并生成准确的代码。</p>
+<section id="llms-txt">
+<h2>什么是 llms.txt？<a class="headerlink" href="#llms-txt" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code> 是一个专为大模型设计的文档索引文件，包含文档结构和关键页面说明，方便 AI 工具快速定位所需内容。</p>
+<p>AgentScope 提供两个文件：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>文件</p></th>
+<th class="head"><p>说明</p></th>
+<th class="head"><p>URL</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">llms.txt</span></code></p></td>
+<td><p>索引文件，包含各页面链接</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms.txt</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">llms-full.txt</span></code></p></td>
+<td><p>完整文档，单文件包含所有内容</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 <section id="id1">
-<h2>快速开始<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<section id="schema">
-<h3>1. 定义 Schema<a class="headerlink" href="#schema" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductInfo</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">price</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">features</span><span class="p">;</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">ProductInfo</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span><span class="w">  </span><span class="c1">// 必须有无参构造函数</span>
+<h2>配置指南<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<section id="claude-code">
+<h3>Claude Code<a class="headerlink" href="#claude-code" title="Link to this heading">¶</a></h3>
+<p><a class="reference external" href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> 通过 MCP 服务器接入文档。</p>
+<p><strong>安装：</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>agentscope-docs<span class="w"> </span>--<span class="w"> </span>uvx<span class="w"> </span>--from<span class="w"> </span>mcpdoc<span class="w"> </span>mcpdoc<span class="w"> </span>--urls<span class="w"> </span>AgentScopeJava:https://java.agentscope.io/llms.txt
+</pre></div>
+</div>
+<p><strong>示例：</strong></p>
+<p>安装后直接提问即可：</p>
+<blockquote>
+<div><p>如何用 AgentScope Java 创建一个工具？</p>
+</div></blockquote>
+</section>
+<section id="cursor">
+<h3>Cursor<a class="headerlink" href="#cursor" title="Link to this heading">¶</a></h3>
+<p><a class="reference external" href="https://cursor.com/">Cursor</a> 支持两种接入方式。</p>
+<p><strong>方式一：添加文档（推荐）</strong></p>
+<ol class="arabic simple">
+<li><p>打开 <strong>Cursor Settings</strong> -&gt; <strong>Features</strong> -&gt; <strong>Docs</strong></p></li>
+<li><p>点击 <strong>+ Add new Doc</strong></p></li>
+<li><p>填入：<code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p></li>
+</ol>
+<p><strong>方式二：MCP 服务器</strong></p>
+<ol class="arabic simple">
+<li><p>打开 <strong>Cursor Settings</strong> -&gt; <strong>Tools &amp; MCP</strong></p></li>
+<li><p>点击 <strong>New MCP Server</strong> 编辑 <code class="docutils literal notranslate"><span class="pre">mcp.json</span></code></p></li>
+<li><p>添加配置：</p></li>
+</ol>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;agentscope-docs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>示例：</strong></p>
+<blockquote>
+<div><p>参考 AgentScope 文档，写一个带天气查询工具的 ReActAgent。</p>
+</div></blockquote>
+</section>
+<section id="windsurf">
+<h3>Windsurf<a class="headerlink" href="#windsurf" title="Link to this heading">¶</a></h3>
+<p><a class="reference external" href="https://codeium.com/windsurf">Windsurf</a> 通过 MCP 服务器接入。</p>
+<ol class="arabic simple">
+<li><p>打开设置，进入 MCP 配置</p></li>
+<li><p>添加服务器：</p></li>
+</ol>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;agentscope-docs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;mcpdoc&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">&quot;--urls&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;AgentScopeJava:https://java.agentscope.io/llms.txt&quot;</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
 <section id="id2">
-<h3>2. 请求结构化输出<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 发送查询，指定输出类型</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 提取类型化数据</span>
-<span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;产品: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">name</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;价格: $&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="p">);</span>
-</pre></div>
-</div>
+<h3>其他工具<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p><strong>支持文档/知识库的工具：</strong></p>
+<p>直接添加 <code class="docutils literal notranslate"><span class="pre">https://java.agentscope.io/llms-full.txt</span></code></p>
+<p><strong>支持 MCP 的工具：</strong></p>
+<p>参考上述 MCP 配置模板</p>
+<p><strong>环境要求：</strong></p>
+<p>MCP 方式需要先安装 <a class="reference external" href="https://docs.astral.sh/uv/"><code class="docutils literal notranslate"><span class="pre">uv</span></code></a>。</p>
 </section>
-</section>
-<hr class="docutils" />
-<section id="id3">
-<h2>两种模式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>模式</p></th>
-<th class="head"><p>特点</p></th>
-<th class="head"><p>适用场景</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CHOICE</span></code>（默认）</p></td>
-<td><p>强制调用工具，一次 API 调用</p></td>
-<td><p>支持 tool_choice 的模型（qwen3-max, gpt-4）</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PROMPT</span></code></p></td>
-<td><p>提示词引导，可能多次调用</p></td>
-<td><p>兼容老模型</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span><span class="w">  </span><span class="c1">// 或 PROMPT</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<hr class="docutils" />
-<section id="id4">
-<h2>Schema 定义<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<section id="id5">
-<h3>支持的类型<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Schema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// 基础类型</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">count</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">score</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Boolean</span><span class="w"> </span><span class="n">active</span><span class="p">;</span>
-
-<span class="w">    </span><span class="c1">// 集合类型</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tags</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata</span><span class="p">;</span>
-
-<span class="w">    </span><span class="c1">// 嵌套对象</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="id6">
-<h3>嵌套结构<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hobbies</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Address</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">street</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="jackson">
-<h3>Jackson 注解<a class="headerlink" href="#jackson" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomSchema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@JsonProperty</span><span class="p">(</span><span class="s">&quot;product_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自定义字段名</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">productName</span><span class="p">;</span>
-
-<span class="w">    </span><span class="nd">@JsonIgnore</span><span class="w">  </span><span class="c1">// 忽略字段</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">internal</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="id7">
-<h2>错误处理<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">    </span><span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="w">    </span><span class="c1">// 业务验证</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">IllegalArgumentException</span><span class="p">(</span><span class="s">&quot;价格无效&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;处理失败: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<hr class="docutils" />
-<section id="id8">
-<h2>更多资源<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><strong>完整示例</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java">StructuredOutputExample.java</a></p></li>
-<li><p><strong>Agent 配置</strong>: <span class="xref myst">agent-config.md</span></p></li>
-</ul>
 </section>
 </section>
 
@@ -584,23 +553,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="studio.html">
+          <a class="next-page" href="../multi-agent/pipeline.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Studio（可视化调试）</div>
+                <div class="title">Pipeline（管道）</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="multimodal.html">
+          <a class="prev-page" href="a2a.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">多模态（Multimodal）</div>
+                <div class="title">A2A (Agent2Agent)</div>
                 
               </div>
             </a>
@@ -613,7 +582,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-01-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -648,21 +617,15 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">结构化输出（Structured Output）</a><ul>
-<li><a class="reference internal" href="#id1">快速开始</a><ul>
-<li><a class="reference internal" href="#schema">1. 定义 Schema</a></li>
-<li><a class="reference internal" href="#id2">2. 请求结构化输出</a></li>
+<li><a class="reference internal" href="#">使用 AI 编程</a><ul>
+<li><a class="reference internal" href="#llms-txt">什么是 llms.txt？</a></li>
+<li><a class="reference internal" href="#id1">配置指南</a><ul>
+<li><a class="reference internal" href="#claude-code">Claude Code</a></li>
+<li><a class="reference internal" href="#cursor">Cursor</a></li>
+<li><a class="reference internal" href="#windsurf">Windsurf</a></li>
+<li><a class="reference internal" href="#id2">其他工具</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id3">两种模式</a></li>
-<li><a class="reference internal" href="#id4">Schema 定义</a><ul>
-<li><a class="reference internal" href="#id5">支持的类型</a></li>
-<li><a class="reference internal" href="#id6">嵌套结构</a></li>
-<li><a class="reference internal" href="#jackson">Jackson 注解</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id7">错误处理</a></li>
-<li><a class="reference internal" href="#id8">更多资源</a></li>
 </ul>
 </li>
 </ul>

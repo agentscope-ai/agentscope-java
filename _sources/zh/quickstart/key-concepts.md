@@ -88,6 +88,26 @@ Message 是 AgentScope 最核心的数据结构，用于：
 - `ToolUseBlock` - LLM 发起的工具调用
 - `ToolResultBlock` - 工具执行结果
 
+**响应元信息**：
+
+Agent 返回的消息包含额外的元信息，帮助理解执行状态：
+
+| 方法 | 说明 |
+|-----|------|
+| `getGenerateReason()` | 消息生成原因，用于判断后续操作 |
+| `getChatUsage()` | Token 用量统计（输入/输出 Token 数、耗时） |
+
+**GenerateReason 枚举值**：
+
+| 值 | 说明 |
+|----|------|
+| `MODEL_STOP` | 任务正常完成 |
+| `TOOL_SUSPENDED` | 工具需要外部执行，等待提供结果 |
+| `REASONING_STOP_REQUESTED` | Reasoning 阶段被 Hook 暂停（HITL） |
+| `ACTING_STOP_REQUESTED` | Acting 阶段被 Hook 暂停（HITL） |
+| `INTERRUPTED` | Agent 被中断 |
+| `MAX_ITERATIONS` | 达到最大迭代次数 |
+
 **示例**：
 
 ```java

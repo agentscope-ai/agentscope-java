@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Studio（可视化调试）" href="studio.html"><link rel="prev" title="多模态（Multimodal）" href="multimodal.html">
-        <link rel="canonical" href="https://java.agentscope.io/zh/task/structured-output.html">
+    <meta property="article:modified_time" content="2026-01-03T05:06:04+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="记忆 (Memory)" href="memory.html"><link rel="prev" title="Hook" href="hook.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/task/hitl.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>结构化输出（Structured Output） - AgentScope Java</title>
+        <title>Human-in-the-Loop - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -366,13 +366,13 @@
 <li class="toctree-l1"><a class="reference internal" href="agent-skill.html">智能体技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Human-in-the-Loop</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A 协议</a></li>
@@ -403,7 +403,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/structured-output.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/hitl.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -420,142 +420,100 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="structured-output">
-<h1>结构化输出（Structured Output）<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h1>
-<p>结构化输出让 Agent 生成符合预定义 Schema 的类型化数据，实现从自然语言到结构化数据的可靠转换。</p>
-<hr class="docutils" />
+          <section id="human-in-the-loop">
+<h1>Human-in-the-Loop<a class="headerlink" href="#human-in-the-loop" title="Link to this heading">¶</a></h1>
+<p>Human-in-the-Loop 让你可以在智能体执行过程中插入人工审核环节。当智能体准备调用工具时，你可以先暂停让用户确认，再决定是否继续。</p>
 <section id="id1">
-<h2>快速开始<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<section id="schema">
-<h3>1. 定义 Schema<a class="headerlink" href="#schema" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductInfo</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">price</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">features</span><span class="p">;</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">ProductInfo</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span><span class="w">  </span><span class="c1">// 必须有无参构造函数</span>
-<span class="p">}</span>
-</pre></div>
-</div>
+<h2>两个暂停时机<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>智能体的执行分为”推理”和”行动”两个阶段，你可以选择在不同时机暂停：</p>
+<p><strong>推理后暂停</strong>：模型决定要调用哪些工具后，在实际执行前暂停。此时你可以看到工具名称和参数，让用户决定是否允许执行。</p>
+<p><strong>行动后暂停</strong>：工具执行完毕后，在进入下一轮推理前暂停。此时你可以看到执行结果，让用户决定是否继续。</p>
 </section>
 <section id="id2">
-<h3>2. 请求结构化输出<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 发送查询，指定输出类型</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<h2>典型场景：敏感操作确认<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>以下示例展示如何在执行删除文件、发送邮件等敏感操作前，先让用户确认：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. 创建确认 Hook</span>
+<span class="n">Hook</span><span class="w"> </span><span class="n">confirmationHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">SENSITIVE_TOOLS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;send_email&quot;</span><span class="p">);</span>
 
-<span class="c1">// 提取类型化数据</span>
-<span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">reasoningMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getReasoningMessage</span><span class="p">();</span>
+<span class="w">            </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolCalls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reasoningMsg</span><span class="p">.</span><span class="na">getContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;产品: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">name</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;价格: $&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="p">);</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="id3">
-<h2>两种模式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>模式</p></th>
-<th class="head"><p>特点</p></th>
-<th class="head"><p>适用场景</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CHOICE</span></code>（默认）</p></td>
-<td><p>强制调用工具，一次 API 调用</p></td>
-<td><p>支持 tool_choice 的模型（qwen3-max, gpt-4）</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PROMPT</span></code></p></td>
-<td><p>提示词引导，可能多次调用</p></td>
-<td><p>兼容老模型</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="c1">// 如果包含敏感工具，暂停等待确认</span>
+<span class="w">            </span><span class="kt">boolean</span><span class="w"> </span><span class="n">hasSensitive</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolCalls</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">anyMatch</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">SENSITIVE_TOOLS</span><span class="p">.</span><span class="na">contains</span><span class="p">(</span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">()));</span>
+
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">hasSensitive</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">e</span><span class="p">.</span><span class="na">stopAgent</span><span class="p">();</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">};</span>
+
+<span class="c1">// 2. 创建智能体</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span><span class="w">  </span><span class="c1">// 或 PROMPT</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="n">confirmationHook</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<hr class="docutils" />
-<section id="id4">
-<h2>Schema 定义<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<section id="id5">
-<h3>支持的类型<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Schema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// 基础类型</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">count</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">score</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Boolean</span><span class="w"> </span><span class="n">active</span><span class="p">;</span>
+<section id="id3">
+<h2>处理暂停和恢复<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p>当智能体暂停时，返回的消息会包含待执行的工具信息。你需要展示给用户，并根据用户选择决定下一步：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="w">    </span><span class="c1">// 集合类型</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tags</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata</span><span class="p">;</span>
-
-<span class="w">    </span><span class="c1">// 嵌套对象</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="id6">
-<h3>嵌套结构<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hobbies</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Address</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">street</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="jackson">
-<h3>Jackson 注解<a class="headerlink" href="#jackson" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomSchema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@JsonProperty</span><span class="p">(</span><span class="s">&quot;product_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自定义字段名</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">productName</span><span class="p">;</span>
-
-<span class="w">    </span><span class="nd">@JsonIgnore</span><span class="w">  </span><span class="c1">// 忽略字段</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">internal</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="id7">
-<h2>错误处理<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">    </span><span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="w">    </span><span class="c1">// 业务验证</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">IllegalArgumentException</span><span class="p">(</span><span class="s">&quot;价格无效&quot;</span><span class="p">);</span>
+<span class="c1">// 检查是否有待确认的工具调用</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">hasContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 展示待执行的工具</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tool</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">pending</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tool</span><span class="p">.</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;参数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">tool</span><span class="p">.</span><span class="na">getInput</span><span class="p">());</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;处理失败: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">userConfirms</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 用户确认，继续执行</span>
+<span class="w">        </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 用户拒绝，返回取消信息</span>
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">cancelResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">pending</span><span class="p">.</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">t</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">t</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">                    </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;操作已取消&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toArray</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="o">[]</span><span class="p">::</span><span class="k">new</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">        </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">cancelResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+
+<span class="c1">// 最终响应</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<hr class="docutils" />
-<section id="id8">
-<h2>更多资源<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="api">
+<h2>API 速查<a class="headerlink" href="#api" title="Link to this heading">¶</a></h2>
+<p><strong>暂停方法</strong>：</p>
 <ul class="simple">
-<li><p><strong>完整示例</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java">StructuredOutputExample.java</a></p></li>
-<li><p><strong>Agent 配置</strong>: <span class="xref myst">agent-config.md</span></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PostReasoningEvent.stopAgent()</span></code> — 推理后暂停</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PostActingEvent.stopAgent()</span></code> — 行动后暂停</p></li>
+</ul>
+<p><strong>恢复方法</strong>：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">agent.call()</span></code> — 继续执行待处理的工具</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">agent.call(toolResultMsg)</span></code> — 提供自定义的工具结果后继续</p></li>
+</ul>
+<p><strong>判断暂停原因</strong>：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">response.getGenerateReason()</span></code> 返回 <code class="docutils literal notranslate"><span class="pre">REASONING_STOP_REQUESTED</span></code> 或 <code class="docutils literal notranslate"><span class="pre">ACTING_STOP_REQUESTED</span></code></p></li>
 </ul>
 </section>
 </section>
@@ -584,23 +542,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="studio.html">
+          <a class="next-page" href="memory.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Studio（可视化调试）</div>
+                <div class="title">记忆 (Memory)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="multimodal.html">
+          <a class="prev-page" href="hook.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">多模态（Multimodal）</div>
+                <div class="title">Hook</div>
                 
               </div>
             </a>
@@ -613,7 +571,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-01-03</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -648,21 +606,11 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">结构化输出（Structured Output）</a><ul>
-<li><a class="reference internal" href="#id1">快速开始</a><ul>
-<li><a class="reference internal" href="#schema">1. 定义 Schema</a></li>
-<li><a class="reference internal" href="#id2">2. 请求结构化输出</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id3">两种模式</a></li>
-<li><a class="reference internal" href="#id4">Schema 定义</a><ul>
-<li><a class="reference internal" href="#id5">支持的类型</a></li>
-<li><a class="reference internal" href="#id6">嵌套结构</a></li>
-<li><a class="reference internal" href="#jackson">Jackson 注解</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id7">错误处理</a></li>
-<li><a class="reference internal" href="#id8">更多资源</a></li>
+<li><a class="reference internal" href="#">Human-in-the-Loop</a><ul>
+<li><a class="reference internal" href="#id1">两个暂停时机</a></li>
+<li><a class="reference internal" href="#id2">典型场景：敏感操作确认</a></li>
+<li><a class="reference internal" href="#id3">处理暂停和恢复</a></li>
+<li><a class="reference internal" href="#api">API 速查</a></li>
 </ul>
 </li>
 </ul>

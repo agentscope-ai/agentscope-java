@@ -296,3 +296,77 @@ toolkit.registerMetaTool();
 ```
 
 When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.
+
+## Tool Suspend
+
+When a tool throws `ToolSuspendException`, the Agent execution pauses and returns to the caller, allowing external systems to perform the actual execution before resuming.
+
+**Use Cases**:
+- Tool requires external system execution (e.g., remote API, user manual operation)
+- Need to asynchronously wait for external results
+
+**Usage**:
+
+```java
+@Tool(name = "external_api", description = "Call external API")
+public ToolResultBlock callExternalApi(
+        @ToolParam(name = "url") String url) {
+    // Throw exception to suspend execution
+    throw new ToolSuspendException("Awaiting external API response: " + url);
+}
+```
+
+**Resume Execution**:
+
+```java
+Msg response = agent.call(userMsg).block();
+
+// Check if suspended
+if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+    // Get pending tool calls
+    List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
+
+    // After external execution, provide result
+    Msg toolResult = Msg.builder()
+        .role(MsgRole.TOOL)
+        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+            TextBlock.builder().text("External execution result").build()))
+        .build();
+
+    // Resume execution
+    response = agent.call(toolResult).block();
+}
+```
+
+## Schema Only Tool
+
+Register only the tool's schema (name, description, parameters) without execution logic. When LLM calls this tool, the framework automatically triggers suspension and returns to the caller for execution.
+
+**Use Cases**:
+- Tool implemented by external systems (e.g., frontend, other services)
+- Dynamically register third-party tools
+
+**Usage**:
+
+```java
+// Method 1: Using ToolSchema
+ToolSchema schema = ToolSchema.builder()
+    .name("query_database")
+    .description("Query external database")
+    .parameters(Map.of(
+        "type", "object",
+        "properties", Map.of("sql", Map.of("type", "string")),
+        "required", List.of("sql")
+    ))
+    .build();
+
+toolkit.registerSchema(schema);
+
+// Method 2: Batch registration
+toolkit.registerSchemas(List.of(schema1, schema2));
+
+// Check if it's an external tool
+boolean isExternal = toolkit.isExternalTool("query_database");  // true
+```
+
+The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED` → external execution → provide result to resume.

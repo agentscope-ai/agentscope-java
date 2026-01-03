@@ -111,13 +111,15 @@ Once you're familiar with the basics, explore these features:
 
 ## AI-Powered Development
 
-AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Windsurf, and GitHub Copilot. This guide helps AI assistants understand AgentScope Java's APIs, patterns, and best practices to generate accurate code.
+AgentScope documentation supports the [`llms.txt` standard](https://llmstxt.org/), enabling AI coding assistants like Claude Code, Cursor, and Windsurf to understand AgentScope APIs and generate accurate code.
 
 **Quick Setup for Cursor:**
 
 1. Open Cursor Settings -> Features -> Docs
 2. Click "+ Add new Doc"
 3. Add URL: `https://java.agentscope.io/llms-full.txt`
+
+For other tools and detailed configuration, see **[Coding with AI](task/ai-coding.md)**.
 
 ## Community
 
@@ -458,6 +460,26 @@ Message is the most fundamental data structure in AgentScope, used for:
 - `ThinkingBlock` - Reasoning traces (for reasoning models)
 - `ToolUseBlock` - Tool invocation initiated by LLM
 - `ToolResultBlock` - Tool execution result
+
+**Response Metadata**:
+
+Messages returned by Agent contain additional metadata to help understand execution state:
+
+| Method | Description |
+|--------|-------------|
+| `getGenerateReason()` | Reason for message generation, used to determine next actions |
+| `getChatUsage()` | Token usage statistics (input/output tokens, time) |
+
+**GenerateReason Values**:
+
+| Value | Description |
+|-------|-------------|
+| `MODEL_STOP` | Task completed normally |
+| `TOOL_SUSPENDED` | Tool needs external execution, waiting for result |
+| `REASONING_STOP_REQUESTED` | Paused by Hook during Reasoning phase (HITL) |
+| `ACTING_STOP_REQUESTED` | Paused by Hook during Acting phase (HITL) |
+| `INTERRUPTED` | Agent was interrupted |
+| `MAX_ITERATIONS` | Maximum iterations reached |
 
 **Example**:
 
@@ -1495,6 +1517,80 @@ toolkit.registerMetaTool();
 ```
 
 When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.
+
+## Tool Suspend
+
+When a tool throws `ToolSuspendException`, the Agent execution pauses and returns to the caller, allowing external systems to perform the actual execution before resuming.
+
+**Use Cases**:
+- Tool requires external system execution (e.g., remote API, user manual operation)
+- Need to asynchronously wait for external results
+
+**Usage**:
+
+```java
+@Tool(name = "external_api", description = "Call external API")
+public ToolResultBlock callExternalApi(
+        @ToolParam(name = "url") String url) {
+    // Throw exception to suspend execution
+    throw new ToolSuspendException("Awaiting external API response: " + url);
+}
+```
+
+**Resume Execution**:
+
+```java
+Msg response = agent.call(userMsg).block();
+
+// Check if suspended
+if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+    // Get pending tool calls
+    List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
+
+    // After external execution, provide result
+    Msg toolResult = Msg.builder()
+        .role(MsgRole.TOOL)
+        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+            TextBlock.builder().text("External execution result").build()))
+        .build();
+
+    // Resume execution
+    response = agent.call(toolResult).block();
+}
+```
+
+## Schema Only Tool
+
+Register only the tool's schema (name, description, parameters) without execution logic. When LLM calls this tool, the framework automatically triggers suspension and returns to the caller for execution.
+
+**Use Cases**:
+- Tool implemented by external systems (e.g., frontend, other services)
+- Dynamically register third-party tools
+
+**Usage**:
+
+```java
+// Method 1: Using ToolSchema
+ToolSchema schema = ToolSchema.builder()
+    .name("query_database")
+    .description("Query external database")
+    .parameters(Map.of(
+        "type", "object",
+        "properties", Map.of("sql", Map.of("type", "string")),
+        "required", List.of("sql")
+    ))
+    .build();
+
+toolkit.registerSchema(schema);
+
+// Method 2: Batch registration
+toolkit.registerSchemas(List.of(schema1, schema2));
+
+// Check if it's an external tool
+boolean isExternal = toolkit.isExternalTool("query_database");  // true
+```
+
+The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED` → external execution → provide result to resume.
 
 
 # MCP (Model Context Protocol)
@@ -2800,6 +2896,104 @@ Run the example:
 cd agentscope-examples/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
+
+
+# Human-in-the-Loop
+
+Human-in-the-Loop lets you insert human review checkpoints during agent execution. When the agent is about to call tools, you can pause for user confirmation before proceeding.
+
+## Two Pause Points
+
+Agent execution has two phases: "reasoning" and "acting". You can pause at either point:
+
+**Pause after reasoning**: After the model decides which tools to call, but before execution. You can see the tool names and parameters, letting users decide whether to allow execution.
+
+**Pause after acting**: After tool execution completes, but before the next reasoning iteration. You can see the results, letting users decide whether to continue.
+
+## Example: Confirming Sensitive Operations
+
+This example shows how to require user confirmation before executing sensitive operations like deleting files or sending emails:
+
+```java
+// 1. Create confirmation hook
+Hook confirmationHook = new Hook() {
+    private static final List<String> SENSITIVE_TOOLS = List.of("delete_file", "send_email");
+
+    @Override
+    public <T extends HookEvent> Mono<T> onEvent(T event) {
+        if (event instanceof PostReasoningEvent e) {
+            Msg reasoningMsg = e.getReasoningMessage();
+            List<ToolUseBlock> toolCalls = reasoningMsg.getContentBlocks(ToolUseBlock.class);
+
+            // Pause if sensitive tools are involved
+            boolean hasSensitive = toolCalls.stream()
+                .anyMatch(t -> SENSITIVE_TOOLS.contains(t.getName()));
+
+            if (hasSensitive) {
+                e.stopAgent();
+            }
+        }
+        return Mono.just(event);
+    }
+};
+
+// 2. Create agent
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .hook(confirmationHook)
+    .build();
+```
+
+## Handling Pause and Resume
+
+When the agent pauses, the returned message contains the pending tool information. Display it to the user and decide next steps based on their choice:
+
+```java
+Msg response = agent.call(userMsg).block();
+
+// Check for pending tool calls
+while (response.hasContentBlocks(ToolUseBlock.class)) {
+    // Display pending tools
+    List<ToolUseBlock> pending = response.getContentBlocks(ToolUseBlock.class);
+    for (ToolUseBlock tool : pending) {
+        System.out.println("Tool: " + tool.getName());
+        System.out.println("Input: " + tool.getInput());
+    }
+
+    if (userConfirms()) {
+        // User confirmed, continue execution
+        response = agent.call().block();
+    } else {
+        // User declined, return cancellation
+        Msg cancelResult = Msg.builder()
+            .role(MsgRole.TOOL)
+            .content(pending.stream()
+                .map(t -> ToolResultBlock.of(t.getId(), t.getName(),
+                    TextBlock.builder().text("Operation cancelled").build()))
+                .toArray(ToolResultBlock[]::new))
+            .build();
+        response = agent.call(cancelResult).block();
+    }
+}
+
+// Final response
+System.out.println(response.getTextContent());
+```
+
+## Quick Reference
+
+**Pause methods**:
+- `PostReasoningEvent.stopAgent()` — Pause after reasoning
+- `PostActingEvent.stopAgent()` — Pause after acting
+
+**Resume methods**:
+- `agent.call()` — Continue executing pending tools
+- `agent.call(toolResultMsg)` — Provide custom tool result and continue
+
+**Check pause reason**:
+- `response.getGenerateReason()` returns `REASONING_STOP_REQUESTED` or `ACTING_STOP_REQUESTED`
 
 
 # Memory
@@ -4896,6 +5090,114 @@ agent.interrupt(Msg.builder()
 - **Nacos Java SDK**: https://nacos.io/docs/latest/manual/user/java-sdk/usage
 - **Nacos Java SDK Additional Configuration Parameters**: https://nacos.io/docs/latest/manual/user/java-sdk/properties
 - **Nacos Community**: https://github.com/alibaba/nacos
+
+# Coding with AI
+
+AgentScope Java documentation supports the [`llms.txt` standard](https://llmstxt.org/), providing a machine-readable index optimized for Large Language Models. This allows you to use the documentation as context in your AI-powered development environment.
+
+## What is llms.txt?
+
+`llms.txt` is a standardized text file that acts as a map for LLMs, listing the most important documentation pages and their descriptions. This helps AI tools understand the structure of the documentation and retrieve relevant information.
+
+AgentScope provides the following files:
+
+| File | Best For | URL |
+|------|----------|-----|
+| `llms.txt` | Tools that can fetch links dynamically | `https://java.agentscope.io/llms.txt` |
+| `llms-full.txt` | Tools that need a single, static text dump | `https://java.agentscope.io/llms-full.txt` |
+
+## Development Tools
+
+### Claude Code
+
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) can be configured to query the AgentScope documentation by adding an MCP server.
+
+**Installation:**
+
+```bash
+claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/llms.txt
+```
+
+**Usage:**
+
+Once installed, you can ask questions about AgentScope directly in Claude Code:
+
+> How do I create a tool with AgentScope Java?
+
+### Cursor
+
+[Cursor](https://cursor.com/) IDE can be configured to access the AgentScope documentation in two ways.
+
+**Method 1: Docs Feature (Recommended)**
+
+1. Open **Cursor Settings** -> **Features** -> **Docs**
+2. Click **+ Add new Doc**
+3. Add URL: `https://java.agentscope.io/llms-full.txt`
+
+**Method 2: MCP Server**
+
+1. Open **Cursor Settings** -> **Tools & MCP**
+2. Click **New MCP Server** to edit `mcp.json`
+3. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "agentscope-docs": {
+      "command": "uvx",
+      "args": [
+        "--from", "mcpdoc", "mcpdoc",
+        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+      ]
+    }
+  }
+}
+```
+
+**Usage:**
+
+Once configured, you can prompt the coding agent:
+
+> Use the AgentScope docs to build a ReActAgent with a weather tool.
+
+### Windsurf
+
+[Windsurf](https://codeium.com/windsurf) supports MCP servers for documentation access.
+
+**Configuration:**
+
+1. Open Windsurf Settings
+2. Navigate to MCP configuration
+3. Add the following server:
+
+```json
+{
+  "mcpServers": {
+    "agentscope-docs": {
+      "command": "uvx",
+      "args": [
+        "--from", "mcpdoc", "mcpdoc",
+        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+      ]
+    }
+  }
+}
+```
+
+### Other Tools
+
+Any tool that supports the `llms.txt` standard or can ingest documentation from a URL can benefit from these files.
+
+**For tools with Docs/Knowledge Base feature:**
+- Add URL: `https://java.agentscope.io/llms-full.txt`
+
+**For tools with MCP support:**
+- Use the MCP configuration template above with `mcpdoc`
+
+**Prerequisites:**
+
+MCP configurations require [`uv`](https://docs.astral.sh/uv/) to be installed, as they use `uvx` to run the documentation server.
+
 
 # Pipeline
 
