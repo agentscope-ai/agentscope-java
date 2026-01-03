@@ -359,18 +359,6 @@ public class OpenAIClient {
     }
 
     /**
-     * Make a streaming API call.
-     *
-     * @param apiKey the API key for authentication
-     * @param baseUrl the base URL (null for default)
-     * @param request the OpenAI request
-     * @return a Flux of OpenAI responses (one per SSE event)
-     */
-    public Flux<OpenAIResponse> stream(String apiKey, String baseUrl, OpenAIRequest request) {
-        return stream(apiKey, baseUrl, request, null);
-    }
-
-    /**
      * Make a streaming API call with options for headers and query params.
      *
      * @param apiKey the API key for authentication
@@ -447,10 +435,12 @@ public class OpenAIClient {
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof HttpTransportException) {
-                                    return new OpenAIException(
+                                    return OpenAIException.create(
+                                            ((HttpTransportException) ex).getStatusCode(),
                                             "HTTP transport error during streaming: "
                                                     + ex.getMessage(),
-                                            ex);
+                                            null,
+                                            ((HttpTransportException) ex).getResponseBody());
                                 }
                                 return ex;
                             });

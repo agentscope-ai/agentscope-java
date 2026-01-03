@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
@@ -31,70 +32,137 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Formatter for OpenAI Chat Completion HTTP API.
- * Converts between AgentScope Msg objects and OpenAI DTO types.
+ * Multi-agent formatter for DeepSeek Chat models.
  *
- * <p>This formatter is used with the HTTP-based OpenAI client for standard OpenAI GPT models.
- * It provides full support for:
+ * <p>This formatter extends {@link OpenAIMultiAgentFormatter} with DeepSeek-specific handling:
  * <ul>
- *   <li>All sampling parameters (temperature, top_p, penalties)</li>
- *   <li>Tool calling with strict mode support</li>
- *   <li>Full tool_choice options (auto, none, required, specific)</li>
+ *   <li>No name field in messages (returns HTTP 400 if present)</li>
+ *   <li>System messages converted to user messages</li>
+ *   <li>Messages should not end with assistant role</li>
+ *   <li>Does NOT support strict parameter in tool definitions</li>
  * </ul>
+ *
+ * <p>Usage:
+ * <pre>{@code
+ * OpenAIChatModel.builder()
+ *     .formatter(new DeepSeekMultiAgentFormatter())
+ *     .modelName("deepseek-chat")
+ *     .baseUrl("https://api.deepseek.com/v1")
+ *     .apiKey(apiKey)
+ *     .build();
+ * }</pre>
  */
-public class OpenAIChatFormatter extends OpenAIBaseFormatter {
+public class DeepSeekMultiAgentFormatter extends OpenAIMultiAgentFormatter {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIChatFormatter.class);
+    private static final Logger log = LoggerFactory.getLogger(DeepSeekMultiAgentFormatter.class);
 
-    public OpenAIChatFormatter() {
+    public DeepSeekMultiAgentFormatter() {
         super();
+    }
+
+    public DeepSeekMultiAgentFormatter(String conversationHistoryPrompt) {
+        super(conversationHistoryPrompt);
     }
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        List<OpenAIMessage> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            boolean hasMedia = hasMediaContent(msg);
-            OpenAIMessage openAIMsg = messageConverter.convertToMessage(msg, hasMedia);
-            if (openAIMsg != null) {
-                result.add(openAIMsg);
+        // Use parent's multi-agent formatting
+        List<OpenAIMessage> messages = super.doFormat(msgs);
+        // Apply DeepSeek-specific fixes
+        return applyDeepSeekFixes(messages);
+    }
+
+    /**
+     * Apply DeepSeek-specific message format fixes.
+     */
+    private List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
+        boolean needsFix = false;
+
+        for (OpenAIMessage msg : messages) {
+            if ("system".equals(msg.getRole()) || msg.getName() != null) {
+                needsFix = true;
+                break;
             }
         }
-        return result;
+
+        if (!needsFix
+                && !messages.isEmpty()
+                && "assistant".equals(messages.get(messages.size() - 1).getRole())) {
+            needsFix = true;
+        }
+
+        if (!needsFix) {
+            return messages;
+        }
+
+        log.debug("DeepSeek MultiAgent: applying message format fixes");
+        List<OpenAIMessage> adjustedMessages = new ArrayList<>();
+
+        for (OpenAIMessage msg : messages) {
+            String role = msg.getRole();
+            if ("system".equals(role)) {
+                role = "user";
+            }
+
+            OpenAIMessage.Builder builder = OpenAIMessage.builder().role(role);
+
+            Object content = msg.getContent();
+            if (content instanceof String) {
+                builder.content((String) content);
+            } else if (content instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<OpenAIContentPart> contentParts = (List<OpenAIContentPart>) content;
+                builder.content(contentParts);
+            }
+
+            // Note: Don't include name field for DeepSeek
+            if (msg.getToolCalls() != null) {
+                builder.toolCalls(msg.getToolCalls());
+            }
+            if (msg.getToolCallId() != null) {
+                builder.toolCallId(msg.getToolCallId());
+            }
+
+            adjustedMessages.add(builder.build());
+        }
+
+        if (!adjustedMessages.isEmpty()
+                && "assistant"
+                        .equals(adjustedMessages.get(adjustedMessages.size() - 1).getRole())) {
+            adjustedMessages.add(
+                    OpenAIMessage.builder().role("user").content("Please continue.").build());
+        }
+
+        return adjustedMessages;
     }
 
     @Override
     public void applyOptions(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
-
-        // Apply temperature
+        // DeepSeek supports all sampling parameters
         Double temperature =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
         if (temperature != null) {
             request.setTemperature(temperature);
         }
 
-        // Apply top_p
         Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
         if (topP != null) {
             request.setTopP(topP);
         }
 
-        // Apply frequency penalty
         Double frequencyPenalty =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getFrequencyPenalty);
         if (frequencyPenalty != null) {
             request.setFrequencyPenalty(frequencyPenalty);
         }
 
-        // Apply presence penalty
         Double presencePenalty =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getPresencePenalty);
         if (presencePenalty != null) {
             request.setPresencePenalty(presencePenalty);
         }
 
-        // Apply max tokens
         Integer maxTokens =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
         if (maxTokens != null) {
@@ -102,7 +170,6 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             request.setMaxTokens(maxTokens);
         }
 
-        // Apply seed
         Long seed = getOptionOrDefault(options, defaultOptions, GenerateOptions::getSeed);
         if (seed != null) {
             if (seed < Integer.MIN_VALUE || seed > Integer.MAX_VALUE) {
@@ -111,7 +178,6 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             request.setSeed(seed.intValue());
         }
 
-        // Apply additional body params (must be last to allow overriding)
         applyAdditionalBodyParams(request, defaultOptions);
         applyAdditionalBodyParams(request, options);
     }
@@ -126,26 +192,19 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
 
         try {
             for (ToolSchema toolSchema : tools) {
-                OpenAIToolFunction.Builder functionBuilder =
+                // DeepSeek does NOT support strict parameter
+                OpenAIToolFunction function =
                         OpenAIToolFunction.builder()
                                 .name(toolSchema.getName())
                                 .description(toolSchema.getDescription())
-                                .parameters(toolSchema.getParameters());
+                                .parameters(toolSchema.getParameters())
+                                .build();
 
-                // OpenAI supports the strict parameter
-                if (toolSchema.getStrict() != null) {
-                    functionBuilder.strict(toolSchema.getStrict());
-                }
-
-                OpenAIToolFunction function = functionBuilder.build();
                 openAITools.add(OpenAITool.function(function));
-                log.debug(
-                        "Converted tool to OpenAI format: {} (strict: {})",
-                        toolSchema.getName(),
-                        toolSchema.getStrict());
+                log.debug("Converted tool to DeepSeek format: {}", toolSchema.getName());
             }
         } catch (Exception e) {
-            log.error("Failed to convert tools to OpenAI format: {}", e.getMessage(), e);
+            log.error("Failed to convert tools to DeepSeek format: {}", e.getMessage(), e);
         }
 
         if (!openAITools.isEmpty()) {
@@ -160,6 +219,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             return;
         }
 
+        // DeepSeek supports all tool_choice options
         if (toolChoice == null || toolChoice instanceof ToolChoice.Auto) {
             request.setToolChoice("auto");
         } else if (toolChoice instanceof ToolChoice.None) {
@@ -167,7 +227,6 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         } else if (toolChoice instanceof ToolChoice.Required) {
             request.setToolChoice("required");
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            // OpenAI format: {"type": "function", "function": {"name": "..."}}
             Map<String, Object> namedToolChoice = new HashMap<>();
             namedToolChoice.put("type", "function");
             Map<String, Object> function = new HashMap<>();
@@ -175,61 +234,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             namedToolChoice.put("function", function);
             request.setToolChoice(namedToolChoice);
         } else {
-            // Fallback to auto for unknown types
             request.setToolChoice("auto");
         }
 
         log.debug(
                 "Applied tool choice: {}",
                 toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
-    }
-
-    /**
-     * Apply additional body parameters from GenerateOptions to OpenAI request.
-     * This handles parameters like reasoning_effort that are set via additionalBodyParam().
-     */
-    protected void applyAdditionalBodyParams(OpenAIRequest request, GenerateOptions opts) {
-        if (opts == null) return;
-        Map<String, Object> params = opts.getAdditionalBodyParams();
-        if (params != null && !params.isEmpty()) {
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-
-                // Map common parameter names to OpenAIRequest setters
-                switch (key) {
-                    case "reasoning_effort":
-                        if (value instanceof String) {
-                            request.setReasoningEffort((String) value);
-                        }
-                        break;
-                    case "include_reasoning":
-                        if (value instanceof Boolean) {
-                            request.setIncludeReasoning((Boolean) value);
-                        }
-                        break;
-                    case "stop":
-                        if (value instanceof List) {
-                            @SuppressWarnings("unchecked")
-                            List<String> stopList = (List<String>) value;
-                            request.setStop(stopList);
-                        }
-                        break;
-                    case "response_format":
-                        if (value instanceof Map) {
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> formatMap = (Map<String, Object>) value;
-                            request.setResponseFormat(formatMap);
-                        }
-                        break;
-                    default:
-                        // Add unknown parameters to extraParams
-                        request.addExtraParam(key, value);
-                        log.debug("Additional body parameter '{}' added to extraParams", key);
-                        break;
-                }
-            }
-            log.debug("Applied {} additional body params to OpenAI request", params.size());
-        }
     }
 }

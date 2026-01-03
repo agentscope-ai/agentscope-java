@@ -21,39 +21,38 @@ import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Provider for GLM (Zhipu AI) API - OpenAI compatible.
+ *
+ * <p>Supports GLM-4, GLM-4V, GLM-Z1, and GLM-4.5 models.
  */
-public class GLMProvider implements ModelProvider {
+@ModelCapabilities({
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.STRUCTURED_OUTPUT
+})
+public class GLMProvider extends BaseModelProvider {
 
+    private static final String API_KEY_ENV = "GLM_API_KEY";
     private static final String GLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/";
-    private final String modelName;
-    private final boolean multiAgentFormatter;
 
     public GLMProvider(String modelName, boolean multiAgentFormatter) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("GLM_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getProperty("GLM_API_KEY");
-        }
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("GLM_API_KEY environment variable is required");
-        }
-
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
         OpenAIChatModel model =
                 OpenAIChatModel.builder()
                         .baseUrl(GLM_BASE_URL)
                         .apiKey(apiKey)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .stream(true)
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
                         .build();
@@ -62,8 +61,7 @@ public class GLMProvider implements ModelProvider {
                 .name(name)
                 .model(model)
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -72,27 +70,24 @@ public class GLMProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        return false;
-    }
-
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("GLM_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getProperty("GLM_API_KEY");
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
         }
-        return apiKey != null && !apiKey.isEmpty();
+        return caps;
     }
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-    /**
-     * GLM-4 Plus - Latest generation flagship model.
-     */
+    /** GLM-4 Plus - Latest generation flagship model. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GLM4Plus extends GLMProvider {
         public GLM4Plus() {
             super("glm-4-plus", false);
@@ -104,9 +99,13 @@ public class GLMProvider implements ModelProvider {
         }
     }
 
-    /**
-     * GLM-4 Plus with Multi-Agent Formatter.
-     */
+    /** GLM-4 Plus with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GLM4PlusMultiAgent extends GLMProvider {
         public GLM4PlusMultiAgent() {
             super("glm-4-plus", true);
@@ -120,8 +119,15 @@ public class GLMProvider implements ModelProvider {
 
     /**
      * GLM-4V Plus - Latest generation multimodal model.
+     *
      * <p>Note: GLM-4V series does NOT support tool calling (function calling).
      */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO
+    })
     public static class GLM4VPlus extends GLMProvider {
         public GLM4VPlus() {
             super("glm-4v-plus", false);
@@ -140,8 +146,16 @@ public class GLMProvider implements ModelProvider {
 
     /**
      * GLM-4V Plus with Multi-Agent Formatter.
+     *
      * <p>Note: GLM-4V series does NOT support tool calling (function calling).
      */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class GLM4VPlusMultiAgent extends GLMProvider {
         public GLM4VPlusMultiAgent() {
             super("glm-4v-plus", true);
@@ -160,10 +174,14 @@ public class GLMProvider implements ModelProvider {
 
     /**
      * GLM-Z1-Air - Reasoning model with thinking mode support.
+     *
      * <p>Uses reinforcement learning for deep reasoning on complex tasks.
-     * Supports thinking mode via thinking.type parameter.
-     * <p>Reference: <a href="https://open.bigmodel.cn/dev/api/Reasoning-models/glm-z1">GLM-Z1 Documentation</a>
      */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
+    })
     public static class GLMZ1Air extends GLMProvider {
         public GLMZ1Air() {
             super("glm-z1-air", false);
@@ -173,18 +191,18 @@ public class GLMProvider implements ModelProvider {
         public String getProviderName() {
             return "GLM-Z1-Air";
         }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
-        }
     }
 
     /**
      * GLM-4.5 - Hybrid reasoning model with ARC (Agentic/Reasoning/Coding) capabilities.
+     *
      * <p>Supports thinking mode toggle for complex reasoning tasks.
-     * <p>Reference: <a href="https://docs.bigmodel.cn/cn/guide/models/text/glm-4.5">GLM-4.5 Documentation</a>
      */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
+    })
     public static class GLM45 extends GLMProvider {
         public GLM45() {
             super("glm-4.5", false);
@@ -193,11 +211,6 @@ public class GLMProvider implements ModelProvider {
         @Override
         public String getProviderName() {
             return "GLM-4.5";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
         }
     }
 }

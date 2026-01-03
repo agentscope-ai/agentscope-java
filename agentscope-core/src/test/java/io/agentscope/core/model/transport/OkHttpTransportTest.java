@@ -256,7 +256,7 @@ class OkHttpTransportTest {
         HttpTransportException exception =
                 new HttpTransportException("Test error", 429, "rate limited");
 
-        assertEquals("Test error", exception.getMessage());
+        assertEquals("Test error | Response body: rate limited", exception.getMessage());
         assertEquals(429, exception.getStatusCode());
         assertEquals("rate limited", exception.getResponseBody());
         assertTrue(exception.isHttpError());

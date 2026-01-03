@@ -21,34 +21,39 @@ import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
-public class DashScopeCompatibleProvider implements ModelProvider {
+/**
+ * Provider for DashScope OpenAI-compatible API.
+ *
+ * <p>Uses the OpenAI-compatible endpoint at dashscope.aliyuncs.com/compatible-mode/v1.
+ */
+@ModelCapabilities({
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.STRUCTURED_OUTPUT
+})
+public class DashScopeCompatibleProvider extends BaseModelProvider {
 
+    private static final String API_KEY_ENV = "DASHSCOPE_API_KEY";
     private static final String COMPATIBLE_BASE_URL =
             "https://dashscope.aliyuncs.com/compatible-mode/v1";
-    private final String modelName;
-    private final boolean multiAgentFormatter;
 
     public DashScopeCompatibleProvider(String modelName, boolean multiAgentFormatter) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("DASHSCOPE_API_KEY environment variable is required");
-        }
-
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
         OpenAIChatModel model =
                 OpenAIChatModel.builder()
                         .baseUrl(COMPATIBLE_BASE_URL)
                         .apiKey(apiKey)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .stream(true)
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
                         .build();
@@ -57,8 +62,7 @@ public class DashScopeCompatibleProvider implements ModelProvider {
                 .name(name)
                 .model(model)
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -67,22 +71,26 @@ public class DashScopeCompatibleProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        // Compatible endpoint doesn't support thinking mode
-        return false;
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
+        }
+        return caps;
     }
 
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        return apiKey != null && !apiKey.isEmpty();
-    }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
+    /** Qwen3-Omni-Flash - Multimodal omni model. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Qwen3OmniFlashOpenAI extends DashScopeCompatibleProvider {
         public Qwen3OmniFlashOpenAI() {
             super("qwen3-omni-flash", false);
@@ -94,6 +102,15 @@ public class DashScopeCompatibleProvider implements ModelProvider {
         }
     }
 
+    /** Qwen3-Omni-Flash with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Qwen3OmniFlashMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public Qwen3OmniFlashMultiAgentOpenAI() {
             super("qwen3-omni-flash", true);
@@ -101,10 +118,18 @@ public class DashScopeCompatibleProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "OpenAI to DashScope";
+            return "OpenAI to DashScope (Multi-Agent)";
         }
     }
 
+    /** Qwen3-VL-Plus via OpenAI compatible API. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Qwen3VlPlusOpenAI extends DashScopeCompatibleProvider {
         public Qwen3VlPlusOpenAI() {
             super("qwen3-vl-plus", false);
@@ -116,6 +141,15 @@ public class DashScopeCompatibleProvider implements ModelProvider {
         }
     }
 
+    /** Qwen3-VL-Plus with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Qwen3VlPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public Qwen3VlPlusMultiAgentOpenAI() {
             super("qwen3-vl-plus", true);
@@ -123,10 +157,16 @@ public class DashScopeCompatibleProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "OpenAI to DashScope";
+            return "OpenAI to DashScope (Multi-Agent)";
         }
     }
 
+    /** Qwen-Plus - Standard text model via OpenAI compatible API. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class QwenPlusOpenAI extends DashScopeCompatibleProvider {
         public QwenPlusOpenAI() {
             super("qwen-plus", false);
@@ -138,6 +178,13 @@ public class DashScopeCompatibleProvider implements ModelProvider {
         }
     }
 
+    /** Qwen-Plus with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class QwenPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public QwenPlusMultiAgentOpenAI() {
             super("qwen-plus", true);
@@ -145,29 +192,7 @@ public class DashScopeCompatibleProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "OpenAI to DashScope";
-        }
-    }
-
-    public static class QwenOmniTurboOpenAI extends DashScopeCompatibleProvider {
-        public QwenOmniTurboOpenAI() {
-            super("qwen-omni-turbo", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI to DashScope";
-        }
-    }
-
-    public static class QwenOmniTurboMultiAgentOpenAI extends DashScopeCompatibleProvider {
-        public QwenOmniTurboMultiAgentOpenAI() {
-            super("qwen-omni-turbo", true);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI to DashScope";
+            return "OpenAI to DashScope (Multi-Agent)";
         }
     }
 }

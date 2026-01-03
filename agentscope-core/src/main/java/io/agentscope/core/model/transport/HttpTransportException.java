@@ -138,4 +138,50 @@ public class HttpTransportException extends RuntimeException {
         // Server errors and rate limiting are retryable
         return isServerError() || statusCode == 429;
     }
+
+    /**
+     * Get the detailed error message including response body for better debugging.
+     *
+     * <p>If a response body is available, it will be appended to the message
+     * for easier troubleshooting.
+     *
+     * @return the full error message with response body details
+     */
+    @Override
+    public String getMessage() {
+        String baseMessage = super.getMessage();
+        if (responseBody != null && !responseBody.isEmpty()) {
+            // Truncate very long response bodies (max 1000 chars) to avoid log overflow
+            String truncatedBody =
+                    responseBody.length() > 1000
+                            ? responseBody.substring(0, 1000) + "...(truncated)"
+                            : responseBody;
+            return baseMessage + " | Response body: " + truncatedBody;
+        }
+        return baseMessage;
+    }
+
+    /**
+     * Get the formatted error message with all available details.
+     *
+     * @return formatted error string including status code and response body
+     */
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getClass().getName()).append(": ");
+        if (statusCode != null) {
+            sb.append("[HTTP ").append(statusCode).append("] ");
+        }
+        sb.append(super.getMessage());
+        if (responseBody != null && !responseBody.isEmpty()) {
+            // Truncate very long response bodies
+            String truncatedBody =
+                    responseBody.length() > 500
+                            ? responseBody.substring(0, 500) + "...(truncated)"
+                            : responseBody;
+            sb.append("\nResponse body: ").append(truncatedBody);
+        }
+        return sb.toString();
+    }
 }

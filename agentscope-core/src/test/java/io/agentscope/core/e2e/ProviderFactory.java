@@ -21,9 +21,12 @@ import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.DeepSeekProvider;
 import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
+import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,13 +34,30 @@ import java.util.stream.Stream;
  * Factory for creating ModelProvider instances based on available API keys.
  *
  * <p>Dynamically provides enabled providers based on environment variables:
- * - OPENAI_API_KEY: Enables OpenAI Native providers
- * - DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
- * - DEEPSEEK_API_KEY: Enables DeepSeek Native providers
- * - GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
- * - GOOGLE_API_KEY: Enables Google Gemini Native providers
- * - ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
- * - OPENROUTER_API_KEY: Enables OpenRouter providers (access to various models)
+ *
+ * <ul>
+ *   <li>OPENAI_API_KEY: Enables OpenAI Native providers
+ *   <li>DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
+ *   <li>DEEPSEEK_API_KEY: Enables DeepSeek Native providers
+ *   <li>GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
+ *   <li>GOOGLE_API_KEY: Enables Google Gemini Native providers
+ *   <li>ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
+ *   <li>OPENROUTER_API_KEY: Enables OpenRouter providers (access to various models)
+ * </ul>
+ *
+ * <p>Usage:
+ *
+ * <pre>{@code
+ * // Get all basic providers
+ * Stream<ModelProvider> basics = ProviderFactory.getBasicProviders();
+ *
+ * // Get providers with specific capabilities
+ * Stream<ModelProvider> imageProviders = ProviderFactory.getProviders(
+ *     ModelCapability.BASIC, ModelCapability.IMAGE);
+ *
+ * // Check provider status
+ * String status = ProviderFactory.getApiKeyStatus();
+ * }</pre>
  */
 public class ProviderFactory {
 
@@ -58,6 +78,77 @@ public class ProviderFactory {
                     GOOGLE_API_KEY,
                     ANTHROPIC_API_KEY,
                     OPENROUTER_API_KEY);
+
+    /**
+     * Gets all registered providers (including disabled ones).
+     *
+     * @return List of all provider instances
+     */
+    private static List<ModelProvider> getAllProviders() {
+        List<ModelProvider> providers = new ArrayList<>();
+
+        // DashScope Compatible providers
+        providers.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
+        providers.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
+
+        // DashScope Native providers
+        providers.add(new DashScopeProvider.QwenPlusDashScope());
+        providers.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
+        providers.add(new DashScopeProvider.QwenPlusThinkingDashScope());
+        providers.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope());
+        providers.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+        providers.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+
+        // Gemini providers
+        providers.add(new GeminiProvider.Gemini25FlashGemini());
+        providers.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+
+        // Anthropic providers
+        providers.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
+        providers.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
+
+        // DeepSeek providers
+        providers.add(new DeepSeekProvider.DeepSeekChat());
+        providers.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
+        providers.add(new DeepSeekProvider.DeepSeekR1());
+        providers.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
+
+        // GLM providers
+        providers.add(new GLMProvider.GLM4Plus());
+        providers.add(new GLMProvider.GLM4PlusMultiAgent());
+        providers.add(new GLMProvider.GLM4VPlus());
+        providers.add(new GLMProvider.GLM4VPlusMultiAgent());
+        providers.add(new GLMProvider.GLMZ1Air());
+        providers.add(new GLMProvider.GLM45());
+
+        // OpenRouter providers
+        providers.add(new OpenRouterProvider.GPT4oMini());
+        providers.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+        providers.add(new OpenRouterProvider.Claude35Sonnet());
+        providers.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
+        providers.add(new OpenRouterProvider.QwenVL72B());
+        providers.add(new OpenRouterProvider.QwenVL72BMultiAgent());
+        providers.add(new OpenRouterProvider.Gemini3FlashPreview());
+        providers.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+        providers.add(new OpenRouterProvider.Gemini3ProPreview());
+        providers.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+        providers.add(new OpenRouterProvider.DeepSeekChat());
+        providers.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
+        providers.add(new OpenRouterProvider.DeepSeekR1());
+        providers.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+        providers.add(new OpenRouterProvider.GLM46());
+        providers.add(new OpenRouterProvider.GLM46MultiAgent());
+
+        return providers;
+    }
+
+    // ==========================================================================
+    // API Key Helpers
+    // ==========================================================================
 
     protected static boolean hasApiKey(String keyName) {
         String key = System.getenv(keyName);
@@ -95,63 +186,34 @@ public class ProviderFactory {
         return hasApiKey(OPENROUTER_API_KEY);
     }
 
+    // ==========================================================================
+    // Capability-based Provider Selection
+    // ==========================================================================
+
+    /**
+     * Gets providers with all specified capabilities.
+     *
+     * @param required The required capabilities
+     * @return Stream of enabled providers with all required capabilities
+     */
+    public static Stream<ModelProvider> getProviders(ModelCapability... required) {
+        Set<ModelCapability> requiredSet = Set.of(required);
+        return getAllProviders().stream()
+                .filter(ModelProvider::isEnabled)
+                .filter(p -> p.getCapabilities().containsAll(requiredSet));
+    }
+
+    // ==========================================================================
+    // Convenience Methods (renamed from getEnabledXxxProviders to getXxxProviders)
+    // ==========================================================================
+
     /**
      * Gets all enabled basic providers for core functionality testing.
      *
-     * @return Stream of enabled providers
+     * @return Stream of enabled providers with basic capability
      */
-    public static Stream<ModelProvider> getEnabledBasicProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.QwenPlusDashScope());
-            builders.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasAnthropicKey()) {
-            builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
-            builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
-        }
-
-        if (hasDeepSeekKey()) {
-            builders.add(new DeepSeekProvider.DeepSeekChat());
-            builders.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
-            builders.add(new DeepSeekProvider.DeepSeekR1());
-            builders.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4Plus());
-            builders.add(new GLMProvider.GLM4PlusMultiAgent());
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.GPT4oMini());
-            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
-            builders.add(new OpenRouterProvider.Claude35Sonnet());
-            builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekChat());
-            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekR1());
-            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getBasicProviders() {
+        return getProviders(ModelCapability.BASIC);
     }
 
     /**
@@ -159,55 +221,8 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support tools
      */
-    public static Stream<ModelProvider> getEnabledToolProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.QwenPlusDashScope());
-            builders.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasAnthropicKey()) {
-            builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
-            builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
-        }
-
-        if (hasDeepSeekKey()) {
-            builders.add(new DeepSeekProvider.DeepSeekChat());
-            builders.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
-            // R1 does not support tools yet
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4Plus());
-            builders.add(new GLMProvider.GLM4PlusMultiAgent());
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.GPT4oMini());
-            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
-            builders.add(new OpenRouterProvider.Claude35Sonnet());
-            builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekChat());
-            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getToolProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.TOOL_CALLING);
     }
 
     /**
@@ -215,43 +230,8 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support images
      */
-    public static Stream<ModelProvider> getEnabledImageProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            //            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
-            //            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
-            //            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasAnthropicKey()) {
-            builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
-            builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.GPT4oMini());
-            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getImageProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.IMAGE);
     }
 
     /**
@@ -259,34 +239,8 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support audio
      */
-    public static Stream<ModelProvider> getEnabledAudioProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
-            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getAudioProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.AUDIO);
     }
 
     /**
@@ -294,42 +248,8 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support multiple modalities
      */
-    public static Stream<ModelProvider> getEnabledMultimodalProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
-            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.GPT4oMini());
-            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
-            builders.add(new OpenRouterProvider.QwenVL72B());
-            builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getMultimodalProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.IMAGE, ModelCapability.AUDIO);
     }
 
     /**
@@ -337,49 +257,16 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support thinking
      */
-    public static Stream<ModelProvider> getEnabledThinkingProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeProvider.QwenPlusThinkingDashScope());
-            builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasAnthropicKey()) {
-            builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
-            builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
-        }
-
-        if (hasDeepSeekKey()) {
-            builders.add(new DeepSeekProvider.DeepSeekR1());
-            builders.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLMZ1Air());
-            builders.add(new GLMProvider.GLM45());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekChat());
-            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekR1());
-            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getThinkingProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.THINKING);
     }
 
-    public static Stream<ModelProvider> getSmallThinkingBudgetProviders() {
+    /**
+     * Gets all enabled providers for thinking with budget control.
+     *
+     * @return Stream of enabled providers that support thinking budget
+     */
+    public static Stream<ModelProvider> getThinkingBudgetProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasDashScopeKey()) {
@@ -388,17 +275,13 @@ public class ProviderFactory {
         }
 
         if (hasGLMKey()) {
-            // GLM-Z1-Air and GLM-4.5 have built-in thinking management
             builders.add(new GLMProvider.GLMZ1Air());
             builders.add(new GLMProvider.GLM45());
         }
 
         if (hasOpenRouterKey()) {
-            // DeepSeek R1 is a thinking model (budget is internal/managed by model)
             builders.add(new OpenRouterProvider.DeepSeekR1());
             builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-
-            // Claude 3.5 Sonnet with explicit thinking budget
             builders.add(new OpenRouterProvider.Claude35SonnetThinking(1024));
         }
 
@@ -410,34 +293,8 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support video
      */
-    public static Stream<ModelProvider> getEnabledVideoProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getVideoProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.VIDEO);
     }
 
     /**
@@ -445,39 +302,35 @@ public class ProviderFactory {
      *
      * @return Stream of enabled providers that support multimodal tools
      */
-    public static Stream<ModelProvider> getEnabledMultimodalToolProviders() {
-        Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
-            builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
-            // Dash Scope do not support Image well
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
-        }
-
-        if (hasGoogleKey()) {
-            builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
-        }
-
-        if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLM4VPlus());
-            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
-        }
-
-        if (hasOpenRouterKey()) {
-            builders.add(new OpenRouterProvider.QwenVL72B());
-            builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
-            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            // Gemini 3 Pro Preview fails with 400 Bad Request for tool calls via OpenRouter
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
-        }
-
-        return builders.build();
+    public static Stream<ModelProvider> getMultimodalToolProviders() {
+        return getProviders(
+                ModelCapability.BASIC, ModelCapability.IMAGE, ModelCapability.TOOL_CALLING);
     }
+
+    /**
+     * Gets all enabled providers that support multi-agent formatter for MsgHub testing.
+     *
+     * @return Stream of enabled providers with multi-agent formatter capability
+     */
+    public static Stream<ModelProvider> getMultiAgentProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.MULTI_AGENT_FORMATTER);
+    }
+
+    /**
+     * Gets all enabled providers that support structured output via tool_choice=required.
+     *
+     * <p>Note: Providers with THINKING capability are excluded since DashScope's thinking mode
+     * does not support tool_choice=required which is needed for structured output.
+     *
+     * @return Stream of enabled providers with structured output capability
+     */
+    public static Stream<ModelProvider> getStructuredOutputProviders() {
+        return getProviders(ModelCapability.BASIC, ModelCapability.STRUCTURED_OUTPUT);
+    }
+
+    // ==========================================================================
+    // Utility Methods
+    // ==========================================================================
 
     /**
      * Checks if any E2E tests can be run (has at least one API key).

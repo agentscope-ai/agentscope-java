@@ -18,7 +18,6 @@ package io.agentscope.core.e2e;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
@@ -32,7 +31,7 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,7 +57,7 @@ import org.slf4j.LoggerFactory;
  */
 @Tag("e2e")
 @Tag("structured-output")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Structured Output E2E Tests")
 class StructuredOutputE2ETest {
@@ -176,12 +175,9 @@ class StructuredOutputE2ETest {
     // ==================== Test Methods ====================
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should return basic structured output in single round")
     void testBasicStructuredOutput(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         System.out.println(
                 "\n=== Test: Basic Structured Output with " + provider.getProviderName() + " ===");
@@ -218,12 +214,9 @@ class StructuredOutputE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should combine tool calling with structured output")
     void testStructuredOutputWithToolCalling(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         System.out.println(
                 "\n=== Test: Structured Output with Tool Calling - "
@@ -277,12 +270,9 @@ class StructuredOutputE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should generate structured output after multi-round conversation")
     void testStructuredOutputAfterMultiRound(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         System.out.println(
                 "\n=== Test: Structured Output After Multi-Round - "
@@ -356,12 +346,9 @@ class StructuredOutputE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle complex nested data structures")
     void testComplexNestedStructure(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         if (provider.getModelName().startsWith("gemini")) {
             // Gemini cannot handle this case well
@@ -379,7 +366,8 @@ class StructuredOutputE2ETest {
                         "User",
                         "Analyze the iPhone 16 Pro. Provide: product name, a list of key features,"
                                 + " pricing information (amount and currency), and ratings from"
-                                + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88).");
+                                + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88). " +
+                                "This is the simulation of a real user conversation, so you can simply reply some random information about the product.");
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         // Request structured output with complex nested structure
@@ -421,12 +409,9 @@ class StructuredOutputE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should generate structured output from existing memory without new input")
     void testStructuredOutputWithoutNewInput(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         System.out.println(
                 "\n=== Test: Structured Output Without New Input - "
@@ -467,12 +452,9 @@ class StructuredOutputE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should properly cleanup memory after structured output generation")
     void testStructuredOutputMemoryCleanup(ModelProvider provider) {
-        assumeTrue(
-                provider.supportsToolCalling(),
-                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
 
         System.out.println(
                 "\n=== Test: Memory Cleanup After Structured Output - "
@@ -523,20 +505,20 @@ class StructuredOutputE2ETest {
     }
 
     @Test
-    @DisplayName("Should verify tool provider availability for structured output tests")
-    void testToolProviderAvailability() {
-        System.out.println("\n=== Test: Tool Provider Availability ===");
+    @DisplayName("Should verify structured output provider availability")
+    void testStructuredOutputProviderAvailability() {
+        System.out.println("\n=== Test: Structured Output Provider Availability ===");
 
-        long enabledToolProviders = ProviderFactory.getEnabledToolProviders().count();
+        long enabledProviders = ProviderFactory.getStructuredOutputProviders().count();
 
-        System.out.println("Enabled tool providers: " + enabledToolProviders);
+        System.out.println("Enabled structured output providers: " + enabledProviders);
 
-        // At least one tool provider should be available if API keys are set
+        // At least one structured output provider should be available if API keys are set
         assertTrue(
-                enabledToolProviders > 0,
-                "At least one tool provider should be enabled (check OPENAI_API_KEY or"
-                        + " DASHSCOPE_API_KEY)");
+                enabledProviders > 0,
+                "At least one structured output provider should be enabled (check OPENAI_API_KEY or"
+                        + " DASHSCOPE_API_KEY). Note: Thinking mode providers are excluded.");
 
-        System.out.println("✓ Tool provider availability verified");
+        System.out.println("✓ Structured output provider availability verified");
     }
 }

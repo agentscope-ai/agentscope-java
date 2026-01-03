@@ -17,12 +17,13 @@ package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
+import java.util.Set;
 
 /**
  * Provider interface for creating ReActAgent instances with different model configurations.
  *
- * <p>Implementations provide agents for different APIs (OpenAI Native, DashScope Native,
- * DashScope Compatible, Bailian) with proper model configurations.
+ * <p>Implementations provide agents for different APIs (OpenAI Native, DashScope Native, DashScope
+ * Compatible, Bailian) with proper model configurations.
  */
 public interface ModelProvider {
 
@@ -34,6 +35,16 @@ public interface ModelProvider {
      * @return Configured ReActAgent
      */
     ReActAgent createAgent(String name, Toolkit toolkit);
+
+    /**
+     * Creates a ReActAgent.Builder with the specified configuration. Use this when you need to
+     * customize the agent further (e.g., adding hooks, memory).
+     *
+     * @param name The name of the agent
+     * @param toolkit The toolkit to use
+     * @return ReActAgent.Builder ready for further configuration
+     */
+    ReActAgent.Builder createAgentBuilder(String name, Toolkit toolkit);
 
     /**
      * Gets the display name of this provider.
@@ -71,6 +82,47 @@ public interface ModelProvider {
      * @return true if tool calling is supported
      */
     default boolean supportsToolCalling() {
+        return true;
+    }
+
+    /**
+     * Gets the set of capabilities supported by this provider.
+     *
+     * <p>Default implementation returns capabilities based on {@link ModelCapabilities} annotation
+     * if present, otherwise returns a basic set of capabilities.
+     *
+     * @return Set of supported capabilities
+     */
+    default Set<ModelCapability> getCapabilities() {
+        ModelCapabilities annotation = this.getClass().getAnnotation(ModelCapabilities.class);
+        if (annotation != null) {
+            return Set.of(annotation.value());
+        }
+        // Fallback: derive capabilities from existing methods
+        Set<ModelCapability> capabilities = new java.util.HashSet<>();
+        capabilities.add(ModelCapability.BASIC);
+        if (supportsToolCalling()) {
+            capabilities.add(ModelCapability.TOOL_CALLING);
+        }
+        if (supportsThinking()) {
+            capabilities.add(ModelCapability.THINKING);
+        }
+        return capabilities;
+    }
+
+    /**
+     * Checks if this provider has all the specified capabilities.
+     *
+     * @param required The required capabilities
+     * @return true if all required capabilities are supported
+     */
+    default boolean hasCapabilities(ModelCapability... required) {
+        Set<ModelCapability> capabilities = getCapabilities();
+        for (ModelCapability cap : required) {
+            if (!capabilities.contains(cap)) {
+                return false;
+            }
+        }
         return true;
     }
 }

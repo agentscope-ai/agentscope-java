@@ -22,18 +22,27 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Provider for OpenRouter API - 100% compatible with OpenAI API format.
  *
- * <p>OpenRouter provides access to various LLMs through an OpenAI-compatible interface,
- * allowing our OpenAI HTTP implementation to work seamlessly with multiple model providers.
+ * <p>OpenRouter provides access to various LLMs through an OpenAI-compatible interface, allowing
+ * our OpenAI HTTP implementation to work seamlessly with multiple model providers.
  */
-public class OpenRouterProvider implements ModelProvider {
+@ModelCapabilities({
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.STRUCTURED_OUTPUT
+})
+public class OpenRouterProvider extends BaseModelProvider {
 
+    private static final String API_KEY_ENV = "OPENROUTER_API_KEY";
+    private static final String BASE_URL_ENV = "OPENROUTER_BASE_URL";
     private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
-    private final String modelName;
-    private final boolean multiAgentFormatter;
+
     private final GenerateOptions defaultOptions;
 
     public OpenRouterProvider(String modelName, boolean multiAgentFormatter) {
@@ -42,25 +51,15 @@ public class OpenRouterProvider implements ModelProvider {
 
     public OpenRouterProvider(
             String modelName, boolean multiAgentFormatter, GenerateOptions defaultOptions) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
         this.defaultOptions = defaultOptions;
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("OPENROUTER_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getProperty("OPENROUTER_API_KEY");
-        }
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("OPENROUTER_API_KEY environment variable is required");
-        }
-
-        // Get base URL from environment variable, fallback to default
-        String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
+        String baseUrl = System.getenv(BASE_URL_ENV);
         if (baseUrl == null || baseUrl.isEmpty()) {
-            baseUrl = System.getProperty("OPENROUTER_BASE_URL");
+            baseUrl = System.getProperty(BASE_URL_ENV);
         }
         if (baseUrl == null || baseUrl.isEmpty()) {
             baseUrl = DEFAULT_OPENROUTER_BASE_URL;
@@ -68,7 +67,7 @@ public class OpenRouterProvider implements ModelProvider {
 
         // Check if model needs specific configuration
         GenerateOptions options = this.defaultOptions;
-        if (options == null && modelName.contains("gemini")) {
+        if (options == null && getModelName().contains("gemini")) {
             // Gemini models on OpenRouter need include_reasoning=true for tools to work
             options =
                     GenerateOptions.builder()
@@ -80,11 +79,11 @@ public class OpenRouterProvider implements ModelProvider {
                 OpenAIChatModel.builder()
                         .baseUrl(baseUrl)
                         .apiKey(apiKey)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .stream(false)
-                        .defaultOptions(options)
+                        .generateOptions(options)
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
                         .build();
@@ -93,8 +92,7 @@ public class OpenRouterProvider implements ModelProvider {
                 .name(name)
                 .model(model)
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -103,25 +101,25 @@ public class OpenRouterProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        // OpenRouter supports various models, some with thinking
-        return false; // Can be overridden in subclasses
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
+        }
+        return caps;
     }
 
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("OPENROUTER_API_KEY");
-        return apiKey != null && !apiKey.isEmpty();
-    }
+    // ==========================================================================
+    // GPT Models
+    // ==========================================================================
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
-    /**
-     * GPT-4o mini - OpenAI's fast, cost-effective model for various tasks.
-     */
+    /** GPT-4o mini - OpenAI's fast, cost-effective model for various tasks. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GPT4oMini extends OpenRouterProvider {
         public GPT4oMini() {
             super("openai/gpt-4o-mini", false);
@@ -133,9 +131,14 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * GPT-4o mini with Multi-Agent Formatter.
-     */
+    /** GPT-4o mini with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GPT4oMiniMultiAgent extends OpenRouterProvider {
         public GPT4oMiniMultiAgent() {
             super("openai/gpt-4o-mini", true);
@@ -147,14 +150,19 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Claude 3.5 Sonnet - Anthropic's powerful model for complex reasoning.
-     */
+    // ==========================================================================
+    // Claude Models
+    // ==========================================================================
+
+    /** Claude 3.5 Sonnet - Anthropic's powerful model for complex reasoning. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Claude35Sonnet extends OpenRouterProvider {
         public Claude35Sonnet() {
-            // Use multi-agent formatter to ensure compatibility with Anthropic's strict message
-            // ordering
-            // (e.g., preventing consecutive Assistant messages in multi-agent history)
             super("anthropic/claude-3.5-sonnet", true);
         }
 
@@ -164,9 +172,14 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Claude 3.5 Sonnet with Multi-Agent Formatter.
-     */
+    /** Claude 3.5 Sonnet with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class Claude35SonnetMultiAgent extends OpenRouterProvider {
         public Claude35SonnetMultiAgent() {
             super("anthropic/claude-3.5-sonnet", true);
@@ -178,9 +191,44 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Qwen VL Plus - Alibaba's vision model for multimodal tasks.
-     */
+    /** Claude 3.5 Sonnet with Thinking Mode enabled. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.THINKING,
+        ModelCapability.THINKING_BUDGET
+    })
+    public static class Claude35SonnetThinking extends OpenRouterProvider {
+        public Claude35SonnetThinking(int budget) {
+            super(
+                    "anthropic/claude-3.5-sonnet",
+                    false,
+                    GenerateOptions.builder()
+                            .additionalBodyParam(
+                                    "thinking", Map.of("type", "enabled", "budget_tokens", budget))
+                            .maxTokens(Math.max(budget + 2000, 4000))
+                            .build());
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
+        }
+    }
+
+    // ==========================================================================
+    // Qwen Models
+    // ==========================================================================
+
+    /** Qwen3 VL 235B - Alibaba's vision model for multimodal tasks. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class QwenVL72B extends OpenRouterProvider {
         public QwenVL72B() {
             super("qwen/qwen3-vl-235b-a22b-instruct", false);
@@ -192,9 +240,15 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Qwen2 VL 72B with Multi-Agent Formatter.
-     */
+    /** Qwen3 VL 235B with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class QwenVL72BMultiAgent extends OpenRouterProvider {
         public QwenVL72BMultiAgent() {
             super("qwen/qwen3-vl-235b-a22b-instruct", true);
@@ -206,9 +260,19 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Gemini 3 Flash Preview - Google's latest fast model via OpenRouter.
-     */
+    // ==========================================================================
+    // Gemini Models
+    // ==========================================================================
+
+    /** Gemini 3 Flash Preview - Google's latest fast model via OpenRouter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING
+    })
     public static class Gemini3FlashPreview extends OpenRouterProvider {
         public Gemini3FlashPreview() {
             super("google/gemini-3-flash-preview", false);
@@ -220,9 +284,16 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Gemini 3 Flash Preview with Multi-Agent Formatter.
-     */
+    /** Gemini 3 Flash Preview with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class Gemini3FlashPreviewMultiAgent extends OpenRouterProvider {
         public Gemini3FlashPreviewMultiAgent() {
             super("google/gemini-3-flash-preview", true);
@@ -234,9 +305,15 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Gemini 3 Pro Preview - Google's latest powerful model via OpenRouter.
-     */
+    /** Gemini 3 Pro Preview - Google's latest powerful model via OpenRouter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING
+    })
     public static class Gemini3ProPreview extends OpenRouterProvider {
         public Gemini3ProPreview() {
             super("google/gemini-3-pro-preview", false);
@@ -248,9 +325,16 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Gemini 3 Pro Preview with Multi-Agent Formatter.
-     */
+    /** Gemini 3 Pro Preview with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class Gemini3ProPreviewMultiAgent extends OpenRouterProvider {
         public Gemini3ProPreviewMultiAgent() {
             super("google/gemini-3-pro-preview", true);
@@ -262,40 +346,18 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * Claude 3.5 Sonnet with Thinking Mode enabled.
-     */
-    public static class Claude35SonnetThinking extends OpenRouterProvider {
-        public Claude35SonnetThinking(int budget) {
-            super(
-                    "anthropic/claude-3.5-sonnet",
-                    false,
-                    GenerateOptions.builder()
-                            .additionalBodyParam(
-                                    "thinking",
-                                    java.util.Map.of("type", "enabled", "budget_tokens", budget))
-                            .maxTokens(Math.max(budget + 2000, 4000))
-                            .build());
-        }
+    // ==========================================================================
+    // DeepSeek Models
+    // ==========================================================================
 
-        @Override
-        public String getProviderName() {
-            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
-        }
-    }
-
-    /**
-     * DeepSeek Chat - DeepSeek's fast and efficient model via OpenRouter.
-     */
+    /** DeepSeek Chat - DeepSeek's fast and efficient model via OpenRouter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class DeepSeekChat extends OpenRouterProvider {
         public DeepSeekChat() {
-            // Use multi-agent formatter to ensure compatibility and robustness in multi-agent
-            // scenarios
             super("deepseek/deepseek-chat", true);
         }
 
@@ -305,9 +367,13 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * DeepSeek Chat with Multi-Agent Formatter.
-     */
+    /** DeepSeek Chat with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class DeepSeekChatMultiAgent extends OpenRouterProvider {
         public DeepSeekChatMultiAgent() {
             super("deepseek/deepseek-chat", true);
@@ -319,9 +385,8 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * DeepSeek R1 - DeepSeek's reasoning model via OpenRouter.
-     */
+    /** DeepSeek R1 - DeepSeek's reasoning model via OpenRouter. */
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.THINKING})
     public static class DeepSeekR1 extends OpenRouterProvider {
         public DeepSeekR1() {
             super("deepseek/deepseek-r1", false);
@@ -333,14 +398,17 @@ public class OpenRouterProvider implements ModelProvider {
         }
 
         @Override
-        public boolean supportsThinking() {
-            return true;
+        public boolean supportsToolCalling() {
+            return false;
         }
     }
 
-    /**
-     * DeepSeek R1 with Multi-Agent Formatter.
-     */
+    /** DeepSeek R1 with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class DeepSeekR1MultiAgent extends OpenRouterProvider {
         public DeepSeekR1MultiAgent() {
             super("deepseek/deepseek-r1", true);
@@ -352,17 +420,24 @@ public class OpenRouterProvider implements ModelProvider {
         }
 
         @Override
-        public boolean supportsThinking() {
-            return true;
+        public boolean supportsToolCalling() {
+            return false;
         }
     }
 
-    /**
-     * GLM 4 - Zhipu AI's latest GLM model via OpenRouter.
-     */
+    // ==========================================================================
+    // GLM Models
+    // ==========================================================================
+
+    /** GLM 4.6V - Zhipu AI's latest GLM model via OpenRouter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GLM46 extends OpenRouterProvider {
         public GLM46() {
-            // Use multi-agent formatter to ensure compatibility with strict role alternation
             super("z-ai/glm-4.6v", true);
         }
 
@@ -372,9 +447,14 @@ public class OpenRouterProvider implements ModelProvider {
         }
     }
 
-    /**
-     * GLM 4 with Multi-Agent Formatter.
-     */
+    /** GLM 4.6V with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
+    })
     public static class GLM46MultiAgent extends OpenRouterProvider {
         public GLM46MultiAgent() {
             super("z-ai/glm-4.6v", true);
