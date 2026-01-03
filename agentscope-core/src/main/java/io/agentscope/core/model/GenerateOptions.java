@@ -27,10 +27,6 @@ import java.util.Map;
  *
  * <p>This class holds both per-request generation parameters (temperature, maxTokens, etc.)
  * and connection-level configuration (apiKey, baseUrl, modelName, stream).
- *
- * <p>For connection-level configuration that will be reused across multiple requests,
- * consider using {@link OpenAIConfig} to create a configuration context and then use
- * {@link OpenAIConfig#toOptions()} to create GenerateOptions instances.
  */
 public class GenerateOptions {
     // Connection-level configuration
