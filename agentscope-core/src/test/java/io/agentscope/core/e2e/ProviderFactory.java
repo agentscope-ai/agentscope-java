@@ -19,6 +19,7 @@ import io.agentscope.core.e2e.providers.AnthropicProvider;
 import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
 import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.DeepSeekProvider;
+import io.agentscope.core.e2e.providers.DeepSeekReasonerProvider;
 import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelCapability;
@@ -114,8 +115,8 @@ public class ProviderFactory {
         // DeepSeek providers
         providers.add(new DeepSeekProvider.DeepSeekChat());
         providers.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
-        providers.add(new DeepSeekProvider.DeepSeekR1());
-        providers.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
+        providers.add(new DeepSeekReasonerProvider.DeepSeekR1());
+        providers.add(new DeepSeekReasonerProvider.DeepSeekR1MultiAgent());
 
         // GLM providers
         providers.add(new GLMProvider.GLM4Plus());

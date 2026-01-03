@@ -18,6 +18,8 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.OpenRouterFormatter;
+import io.agentscope.core.formatter.openai.OpenRouterMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
@@ -84,8 +86,8 @@ public class OpenRouterProvider extends BaseModelProvider {
                         .generateOptions(options)
                         .formatter(
                                 isMultiAgentFormatter()
-                                        ? new OpenAIMultiAgentFormatter()
-                                        : new OpenAIChatFormatter())
+                                        ? new OpenRouterMultiAgentFormatter()
+                                        : new OpenRouterFormatter())
                         .build();
 
         return ReActAgent.builder()
