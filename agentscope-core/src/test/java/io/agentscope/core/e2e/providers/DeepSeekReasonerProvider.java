@@ -16,14 +16,11 @@
 package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.openai.DeepSeekFormatter;
-import io.agentscope.core.formatter.openai.DeepSeekMultiAgentFormatter;
 import io.agentscope.core.formatter.openai.DeepSeekReasonerFormatter;
 import io.agentscope.core.formatter.openai.DeepSeekReasonerMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
-
 import java.util.HashSet;
 import java.util.Set;
 

@@ -122,7 +122,8 @@ public final class ModelUtils {
                                                                 + " to: {}",
                                                         signal.totalRetriesInARow() + 1,
                                                         maxAttempts - 1,
-                                                        signal.failure().getMessage(), signal.failure()));
+                                                        signal.failure().getMessage(),
+                                                        signal.failure()));
 
                 responseFlux = responseFlux.retryWhen(retrySpec);
                 LOG.debug(

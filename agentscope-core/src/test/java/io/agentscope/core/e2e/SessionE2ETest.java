@@ -166,8 +166,7 @@ class SessionE2ETest {
         ReActAgent agent2 = provider.createAgent("ContextAgent", toolkit);
         agent2.loadFrom(session, SimpleSessionKey.of(sessionId));
 
-        Msg followUpMsg =
-                TestUtils.createUserMessage("User", "What is my name I told you?");
+        Msg followUpMsg = TestUtils.createUserMessage("User", "What is my name I told you?");
         Msg response2 = agent2.call(followUpMsg).block(TEST_TIMEOUT);
         assertNotNull(response2, "Should receive response");
 

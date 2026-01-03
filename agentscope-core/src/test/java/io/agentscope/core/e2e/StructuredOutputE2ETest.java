@@ -365,9 +365,10 @@ class StructuredOutputE2ETest {
                 TestUtils.createUserMessage(
                         "User",
                         "Analyze the iPhone 16 Pro. Provide: product name, a list of key features,"
-                                + " pricing information (amount and currency), and ratings from"
-                                + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88). " +
-                                "This is the simulation of a real user conversation, so you can simply reply some random information about the product.");
+                            + " pricing information (amount and currency), and ratings from"
+                            + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88). This"
+                            + " is the simulation of a real user conversation, so you can simply"
+                            + " reply some random information about the product.");
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         // Request structured output with complex nested structure

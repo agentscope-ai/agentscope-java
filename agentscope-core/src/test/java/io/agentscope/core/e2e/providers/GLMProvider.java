@@ -18,8 +18,6 @@ package io.agentscope.core.e2e.providers;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.GLMFormatter;
 import io.agentscope.core.formatter.openai.GLMMultiAgentFormatter;
-import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
-import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;

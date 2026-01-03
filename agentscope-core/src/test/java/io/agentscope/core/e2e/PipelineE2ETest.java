@@ -65,17 +65,21 @@ class PipelineE2ETest {
         Toolkit toolkit = new Toolkit();
 
         // Create two agents: analyzer and summarizer
-        ReActAgent analyzer =
-                provider.createAgentBuilder("Analyzer", toolkit)
-                        .build();
-        analyzer.observe(Msg.builder().textContent("You are an analyzer. Analyze the input and provide key points. "
-                + "Keep your response concise.").build());
+        ReActAgent analyzer = provider.createAgentBuilder("Analyzer", toolkit).build();
+        analyzer.observe(
+                Msg.builder()
+                        .textContent(
+                                "You are an analyzer. Analyze the input and provide key points. "
+                                        + "Keep your response concise.")
+                        .build());
 
-        ReActAgent summarizer =
-                provider.createAgentBuilder("Summarizer", toolkit)
-                        .build();
-        summarizer.observe(Msg.builder().textContent("You are a summarizer. Take the analysis and create a brief "
-                + "one-sentence summary.").build());
+        ReActAgent summarizer = provider.createAgentBuilder("Summarizer", toolkit).build();
+        summarizer.observe(
+                Msg.builder()
+                        .textContent(
+                                "You are a summarizer. Take the analysis and create a brief "
+                                        + "one-sentence summary.")
+                        .build());
 
         // Create sequential pipeline
         SequentialPipeline pipeline = new SequentialPipeline(List.of(analyzer, summarizer));
@@ -107,15 +111,17 @@ class PipelineE2ETest {
 
         Toolkit toolkit = new Toolkit();
 
-        ReActAgent agent1 =
-                provider.createAgentBuilder("Agent1", toolkit)
-                        .build();
-        agent1.observe(Msg.builder().textContent("Reply with 'Step 1 complete' followed by the input.").build());
+        ReActAgent agent1 = provider.createAgentBuilder("Agent1", toolkit).build();
+        agent1.observe(
+                Msg.builder()
+                        .textContent("Reply with 'Step 1 complete' followed by the input.")
+                        .build());
 
-        ReActAgent agent2 =
-                provider.createAgentBuilder("Agent2", toolkit)
-                        .build();
-        agent2.observe(Msg.builder().textContent("Reply with 'Step 2 complete' followed by the input.").build());
+        ReActAgent agent2 = provider.createAgentBuilder("Agent2", toolkit).build();
+        agent2.observe(
+                Msg.builder()
+                        .textContent("Reply with 'Step 2 complete' followed by the input.")
+                        .build());
 
         Msg input = TestUtils.createUserMessage("User", "Start");
 

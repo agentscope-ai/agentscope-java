@@ -15,6 +15,11 @@
  */
 package io.agentscope.core.e2e;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
@@ -26,6 +31,10 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -35,16 +44,6 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Mono;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * E2E tests for Human-in-the-Loop (HITL) functionality.
@@ -165,7 +164,11 @@ class HITLBasicE2ETest {
                 provider.createAgentBuilder("HITLAgent", toolkit).hook(confirmationHook).build();
 
         // Ask to delete a file - should trigger HITL
-        Msg input = TestUtils.createUserMessage("User", "Please delete the file named 'temp.txt'");
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Please delete the file named 'temp.txt' directly using the delete_file"
+                                + " tool.");
         Msg response = agent.call(input).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should receive response");
@@ -259,7 +262,11 @@ class HITLBasicE2ETest {
                         .build();
 
         // Ask to delete a file - may trigger HITL
-        Msg input = TestUtils.createUserMessage("User", "Please delete the file named 'test.txt'");
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Please delete the file named 'test.txt' directly using the delete_file"
+                                + " tool.");
         Msg response = agent.call(input).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should receive first response");

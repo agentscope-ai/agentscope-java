@@ -23,7 +23,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;
-
 import java.util.HashSet;
 import java.util.Set;
 
@@ -33,9 +32,9 @@ import java.util.Set;
  * <p>Supports models: qwen-plus, qwen-vl-max, qwen3-vl-plus with optional thinking mode.
  */
 @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.STRUCTURED_OUTPUT
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.STRUCTURED_OUTPUT
 })
 public class DashScopeProvider extends BaseModelProvider {
 
@@ -77,7 +76,10 @@ public class DashScopeProvider extends BaseModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .structuredOutputReminder(enableThinking ? StructuredOutputReminder.PROMPT : StructuredOutputReminder.PROMPT)
+                .structuredOutputReminder(
+                        enableThinking
+                                ? StructuredOutputReminder.PROMPT
+                                : StructuredOutputReminder.PROMPT)
                 .memory(new InMemoryMemory());
     }
 
@@ -110,11 +112,11 @@ public class DashScopeProvider extends BaseModelProvider {
      * <p>Note: qwen3-vl-plus supports IMAGE and VIDEO but NOT AUDIO.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.IMAGE,
-            ModelCapability.VIDEO,
-            ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.STRUCTURED_OUTPUT
     })
     public static class Qwen3VlPlusDashScope extends DashScopeProvider {
         public Qwen3VlPlusDashScope() {
@@ -133,12 +135,12 @@ public class DashScopeProvider extends BaseModelProvider {
      * <p>Note: qwen3-vl-plus supports IMAGE and VIDEO but NOT AUDIO.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.IMAGE,
-            ModelCapability.VIDEO,
-            ModelCapability.MULTI_AGENT_FORMATTER,
-            ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
     })
     public static class Qwen3VlPlusMultiAgentDashScope extends DashScopeProvider {
         public Qwen3VlPlusMultiAgentDashScope() {
@@ -155,9 +157,9 @@ public class DashScopeProvider extends BaseModelProvider {
      * Qwen-Plus with thinking mode.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.THINKING
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
     })
     public static class QwenPlusThinkingDashScope extends DashScopeProvider {
         public QwenPlusThinkingDashScope() {
@@ -178,10 +180,10 @@ public class DashScopeProvider extends BaseModelProvider {
      * Qwen-Plus with thinking mode and multi-agent formatter.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.THINKING,
-            ModelCapability.MULTI_AGENT_FORMATTER
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class QwenPlusThinkingMultiAgentDashScope extends DashScopeProvider {
         public QwenPlusThinkingMultiAgentDashScope() {
@@ -202,9 +204,9 @@ public class DashScopeProvider extends BaseModelProvider {
      * Qwen-Plus - Standard text model.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.STRUCTURED_OUTPUT
     })
     public static class QwenPlusDashScope extends DashScopeProvider {
         public QwenPlusDashScope() {
@@ -221,10 +223,10 @@ public class DashScopeProvider extends BaseModelProvider {
      * Qwen-Plus with multi-agent formatter.
      */
     @ModelCapabilities({
-            ModelCapability.BASIC,
-            ModelCapability.TOOL_CALLING,
-            ModelCapability.MULTI_AGENT_FORMATTER,
-            ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER,
+        ModelCapability.STRUCTURED_OUTPUT
     })
     public static class QwenPlusMultiAgentDashScope extends DashScopeProvider {
         public QwenPlusMultiAgentDashScope() {
