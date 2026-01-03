@@ -300,7 +300,11 @@ public class OpenAIClient {
             if (!httpResponse.isSuccessful()) {
                 int statusCode = httpResponse.getStatusCode();
                 String responseBody = httpResponse.getBody();
-                String errorMessage = "OpenAI API request failed with status " + statusCode;
+                String errorMessage =
+                        "OpenAI API request failed with status "
+                                + statusCode
+                                + " | "
+                                + responseBody;
                 throw OpenAIException.create(statusCode, errorMessage, null, responseBody);
             }
 

@@ -82,60 +82,59 @@ public class GLMProvider extends BaseModelProvider {
     // Provider Instances
     // ==========================================================================
 
-    /** GLM-4 Plus - Latest generation flagship model. */
+    /** GLM-4.6 */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class GLM4Plus extends GLMProvider {
-        public GLM4Plus() {
-            super("glm-4-plus", false);
+    public static class GLM46 extends GLMProvider {
+        public GLM46() {
+            super("glm-4.6", false);
         }
 
         @Override
         public String getProviderName() {
-            return "GLM-4 Plus";
+            return "GLM-4.6";
         }
     }
 
-    /** GLM-4 Plus with Multi-Agent Formatter. */
+    /** GLM-4.6 with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.MULTI_AGENT_FORMATTER,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class GLM4PlusMultiAgent extends GLMProvider {
-        public GLM4PlusMultiAgent() {
-            super("glm-4-plus", true);
+    public static class GLM46MultiAgent extends GLMProvider {
+        public GLM46MultiAgent() {
+            super("glm-4.6", true);
         }
 
         @Override
         public String getProviderName() {
-            return "GLM-4 Plus (MultiAgent)";
+            return "GLM-4.6 (MultiAgent)";
         }
     }
 
     /**
-     * GLM-4V Plus - Latest generation multimodal model.
-     *
-     * <p>Note: GLM-4V series does NOT support tool calling (function calling).
+     * GLM-4.6V
      */
     @ModelCapabilities({
         ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.AUDIO,
         ModelCapability.VIDEO
     })
-    public static class GLM4VPlus extends GLMProvider {
-        public GLM4VPlus() {
-            super("glm-4v-plus", false);
+    public static class GLM46VPlus extends GLMProvider {
+        public GLM46VPlus() {
+            super("glm-4.6v", false);
         }
 
         @Override
         public String getProviderName() {
-            return "GLM-4V Plus";
+            return "GLM-4.6V";
         }
 
         @Override
@@ -145,25 +144,24 @@ public class GLMProvider extends BaseModelProvider {
     }
 
     /**
-     * GLM-4V Plus with Multi-Agent Formatter.
-     *
-     * <p>Note: GLM-4V series does NOT support tool calling (function calling).
+     * GLM-4.6V with Multi-Agent Formatter.
      */
     @ModelCapabilities({
         ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.AUDIO,
         ModelCapability.VIDEO,
         ModelCapability.MULTI_AGENT_FORMATTER
     })
-    public static class GLM4VPlusMultiAgent extends GLMProvider {
-        public GLM4VPlusMultiAgent() {
-            super("glm-4v-plus", true);
+    public static class GLM46VMultiAgent extends GLMProvider {
+        public GLM46VMultiAgent() {
+            super("glm-4.6v", true);
         }
 
         @Override
         public String getProviderName() {
-            return "GLM-4V Plus (MultiAgent)";
+            return "GLM-4.6V (MultiAgent)";
         }
 
         @Override
@@ -173,30 +171,7 @@ public class GLMProvider extends BaseModelProvider {
     }
 
     /**
-     * GLM-Z1-Air - Reasoning model with thinking mode support.
-     *
-     * <p>Uses reinforcement learning for deep reasoning on complex tasks.
-     */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.THINKING
-    })
-    public static class GLMZ1Air extends GLMProvider {
-        public GLMZ1Air() {
-            super("glm-z1-air", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "GLM-Z1-Air";
-        }
-    }
-
-    /**
-     * GLM-4.5 - Hybrid reasoning model with ARC (Agentic/Reasoning/Coding) capabilities.
-     *
-     * <p>Supports thinking mode toggle for complex reasoning tasks.
+     * GLM-4.5
      */
     @ModelCapabilities({
         ModelCapability.BASIC,
@@ -211,6 +186,25 @@ public class GLMProvider extends BaseModelProvider {
         @Override
         public String getProviderName() {
             return "GLM-4.5";
+        }
+    }
+
+    /**
+     * GLM-4.7
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
+    })
+    public static class GLM47 extends GLMProvider {
+        public GLM47() {
+            super("glm-4.7", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "GLM-4.7";
         }
     }
 }

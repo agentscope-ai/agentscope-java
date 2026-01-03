@@ -119,26 +119,26 @@ public class ProviderFactory {
         providers.add(new DeepSeekReasonerProvider.DeepSeekR1MultiAgent());
 
         // GLM providers
-        providers.add(new GLMProvider.GLM4Plus());
-        providers.add(new GLMProvider.GLM4PlusMultiAgent());
-        providers.add(new GLMProvider.GLM4VPlus());
-        providers.add(new GLMProvider.GLM4VPlusMultiAgent());
-        providers.add(new GLMProvider.GLMZ1Air());
+        providers.add(new GLMProvider.GLM46());
+        providers.add(new GLMProvider.GLM46MultiAgent());
+        providers.add(new GLMProvider.GLM46VPlus());
+        providers.add(new GLMProvider.GLM46VMultiAgent());
         providers.add(new GLMProvider.GLM45());
+        providers.add(new GLMProvider.GLM47());
 
         // OpenRouter providers
-        providers.add(new OpenRouterProvider.GPT4oMini());
-        providers.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
-        providers.add(new OpenRouterProvider.Claude35Sonnet());
-        providers.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
-        providers.add(new OpenRouterProvider.QwenVL72B());
-        providers.add(new OpenRouterProvider.QwenVL72BMultiAgent());
+        providers.add(new OpenRouterProvider.GPT52());
+        providers.add(new OpenRouterProvider.GPT52MultiAgent());
+        providers.add(new OpenRouterProvider.Claude45Haiku());
+        providers.add(new OpenRouterProvider.Claude45HaikuMultiAgent());
+        providers.add(new OpenRouterProvider.Qwen3VL());
+        providers.add(new OpenRouterProvider.Qwen3VLMultiAgent());
         providers.add(new OpenRouterProvider.Gemini3FlashPreview());
         providers.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
         providers.add(new OpenRouterProvider.Gemini3ProPreview());
         providers.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
-        providers.add(new OpenRouterProvider.DeepSeekChat());
-        providers.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
+        providers.add(new OpenRouterProvider.DeepSeekV32());
+        providers.add(new OpenRouterProvider.DeepSeekV32MultiAgent());
         providers.add(new OpenRouterProvider.DeepSeekR1());
         providers.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
         providers.add(new OpenRouterProvider.GLM46());
@@ -276,14 +276,14 @@ public class ProviderFactory {
         }
 
         if (hasGLMKey()) {
-            builders.add(new GLMProvider.GLMZ1Air());
             builders.add(new GLMProvider.GLM45());
+            builders.add(new GLMProvider.GLM47());
         }
 
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.DeepSeekR1());
             builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-            builders.add(new OpenRouterProvider.Claude35SonnetThinking(1024));
+            builders.add(new OpenRouterProvider.Claude45HaikuThinking(1024));
         }
 
         return builders.build();

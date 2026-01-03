@@ -113,25 +113,25 @@ public class OpenRouterProvider extends BaseModelProvider {
     // GPT Models
     // ==========================================================================
 
-    /** GPT-4o mini - OpenAI's fast, cost-effective model for various tasks. */
+    /** GPT-5.2 */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class GPT4oMini extends OpenRouterProvider {
-        public GPT4oMini() {
-            super("openai/gpt-4o-mini", false);
+    public static class GPT52 extends OpenRouterProvider {
+        public GPT52() {
+            super("openai/gpt-5.2", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - GPT-4o mini";
+            return "OpenRouter - GPT-5.2";
         }
     }
 
-    /** GPT-4o mini with Multi-Agent Formatter. */
+    /** GPT-5.2 with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
@@ -139,14 +139,14 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.MULTI_AGENT_FORMATTER,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class GPT4oMiniMultiAgent extends OpenRouterProvider {
-        public GPT4oMiniMultiAgent() {
-            super("openai/gpt-4o-mini", true);
+    public static class GPT52MultiAgent extends OpenRouterProvider {
+        public GPT52MultiAgent() {
+            super("openai/gpt-5.2", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - GPT-4o mini (MultiAgent)";
+            return "OpenRouter - GPT-5.2 (MultiAgent)";
         }
     }
 
@@ -154,25 +154,25 @@ public class OpenRouterProvider extends BaseModelProvider {
     // Claude Models
     // ==========================================================================
 
-    /** Claude 3.5 Sonnet - Anthropic's powerful model for complex reasoning. */
+    /** Claude 4.5 Haiku */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class Claude35Sonnet extends OpenRouterProvider {
-        public Claude35Sonnet() {
-            super("anthropic/claude-3.5-sonnet", true);
+    public static class Claude45Haiku extends OpenRouterProvider {
+        public Claude45Haiku() {
+            super("anthropic/claude-haiku-4.5", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Claude 3.5 Sonnet";
+            return "OpenRouter - Claude 4.5 Haiku";
         }
     }
 
-    /** Claude 3.5 Sonnet with Multi-Agent Formatter. */
+    /** Claude 4.5 Haiku with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
@@ -180,18 +180,18 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.MULTI_AGENT_FORMATTER,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class Claude35SonnetMultiAgent extends OpenRouterProvider {
-        public Claude35SonnetMultiAgent() {
-            super("anthropic/claude-3.5-sonnet", true);
+    public static class Claude45HaikuMultiAgent extends OpenRouterProvider {
+        public Claude45HaikuMultiAgent() {
+            super("anthropic/claude-haiku-4.5", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Claude 3.5 Sonnet (MultiAgent)";
+            return "OpenRouter - Claude 4.5 Haiku (MultiAgent)";
         }
     }
 
-    /** Claude 3.5 Sonnet with Thinking Mode enabled. */
+    /** Claude 4.5 Haiku with Thinking Mode enabled. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
@@ -199,10 +199,10 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.THINKING,
         ModelCapability.THINKING_BUDGET
     })
-    public static class Claude35SonnetThinking extends OpenRouterProvider {
-        public Claude35SonnetThinking(int budget) {
+    public static class Claude45HaikuThinking extends OpenRouterProvider {
+        public Claude45HaikuThinking(int budget) {
             super(
-                    "anthropic/claude-3.5-sonnet",
+                    "anthropic/claude-haiku-4.5",
                     false,
                     GenerateOptions.builder()
                             .additionalBodyParam(
@@ -213,7 +213,7 @@ public class OpenRouterProvider extends BaseModelProvider {
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
+            return "OpenRouter - Claude 4.5 Haiku (Thinking)";
         }
     }
 
@@ -221,7 +221,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // Qwen Models
     // ==========================================================================
 
-    /** Qwen3 VL 235B - Alibaba's vision model for multimodal tasks. */
+    /** Qwen3 VL - Alibaba's vision model for multimodal tasks. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
@@ -229,18 +229,18 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.VIDEO,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class QwenVL72B extends OpenRouterProvider {
-        public QwenVL72B() {
-            super("qwen/qwen3-vl-235b-a22b-instruct", false);
+    public static class Qwen3VL extends OpenRouterProvider {
+        public Qwen3VL() {
+            super("qwen/qwen3-vl-32b-instruct", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Qwen3 VL 235B";
+            return "OpenRouter - Qwen3 VL";
         }
     }
 
-    /** Qwen3 VL 235B with Multi-Agent Formatter. */
+    /** Qwen3 VL with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
@@ -249,14 +249,14 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.MULTI_AGENT_FORMATTER,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class QwenVL72BMultiAgent extends OpenRouterProvider {
-        public QwenVL72BMultiAgent() {
-            super("qwen/qwen3-vl-235b-a22b-instruct", true);
+    public static class Qwen3VLMultiAgent extends OpenRouterProvider {
+        public Qwen3VLMultiAgent() {
+            super("qwen/qwen3-vl-32b-instruct", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Qwen3 VL 235B (MultiAgent)";
+            return "OpenRouter - Qwen3 VL (MultiAgent)";
         }
     }
 
@@ -350,38 +350,38 @@ public class OpenRouterProvider extends BaseModelProvider {
     // DeepSeek Models
     // ==========================================================================
 
-    /** DeepSeek Chat - DeepSeek's fast and efficient model via OpenRouter. */
+    /** DeepSeek V3.2 - DeepSeek's fast and efficient model via OpenRouter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class DeepSeekChat extends OpenRouterProvider {
-        public DeepSeekChat() {
-            super("deepseek/deepseek-chat", true);
+    public static class DeepSeekV32 extends OpenRouterProvider {
+        public DeepSeekV32() {
+            super("deepseek/deepseek-v3.2", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - DeepSeek Chat";
+            return "OpenRouter - DeepSeek V3.2";
         }
     }
 
-    /** DeepSeek Chat with Multi-Agent Formatter. */
+    /** DeepSeek V3.2 with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.MULTI_AGENT_FORMATTER,
         ModelCapability.STRUCTURED_OUTPUT
     })
-    public static class DeepSeekChatMultiAgent extends OpenRouterProvider {
-        public DeepSeekChatMultiAgent() {
-            super("deepseek/deepseek-chat", true);
+    public static class DeepSeekV32MultiAgent extends OpenRouterProvider {
+        public DeepSeekV32MultiAgent() {
+            super("deepseek/deepseek-v3.2", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - DeepSeek Chat (MultiAgent)";
+            return "OpenRouter - DeepSeek V3.2 (MultiAgent)";
         }
     }
 
