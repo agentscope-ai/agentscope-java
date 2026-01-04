@@ -17,6 +17,7 @@ package io.agentscope.core;
 
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
+import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
@@ -63,6 +64,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -138,13 +140,13 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     // ==================== Constructor ====================
 
-    private ReActAgent(Builder builder) {
+    private ReActAgent(Builder builder, Toolkit agentToolkit) {
         super(
                 builder.name,
                 builder.description,
                 builder.checkRunning,
-                builder.hooks,
-                builder.toolkit,
+                new ArrayList<>(builder.hooks),
+                agentToolkit,
                 builder.structuredOutputReminder);
 
         this.memory = builder.memory;
@@ -403,6 +405,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (allToolCalls.isEmpty()) {
             return executeIteration(iter + 1);
         }
+
+        // Set chunk callback for streaming tool responses
+        toolkit.setChunkCallback((toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
         // Execute all tools (including external ones which will return pending results)
         return notifyPreActingHooks(allToolCalls)
@@ -678,6 +683,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .collectList();
     }
 
+    private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
+        ActingChunkEvent event = new ActingChunkEvent(this, toolkit, toolUse, chunk);
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+    }
+
     private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
@@ -775,7 +785,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private int maxIters = 10;
         private ExecutionConfig modelExecutionConfig;
         private ExecutionConfig toolExecutionConfig;
-        private final List<Hook> hooks = new ArrayList<>();
+        private final Set<Hook> hooks = new LinkedHashSet<>();
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
@@ -791,7 +801,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private StatePersistence statePersistence;
 
         // RAG configuration
-        private final List<Knowledge> knowledgeBases = new ArrayList<>();
+        private final Set<Knowledge> knowledgeBases = new LinkedHashSet<>();
         private RAGMode ragMode = RAGMode.GENERIC;
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
@@ -1160,31 +1170,34 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
+            // Deep copy toolkit to avoid state interference between agents
+            Toolkit agentToolkit = this.toolkit.copy();
+
             if (enableMetaTool) {
-                toolkit.registerMetaTool();
+                agentToolkit.registerMetaTool();
             }
 
             // Configure long-term memory if provided
             if (longTermMemory != null) {
-                configureLongTermMemory();
+                configureLongTermMemory(agentToolkit);
             }
 
             // Configure RAG if knowledge bases are provided
             if (!knowledgeBases.isEmpty()) {
-                configureRAG();
+                configureRAG(agentToolkit);
             }
 
             // Configure PlanNotebook if provided
             if (planNotebook != null) {
-                configurePlan();
+                configurePlan(agentToolkit);
             }
 
             // Configure SkillBox if provided
             if (skillBox != null) {
-                configureSkillBox();
+                configureSkillBox(agentToolkit);
             }
 
-            return new ReActAgent(this);
+            return new ReActAgent(this, agentToolkit);
         }
 
         /**
@@ -1197,11 +1210,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *   <li>BOTH: Combines both approaches (registers tools + hook)</li>
          * </ul>
          */
-        private void configureLongTermMemory() {
+        private void configureLongTermMemory(Toolkit agentToolkit) {
             // If agent control is enabled, register memory tools via adapter
             if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                toolkit.registerTool(new LongTermMemoryTools(longTermMemory));
+                agentToolkit.registerTool(new LongTermMemoryTools(longTermMemory));
             }
 
             // If static control is enabled, register the hook for automatic memory management
@@ -1223,11 +1236,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *   <li>NONE: Does nothing</li>
          * </ul>
          */
-        private void configureRAG() {
+        private void configureRAG(Toolkit agentToolkit) {
             // Aggregate knowledge bases if multiple are provided
             Knowledge aggregatedKnowledge;
             if (knowledgeBases.size() == 1) {
-                aggregatedKnowledge = knowledgeBases.get(0);
+                aggregatedKnowledge = knowledgeBases.iterator().next();
             } else {
                 aggregatedKnowledge = buildAggregatedKnowledge();
             }
@@ -1245,7 +1258,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                     // Register knowledge retrieval tools
                     KnowledgeRetrievalTools tools =
                             new KnowledgeRetrievalTools(aggregatedKnowledge);
-                    toolkit.registerTool(tools);
+                    agentToolkit.registerTool(tools);
                 }
                 case NONE -> {
                     // Do nothing
@@ -1305,9 +1318,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *   <li>Adds a hook to inject plan hints before each reasoning step
          * </ul>
          */
-        private void configurePlan() {
+        private void configurePlan(Toolkit agentToolkit) {
             // Register plan tools to toolkit
-            toolkit.registerTool(planNotebook);
+            agentToolkit.registerTool(planNotebook);
 
             // Add plan hint hook
             Hook planHintHook =
@@ -1344,10 +1357,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
          * </ul>
          */
-        private void configureSkillBox() {
-            skillBox.bindToolkit(toolkit);
+        private void configureSkillBox(Toolkit agentToolkit) {
+            skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
-            toolkit.registerTool(skillBox);
+            agentToolkit.registerTool(skillBox);
 
             hooks.add(new SkillHook(skillBox));
         }
