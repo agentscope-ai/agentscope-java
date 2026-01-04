@@ -141,7 +141,7 @@ class AutoContextHookTest {
         hook.onEvent(event3).block();
 
         // Tool count should not increase after first call
-        assertEquals(toolCountAfterFirst, toolkit.getToolNames().size());
+        assertEquals(toolCountAfterFirst, agentWithPlan.getToolkit().getToolNames().size());
     }
 
     @Test
