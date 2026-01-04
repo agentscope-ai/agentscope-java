@@ -24,11 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -36,14 +34,6 @@ import org.junit.jupiter.api.Test;
  * Unit tests for all AG-UI model classes.
  */
 class AguiModelTest {
-
-    private ObjectMapper objectMapper;
-
-    @BeforeEach
-    void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    }
 
     @Nested
     class AguiMessageTest {
@@ -171,11 +161,11 @@ class AguiModelTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiMessage msg = AguiMessage.assistantMessage("msg-1", "Hello");
 
-            String json = objectMapper.writeValueAsString(msg);
+            String json = JsonUtils.getJsonCodec().toJson(msg);
             assertTrue(json.contains("\"id\":\"msg-1\""));
             assertTrue(json.contains("\"role\":\"assistant\""));
 
-            AguiMessage deserialized = objectMapper.readValue(json, AguiMessage.class);
+            AguiMessage deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
             assertEquals(msg.getId(), deserialized.getId());
             assertEquals(msg.getRole(), deserialized.getRole());
         }
@@ -264,11 +254,11 @@ class AguiModelTest {
             AguiFunctionCall function = new AguiFunctionCall("test", "{\"key\":\"value\"}");
             AguiToolCall toolCall = new AguiToolCall("tc-1", function);
 
-            String json = objectMapper.writeValueAsString(toolCall);
+            String json = JsonUtils.getJsonCodec().toJson(toolCall);
             assertTrue(json.contains("\"id\":\"tc-1\""));
             assertTrue(json.contains("\"type\":\"function\""));
 
-            AguiToolCall deserialized = objectMapper.readValue(json, AguiToolCall.class);
+            AguiToolCall deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiToolCall.class);
             assertEquals(toolCall.getId(), deserialized.getId());
         }
     }
@@ -327,10 +317,11 @@ class AguiModelTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiFunctionCall function = new AguiFunctionCall("process", "{\"input\":\"data\"}");
 
-            String json = objectMapper.writeValueAsString(function);
+            String json = JsonUtils.getJsonCodec().toJson(function);
             assertTrue(json.contains("\"name\":\"process\""));
 
-            AguiFunctionCall deserialized = objectMapper.readValue(json, AguiFunctionCall.class);
+            AguiFunctionCall deserialized =
+                    JsonUtils.getJsonCodec().fromJson(json, AguiFunctionCall.class);
             assertEquals(function.getName(), deserialized.getName());
         }
     }
@@ -409,11 +400,11 @@ class AguiModelTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiTool tool = new AguiTool("search", "Search for data", Map.of("type", "object"));
 
-            String json = objectMapper.writeValueAsString(tool);
+            String json = JsonUtils.getJsonCodec().toJson(tool);
             assertTrue(json.contains("\"name\":\"search\""));
             assertTrue(json.contains("\"description\":\"Search for data\""));
 
-            AguiTool deserialized = objectMapper.readValue(json, AguiTool.class);
+            AguiTool deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiTool.class);
             assertEquals(tool.getName(), deserialized.getName());
         }
     }
@@ -472,11 +463,11 @@ class AguiModelTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiContext context = new AguiContext("Time zone", "UTC");
 
-            String json = objectMapper.writeValueAsString(context);
+            String json = JsonUtils.getJsonCodec().toJson(context);
             assertTrue(json.contains("\"description\":\"Time zone\""));
             assertTrue(json.contains("\"value\":\"UTC\""));
 
-            AguiContext deserialized = objectMapper.readValue(json, AguiContext.class);
+            AguiContext deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiContext.class);
             assertEquals(context.getDescription(), deserialized.getDescription());
         }
     }
@@ -612,11 +603,12 @@ class AguiModelTest {
                             .state(Map.of("key", "value"))
                             .build();
 
-            String json = objectMapper.writeValueAsString(input);
+            String json = JsonUtils.getJsonCodec().toJson(input);
             assertTrue(json.contains("\"threadId\":\"t1\""));
             assertTrue(json.contains("\"runId\":\"r1\""));
 
-            RunAgentInput deserialized = objectMapper.readValue(json, RunAgentInput.class);
+            RunAgentInput deserialized =
+                    JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
             assertEquals(input.getThreadId(), deserialized.getThreadId());
             assertEquals(input.getMessages().size(), deserialized.getMessages().size());
         }
@@ -629,7 +621,7 @@ class AguiModelTest {
                         + "\"tools\":[],\"context\":[],\"state\":{\"key\":\"value\"},"
                         + "\"forwardedProps\":{\"prop1\":123}}";
 
-            RunAgentInput input = objectMapper.readValue(json, RunAgentInput.class);
+            RunAgentInput input = JsonUtils.getJsonCodec().fromJson(json, RunAgentInput.class);
 
             assertEquals("t1", input.getThreadId());
             assertEquals("r1", input.getRunId());

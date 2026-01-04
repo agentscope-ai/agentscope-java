@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -74,7 +73,6 @@ public class Toolkit {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolResultConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
@@ -96,8 +94,8 @@ public class Toolkit {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        this.responseConverter = new ToolResultConverter(objectMapper);
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        this.responseConverter = new ToolResultConverter();
+        this.methodInvoker = new ToolMethodInvoker(responseConverter);
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -640,6 +638,25 @@ public class Toolkit {
         }
         registered.updatePresetParameters(newPresetParameters);
         logger.debug("Updated preset parameters for tool '{}'", toolName);
+    }
+
+    // ==================== Deep Copy ====================
+
+    /**
+     * Create a deep copy of this toolkit.
+     *
+     * @return A new Toolkit instance with copied state
+     */
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        return copy;
     }
 
     /**

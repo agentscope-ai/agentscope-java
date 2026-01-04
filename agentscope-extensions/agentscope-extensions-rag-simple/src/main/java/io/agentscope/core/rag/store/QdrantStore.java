@@ -15,12 +15,12 @@
  */
 package io.agentscope.core.rag.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.util.JsonUtils;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
 import io.qdrant.client.grpc.Collections.Distance;
@@ -106,7 +106,6 @@ import reactor.core.scheduler.Schedulers;
 public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(QdrantStore.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String location;
     private final String collectionName;
@@ -447,7 +446,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             keyMap.put("chunk_id", metadata.getChunkId());
             keyMap.put("content", metadata.getContent());
 
-            String jsonKey = OBJECT_MAPPER.writeValueAsString(keyMap);
+            String jsonKey = JsonUtils.getJsonCodec().toJson(keyMap);
             return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate point ID", e);
@@ -458,6 +457,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
      * Converts DocumentMetadata to Qdrant payload map.
      *
      * <p>Serializes the ContentBlock to JSON and stores it as a Qdrant Value.
+     * Also stores all custom payload fields from the metadata.
      *
      * @param metadata the document metadata
      * @return a map of payload key-value pairs
@@ -467,9 +467,10 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
         try {
             // Serialize ContentBlock to JSON, then convert to Qdrant Value
-            String contentJson = OBJECT_MAPPER.writeValueAsString(metadata.getContent());
+            String contentJson = JsonUtils.getJsonCodec().toJson(metadata.getContent());
             @SuppressWarnings("unchecked")
-            Map<String, Object> contentMap = OBJECT_MAPPER.readValue(contentJson, Map.class);
+            Map<String, Object> contentMap =
+                    JsonUtils.getJsonCodec().fromJson(contentJson, Map.class);
             Value contentValue = convertObjectToValue(contentMap);
             payloadMap.put("content", contentValue);
         } catch (Exception e) {
@@ -487,6 +488,13 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         // Store chunk_id
         Value chunkIdValue = Value.newBuilder().setStringValue(metadata.getChunkId()).build();
         payloadMap.put("chunk_id", chunkIdValue);
+
+        // Store custom payload as nested Struct (dictionary)
+        Map<String, Object> customPayload = metadata.getPayload();
+        if (customPayload != null && !customPayload.isEmpty()) {
+            Value payloadValue = convertObjectToValue(customPayload);
+            payloadMap.put("payload", payloadValue);
+        }
 
         return payloadMap;
     }
@@ -528,8 +536,20 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             }
             return Value.newBuilder().setListValue(listBuilder.build()).build();
         } else {
-            // Fallback to string representation
-            return Value.newBuilder().setStringValue(obj.toString()).build();
+            // For custom objects, serialize to Map first using ObjectMapper
+            try {
+                String json = JsonUtils.getJsonCodec().toJson(obj);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+                return convertObjectToValue(map);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to serialize custom object of type "
+                                + obj.getClass().getName()
+                                + ", using string representation",
+                        e);
+                return Value.newBuilder().setStringValue(obj.toString()).build();
+            }
         }
     }
 
@@ -646,7 +666,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
     /**
      * Reconstructs DocumentMetadata from Qdrant payload map.
      *
-     * <p>Deserializes the content field from JSON to ContentBlock.
+     * <p>Deserializes the content field from JSON to ContentBlock and extracts
+     * all custom payload fields.
      *
      * @param payload the payload map from Qdrant
      * @return the reconstructed DocumentMetadata
@@ -663,8 +684,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         try {
             // Convert Qdrant Value to Map, then to JSON, then to ContentBlock
             Object contentObj = convertValueToObject(contentValue);
-            String contentJson = OBJECT_MAPPER.writeValueAsString(contentObj);
-            content = OBJECT_MAPPER.readValue(contentJson, ContentBlock.class);
+            String contentJson = JsonUtils.getJsonCodec().toJson(contentObj);
+            content = JsonUtils.getJsonCodec().fromJson(contentJson, ContentBlock.class);
         } catch (Exception e) {
             log.error("Failed to deserialize ContentBlock from payload, using fallback", e);
             // Fallback: create a TextBlock from string representation
@@ -686,7 +707,24 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         }
         String chunkId = chunkIdValue.getStringValue();
 
-        return new DocumentMetadata(content, docId, chunkId);
+        // Extract custom payload from payload field (nested Struct)
+        Map<String, Object> customPayload = new HashMap<>();
+        Value payloadValue = payload.get("payload");
+        if (payloadValue != null) {
+            Object payloadObj = convertValueToObject(payloadValue);
+            if (payloadObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> payloadMap = (Map<String, Object>) payloadObj;
+                customPayload = payloadMap;
+            } else {
+                log.warn(
+                        "Expected Map type for payload but got "
+                                + (payloadObj != null ? payloadObj.getClass().getName() : "null"));
+                customPayload = new HashMap<>();
+            }
+        }
+
+        return new DocumentMetadata(content, docId, chunkId, customPayload);
     }
 
     /**

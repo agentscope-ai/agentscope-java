@@ -15,8 +15,9 @@
  */
 package io.agentscope.core.memory.mem0;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -55,7 +56,7 @@ public class Mem0Client {
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
     private final String apiKey;
-    private final ObjectMapper objectMapper;
+    private final JsonCodec jsonCodec;
     private final String addEndpoint;
     private final String searchEndpoint;
 
@@ -97,9 +98,7 @@ public class Mem0Client {
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
                         : apiBaseUrl;
         this.apiKey = apiKey;
-        this.objectMapper = new ObjectMapper();
-        // Enables serialization/deserialization of Java date/time types
-        this.objectMapper.registerModule(new JavaTimeModule());
+        this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient =
                 new OkHttpClient.Builder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -138,7 +137,7 @@ public class Mem0Client {
         return Mono.fromCallable(
                         () -> {
                             // Serialize request to JSON
-                            String json = objectMapper.writeValueAsString(request);
+                            String json = jsonCodec.toJson(request);
 
                             // Build HTTP request
                             Request.Builder requestBuilder =
@@ -201,15 +200,7 @@ public class Mem0Client {
     private <T, R> Mono<R> executePost(
             String endpoint, T request, Class<R> responseType, String operationName) {
         return executePostRaw(endpoint, request, operationName)
-                .map(
-                        responseBody -> {
-                            try {
-                                return objectMapper.readValue(responseBody, responseType);
-                            } catch (IOException e) {
-                                throw new RuntimeException(
-                                        "Failed to parse response for " + operationName, e);
-                            }
-                        });
+                .map(responseBody -> jsonCodec.fromJson(responseBody, responseType));
     }
 
     /**
@@ -252,35 +243,24 @@ public class Mem0Client {
         return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
-                            try {
-                                // Platform Mem0 uses /v2/memories/search/ endpoint and returns
-                                // direct array
-                                // Self-hosted Mem0 uses /search endpoint and returns wrapped format
-                                if (searchEndpoint.contains("/v2/")) {
-                                    // Platform Mem0 returns direct array
-                                    List<Mem0SearchResult> results =
-                                            objectMapper.readValue(
-                                                    responseBody,
-                                                    objectMapper
-                                                            .getTypeFactory()
-                                                            .constructCollectionType(
-                                                                    List.class,
-                                                                    Mem0SearchResult.class));
+                            // Platform Mem0 uses /v2/memories/search/ endpoint and returns
+                            // direct array
+                            // Self-hosted Mem0 uses /search endpoint and returns wrapped format
+                            if (searchEndpoint.contains("/v2/")) {
+                                // Platform Mem0 returns direct array
+                                List<Mem0SearchResult> results =
+                                        jsonCodec.fromJson(
+                                                responseBody,
+                                                new TypeReference<List<Mem0SearchResult>>() {});
 
-                                    // Wrap in Mem0SearchResponse for consistency
-                                    Mem0SearchResponse searchResponse = new Mem0SearchResponse();
-                                    searchResponse.setResults(results);
-                                    return searchResponse;
-                                } else {
-                                    // Self-hosted Mem0 returns response wrapped in {"results":
-                                    // [...]}
-                                    Mem0SearchResponse searchResponse =
-                                            objectMapper.readValue(
-                                                    responseBody, Mem0SearchResponse.class);
-                                    return searchResponse;
-                                }
-                            } catch (Exception e) {
-                                throw new RuntimeException("Failed to parse search response", e);
+                                // Wrap in Mem0SearchResponse for consistency
+                                Mem0SearchResponse searchResponse = new Mem0SearchResponse();
+                                searchResponse.setResults(results);
+                                return searchResponse;
+                            } else {
+                                // Self-hosted Mem0 returns response wrapped in {"results":
+                                // [...]}
+                                return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                             }
                         });
     }

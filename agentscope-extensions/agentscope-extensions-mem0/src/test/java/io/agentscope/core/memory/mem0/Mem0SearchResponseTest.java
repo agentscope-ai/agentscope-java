@@ -20,23 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0SearchResponse}. */
 class Mem0SearchResponseTest {
-
-    private ObjectMapper objectMapper;
-
-    @BeforeEach
-    void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-    }
 
     @Test
     void testDefaultConstructor() {
@@ -74,7 +64,8 @@ class Mem0SearchResponseTest {
                         + "]"
                         + "}";
 
-        Mem0SearchResponse response = objectMapper.readValue(json, Mem0SearchResponse.class);
+        Mem0SearchResponse response =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0SearchResponse.class);
 
         assertNotNull(response);
         assertNotNull(response.getResults());
@@ -96,7 +87,7 @@ class Mem0SearchResponseTest {
 
         response.setResults(results);
 
-        String json = objectMapper.writeValueAsString(response);
+        String json = JsonUtils.getJsonCodec().toJson(response);
         assertNotNull(json);
         assertTrue(json.contains("\"results\""));
         assertTrue(json.contains("mem_789"));
@@ -117,8 +108,9 @@ class Mem0SearchResponseTest {
 
         original.setResults(results);
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0SearchResponse deserialized = objectMapper.readValue(json, Mem0SearchResponse.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0SearchResponse deserialized =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0SearchResponse.class);
 
         assertEquals(original.getResults().size(), deserialized.getResults().size());
         assertEquals(

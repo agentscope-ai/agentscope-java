@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
@@ -30,6 +29,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -49,11 +49,7 @@ public class DashScopeResponseParser {
     /** Placeholder name for tool call argument fragments in streaming responses. */
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";
 
-    private final ObjectMapper objectMapper;
-
-    public DashScopeResponseParser() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public DashScopeResponseParser() {}
 
     /**
      * Parse DashScopeResponse to AgentScope ChatResponse.
@@ -156,7 +152,8 @@ public class DashScopeResponseParser {
                 rawContent = argsJson;
                 try {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
+                    Map<String, Object> parsed =
+                            JsonUtils.getJsonCodec().fromJson(argsJson, Map.class);
                     if (parsed != null) {
                         argsMap.putAll(parsed);
                     }

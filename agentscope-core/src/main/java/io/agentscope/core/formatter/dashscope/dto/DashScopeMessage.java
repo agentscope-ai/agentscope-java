@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 
 /**
@@ -110,7 +110,9 @@ public class DashScopeMessage {
         }
         if (content instanceof List) {
             List<DashScopeContentPart> contentParts =
-                    new ObjectMapper().convertValue(content, new TypeReference<>() {});
+                    JsonUtils.getJsonCodec()
+                            .convertValue(
+                                    content, new TypeReference<List<DashScopeContentPart>>() {});
             if (contentParts != null && !contentParts.isEmpty()) {
                 return contentParts.get(0).getText();
             }

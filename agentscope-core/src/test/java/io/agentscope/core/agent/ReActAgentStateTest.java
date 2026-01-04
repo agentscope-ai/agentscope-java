@@ -223,9 +223,11 @@ class ReActAgentStateTest {
             agent2.loadFrom(session, sessionKey);
 
             // Should have loaded the saved activeGroups
-            assertEquals(2, toolkit2.getActiveGroups().size());
-            assertTrue(toolkit2.getActiveGroups().contains("group1"));
-            assertTrue(toolkit2.getActiveGroups().contains("group2"));
+            // Note: Agent uses a copy of toolkit, so we need to check agent's internal toolkit
+            Toolkit agentToolkit = agent2.getToolkit();
+            assertEquals(2, agentToolkit.getActiveGroups().size());
+            assertTrue(agentToolkit.getActiveGroups().contains("group1"));
+            assertTrue(agentToolkit.getActiveGroups().contains("group2"));
         }
 
         @Test
@@ -514,8 +516,10 @@ class ReActAgentStateTest {
             // Verify all state was loaded
             assertEquals(2, newMemory.getMessages().size());
             assertEquals("Hello from JsonSession", getTextContent(newMemory.getMessages().get(0)));
-            assertEquals(2, newToolkit.getActiveGroups().size());
-            assertTrue(newToolkit.getActiveGroups().contains("web"));
+            // Note: Agent uses a copy of toolkit, so we need to check agent's internal toolkit
+            Toolkit agentToolkit = newAgent.getToolkit();
+            assertEquals(2, agentToolkit.getActiveGroups().size());
+            assertTrue(agentToolkit.getActiveGroups().contains("web"));
         }
 
         @Test

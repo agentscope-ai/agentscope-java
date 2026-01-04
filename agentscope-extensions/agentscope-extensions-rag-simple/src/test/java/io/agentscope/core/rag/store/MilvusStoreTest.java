@@ -757,4 +757,182 @@ class MilvusStoreTest {
 
         StepVerifier.create(store.delete("doc-1")).expectError(VectorStoreException.class).verify();
     }
+
+    // ==================== Payload Functionality Tests ====================
+
+    private MilvusStore createMockStoreForPayloadTest() throws VectorStoreException {
+        try (MockedConstruction<MilvusClientV2> ignored =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            // Mock insert
+                            InsertResp insertResp = mock(InsertResp.class);
+                            when(insertResp.getInsertCnt()).thenReturn(1L);
+                            when(mock.insert(any(InsertReq.class))).thenReturn(insertResp);
+
+                            // Mock search with payload
+                            SearchResp.SearchResult mockResult =
+                                    mock(SearchResp.SearchResult.class);
+                            when(mockResult.getScore()).thenReturn(0.95f);
+
+                            Map<String, Object> entity = new HashMap<>();
+                            entity.put("doc_id", "doc-payload-test");
+                            entity.put("chunk_id", "0");
+                            entity.put(
+                                    "content",
+                                    "{\"type\":\"text\",\"text\":\"Test document content\"}");
+                            entity.put(
+                                    "payload",
+                                    "{\"filename\":\"report.pdf\",\"department\":\"Engineering\",\"author\":\"John"
+                                        + " Doe\",\"priority\":1,\"tags\":[\"urgent\",\"quarterly\"],\"custom\":{\"author\":\"Alice\",\"version\":2,\"active\":true,\"tags\":[\"important\",\"reviewed\"]}}");
+                            when(mockResult.getEntity()).thenReturn(entity);
+
+                            SearchResp searchResp = mock(SearchResp.class);
+                            when(searchResp.getSearchResults())
+                                    .thenReturn(List.of(List.of(mockResult)));
+                            when(mock.search(any(SearchReq.class))).thenReturn(searchResp);
+                        })) {
+            return MilvusStore.builder()
+                    .uri(TEST_URI)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .build();
+        }
+    }
+
+    @Test
+    @DisplayName("Should store and load document with custom payload")
+    void testDocumentWithPayload() throws VectorStoreException {
+        store = createMockStoreForPayloadTest();
+
+        // Create document with custom payload
+        TextBlock content = TextBlock.builder().text("Test document content").build();
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "report.pdf");
+        payload.put("department", "Engineering");
+        payload.put("author", "John Doe");
+        payload.put("priority", 1);
+        payload.put("tags", List.of("urgent", "quarterly"));
+
+        // Create custom object
+        CustomObject customObject = new CustomObject();
+        customObject.setAuthor("Alice");
+        customObject.setVersion(2);
+        customObject.setActive(true);
+        customObject.setTags(List.of("important", "reviewed"));
+        payload.put("custom", customObject);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-payload-test", "0", payload);
+        Document doc = new Document(metadata);
+        doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
+
+        // Add document
+        StepVerifier.create(store.add(List.of(doc))).verifyComplete();
+
+        // Search for the document
+        double[] query = new double[] {1.0, 0.0, 0.0};
+        StepVerifier.create(store.search(query, 10, null))
+                .assertNext(
+                        results -> {
+                            assertNotNull(results, "Search results should not be null");
+                            assertEquals(1, results.size(), "Should find exactly one document");
+
+                            Document retrievedDoc = results.get(0);
+                            assertNotNull(retrievedDoc, "Retrieved document should not be null");
+
+                            // Verify payload fields are correctly loaded
+                            assertEquals(
+                                    "report.pdf",
+                                    retrievedDoc.getPayloadValue("filename"),
+                                    "Filename should match");
+                            assertEquals(
+                                    "Engineering",
+                                    retrievedDoc.getPayloadValue("department"),
+                                    "Department should match");
+                            assertEquals(
+                                    "John Doe",
+                                    retrievedDoc.getPayloadValue("author"),
+                                    "Author should match");
+                            assertEquals(
+                                    1,
+                                    retrievedDoc.getPayloadValue("priority"),
+                                    "Priority should match");
+
+                            // Verify tags list
+                            Object tagsObj = retrievedDoc.getPayloadValue("tags");
+                            assertNotNull(tagsObj, "Tags should not be null");
+                            assertTrue(tagsObj instanceof List, "Tags should be a List");
+                            @SuppressWarnings("unchecked")
+                            List<String> tags = (List<String>) tagsObj;
+                            assertEquals(2, tags.size(), "Should have 2 tags");
+                            assertTrue(tags.contains("urgent"), "Should contain 'urgent' tag");
+                            assertTrue(
+                                    tags.contains("quarterly"), "Should contain 'quarterly' tag");
+
+                            // Verify payload key existence
+                            assertTrue(
+                                    retrievedDoc.hasPayloadKey("filename"),
+                                    "Should have filename key");
+                            assertFalse(
+                                    retrievedDoc.hasPayloadKey("nonexistent"),
+                                    "Should not have nonexistent key");
+
+                            // Verify content is preserved
+                            assertEquals(
+                                    "Test document content",
+                                    retrievedDoc.getMetadata().getContentText(),
+                                    "Content should match");
+
+                            // Verify custom object using getPayloadValueAs
+                            CustomObject retrievedCustom =
+                                    retrievedDoc.getPayloadValueAs("custom", CustomObject.class);
+                            assertNotNull(retrievedCustom, "Custom object should not be null");
+                        })
+                .verifyComplete();
+    }
+
+    /**
+     * Custom object for testing payload serialization
+     */
+    static class CustomObject {
+        private String author;
+        private int version;
+        private boolean active;
+        private List<String> tags;
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public void setAuthor(String author) {
+            this.author = author;
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public void setVersion(int version) {
+            this.version = version;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
+
+        public void setActive(boolean active) {
+            this.active = active;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+
+        public void setTags(List<String> tags) {
+            this.tags = tags;
+        }
+    }
 }
