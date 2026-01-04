@@ -19,6 +19,8 @@ package io.agentscope.core.util;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -27,10 +29,6 @@ import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.github.victools.jsonschema.module.jackson.JacksonModule;
 import com.github.victools.jsonschema.module.jackson.JacksonOption;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
 import java.lang.reflect.Type;
 import java.util.Map;
 
@@ -61,8 +59,8 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
-	private static final ObjectMapper OBJECT_MAPPER =
-			JsonMapper.builder().addModule(new JavaTimeModule()).build();
+    private static final ObjectMapper OBJECT_MAPPER =
+            JsonMapper.builder().addModule(new JavaTimeModule()).build();
     private static final SchemaGenerator schemaGenerator;
 
     static {
