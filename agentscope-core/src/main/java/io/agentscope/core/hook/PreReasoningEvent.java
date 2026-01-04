@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -47,6 +47,7 @@ import java.util.Objects;
 public final class PreReasoningEvent extends ReasoningEvent {
 
     private List<Msg> inputMessages;
+    private GenerateOptions overriddenGenerateOptions;
 
     /**
      * Constructor for PreReasoningEvent.
@@ -85,5 +86,31 @@ public final class PreReasoningEvent extends ReasoningEvent {
      */
     public void setInputMessages(List<Msg> inputMessages) {
         this.inputMessages = Objects.requireNonNull(inputMessages, "inputMessages cannot be null");
+    }
+
+    /**
+     * Get the effective generation options.
+     *
+     * <p>Returns the overridden options if set via {@link #setGenerateOptions(GenerateOptions)},
+     * otherwise returns the original options from the parent class.
+     *
+     * @return The effective generation options
+     */
+    public GenerateOptions getEffectiveGenerateOptions() {
+        return overriddenGenerateOptions != null
+                ? overriddenGenerateOptions
+                : super.getGenerateOptions();
+    }
+
+    /**
+     * Set custom generation options for this reasoning call.
+     *
+     * <p>This allows hooks to override the default generation options, for example to set
+     * a specific tool_choice for structured output.
+     *
+     * @param generateOptions The custom generation options
+     */
+    public void setGenerateOptions(GenerateOptions generateOptions) {
+        this.overriddenGenerateOptions = generateOptions;
     }
 }

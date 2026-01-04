@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -19,10 +19,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { Button, Card, Row, Col, Typography, Space, Dropdown } from 'ant-design-vue'
-import { 
-  MessageOutlined, 
-  ShoppingCartOutlined, 
-  CustomerServiceOutlined, 
+import {
+  MessageOutlined,
+  ShoppingCartOutlined,
+  CustomerServiceOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
   GlobalOutlined
@@ -94,8 +94,8 @@ const goToSettings = () => {
         </Button>
         <template #overlay>
           <div class="lang-menu">
-            <div 
-              v-for="item in languageMenuItems" 
+            <div
+              v-for="item in languageMenuItems"
               :key="item.key"
               class="lang-menu-item"
               :class="{ active: currentLocale === item.key }"
@@ -116,9 +116,9 @@ const goToSettings = () => {
           <h2 class="hero-subtitle">{{ t('home.subtitle') }}</h2>
           <p class="hero-description">{{ t('home.description') }}</p>
           <Space size="large">
-            <Button 
-              type="primary" 
-              size="large" 
+            <Button
+              type="primary"
+              size="large"
               @click="goToChat"
               class="cta-button"
             >
@@ -127,8 +127,8 @@ const goToSettings = () => {
               </template>
               {{ t('home.startChat') }}
             </Button>
-            <Button 
-              size="large" 
+            <Button
+              size="large"
               @click="goToSettings"
               class="secondary-button"
             >
@@ -167,11 +167,11 @@ const goToSettings = () => {
           {{ t('home.features.title') }}
         </Typography.Title>
         <Row :gutter="[24, 24]">
-          <Col 
-            v-for="(feature, index) in features" 
+          <Col
+            v-for="(feature, index) in features"
             :key="index"
-            :xs="24" 
-            :sm="12" 
+            :xs="24"
+            :sm="12"
             :lg="6"
           >
             <Card class="feature-card" hoverable>
@@ -194,9 +194,9 @@ const goToSettings = () => {
         <div class="cta-content">
           <h2>{{ t('home.cta.title') }}</h2>
           <p>{{ t('home.cta.description') }}</p>
-          <Button 
-            type="primary" 
-            size="large" 
+          <Button
+            type="primary"
+            size="large"
             @click="goToChat"
             class="cta-button"
           >
@@ -534,25 +534,25 @@ const goToSettings = () => {
     gap: 40px;
     text-align: center;
   }
-  
+
   .hero-title {
     font-size: 2.5rem;
   }
-  
+
   .hero-subtitle {
     font-size: 1.5rem;
   }
-  
+
   .milk-tea-illustration {
     width: 200px;
     height: 200px;
   }
-  
+
   .cup {
     width: 80px;
     height: 100px;
   }
-  
+
   .cup-body {
     width: 70px;
     height: 70px;

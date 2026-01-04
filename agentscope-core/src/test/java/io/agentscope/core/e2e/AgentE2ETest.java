@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,9 +21,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -31,20 +34,25 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
- * End-to-End integration tests for Agent functionality with REAL DashScope API calls.
+ * End-to-End integration tests for Agent functionality with REAL API calls.
  *
  * <p>These tests verify complete agent workflows with actual API calls including multi-round
  * conversations, state management, and streaming responses.
  *
+ * <p>Supports both DashScope and OpenRouter providers:
+ * <ul>
+ *   <li>DashScope: Uses DASHSCOPE_API_KEY environment variable with qwen-plus model</li>
+ *   <li>OpenRouter: Uses OPENROUTER_API_KEY environment variable with openai/gpt-4o-mini model</li>
+ * </ul>
+ *
  * <p><b>Requirements:</b>
  *
  * <ul>
- *   <li>DASHSCOPE_API_KEY environment variable must be set
+ *   <li>Either DASHSCOPE_API_KEY or OPENROUTER_API_KEY environment variable must be set
  *   <li>Active internet connection
- *   <li>Valid DashScope API quota
+ *   <li>Valid API quota for the selected provider
  * </ul>
  *
  * <p><b>Run with:</b>
@@ -53,40 +61,82 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * mvn test -Dtest.e2e=true
  * # or in CI/CD:
  * export DASHSCOPE_API_KEY=your_key
+ * # or
+ * export OPENROUTER_API_KEY=your_key
  * mvn test -Dtest=AgentE2ETest
  * </pre>
  *
  * <p>Tagged as "e2e" - these tests make real API calls and may incur costs.
  */
 @Tag("e2e")
-@DisplayName("Agent E2E Tests (Real DashScope API)")
-@EnabledIfEnvironmentVariable(
-        named = "DASHSCOPE_API_KEY",
-        matches = ".+",
-        disabledReason = "Requires DASHSCOPE_API_KEY environment variable")
+@DisplayName("Agent E2E Tests (Real API - DashScope or OpenRouter)")
 class AgentE2ETest {
 
     private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
-    private static final String MODEL_NAME = "qwen-plus";
+    private static final String DASHSCOPE_MODEL_NAME = "qwen-plus";
+    private static final String OPENROUTER_MODEL_NAME = "openai/gpt-4o-mini";
+    private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
 
     private ReActAgent agent;
-    private DashScopeChatModel realModel;
+    private Model realModel;
     private Toolkit toolkit;
     private InMemoryMemory memory;
+    private String providerName;
+    private String modelName;
 
     @BeforeEach
     void setUp() {
-        // Get API key from environment
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        assumeTrue(apiKey != null && !apiKey.isEmpty(), "DASHSCOPE_API_KEY must be set");
-
         memory = new InMemoryMemory();
         toolkit = new Toolkit(); // Empty toolkit for basic tests
 
-        // Create real DashScope model using builder
-        realModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(true)
-                        .build();
+        // Check for OpenRouter API key first, then DashScope
+        String openRouterApiKey = System.getenv("OPENROUTER_API_KEY");
+        String dashScopeApiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        if (openRouterApiKey != null && !openRouterApiKey.isEmpty()) {
+            // Use OpenRouter
+            providerName = "OpenRouter";
+            modelName = OPENROUTER_MODEL_NAME;
+
+            // Get base URL from environment variable, fallback to default
+            String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                baseUrl = DEFAULT_OPENROUTER_BASE_URL;
+            }
+
+            // Create OpenRouter model using OpenAIChatModel (OpenRouter is OpenAI-compatible)
+            realModel =
+                    OpenAIChatModel.builder().apiKey(openRouterApiKey).modelName(modelName).stream(
+                                    true)
+                            .baseUrl(baseUrl)
+                            .formatter(new OpenAIChatFormatter())
+                            .build();
+
+            System.out.println("=== E2E Test Setup Complete (OpenRouter) ===");
+            System.out.println("Model: " + modelName);
+            System.out.println("Base URL: " + baseUrl);
+        } else if (dashScopeApiKey != null && !dashScopeApiKey.isEmpty()) {
+            // Use DashScope
+            providerName = "DashScope";
+            modelName = DASHSCOPE_MODEL_NAME;
+
+            // Create real DashScope model using builder
+            realModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(dashScopeApiKey)
+                            .modelName(modelName)
+                            .stream(true)
+                            .build();
+
+            System.out.println("=== E2E Test Setup Complete (DashScope) ===");
+            System.out.println("Model: " + modelName);
+        } else {
+            assumeTrue(
+                    false,
+                    "Either OPENROUTER_API_KEY or DASHSCOPE_API_KEY environment variable must be"
+                            + " set");
+            return; // Never reached, but keeps compiler happy
+        }
 
         agent =
                 ReActAgent.builder()
@@ -99,10 +149,16 @@ class AgentE2ETest {
                         .memory(memory)
                         .build();
 
-        System.out.println("=== E2E Test Setup Complete ===");
-        System.out.println("Model: " + MODEL_NAME);
+        String apiKey =
+                openRouterApiKey != null && !openRouterApiKey.isEmpty()
+                        ? openRouterApiKey
+                        : dashScopeApiKey;
         System.out.println(
-                "API Key: " + apiKey.substring(0, Math.min(10, apiKey.length())) + "...");
+                "Provider: "
+                        + providerName
+                        + ", API Key: "
+                        + apiKey.substring(0, Math.min(10, apiKey.length()))
+                        + "...");
     }
 
     @Test
@@ -279,13 +335,33 @@ class AgentE2ETest {
         System.out.println("\n=== Test: Synchronous (Non-Streaming) Mode ===");
 
         // Get API key from environment
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String openRouterApiKey = System.getenv("OPENROUTER_API_KEY");
+        String dashScopeApiKey = System.getenv("DASHSCOPE_API_KEY");
 
-        // Create DashScope model with stream=false
-        DashScopeChatModel syncModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(
-                                false) // Non-streaming mode
-                        .build();
+        Model syncModel;
+        if (openRouterApiKey != null && !openRouterApiKey.isEmpty()) {
+            // Use OpenRouter
+            String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                baseUrl = DEFAULT_OPENROUTER_BASE_URL;
+            }
+            syncModel =
+                    OpenAIChatModel.builder()
+                            .apiKey(openRouterApiKey)
+                            .modelName(OPENROUTER_MODEL_NAME)
+                            .stream(false) // Non-streaming mode
+                            .baseUrl(baseUrl)
+                            .formatter(new OpenAIChatFormatter())
+                            .build();
+        } else {
+            // Use DashScope
+            syncModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(dashScopeApiKey)
+                            .modelName(DASHSCOPE_MODEL_NAME)
+                            .stream(false) // Non-streaming mode
+                            .build();
+        }
 
         // Create agent with synchronous model
         ReActAgent syncAgent =
@@ -327,13 +403,33 @@ class AgentE2ETest {
         System.out.println("\n=== Test: Explicit Streaming Mode ===");
 
         // Get API key from environment
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String openRouterApiKey = System.getenv("OPENROUTER_API_KEY");
+        String dashScopeApiKey = System.getenv("DASHSCOPE_API_KEY");
 
-        // Create DashScope model with stream=true (explicit)
-        DashScopeChatModel streamModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(
-                                true) // Streaming mode
-                        .build();
+        Model streamModel;
+        if (openRouterApiKey != null && !openRouterApiKey.isEmpty()) {
+            // Use OpenRouter
+            String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                baseUrl = DEFAULT_OPENROUTER_BASE_URL;
+            }
+            streamModel =
+                    OpenAIChatModel.builder()
+                            .apiKey(openRouterApiKey)
+                            .modelName(OPENROUTER_MODEL_NAME)
+                            .stream(true) // Streaming mode
+                            .baseUrl(baseUrl)
+                            .formatter(new OpenAIChatFormatter())
+                            .build();
+        } else {
+            // Use DashScope
+            streamModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(dashScopeApiKey)
+                            .modelName(DASHSCOPE_MODEL_NAME)
+                            .stream(true) // Streaming mode
+                            .build();
+        }
 
         // Create agent with streaming model
         ReActAgent streamAgent =
@@ -375,16 +471,50 @@ class AgentE2ETest {
         System.out.println("\n=== Test: Sync vs Stream Equivalence ===");
 
         // Get API key from environment
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String openRouterApiKey = System.getenv("OPENROUTER_API_KEY");
+        String dashScopeApiKey = System.getenv("DASHSCOPE_API_KEY");
 
-        // Create both sync and stream models
-        DashScopeChatModel syncModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(false)
-                        .build();
+        Model syncModel;
+        Model streamModel;
+        if (openRouterApiKey != null && !openRouterApiKey.isEmpty()) {
+            // Use OpenRouter
+            String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                baseUrl = DEFAULT_OPENROUTER_BASE_URL;
+            }
+            syncModel =
+                    OpenAIChatModel.builder()
+                            .apiKey(openRouterApiKey)
+                            .modelName(OPENROUTER_MODEL_NAME)
+                            .stream(false)
+                            .baseUrl(baseUrl)
+                            .formatter(new OpenAIChatFormatter())
+                            .build();
 
-        DashScopeChatModel streamModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(true)
-                        .build();
+            streamModel =
+                    OpenAIChatModel.builder()
+                            .apiKey(openRouterApiKey)
+                            .modelName(OPENROUTER_MODEL_NAME)
+                            .stream(true)
+                            .baseUrl(baseUrl)
+                            .formatter(new OpenAIChatFormatter())
+                            .build();
+        } else {
+            // Use DashScope
+            syncModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(dashScopeApiKey)
+                            .modelName(DASHSCOPE_MODEL_NAME)
+                            .stream(false)
+                            .build();
+
+            streamModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(dashScopeApiKey)
+                            .modelName(DASHSCOPE_MODEL_NAME)
+                            .stream(true)
+                            .build();
+        }
 
         System.out.println("Created both sync and stream models");
 

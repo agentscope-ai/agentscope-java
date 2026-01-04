@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,13 +15,8 @@
  */
 package io.agentscope.examples.werewolf.web;
 
-import static io.agentscope.examples.werewolf.WerewolfGameConfig.HUNTER_COUNT;
 import static io.agentscope.examples.werewolf.WerewolfGameConfig.MAX_DISCUSSION_ROUNDS;
 import static io.agentscope.examples.werewolf.WerewolfGameConfig.MAX_ROUNDS;
-import static io.agentscope.examples.werewolf.WerewolfGameConfig.SEER_COUNT;
-import static io.agentscope.examples.werewolf.WerewolfGameConfig.VILLAGER_COUNT;
-import static io.agentscope.examples.werewolf.WerewolfGameConfig.WEREWOLF_COUNT;
-import static io.agentscope.examples.werewolf.WerewolfGameConfig.WITCH_COUNT;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
@@ -35,6 +30,7 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.werewolf.GameConfiguration;
 import io.agentscope.examples.werewolf.WerewolfGameConfig;
 import io.agentscope.examples.werewolf.WerewolfUtils;
 import io.agentscope.examples.werewolf.entity.GameState;
@@ -76,33 +72,44 @@ public class WerewolfWebGame {
     private final WerewolfUtils utils;
     private final WebUserInput userInput;
     private final Role selectedHumanRole;
+    private final GameConfiguration gameConfig;
 
     private DashScopeChatModel model;
     private GameState gameState;
     private Player humanPlayer;
 
     public WerewolfWebGame(GameEventEmitter emitter, LocalizationBundle bundle) {
-        this(emitter, bundle, null, null);
+        this(emitter, bundle, null, null, new GameConfiguration());
     }
 
     public WerewolfWebGame(
             GameEventEmitter emitter, LocalizationBundle bundle, WebUserInput userInput) {
-        this(emitter, bundle, userInput, null);
+        this(emitter, bundle, userInput, null, new GameConfiguration());
     }
 
-    /**
-     * Create a new WerewolfWebGame with optional human role selection.
-     *
-     * @param emitter The game event emitter
-     * @param bundle The localization bundle
-     * @param userInput The user input handler (null for AI-only game)
-     * @param selectedHumanRole The role selected by human player (null for random)
-     */
     public WerewolfWebGame(
             GameEventEmitter emitter,
             LocalizationBundle bundle,
             WebUserInput userInput,
             Role selectedHumanRole) {
+        this(emitter, bundle, userInput, selectedHumanRole, new GameConfiguration());
+    }
+
+    /**
+     * Create a new WerewolfWebGame with optional human role selection and game configuration.
+     *
+     * @param emitter The game event emitter
+     * @param bundle The localization bundle
+     * @param userInput The user input handler (null for AI-only game)
+     * @param selectedHumanRole The role selected by human player (null for random)
+     * @param gameConfig The game configuration with player and role counts
+     */
+    public WerewolfWebGame(
+            GameEventEmitter emitter,
+            LocalizationBundle bundle,
+            WebUserInput userInput,
+            Role selectedHumanRole,
+            GameConfiguration gameConfig) {
         this.emitter = emitter;
         this.prompts = bundle.prompts();
         this.messages = bundle.messages();
@@ -110,6 +117,7 @@ public class WerewolfWebGame {
         this.utils = new WerewolfUtils(messages);
         this.userInput = userInput;
         this.selectedHumanRole = selectedHumanRole;
+        this.gameConfig = gameConfig;
     }
 
     public GameState getGameState() {
@@ -156,11 +164,11 @@ public class WerewolfWebGame {
 
     private GameState initializeGame() {
         List<Role> roles = new ArrayList<>();
-        for (int i = 0; i < VILLAGER_COUNT; i++) roles.add(Role.VILLAGER);
-        for (int i = 0; i < WEREWOLF_COUNT; i++) roles.add(Role.WEREWOLF);
-        for (int i = 0; i < SEER_COUNT; i++) roles.add(Role.SEER);
-        for (int i = 0; i < WITCH_COUNT; i++) roles.add(Role.WITCH);
-        for (int i = 0; i < HUNTER_COUNT; i++) roles.add(Role.HUNTER);
+        for (int i = 0; i < gameConfig.getVillagerCount(); i++) roles.add(Role.VILLAGER);
+        for (int i = 0; i < gameConfig.getWerewolfCount(); i++) roles.add(Role.WEREWOLF);
+        for (int i = 0; i < gameConfig.getSeerCount(); i++) roles.add(Role.SEER);
+        for (int i = 0; i < gameConfig.getWitchCount(); i++) roles.add(Role.WITCH);
+        for (int i = 0; i < gameConfig.getHunterCount(); i++) roles.add(Role.HUNTER);
         Collections.shuffle(roles);
 
         // Determine human player index based on selected role
@@ -185,7 +193,12 @@ public class WerewolfWebGame {
         }
 
         List<Player> players = new ArrayList<>();
-        List<String> playerNames = langConfig.getPlayerNames();
+        List<String> playerNames = new ArrayList<>(langConfig.getPlayerNames());
+        int totalPlayers = gameConfig.getTotalPlayerCount();
+        // Generate player names if needed
+        for (int i = playerNames.size(); i < totalPlayers; i++) {
+            playerNames.add(String.valueOf(i + 1));
+        }
         for (int i = 0; i < roles.size(); i++) {
             String name = playerNames.get(i);
             Role role = roles.get(i);
@@ -305,12 +318,18 @@ public class WerewolfWebGame {
                     messages.getWerewolvesChose(victim.getName()), EventVisibility.WEREWOLF_ONLY);
         }
 
-        if (gameState.getWitch() != null && gameState.getWitch().isAlive()) {
-            witchActions();
+        // Handle all witches
+        for (Player witch : gameState.getWitches()) {
+            if (witch.isAlive()) {
+                witchActions(witch);
+            }
         }
 
-        if (gameState.getSeer() != null && gameState.getSeer().isAlive()) {
-            seerCheck();
+        // Handle all seers
+        for (Player seer : gameState.getSeers()) {
+            if (seer.isAlive()) {
+                seerCheck(seer);
+            }
         }
 
         // Emit player_eliminated events for night deaths at end of night phase
@@ -460,8 +479,7 @@ public class WerewolfWebGame {
         }
     }
 
-    private void witchActions() {
-        Player witch = gameState.getWitch();
+    private void witchActions(Player witch) {
         Player victim = gameState.getLastNightVictim();
         boolean isHumanWitch = witch.isHuman();
 
@@ -659,8 +677,7 @@ public class WerewolfWebGame {
         emitStatsUpdate();
     }
 
-    private void seerCheck() {
-        Player seer = gameState.getSeer();
+    private void seerCheck(Player seer) {
         boolean isHumanSeer = seer.isHuman();
 
         // Seer actions visibility based on role
@@ -739,15 +756,16 @@ public class WerewolfWebGame {
         String nightAnnouncement = prompts.createNightResultAnnouncement(gameState);
         emitter.emitSystemMessage(nightAnnouncement);
 
-        Player hunter = gameState.getHunter();
-        if (hunter != null
-                && !hunter.isAlive()
-                && (hunter.equals(gameState.getLastNightVictim())
-                        || hunter.equals(gameState.getLastPoisonedVictim()))) {
-            // Night death: no need to broadcast, death will be announced in night result
-            hunterShoot(hunter, false);
-            if (checkGameEnd()) {
-                return;
+        // Handle all hunters who were eliminated
+        for (Player hunter : gameState.getHunters()) {
+            if (!hunter.isAlive()
+                    && (hunter.equals(gameState.getLastNightVictim())
+                            || hunter.equals(gameState.getLastPoisonedVictim()))) {
+                // Night death: no need to broadcast, death will be announced in night result
+                hunterShoot(hunter, false);
+                if (checkGameEnd()) {
+                    return;
+                }
             }
         }
 

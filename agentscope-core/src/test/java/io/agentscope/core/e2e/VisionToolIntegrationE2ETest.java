@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -60,7 +60,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Vision + Tool Integration E2E Tests")
 class VisionToolIntegrationE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    // Extended timeout for vision + tool calls: image processing takes longer than text-only
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
 
     private static final String CAT_IMAGE_URL =
             "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";

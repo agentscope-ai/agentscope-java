@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,7 +31,7 @@ class VersionTest {
         Assertions.assertNotNull(Version.VERSION, "VERSION constant should not be null");
         Assertions.assertFalse(Version.VERSION.isEmpty(), "VERSION constant should not be empty");
         Assertions.assertEquals(
-                "1.0.5-SNAPSHOT", Version.VERSION, "VERSION should match current version");
+                "1.0.6-SNAPSHOT", Version.VERSION, "VERSION should match current version");
     }
 
     @Test
@@ -99,7 +99,7 @@ class VersionTest {
     void testGetUserAgent_ExampleFormat() {
         String userAgent = Version.getUserAgent();
 
-        // Example: agentscope-java/1.0.5-SNAPSHOT; java/17.0.1; platform/Mac OS X
+        // Example: agentscope-java/1.0.6-SNAPSHOT; java/17.0.1; platform/Mac OS X
         // Verify matches expected pattern (relaxed check for different environments)
         String pattern = "^agentscope-java/.+; java/[0-9.]+; platform/.+$";
         Assertions.assertTrue(

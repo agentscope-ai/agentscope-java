@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -127,7 +127,7 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING && !event.isLast()) {
+        if (type == EventType.REASONING) {
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -143,13 +143,13 @@ public class AguiAgentAdapter {
                             state.startMessage(messageId);
                         }
 
-                        // In incremental mode, text is already the delta
-                        events.add(
-                                new AguiEvent.TextMessageContent(
-                                        state.threadId, state.runId, messageId, text));
-
-                        // End message if this is the last event
-                        if (event.isLast()) {
+                        if (!event.isLast()) {
+                            // In incremental mode, text is already the delta
+                            events.add(
+                                    new AguiEvent.TextMessageContent(
+                                            state.threadId, state.runId, messageId, text));
+                        } else {
+                            // End message if this is the last event
                             events.add(
                                     new AguiEvent.TextMessageEnd(
                                             state.threadId, state.runId, messageId));

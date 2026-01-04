@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -151,5 +152,70 @@ class AutoContextConfigTest {
         assertEquals(50, config.getLastKeep());
         assertEquals(6, config.getMinConsecutiveToolMessages());
         assertEquals(0.3, config.getCurrentRoundCompressionRatio());
+    }
+
+    @Test
+    @DisplayName("Should have null customPrompt by default")
+    void testDefaultCustomPrompt() {
+        AutoContextConfig config = new AutoContextConfig();
+        assertNull(config.getCustomPrompt());
+
+        AutoContextConfig config2 = AutoContextConfig.builder().build();
+        assertNull(config2.getCustomPrompt());
+    }
+
+    @Test
+    @DisplayName("Should set and get customPrompt using builder")
+    void testCustomPrompt() {
+        PromptConfig customPrompt =
+                PromptConfig.builder().previousRoundToolCompressPrompt("Custom prompt").build();
+
+        AutoContextConfig config = AutoContextConfig.builder().customPrompt(customPrompt).build();
+
+        assertNotNull(config.getCustomPrompt());
+        assertEquals(customPrompt, config.getCustomPrompt());
+        assertEquals(
+                "Custom prompt", config.getCustomPrompt().getPreviousRoundToolCompressPrompt());
+    }
+
+    @Test
+    @DisplayName("Should support builder method chaining with customPrompt")
+    void testBuilderMethodChainingWithCustomPrompt() {
+        PromptConfig customPrompt = PromptConfig.builder().build();
+        AutoContextConfig.Builder builder = AutoContextConfig.builder();
+
+        AutoContextConfig.Builder result =
+                builder.msgThreshold(50).customPrompt(customPrompt).maxToken(64 * 1024);
+
+        assertNotNull(result);
+        assertEquals(builder, result);
+    }
+
+    @Test
+    @DisplayName("Should build config with customPrompt and other settings")
+    void testCustomPromptWithOtherSettings() {
+        PromptConfig customPrompt =
+                PromptConfig.builder()
+                        .previousRoundToolCompressPrompt("Custom tool prompt")
+                        .currentRoundCompressPrompt("Custom compress prompt")
+                        .build();
+
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(50)
+                        .maxToken(64 * 1024)
+                        .customPrompt(customPrompt)
+                        .lastKeep(20)
+                        .build();
+
+        assertEquals(50, config.getMsgThreshold());
+        assertEquals(64 * 1024, config.getMaxToken());
+        assertEquals(20, config.getLastKeep());
+        assertNotNull(config.getCustomPrompt());
+        assertEquals(
+                "Custom tool prompt",
+                config.getCustomPrompt().getPreviousRoundToolCompressPrompt());
+        assertEquals(
+                "Custom compress prompt", config.getCustomPrompt().getCurrentRoundCompressPrompt());
     }
 }
