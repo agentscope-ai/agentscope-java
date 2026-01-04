@@ -15,8 +15,7 @@
  */
 package io.agentscope.core.rag.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,8 +32,6 @@ import java.util.UUID;
  * for the same content across different runs.
  */
 public class Document {
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String id;
     private final DocumentMetadata metadata;
@@ -158,7 +155,7 @@ public class Document {
             return null;
         }
         try {
-            return OBJECT_MAPPER.convertValue(value, targetClass);
+            return JsonUtils.getJsonCodec().convertValue(value, targetClass);
         } catch (IllegalArgumentException e) {
             throw new RuntimeException(
                     String.format(
@@ -194,22 +191,17 @@ public class Document {
      * @return a deterministic UUID string
      */
     private static String generateDocumentId(DocumentMetadata metadata) {
-        try {
-            // Create a map with doc_id, chunk_id, and content (matching Python implementation)
-            Map<String, Object> keyMap = new LinkedHashMap<>();
-            keyMap.put("doc_id", metadata.getDocId());
-            keyMap.put("chunk_id", metadata.getChunkId());
-            keyMap.put("content", metadata.getContent());
+        // Create a map with doc_id, chunk_id, and content (matching Python implementation)
+        Map<String, Object> keyMap = new LinkedHashMap<>();
+        keyMap.put("doc_id", metadata.getDocId());
+        keyMap.put("chunk_id", metadata.getChunkId());
+        keyMap.put("content", metadata.getContent());
 
-            // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
-            String jsonKey = OBJECT_MAPPER.writeValueAsString(keyMap);
+        // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
+        String jsonKey = JsonUtils.getJsonCodec().toJson(keyMap);
 
-            // Generate UUID v3 (name-based with MD5) from the JSON string
-            return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
-        } catch (JsonProcessingException e) {
-            // Fallback: use a random UUID if JSON serialization fails
-            throw new RuntimeException("Failed to generate document ID", e);
-        }
+        // Generate UUID v3 (name-based with MD5) from the JSON string
+        return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     @Override

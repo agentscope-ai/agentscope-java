@@ -18,7 +18,6 @@ package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -57,7 +56,6 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final SchemaGenerator schemaGenerator;
 
     static {
@@ -88,8 +86,8 @@ public class JsonSchemaUtils {
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
             JsonNode schemaNode = schemaGenerator.generateSchema(clazz);
-            return objectMapper.convertValue(
-                    schemaNode, new TypeReference<Map<String, Object>>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
@@ -107,7 +105,8 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
-            return objectMapper.convertValue(schema, new TypeReference<>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for schema", e);
         }
@@ -122,8 +121,8 @@ public class JsonSchemaUtils {
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
             JsonNode schemaNode = schemaGenerator.generateSchema(type);
-            return objectMapper.convertValue(
-                    schemaNode, new TypeReference<Map<String, Object>>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
@@ -148,7 +147,7 @@ public class JsonSchemaUtils {
         }
 
         try {
-            return objectMapper.convertValue(data, targetClass);
+            return JsonUtils.getJsonCodec().convertValue(data, targetClass);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert metadata to " + targetClass.getName(), e);
         }

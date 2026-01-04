@@ -19,13 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0Message}. */
 class Mem0MessageTest {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testDefaultConstructor() {
@@ -94,7 +92,7 @@ class Mem0MessageTest {
                         .name("TestUser")
                         .build();
 
-        String json = objectMapper.writeValueAsString(message);
+        String json = JsonUtils.getJsonCodec().toJson(message);
         assertNotNull(json);
 
         // Verify all fields are present in JSON
@@ -110,7 +108,7 @@ class Mem0MessageTest {
     void testJsonDeserialization() throws Exception {
         String json = "{\"role\":\"assistant\",\"content\":\"Hello\",\"name\":\"Agent\"}";
 
-        Mem0Message message = objectMapper.readValue(json, Mem0Message.class);
+        Mem0Message message = JsonUtils.getJsonCodec().fromJson(json, Mem0Message.class);
 
         assertNotNull(message);
         assertEquals("assistant", message.getRole());
@@ -122,7 +120,7 @@ class Mem0MessageTest {
     void testJsonDeserializationWithoutName() throws Exception {
         String json = "{\"role\":\"user\",\"content\":\"Test\"}";
 
-        Mem0Message message = objectMapper.readValue(json, Mem0Message.class);
+        Mem0Message message = JsonUtils.getJsonCodec().fromJson(json, Mem0Message.class);
 
         assertNotNull(message);
         assertEquals("user", message.getRole());
@@ -139,8 +137,8 @@ class Mem0MessageTest {
                         .name("RoundTripUser")
                         .build();
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0Message deserialized = objectMapper.readValue(json, Mem0Message.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0Message deserialized = JsonUtils.getJsonCodec().fromJson(json, Mem0Message.class);
 
         assertEquals(original.getRole(), deserialized.getRole());
         assertEquals(original.getContent(), deserialized.getContent());
@@ -151,7 +149,7 @@ class Mem0MessageTest {
     void testJsonExcludesNullFields() throws Exception {
         Mem0Message message = Mem0Message.builder().role("user").content("Test").build();
 
-        String json = objectMapper.writeValueAsString(message);
+        String json = JsonUtils.getJsonCodec().toJson(message);
 
         // The @JsonInclude(Include.NON_NULL) should exclude null name field
         assert !json.contains("\"name\"");

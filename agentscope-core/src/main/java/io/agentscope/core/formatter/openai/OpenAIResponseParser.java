@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -31,6 +29,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.exception.OpenAIException;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -50,8 +50,6 @@ public class OpenAIResponseParser {
 
     /** Placeholder name for tool call argument fragments in streaming responses. */
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";
-
-    private final ObjectMapper objectMapper;
 
     /**
      * Safely get prompt token count from usage, returning 0 if null or invalid.
@@ -75,9 +73,7 @@ public class OpenAIResponseParser {
                 : 0;
     }
 
-    public OpenAIResponseParser() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public OpenAIResponseParser() {}
 
     /**
      * Parse OpenAI response DTO to AgentScope ChatResponse.
@@ -238,7 +234,8 @@ public class OpenAIResponseParser {
                                     if (!arguments.isEmpty()) {
                                         @SuppressWarnings("unchecked")
                                         Map<String, Object> parsed =
-                                                objectMapper.readValue(arguments, Map.class);
+                                                JsonUtils.getJsonCodec()
+                                                        .fromJson(arguments, Map.class);
                                         if (parsed != null) {
                                             argsMap.putAll(parsed);
                                         }
@@ -272,7 +269,7 @@ public class OpenAIResponseParser {
                                             toolCall.getId(),
                                             name);
                                 } catch (Exception ex) {
-                                    if (ex instanceof JsonProcessingException) {
+                                    if (ex instanceof JsonException) {
                                         log.warn(
                                                 "Failed to parse tool call arguments due to JSON"
                                                         + " error: {}",
@@ -495,8 +492,8 @@ public class OpenAIResponseParser {
                                             try {
                                                 @SuppressWarnings("unchecked")
                                                 Map<String, Object> parsed =
-                                                        objectMapper.readValue(
-                                                                arguments, Map.class);
+                                                        JsonUtils.getJsonCodec()
+                                                                .fromJson(arguments, Map.class);
                                                 if (parsed != null) {
                                                     argsMap.putAll(parsed);
                                                 }

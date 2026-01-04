@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -32,14 +31,12 @@ import org.junit.jupiter.api.Test;
 class ToolMethodInvokerTest {
 
     private ToolMethodInvoker invoker;
-    private ObjectMapper objectMapper;
     private ToolResultConverter responseConverter;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        responseConverter = new ToolResultConverter(objectMapper);
-        invoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        responseConverter = new ToolResultConverter();
+        invoker = new ToolMethodInvoker(responseConverter);
     }
 
     private ToolResultBlock invokeWithParam(

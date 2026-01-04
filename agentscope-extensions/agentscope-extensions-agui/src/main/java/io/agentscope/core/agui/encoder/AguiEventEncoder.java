@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.agui.encoder;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.agui.AguiException;
-import io.agentscope.core.agui.AguiObjectMapper;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 
 /**
  * Encoder for AG-UI events to Server-Sent Events (SSE) format.
@@ -29,16 +29,13 @@ import io.agentscope.core.agui.event.AguiEvent;
  * </pre>
  *
  * <p>The encoder is thread-safe and can be shared across multiple requests.
- * It uses a shared ObjectMapper instance for efficient serialization.
  */
 public class AguiEventEncoder {
 
     /**
      * Creates a new AguiEventEncoder.
      */
-    public AguiEventEncoder() {
-        // Uses shared ObjectMapper from AguiObjectMapper
-    }
+    public AguiEventEncoder() {}
 
     /**
      * Encode an AG-UI event to SSE format.
@@ -54,9 +51,9 @@ public class AguiEventEncoder {
      */
     public String encode(AguiEvent event) {
         try {
-            String json = AguiObjectMapper.get().writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             return "data: " + json + "\n\n";
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             throw new AguiException.EncodingException("Failed to encode AG-UI event", e);
         }
     }
@@ -76,8 +73,8 @@ public class AguiEventEncoder {
     public String encodeToJson(AguiEvent event) {
         try {
             // Add leading space for SSE compatibility: "data:" + " {...}" = "data: {...}"
-            return " " + AguiObjectMapper.get().writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+            return " " + JsonUtils.getJsonCodec().toJson(event);
+        } catch (JsonException e) {
             throw new AguiException.EncodingException("Failed to encode AG-UI event to JSON", e);
         }
     }

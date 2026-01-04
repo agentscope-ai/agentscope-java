@@ -15,11 +15,12 @@
  */
 package io.agentscope.core.studio;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.studio.pojo.PushMessageRequest;
 import io.agentscope.core.studio.pojo.RegisterRunRequest;
 import io.agentscope.core.studio.pojo.RequestUserInputRequest;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,7 +56,7 @@ public class StudioClient {
 
     private final OkHttpClient httpClient;
     private final StudioConfig config;
-    private final ObjectMapper objectMapper;
+    private final JsonCodec jsonCodec;
     private final String baseUrl;
 
     /**
@@ -66,7 +67,7 @@ public class StudioClient {
     public StudioClient(StudioConfig config) {
         this.config = config;
         this.baseUrl = config.getStudioUrl();
-        this.objectMapper = new ObjectMapper();
+        this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient =
                 new OkHttpClient.Builder()
                         .connectTimeout(Duration.ofSeconds(10))
@@ -100,7 +101,7 @@ public class StudioClient {
                                             .runDir("")
                                             .build();
 
-                            String json = objectMapper.writeValueAsString(payload);
+                            String json = jsonCodec.toJson(payload);
                             RequestBody body = RequestBody.create(json, JSON_MEDIA_TYPE);
 
                             Request request =
@@ -145,7 +146,7 @@ public class StudioClient {
                                             .msg(msg)
                                             .build();
 
-                            String json = objectMapper.writeValueAsString(payload);
+                            String json = jsonCodec.toJson(payload);
                             RequestBody body = RequestBody.create(json, JSON_MEDIA_TYPE);
 
                             Request request =
@@ -193,7 +194,7 @@ public class StudioClient {
                                             .structuredInput(structuredSchema)
                                             .build();
 
-                            String json = objectMapper.writeValueAsString(payload);
+                            String json = jsonCodec.toJson(payload);
                             RequestBody body = RequestBody.create(json, JSON_MEDIA_TYPE);
 
                             Request request =

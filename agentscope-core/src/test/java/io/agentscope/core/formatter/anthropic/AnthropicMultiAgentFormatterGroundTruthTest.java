@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.MessageParam;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -28,6 +27,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +41,7 @@ import org.junit.jupiter.api.Test;
 class AnthropicMultiAgentFormatterGroundTruthTest {
 
     private AnthropicMultiAgentFormatter formatter;
-    private ObjectMapper objectMapper;
+    private JsonCodec jsonCodec;
     private String imageUrl;
     private List<Msg> msgsSystem;
     private List<Msg> msgsConversation;
@@ -51,7 +52,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
     @BeforeEach
     void setUp() {
         formatter = new AnthropicMultiAgentFormatter();
-        objectMapper = new ObjectMapper();
+        jsonCodec = JsonUtils.getJsonCodec();
         imageUrl = "https://www.example.com/image.png";
 
         // System message
@@ -214,7 +215,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
 
         List<MessageParam> result = formatter.format(allMsgs);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         // Ground truth from Python implementation
         String groundTruthJson =
@@ -326,7 +327,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode, "Formatted output should match ground truth");
     }
 
@@ -342,7 +343,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
 
         List<MessageParam> result = formatter.format(allMsgs);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
                 """
@@ -398,7 +399,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 
@@ -406,7 +407,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
     void testMultiAgentFormatterOnlySystemMessage() throws Exception {
         List<MessageParam> result = formatter.format(msgsSystem);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
                 """
@@ -423,7 +424,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 
@@ -431,7 +432,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
     void testMultiAgentFormatterOnlyConversation() throws Exception {
         List<MessageParam> result = formatter.format(msgsConversation);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
                 """
@@ -459,7 +460,7 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 }

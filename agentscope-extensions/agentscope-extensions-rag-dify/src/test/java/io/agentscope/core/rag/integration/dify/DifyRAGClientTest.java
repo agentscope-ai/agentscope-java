@@ -21,10 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.dify.exception.DifyApiException;
 import io.agentscope.core.rag.integration.dify.exception.DifyAuthException;
 import io.agentscope.core.rag.integration.dify.model.DifyResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -41,13 +41,11 @@ import org.junit.jupiter.api.Test;
 class DifyRAGClientTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -175,7 +173,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals("What is RAG?", parsed.get("query"));
     }
@@ -201,7 +200,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -237,7 +237,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -286,7 +287,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -325,7 +327,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -352,7 +355,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -379,7 +383,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -523,7 +528,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -550,7 +556,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
@@ -568,7 +575,8 @@ class DifyRAGClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> retrievalModel = (Map<String, Object>) parsed.get("retrieval_model");
