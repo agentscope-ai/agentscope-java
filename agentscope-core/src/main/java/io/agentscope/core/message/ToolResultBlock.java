@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
 import java.util.List;
@@ -30,6 +31,7 @@ import java.util.Map;
  *
  * Supports metadata for passing additional execution information.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class ToolResultBlock extends ContentBlock {
 
     /** Metadata key indicating this result is suspended for external execution. */
@@ -39,17 +41,20 @@ public final class ToolResultBlock extends ContentBlock {
     private final String name;
     private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
+    private final Boolean suspended;
 
     @JsonCreator
     public ToolResultBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("output") List<ContentBlock> output,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("suspended") Boolean suspended) {
         this.id = id;
         this.name = name;
         this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        this.suspended = suspended != null ? suspended : false;
     }
 
     /**
@@ -60,7 +65,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output Single content block as output
      */
     public ToolResultBlock(String id, String name, ContentBlock output) {
-        this(id, name, List.of(output), null);
+        this(id, name, List.of(output), null,null);
     }
 
     /**
@@ -71,7 +76,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @param output List of content blocks as output
      */
     public ToolResultBlock(String id, String name, List<ContentBlock> output) {
-        this(id, name, output, null);
+        this(id, name, output, null,null);
     }
 
     /**
@@ -119,7 +124,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return true if this result is suspended, false otherwise
      */
     public boolean isSuspended() {
-        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED)) || (suspended != null && suspended);
     }
 
     /**
@@ -141,7 +146,7 @@ public final class ToolResultBlock extends ContentBlock {
                 toolUse.getId(),
                 toolUse.getName(),
                 List.of(TextBlock.builder().text(content).build()),
-                Map.of(METADATA_SUSPENDED, true));
+                Map.of(METADATA_SUSPENDED, true),true);
     }
 
     /**
@@ -162,7 +167,7 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock text(String text) {
         return new ToolResultBlock(
-                null, null, List.of(TextBlock.builder().text(text).build()), null);
+                null, null, List.of(TextBlock.builder().text(text).build()), null,null);
     }
 
     /**
@@ -176,7 +181,7 @@ public final class ToolResultBlock extends ContentBlock {
                 null,
                 null,
                 List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
-                null);
+                null,null);
     }
 
     /**
@@ -186,7 +191,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with the given output
      */
     public static ToolResultBlock of(ContentBlock output) {
-        return new ToolResultBlock(null, null, List.of(output), null);
+        return new ToolResultBlock(null, null, List.of(output), null,null);
     }
 
     /**
@@ -196,7 +201,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with the given output
      */
     public static ToolResultBlock of(List<ContentBlock> output) {
-        return new ToolResultBlock(null, null, output, null);
+        return new ToolResultBlock(null, null, output, null,null);
     }
 
     /**
@@ -207,7 +212,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with output and metadata
      */
     public static ToolResultBlock of(ContentBlock output, Map<String, Object> metadata) {
-        return new ToolResultBlock(null, null, List.of(output), metadata);
+        return new ToolResultBlock(null, null, List.of(output), metadata,null);
     }
 
     /**
@@ -218,7 +223,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with output and metadata
      */
     public static ToolResultBlock of(List<ContentBlock> output, Map<String, Object> metadata) {
-        return new ToolResultBlock(null, null, output, metadata);
+        return new ToolResultBlock(null, null, output, metadata,null);
     }
 
     /**
@@ -230,7 +235,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock for use in messages
      */
     public static ToolResultBlock of(String id, String name, ContentBlock output) {
-        return new ToolResultBlock(id, name, List.of(output), null);
+        return new ToolResultBlock(id, name, List.of(output), null,null);
     }
 
     /**
@@ -242,7 +247,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock for use in messages
      */
     public static ToolResultBlock of(String id, String name, List<ContentBlock> output) {
-        return new ToolResultBlock(id, name, output, null);
+        return new ToolResultBlock(id, name, output, null,null);
     }
 
     /**
@@ -256,7 +261,7 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock of(
             String id, String name, ContentBlock output, Map<String, Object> metadata) {
-        return new ToolResultBlock(id, name, List.of(output), metadata);
+        return new ToolResultBlock(id, name, List.of(output), metadata,null);
     }
 
     /**
@@ -271,7 +276,7 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock of(
             String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
-        return new ToolResultBlock(id, name, output, metadata);
+        return new ToolResultBlock(id, name, output, metadata,null);
     }
 
     /**
@@ -282,7 +287,7 @@ public final class ToolResultBlock extends ContentBlock {
      * @return New ToolResultBlock with id and name set
      */
     public ToolResultBlock withIdAndName(String id, String name) {
-        return new ToolResultBlock(id, name, this.output, this.metadata);
+        return new ToolResultBlock(id, name, this.output, this.metadata,null);
     }
 
     /**
@@ -364,7 +369,7 @@ public final class ToolResultBlock extends ContentBlock {
          * @return A new ToolResultBlock instance
          */
         public ToolResultBlock build() {
-            return new ToolResultBlock(id, name, output, metadata);
+            return new ToolResultBlock(id, name, output, metadata,null);
         }
     }
 }
