@@ -48,6 +48,7 @@ public class StudioConfig {
     private final int reconnectAttempts;
     private final Duration reconnectDelay;
     private final Duration reconnectMaxDelay;
+    private final String authentication;
 
     private StudioConfig(Builder builder) {
         this.studioUrl = builder.studioUrl;
@@ -59,6 +60,8 @@ public class StudioConfig {
         this.reconnectAttempts = builder.reconnectAttempts;
         this.reconnectDelay = builder.reconnectDelay;
         this.reconnectMaxDelay = builder.reconnectMaxDelay;
+
+        this.authentication = builder.authentication;
     }
 
     public static Builder builder() {
@@ -138,6 +141,20 @@ public class StudioConfig {
     }
 
     /**
+     * Get the authentication value for Arms endpoint's initialization.
+     *
+     * Refer the doc here:
+     *
+     * <a href="https://help.aliyun.com/zh/opentelemetry/user-guide/before-you-begin-before-you-begin">
+     *     Arms Begin Guide</a>
+     *
+     * @return the authentication license.
+     */
+    public String getAuthentication() {
+        return this.authentication;
+    }
+
+    /**
      * Gets the maximum delay between reconnection attempts.
      *
      * @return the maximum reconnect delay (default: 5 seconds)
@@ -156,6 +173,14 @@ public class StudioConfig {
         private int reconnectAttempts = 3;
         private Duration reconnectDelay = Duration.ofSeconds(1);
         private Duration reconnectMaxDelay = Duration.ofSeconds(5);
+
+        // for ARMS product's initialization.
+        private String authentication;
+
+        public Builder authentication(String value) {
+            this.authentication = value;
+            return this;
+        }
 
         public Builder studioUrl(String studioUrl) {
             this.studioUrl = studioUrl;

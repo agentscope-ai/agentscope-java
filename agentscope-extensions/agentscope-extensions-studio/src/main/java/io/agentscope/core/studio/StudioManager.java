@@ -154,6 +154,17 @@ public class StudioManager {
         }
 
         /**
+         * Sets the authentication header value.
+         *
+         * @param value The authentication header value
+         * @return This builder
+         */
+        public Builder authentication(String value) {
+            configBuilder.authentication(value);
+            return this;
+        }
+
+        /**
          * Sets the project name.
          *
          * @param project The project name
@@ -249,13 +260,27 @@ public class StudioManager {
                             })
                     .doOnSuccess(
                             (v) -> {
-                                String traceEndpoint =
-                                        URI.create(config.getStudioUrl()).getPath() + "/v1/traces";
+                                String traceEndpoint;
+
                                 if (config.getTracingUrl() != null) {
                                     traceEndpoint = config.getTracingUrl();
+                                } else {
+                                    traceEndpoint =
+                                            URI.create(config.getStudioUrl()).getPath()
+                                                    + "/v1/traces";
                                 }
-                                TracerRegistry.register(
-                                        TelemetryTracer.builder().endpoint(traceEndpoint).build());
+
+                                TelemetryTracer.Builder builder =
+                                        TelemetryTracer.builder()
+                                                .endpoint(traceEndpoint)
+                                                .serviceName(config.getRunName());
+
+                                if (config.getAuthentication() != null) {
+                                    builder.authentication(config.getAuthentication());
+                                }
+
+                                TelemetryTracer tracer = builder.build();
+                                TracerRegistry.register(tracer);
                             })
                     .doOnError(e -> logger.error("Failed to initialize Studio", e))
                     .onErrorResume(

@@ -17,6 +17,8 @@
 package io.agentscope.core.tracing.telemetry;
 
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_NAME;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.ARMS_GEN_APP_KEY;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.ARMS_HOST_IP_KEY;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentRequestAttributes;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentResponseAttributes;
@@ -28,9 +30,12 @@ import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMRe
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMResponseAttributes;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolRequestAttributes;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_SPAN_KIND;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
+import static io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME;
+import static io.opentelemetry.semconv.incubating.HostIncubatingAttributes.HOST_NAME;
 
 import io.agentscope.core.Version;
 import io.agentscope.core.agent.AgentBase;
@@ -46,17 +51,23 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tracing.Tracer;
 import io.agentscope.core.tracing.telemetry.AttributesExtractors.FormatterConverter;
+import io.agentscope.core.util.HostUtils;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.TracerProvider;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporterBuilder;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
+import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -64,6 +75,7 @@ import reactor.util.context.ContextView;
 
 public class TelemetryTracer implements Tracer {
 
+    public static final String GENAI_APP = "genai_app";
     private final io.opentelemetry.api.trace.Tracer tracer;
 
     public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
@@ -86,6 +98,9 @@ public class TelemetryTracer implements Tracer {
                     spanBuilder.setAllAttributes(getCommonAttributes());
                     spanBuilder.setAttribute(
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callAgent"));
+
+                    // for Arms
+                    spanBuilder.setAttribute(GEN_AI_SPAN_KIND, "AGENT");
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
@@ -124,6 +139,9 @@ public class TelemetryTracer implements Tracer {
                     spanBuilder.setAllAttributes(getCommonAttributes());
                     spanBuilder.setAttribute(
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callModel"));
+
+                    // for Arms
+                    spanBuilder.setAttribute(GEN_AI_SPAN_KIND, "LLM");
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
@@ -169,8 +187,12 @@ public class TelemetryTracer implements Tracer {
                     spanBuilder.setAttribute(
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callTool"));
 
+                    // for Arms
+                    spanBuilder.setAttribute(GEN_AI_SPAN_KIND, "TOOL");
+
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
+                    span.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
 
                     return otelContext
                             .wrapSupplier(toolKitCall)
@@ -236,14 +258,44 @@ public class TelemetryTracer implements Tracer {
         private boolean enabled = true;
         private String endpoint;
         private io.opentelemetry.api.trace.Tracer tracer;
+        private Map<String, String> headers;
+
+        private String serviceName;
 
         public Builder enabled(boolean enabled) {
             this.enabled = enabled;
             return this;
         }
 
+        public Builder serviceName(String serviceName) {
+            this.serviceName = serviceName;
+            return this;
+        }
+
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
+            return this;
+        }
+
+        public Builder header(String key, String value) {
+            if (headers == null) {
+                headers = new HashMap<>();
+            }
+
+            headers.put(key, value);
+            return this;
+        }
+
+        public Builder authentication(String value) {
+            return header("Authentication", value);
+        }
+
+        public Builder headers(Map<String, String> headers) {
+            if (this.headers == null) {
+                this.headers = new HashMap<>();
+            }
+
+            this.headers.putAll(headers);
             return this;
         }
 
@@ -261,15 +313,33 @@ public class TelemetryTracer implements Tracer {
                 return new TelemetryTracer(tracer);
             }
 
+            OtlpHttpSpanExporterBuilder oseBuilder =
+                    OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+
+            Attributes attributes =
+                    Attributes.of(
+                            SERVICE_NAME,
+                            serviceName,
+                            ARMS_GEN_APP_KEY,
+                            GENAI_APP,
+                            HOST_NAME,
+                            HostUtils.getHostname(),
+                            ARMS_HOST_IP_KEY,
+                            HostUtils.getLocalIpAddressOrEmpty());
+
+            Resource resource = Resource.getDefault().merge(Resource.create(attributes));
+
+            if (headers != null) {
+                headers.forEach(oseBuilder::addHeader);
+            }
+
+            OtlpHttpSpanExporter exporter = oseBuilder.build();
+
             TracerProvider tracerProvider =
                     SdkTracerProvider.builder()
-                            .addSpanProcessor(
-                                    BatchSpanProcessor.builder(
-                                                    OtlpHttpSpanExporter.builder()
-                                                            .setEndpoint(endpoint)
-                                                            .build())
-                                            .build())
+                            .addSpanProcessor(BatchSpanProcessor.builder(exporter).build())
                             .setSampler(Sampler.alwaysOn())
+                            .setResource(resource)
                             .build();
 
             return new TelemetryTracer(tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION));
