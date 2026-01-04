@@ -458,6 +458,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
      * Converts DocumentMetadata to Qdrant payload map.
      *
      * <p>Serializes the ContentBlock to JSON and stores it as a Qdrant Value.
+     * Also stores all custom payload fields from the metadata.
      *
      * @param metadata the document metadata
      * @return a map of payload key-value pairs
@@ -487,6 +488,13 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         // Store chunk_id
         Value chunkIdValue = Value.newBuilder().setStringValue(metadata.getChunkId()).build();
         payloadMap.put("chunk_id", chunkIdValue);
+
+        // Store custom payload as nested Struct (dictionary)
+        Map<String, Object> customPayload = metadata.getPayload();
+        if (customPayload != null && !customPayload.isEmpty()) {
+            Value payloadValue = convertObjectToValue(customPayload);
+            payloadMap.put("payload", payloadValue);
+        }
 
         return payloadMap;
     }
@@ -528,8 +536,20 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             }
             return Value.newBuilder().setListValue(listBuilder.build()).build();
         } else {
-            // Fallback to string representation
-            return Value.newBuilder().setStringValue(obj.toString()).build();
+            // For custom objects, serialize to Map first using ObjectMapper
+            try {
+                String json = OBJECT_MAPPER.writeValueAsString(obj);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = OBJECT_MAPPER.readValue(json, Map.class);
+                return convertObjectToValue(map);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to serialize custom object of type "
+                                + obj.getClass().getName()
+                                + ", using string representation",
+                        e);
+                return Value.newBuilder().setStringValue(obj.toString()).build();
+            }
         }
     }
 
@@ -646,7 +666,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
     /**
      * Reconstructs DocumentMetadata from Qdrant payload map.
      *
-     * <p>Deserializes the content field from JSON to ContentBlock.
+     * <p>Deserializes the content field from JSON to ContentBlock and extracts
+     * all custom payload fields.
      *
      * @param payload the payload map from Qdrant
      * @return the reconstructed DocumentMetadata
@@ -686,7 +707,24 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         }
         String chunkId = chunkIdValue.getStringValue();
 
-        return new DocumentMetadata(content, docId, chunkId);
+        // Extract custom payload from payload field (nested Struct)
+        Map<String, Object> customPayload = new HashMap<>();
+        Value payloadValue = payload.get("payload");
+        if (payloadValue != null) {
+            Object payloadObj = convertValueToObject(payloadValue);
+            if (payloadObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> payloadMap = (Map<String, Object>) payloadObj;
+                customPayload = payloadMap;
+            } else {
+                log.warn(
+                        "Expected Map type for payload but got "
+                                + (payloadObj != null ? payloadObj.getClass().getName() : "null"));
+                customPayload = new HashMap<>();
+            }
+        }
+
+        return new DocumentMetadata(content, docId, chunkId, customPayload);
     }
 
     /**
