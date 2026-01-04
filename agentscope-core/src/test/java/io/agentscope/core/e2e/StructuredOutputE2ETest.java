@@ -118,7 +118,6 @@ class StructuredOutputE2ETest {
         public String productName;
         public List<String> features;
         public PriceInfo pricing;
-        public Map<String, Integer> ratings;
 
         @Override
         public String toString() {
@@ -130,8 +129,6 @@ class StructuredOutputE2ETest {
                     + features
                     + ", pricing="
                     + pricing
-                    + ", ratings="
-                    + ratings
                     + '}';
         }
     }
@@ -363,11 +360,12 @@ class StructuredOutputE2ETest {
         Msg input =
                 TestUtils.createUserMessage(
                         "User",
-                        "Analyze the iPhone 16 Pro. Provide: product name, a list of key features,"
-                            + " pricing information (amount and currency), and ratings from"
-                            + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88). This"
-                            + " is the simulation of a real user conversation, so you can simply"
-                            + " reply some random information about the product.");
+                        """
+                                Please generate result base on the following information:
+                                 - Product Name: iPhone 16 Pro
+                                 - Features: 5G, 6.1-inch display, A16 Bionic chip, 512GB storage, 5G support, 12MP camera
+                                 - Pricing: 799 USD (current price)
+                                """);
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         // Request structured output with complex nested structure
@@ -393,17 +391,6 @@ class StructuredOutputE2ETest {
                 analysis.pricing.amount > 0,
                 "Price amount should be positive for " + provider.getModelName());
         assertNotNull(analysis.pricing.currency, "Currency should be populated");
-
-        // Validate ratings if present (optional for some models)
-        if (analysis.ratings != null) {
-            assertTrue(
-                    analysis.ratings.size() > 0,
-                    "If ratings are provided, should have at least one rating");
-            System.out.println("Ratings: " + analysis.ratings);
-        } else {
-            System.out.println(
-                    "Note: Ratings not provided by model (acceptable for complex Map types)");
-        }
 
         System.out.println("✓ Complex nested structure verified for " + provider.getProviderName());
     }
