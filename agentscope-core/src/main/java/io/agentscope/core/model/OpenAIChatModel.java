@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,227 +15,167 @@
  */
 package io.agentscope.core.model;
 
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.core.http.StreamResponse;
-import com.openai.models.ChatModel;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionChunk;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
- * OpenAI Chat Model implementation using the official OpenAI Java SDK v3.5.3.
- * This implementation provides complete integration with OpenAI's Chat
- * Completion API,
- * including tool calling and streaming support.
+ * OpenAI Chat Model using native HTTP API.
+ *
+ * <p>This implementation uses direct HTTP calls to OpenAI-compatible APIs.
+ *
+ * <p>Features:
+ * <ul>
+ *   <li>Streaming and non-streaming modes</li>
+ *   <li>Tool calling support</li>
+ *   <li>Automatic message format conversion</li>
+ *   <li>Timeout and retry configuration</li>
+ *   <li>Multi-provider support via different Formatters</li>
+ * </ul>
+ *
+ * <p>Provider-specific behavior is handled by the Formatter. Use the appropriate formatter
+ * for your provider:
+ * <ul>
+ *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
+ *   <li>{@link io.agentscope.core.formatter.openai.DeepSeekFormatter} - DeepSeek Chat models</li>
+ *   <li>{@link io.agentscope.core.formatter.openai.GLMFormatter} - Zhipu GLM models</li>
+ * </ul>
  */
 public class OpenAIChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatModel.class);
 
-    private final String baseUrl;
-    private final String apiKey;
-    private final String modelName;
-    private final ChatModel model;
-    private final boolean streamEnabled;
     private final OpenAIClient client;
-    private final GenerateOptions defaultOptions;
-    private final Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
-            formatter;
+    private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
+    private final GenerateOptions configuredOptions;
 
     /**
-     * Creates a new OpenAI chat model instance.
+     * Creates a new OpenAI chat model instance with pre-configured options.
      *
-     * @param baseUrl        the base URL for OpenAI API (null for default)
-     * @param apiKey         the API key for authentication (null for no
-     *                       authentication)
-     * @param modelName      the model name to use (e.g., "gpt-4", "gpt-3.5-turbo")
-     * @param streamEnabled  whether streaming should be enabled
-     * @param defaultOptions default generation options
-     * @param formatter      the message formatter to use (null for default OpenAI
-     *                       formatter)
+     * @param client            the OpenAI HTTP client
+     * @param formatter         the message formatter
+     * @param configuredOptions the pre-configured options (can be null for stateless usage)
      */
-    public OpenAIChatModel(
-            String baseUrl,
-            String apiKey,
-            String modelName,
-            boolean streamEnabled,
-            GenerateOptions defaultOptions,
-            Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
-                    formatter) {
-        this.baseUrl = baseUrl;
-        this.apiKey = apiKey;
-        this.modelName = modelName;
-        this.model = ChatModel.of(modelName);
-        this.streamEnabled = streamEnabled;
-        this.defaultOptions =
-                defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
+    private OpenAIChatModel(
+            OpenAIClient client,
+            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter,
+            GenerateOptions configuredOptions) {
+        this.client = client != null ? client : new OpenAIClient();
         this.formatter = formatter != null ? formatter : new OpenAIChatFormatter();
-
-        // Initialize OpenAI client
-        OpenAIOkHttpClient.Builder clientBuilder = OpenAIOkHttpClient.builder();
-
-        if (apiKey != null) {
-            clientBuilder.apiKey(apiKey);
-        }
-
-        if (baseUrl != null) {
-            clientBuilder.baseUrl(baseUrl);
-        }
-
-        // Set unified AgentScope User-Agent (overrides OpenAI SDK default)
-        clientBuilder.putHeader("User-Agent", Version.getUserAgent());
-
-        this.client = clientBuilder.build();
+        this.configuredOptions = configuredOptions;
     }
 
-    /**
-     * Stream chat completion responses from OpenAI's API.
-     *
-     * <p>
-     * This method internally handles message formatting using the configured
-     * formatter.
-     * It supports both streaming and non-streaming modes based on the streamEnabled
-     * setting.
-     *
-     * <p>
-     * Supports timeout and retry configuration through GenerateOptions:
-     * <ul>
-     * <li>Request timeout: Cancels the request if it exceeds the specified
-     * duration</li>
-     * <li>Retry config: Automatically retries failed requests with exponential
-     * backoff</li>
-     * </ul>
-     *
-     * @param messages AgentScope messages to send to the model
-     * @param tools    Optional list of tool schemas (null or empty if no tools)
-     * @param options  Optional generation options (null to use defaults)
-     * @return Flux stream of chat responses
-     */
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        Instant startTime = Instant.now();
-        log.debug(
-                "OpenAI stream: model={}, messages={}, tools_present={}",
-                model,
-                messages != null ? messages.size() : 0,
-                tools != null && !tools.isEmpty());
-
-        Flux<ChatResponse> responseFlux =
-                Flux.defer(
-                        () -> {
-                            try {
-                                // Build chat completion request
-                                ChatCompletionCreateParams.Builder paramsBuilder =
-                                        ChatCompletionCreateParams.builder().model(model);
-
-                                // Use formatter to convert Msg to OpenAI
-                                // ChatCompletionMessageParam
-                                List<ChatCompletionMessageParam> formattedMessages =
-                                        formatter.format(messages);
-                                for (ChatCompletionMessageParam param : formattedMessages) {
-                                    paramsBuilder.addMessage(param);
-                                }
-
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
-
-                                // Apply tool choice if available
-                                applyToolChoiceIfAvailable(paramsBuilder, options);
-
-                                // Create the request
-                                ChatCompletionCreateParams params = paramsBuilder.build();
-
-                                if (streamEnabled) {
-                                    // Make streaming API call
-                                    StreamResponse<ChatCompletionChunk> streamResponse =
-                                            client.chat().completions().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
-                                    return Flux.fromStream(streamResponse.stream())
-                                            .publishOn(Schedulers.boundedElastic())
-                                            .map(chunk -> formatter.parseResponse(chunk, startTime))
-                                            .filter(Objects::nonNull)
-                                            .doFinally(
-                                                    signalType -> {
-                                                        try {
-                                                            streamResponse.close();
-                                                        } catch (Exception ignored) {
-                                                        }
-                                                    });
-                                } else {
-                                    // For non-streaming, make a single call
-                                    // and return as Flux
-                                    ChatCompletion completion =
-                                            client.chat().completions().create(params);
-                                    ChatResponse response =
-                                            formatter.parseResponse(completion, startTime);
-                                    return Flux.just(response);
-                                }
-                            } catch (Exception e) {
-                                return Flux.error(
-                                        new ModelException(
-                                                "Failed to stream OpenAI API: " + e.getMessage(),
-                                                e,
-                                                modelName,
-                                                "openai"));
-                            }
-                        });
-
-        // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "openai", log);
+                doStream0(messages, tools, options),
+                options,
+                configuredOptions,
+                configuredOptions.getModelName(),
+                "openai");
+    }
+
+    protected Flux<ChatResponse> doStream0(
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+
+        // Merge provided options with configured options (provided takes precedence)
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, configuredOptions);
+
+        if (effectiveOptions == null || effectiveOptions.getModelName() == null) {
+            throw new IllegalArgumentException(
+                    "modelName must be specified in GenerateOptions or configured in builder");
+        }
+
+        String modelName = effectiveOptions.getModelName();
+        log.debug("OpenAI API call: model={}", modelName);
+
+        // Determine streaming mode (effectiveOptions.stream takes precedence)
+        boolean stream =
+                effectiveOptions.getStream() != null ? effectiveOptions.getStream() : false;
+
+        // Get apiKey and baseUrl from effectiveOptions
+        String apiKey = effectiveOptions.getApiKey();
+        String baseUrl = effectiveOptions.getBaseUrl();
+
+        Instant start = Instant.now();
+
+        // Format messages using formatter (handles provider-specific transformations)
+        List<OpenAIMessage> openaiMessages = formatter.format(messages);
+
+        // Build request
+        OpenAIRequest.Builder requestBuilder =
+                OpenAIRequest.builder().model(modelName).messages(openaiMessages).stream(stream);
+
+        // Include usage in stream_options for all streaming calls
+        // This ensures token usage information is available in the final response chunk
+        // Required by OpenAI-compatible APIs like DashScope, Bailian, etc.
+        if (stream) {
+            requestBuilder.streamOptions(
+                    new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
+        }
+
+        OpenAIRequest request = requestBuilder.build();
+
+        // Apply tools to request (formatter handles provider-specific tool format)
+        if (tools != null && !tools.isEmpty()) {
+            formatter.applyTools(request, tools);
+        }
+
+        // Apply generation options (formatter handles provider-specific options)
+        formatter.applyOptions(request, effectiveOptions, null);
+
+        // Apply tool choice if specified (formatter handles provider-specific tool choice)
+        if (effectiveOptions.getToolChoice() != null) {
+            formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
+        }
+
+        // Make the API call
+        if (stream) {
+            // Streaming mode
+            return client.stream(apiKey, baseUrl, request, effectiveOptions)
+                    .map(response -> formatter.parseResponse(response, start))
+                    .filter(Objects::nonNull);
+        } else {
+            // Non-streaming mode: make a single call and return as Flux
+            return Flux.defer(
+                    () -> {
+                        try {
+                            OpenAIResponse response =
+                                    client.call(apiKey, baseUrl, request, effectiveOptions);
+                            ChatResponse chatResponse = formatter.parseResponse(response, start);
+                            return Flux.just(chatResponse);
+                        } catch (Exception e) {
+                            return Flux.error(
+                                    new ModelException(
+                                            "Failed to call OpenAI API: " + e.getMessage(),
+                                            e,
+                                            modelName,
+                                            "openai"));
+                        }
+                    });
+        }
     }
 
     /**
      * Gets the model name for logging and identification.
      *
-     * @return the model name
+     * @return the model name, or null if not configured
      */
     @Override
     public String getModelName() {
-        return modelName;
-    }
-
-    /**
-     * Gets the base URL for OpenAI API.
-     *
-     * @return the base URL
-     */
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    /**
-     * Apply tool choice configuration if available in options.
-     *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param options       Generation options containing tool choice
-     */
-    private void applyToolChoiceIfAvailable(
-            ChatCompletionCreateParams.Builder paramsBuilder, GenerateOptions options) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getToolChoice() != null) {
-            formatter.applyToolChoice(paramsBuilder, opt.getToolChoice());
-        }
+        return configuredOptions != null ? configuredOptions.getModelName() : null;
     }
 
     /**
@@ -247,30 +187,25 @@ public class OpenAIChatModel extends ChatModelBase {
         return new Builder();
     }
 
+    /**
+     * Builder for OpenAIChatModel.
+     *
+     * <p>The built model internally wraps the configuration so that calls without explicit
+     * options use the builder-provided values.
+     */
     public static class Builder {
-        private String baseUrl;
         private String apiKey;
         private String modelName;
-        private boolean streamEnabled = true;
-        private GenerateOptions defaultOptions = null;
-        private Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
-                formatter;
+        private Boolean stream;
+        private GenerateOptions defaultOptions;
+        private String baseUrl;
+        private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
+        private HttpTransport httpTransport;
 
         /**
-         * Sets the base URL for OpenAI API.
+         * Sets the API key for OpenAI authentication.
          *
-         * @param baseUrl the base URL (null for default OpenAI API)
-         * @return this builder instance
-         */
-        public Builder baseUrl(String baseUrl) {
-            this.baseUrl = baseUrl;
-            return this;
-        }
-
-        /**
-         * Sets the API key for authentication.
-         *
-         * @param apiKey the API key (null for no authentication)
+         * @param apiKey the API key
          * @return this builder instance
          */
         public Builder apiKey(String apiKey) {
@@ -292,61 +227,100 @@ public class OpenAIChatModel extends ChatModelBase {
         /**
          * Sets whether streaming should be enabled.
          *
-         * @param streamEnabled true to enable streaming, false for non-streaming
+         * @param stream true to enable streaming, false for non-streaming
          * @return this builder instance
          */
-        public Builder stream(boolean streamEnabled) {
-            this.streamEnabled = streamEnabled;
+        public Builder stream(boolean stream) {
+            this.stream = stream;
             return this;
         }
 
         /**
          * Sets the default generation options.
          *
-         * @param options the default options to use
+         * @param options the default options to use (null for defaults)
          * @return this builder instance
          */
-        public Builder defaultOptions(GenerateOptions options) {
+        public Builder generateOptions(GenerateOptions options) {
             this.defaultOptions = options;
+            return this;
+        }
+
+        /**
+         * Sets a custom base URL for OpenAI API.
+         *
+         * @param baseUrl the base URL (null for default)
+         * @return this builder instance
+         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
             return this;
         }
 
         /**
          * Sets the message formatter to use.
          *
+         * <p>Use provider-specific formatters for different providers:
+         * <ul>
+         *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
+         *   <li>{@link io.agentscope.core.formatter.openai.DeepSeekFormatter} - DeepSeek Chat models</li>
+         *   <li>{@link io.agentscope.core.formatter.openai.GLMFormatter} - Zhipu GLM models</li>
+         * </ul>
+         *
          * @param formatter the formatter (null for default OpenAI formatter)
          * @return this builder instance
          */
         public Builder formatter(
-                Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
-                        formatter) {
+                Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter) {
             this.formatter = formatter;
+            return this;
+        }
+
+        /**
+         * Sets the HTTP transport to use.
+         *
+         * @param httpTransport the HTTP transport (null for default from factory)
+         * @return this builder instance
+         */
+        public Builder httpTransport(HttpTransport httpTransport) {
+            this.httpTransport = httpTransport;
             return this;
         }
 
         /**
          * Builds the OpenAIChatModel instance.
          *
-         * <p>
-         * This method ensures that the defaultOptions always has proper executionConfig
-         * applied: - If no defaultOptions are provided, uses MODEL_DEFAULTS for
-         * executionConfig - If defaultOptions are provided but executionConfig is null,
-         * merges
-         * user-provided options with MODEL_DEFAULTS
-         *
-         * <p>
-         * Uses ModelUtils.ensureDefaultExecutionConfig() to apply defaults consistently
-         * across
-         * all model implementations.
-         *
          * @return configured OpenAIChatModel instance
+         * @throws IllegalArgumentException if modelName is not set
          */
         public OpenAIChatModel build() {
-            GenerateOptions effectiveOptions =
-                    ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
+            Objects.requireNonNull(modelName, "modelName must be set");
 
-            return new OpenAIChatModel(
-                    baseUrl, apiKey, modelName, streamEnabled, effectiveOptions, formatter);
+            // Build options from builder fields (these take precedence)
+            GenerateOptions builderOptions =
+                    GenerateOptions.builder()
+                            .apiKey(apiKey)
+                            .baseUrl(baseUrl)
+                            .modelName(modelName)
+                            .stream(stream)
+                            .build();
+
+            // Merge with defaultOptions (builder fields take precedence)
+            GenerateOptions mergedOptions =
+                    GenerateOptions.mergeOptions(builderOptions, defaultOptions);
+
+            // Ensure execution config has defaults
+            GenerateOptions effectiveOptions =
+                    ModelUtils.ensureDefaultExecutionConfig(mergedOptions);
+
+            // Create transport
+            HttpTransport transport =
+                    httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+            OpenAIClient client = new OpenAIClient(transport);
+            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> fmt =
+                    formatter != null ? formatter : new OpenAIChatFormatter();
+
+            return new OpenAIChatModel(client, fmt, effectiveOptions);
         }
     }
 }

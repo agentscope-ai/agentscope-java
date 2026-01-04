@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -67,6 +67,9 @@
                 <!-- Right: Buttons -->
                 <div class="control-area">
                     <div class="control-buttons">
+                        <button class="btn btn-config" id="config-btn" onclick="showConfigModal()">
+                            <span data-i18n="configTitle">⚙️ 游戏配置</span>
+                        </button>
                         <button class="btn btn-primary" id="start-btn" onclick="showRoleSelector()">
                             <span data-i18n="startGame">🎮 开始游戏</span>
                         </button>
@@ -103,6 +106,43 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div class="modal-overlay" id="config-modal" style="display: none;" onclick="if(event.target === this) hideConfigModal()">
+        <div class="role-selector-modal" onclick="event.stopPropagation()">
+            <h3 class="modal-title" data-i18n="configTitle">⚙️ 游戏配置</h3>
+            <div class="config-form-modal">
+                <div class="config-row">
+                    <label data-i18n="configVillager">村民数量:</label>
+                    <input type="number" id="config-villager" min="0" value="3" class="config-input">
+                </div>
+                <div class="config-row">
+                    <label data-i18n="configWerewolf">狼人数量:</label>
+                    <input type="number" id="config-werewolf" min="1" value="3" class="config-input">
+                </div>
+                <div class="config-row">
+                    <label data-i18n="configSeer">预言家数量:</label>
+                    <input type="number" id="config-seer" min="0" value="1" class="config-input">
+                </div>
+                <div class="config-row">
+                    <label data-i18n="configWitch">女巫数量:</label>
+                    <input type="number" id="config-witch" min="0" value="1" class="config-input">
+                </div>
+                <div class="config-row">
+                    <label data-i18n="configHunter">猎人数量:</label>
+                    <input type="number" id="config-hunter" min="0" value="1" class="config-input">
+                </div>
+                <div class="config-total">
+                    <span data-i18n="configTotal">总玩家数:</span>
+                    <span id="config-total-count">9</span>
+                </div>
+                <div class="config-error" id="config-error" style="display: none;"></div>
+            </div>
+            <button class="btn btn-primary" id="config-confirm-btn" onclick="hideConfigModal()">
+                <span data-i18n="confirm">确认</span>
+            </button>
+        </div>
     </div>
 
     <!-- Role Selection Modal -->

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,6 @@ package io.agentscope.core.hook;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Toolkit;
-import java.util.Objects;
 
 /**
  * Base class for tool execution (acting) related events.
@@ -51,14 +50,13 @@ public abstract sealed class ActingEvent extends HookEvent
      *
      * @param type The event type (must not be null)
      * @param agent The agent instance (must not be null)
-     * @param toolkit The toolkit instance (must not be null)
-     * @param toolUse The tool being executed (must not be null)
-     * @throws NullPointerException if type, agent, toolkit, or toolUse is null
+     * @param toolkit The toolkit instance
+     * @param toolUse The tool being executed (can be null for empty events)
      */
     protected ActingEvent(HookEventType type, Agent agent, Toolkit toolkit, ToolUseBlock toolUse) {
         super(type, agent);
-        this.toolkit = Objects.requireNonNull(toolkit, "toolkit cannot be null");
-        this.toolUse = Objects.requireNonNull(toolUse, "toolUse cannot be null");
+        this.toolkit = toolkit;
+        this.toolUse = toolUse;
     }
 
     /**

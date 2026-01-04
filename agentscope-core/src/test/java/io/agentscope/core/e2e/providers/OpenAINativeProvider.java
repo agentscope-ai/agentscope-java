@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,11 @@ public class OpenAINativeProvider implements ModelProvider {
 
     @Override
     public ReActAgent createAgent(String name, Toolkit toolkit) {
+        return createAgentBuilder(name, toolkit).build();
+    }
+
+    @Override
+    public ReActAgent.Builder createAgentBuilder(String name, Toolkit toolkit) {
         String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IllegalStateException("OPENAI_API_KEY environment variable is required");
@@ -48,7 +53,7 @@ public class OpenAINativeProvider implements ModelProvider {
                                 multiAgentFormatter
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
-                        .defaultOptions(GenerateOptions.builder().build());
+                        .generateOptions(GenerateOptions.builder().build());
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
             builder.baseUrl(baseUrl);
@@ -58,8 +63,7 @@ public class OpenAINativeProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override

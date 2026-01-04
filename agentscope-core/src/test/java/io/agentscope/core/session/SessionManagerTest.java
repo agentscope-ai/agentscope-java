@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,13 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.State;
 import io.agentscope.core.state.StateModule;
-import io.agentscope.core.state.StateModuleBase;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,60 +47,6 @@ public class SessionManagerTest {
         } catch (IOException e) {
             // Ignore deletion errors
         }
-    }
-
-    @Test
-    public void testComponentNameResolution() {
-        // Test components that implement getComponentName
-        InMemoryMemory memory = new InMemoryMemory();
-        assertEquals("memory", memory.getComponentName());
-
-        // Test custom component without getComponentName
-        StateModule customModule =
-                new StateModule() {
-                    @Override
-                    public Map<String, Object> stateDict() {
-                        return Map.of();
-                    }
-
-                    @Override
-                    public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
-                        // Empty implementation
-                    }
-
-                    @Override
-                    public String[] getRegisteredAttributes() {
-                        return new String[0];
-                    }
-
-                    @Override
-                    public boolean unregisterState(String attributeName) {
-                        return false;
-                    }
-
-                    @Override
-                    public void clearRegisteredState() {
-                        // Empty implementation
-                    }
-
-                    @Override
-                    public void registerState(
-                            String attributeName,
-                            java.util.function.Function<Object, Object> toJsonFunction,
-                            java.util.function.Function<Object, Object> fromJsonFunction) {
-                        // Empty implementation
-                    }
-                };
-
-        // Should use default naming: class name with first letter lowercased
-        SessionManager manager =
-                SessionManager.forSessionId("test")
-                        .withSession(new JsonSession(Path.of("sessions")))
-                        .addComponent(customModule);
-        Map<String, StateModule> componentMap = Map.of("customModule", customModule);
-
-        // The manager should correctly name the component
-        assertFalse(manager.sessionExists()); // Session doesn't exist, but that's ok
     }
 
     @Test
@@ -295,16 +246,9 @@ public class SessionManagerTest {
         assertThrows(IllegalStateException.class, manager::deleteOrThrow);
     }
 
-    /**
-     * Simple test state module implementation.
-     */
-    private static class TestStateModule extends StateModuleBase {
+    /** Simple test state module implementation using the new API. */
+    private static class TestStateModule implements StateModule {
         private String value;
-
-        public TestStateModule() {
-            // Register the value field for state management
-            registerState("value");
-        }
 
         public String getValue() {
             return value;
@@ -315,71 +259,87 @@ public class SessionManagerTest {
         }
 
         @Override
-        public String getComponentName() {
-            return "customModule";
+        public void saveTo(Session session, SessionKey sessionKey) {
+            session.save(sessionKey, "testStateModule_value", new TestState(value));
+        }
+
+        @Override
+        public void loadFrom(Session session, SessionKey sessionKey) {
+            session.get(sessionKey, "testStateModule_value", TestState.class)
+                    .ifPresent(state -> this.value = state.value());
         }
     }
 
-    /**
-     * Simple test session implementation for testing custom session support.
-     */
+    /** Simple state record for testing. */
+    public record TestState(String value) implements State {}
+
+    /** Simple test session implementation for testing custom session support. */
     private static class TestSession implements Session {
 
-        private Map<String, Map<String, Object>> storage = new java.util.HashMap<>();
+        private final Map<String, Map<String, State>> singleStates = new ConcurrentHashMap<>();
+        private final Map<String, Map<String, List<State>>> listStates = new ConcurrentHashMap<>();
 
         @Override
-        public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
-            Map<String, Object> sessionData = new java.util.HashMap<>();
-            for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                sessionData.put(entry.getKey(), entry.getValue().stateDict());
+        public void save(SessionKey sessionKey, String key, State value) {
+            String sessionId = sessionKey.toString();
+            singleStates.computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>()).put(key, value);
+        }
+
+        @Override
+        public void save(SessionKey sessionKey, String key, List<? extends State> values) {
+            String sessionId = sessionKey.toString();
+            listStates
+                    .computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>())
+                    .put(key, List.copyOf(values));
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
+            String sessionId = sessionKey.toString();
+            Map<String, State> states = singleStates.get(sessionId);
+            if (states == null) {
+                return Optional.empty();
             }
-            storage.put(sessionId, sessionData);
-        }
-
-        @Override
-        public void loadSessionState(
-                String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
-            Map<String, Object> sessionData = storage.get(sessionId);
-            if (sessionData != null) {
-                for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                    Object componentState = sessionData.get(entry.getKey());
-                    if (componentState instanceof Map) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> stateMap = (Map<String, Object>) componentState;
-                        entry.getValue().loadStateDict(stateMap, true);
-                    }
-                }
-            } else if (!allowNotExist) {
-                throw new IllegalArgumentException("Session not found: " + sessionId);
+            State state = states.get(key);
+            if (state == null) {
+                return Optional.empty();
             }
+            return Optional.of((T) state);
         }
 
         @Override
-        public boolean sessionExists(String sessionId) {
-            return storage.containsKey(sessionId);
-        }
-
-        @Override
-        public boolean deleteSession(String sessionId) {
-            return storage.remove(sessionId) != null;
-        }
-
-        @Override
-        public java.util.List<String> listSessions() {
-            return new java.util.ArrayList<>(storage.keySet());
-        }
-
-        @Override
-        public SessionInfo getSessionInfo(String sessionId) {
-            Map<String, Object> sessionData = storage.get(sessionId);
-            if (sessionData == null) {
-                return new SessionInfo(sessionId, 0, 0, 0);
+        @SuppressWarnings("unchecked")
+        public <T extends State> List<T> getList(
+                SessionKey sessionKey, String key, Class<T> itemType) {
+            String sessionId = sessionKey.toString();
+            Map<String, List<State>> lists = listStates.get(sessionId);
+            if (lists == null) {
+                return List.of();
             }
-            return new SessionInfo(
-                    sessionId,
-                    sessionData.toString().length(),
-                    System.currentTimeMillis(),
-                    sessionData.size());
+            List<State> list = lists.get(key);
+            if (list == null) {
+                return List.of();
+            }
+            return (List<T>) list;
+        }
+
+        @Override
+        public boolean exists(SessionKey sessionKey) {
+            String sessionId = sessionKey.toString();
+            return singleStates.containsKey(sessionId) || listStates.containsKey(sessionId);
+        }
+
+        @Override
+        public void delete(SessionKey sessionKey) {
+            String sessionId = sessionKey.toString();
+            singleStates.remove(sessionId);
+            listStates.remove(sessionId);
+        }
+
+        @Override
+        public Set<SessionKey> listSessionKeys() {
+            return Set.of();
         }
     }
 }

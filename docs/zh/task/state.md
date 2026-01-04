@@ -6,55 +6,89 @@ State 提供组件状态的序列化和反序列化能力，是 Session 持久�
 
 ## 核心接口
 
+### StateModule 接口
+
 所有支持状态管理的组件都实现 `StateModule` 接口：
 
 ```java
 public interface StateModule {
-    Map<String, Object> stateDict();                           // 导出状态
-    void loadStateDict(Map<String, Object> state, boolean strict);  // 导入状态
-    String getComponentName();                                 // 组件名称
+    // 保存状态到 Session
+    void saveTo(Session session, SessionKey sessionKey);
+
+    // 从 Session 加载状态
+    void loadFrom(Session session, SessionKey sessionKey);
+
+    // 从 Session 加载状态（如存在），返回是否成功加载
+    default boolean loadIfExists(Session session, SessionKey sessionKey) {
+        if (session.exists(sessionKey)) {
+            loadFrom(session, sessionKey);
+            return true;
+        }
+        return false;
+    }
 }
 ```
 
-**内置支持**：`ReActAgent`、`InMemoryMemory`、`Toolkit`、`PlanNotebook` 等均已实现此接口。
+**内置支持**：`ReActAgent`、`InMemoryMemory`、`PlanNotebook` 等均已实现此接口。
+
+### State 接口
+
+`State` 是一个标记接口，用于标识可以被 Session 存储的状态对象：
+
+```java
+public interface State {
+    // 标记接口，无需实现任何方法
+}
+```
 
 ---
 
 ## 使用方式
 
-### 推荐：使用 Session API
+### 推荐：使用 Agent 的 saveTo/loadFrom
 
-大多数场景建议使用 [Session](./session.md) 高级 API，自动处理序列化和存储：
+大多数场景建议直接调用 Agent 的状态管理方法：
 
 ```java
-// 保存
-SessionManager.forSessionId("user123")
-    .withSession(new JsonSession(Path.of("sessions")))
-    .addComponent(agent)
-    .saveSession();
+import io.agentscope.core.session.JsonSession;
 
-// 加载
-SessionManager.forSessionId("user123")
-    .withSession(new JsonSession(Path.of("sessions")))
-    .addComponent(agent)
-    .loadIfExists();
+// 创建 Session
+Session session = new JsonSession(Path.of("sessions"));
+
+// 保存
+agent.saveTo(session, "user123");
+
+// 加载（会话不存在时静默跳过）
+agent.loadIfExists(session, "user123");
+
+// 加载（会话不存在时抛异常）
+agent.loadFrom(session, "user123");
 ```
 
-### 高级：手动状态管理
+### 直接使用 Session API
 
-需要自定义序列化或与现有存储集成时，可直接使用底层 API：
+Session 提供类型安全的状态存储 API：
 
 ```java
-// 导出状态
-Map<String, Object> state = agent.stateDict();
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 
-// 序列化（可用任意格式）
-ObjectMapper mapper = new ObjectMapper();
-String json = mapper.writeValueAsString(state);
+// 定义状态类
+public record UserPreferences(String theme, String language) implements State {}
 
-// 反序列化并恢复
-Map<String, Object> loaded = mapper.readValue(json, Map.class);
-agent.loadStateDict(loaded, false);
+// 保存单个状态
+session.save(sessionKey, "preferences", new UserPreferences("dark", "zh"));
+
+// 获取单个状态
+Optional<UserPreferences> prefs = session.get(sessionKey, "preferences", UserPreferences.class);
+
+// 保存状态列表
+session.save(sessionKey, "history", List.of(msg1State, msg2State));
+
+// 获取状态列表
+List<MsgState> history = session.getList(sessionKey, "history", MsgState.class);
 ```
 
 ---
@@ -64,29 +98,54 @@ agent.loadStateDict(loaded, false);
 实现 `StateModule` 接口使自定义组件支持持久化：
 
 ```java
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.State;
+import io.agentscope.core.state.StateModule;
+
 public class MyComponent implements StateModule {
     private String data;
+    private int counter;
+
+    // 定义组件的状态类
+    public record MyState(String data, int counter) implements State {}
 
     @Override
-    public Map<String, Object> stateDict() {
-        return Map.of("data", data);
+    public void saveTo(Session session, SessionKey sessionKey) {
+        session.save(sessionKey, "myComponent", new MyState(data, counter));
     }
 
     @Override
-    public void loadStateDict(Map<String, Object> state, boolean strict) {
-        this.data = (String) state.get("data");
-    }
-
-    @Override
-    public String getComponentName() {
-        return "myComponent";
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        session.get(sessionKey, "myComponent", MyState.class)
+            .ifPresent(state -> {
+                this.data = state.data();
+                this.counter = state.counter();
+            });
     }
 }
 ```
 
 ---
 
+## SessionKey
+
+`SessionKey` 用于标识会话，`SimpleSessionKey` 是常用的实现：
+
+```java
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.SessionKey;
+
+// 创建 SessionKey
+SessionKey key = SimpleSessionKey.of("user123");
+
+// 获取 session ID
+String sessionId = ((SimpleSessionKey) key).sessionId();
+```
+
+---
+
 ## 相关文档
 
-- [Session](./session.md) - 高级会话管理 API
+- [Session](./session.md) - 会话管理 API
 - [Memory](./memory.md) - 记忆管理

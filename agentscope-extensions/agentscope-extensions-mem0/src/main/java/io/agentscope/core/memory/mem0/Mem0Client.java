@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,20 +30,37 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * HTTP client for interacting with the Mem0 API.
+ *
+ * <p>Supports both Platform Mem0 and self-hosted Mem0 deployments:
+ * <ul>
+ *   <li><b>Platform Mem0:</b> Uses endpoints /v1/memories/ and /v2/memories/search/</li>
+ *   <li><b>Self-hosted Mem0:</b> Uses endpoints /memories and /memories/search</li>
+ * </ul>
+ *
+ * <p>By default, the client uses Platform Mem0 endpoints. To use self-hosted Mem0,
+ * specify "self-hosted" as the apiType parameter.
  */
 public class Mem0Client {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    private static final String MEMORIES_ENDPOINT = "/v1/memories/";
-    private static final String SEARCH_ENDPOINT = "/v2/memories/search/";
+
+    // Platform Mem0 endpoints
+    private static final String PLATFORM_MEMORIES_ENDPOINT = "/v1/memories/";
+    private static final String PLATFORM_SEARCH_ENDPOINT = "/v2/memories/search/";
+
+    // Self-hosted Mem0 endpoints
+    private static final String SELF_HOSTED_MEMORIES_ENDPOINT = "/memories";
+    private static final String SELF_HOSTED_SEARCH_ENDPOINT = "/search";
 
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
     private final String apiKey;
     private final ObjectMapper objectMapper;
+    private final String addEndpoint;
+    private final String searchEndpoint;
 
     /**
-     * Creates a new Mem0Client with specified configuration.
+     * Creates a new Mem0Client with specified configuration (defaults to Platform Mem0).
      *
      * @param apiBaseUrl The base URL of the Mem0 API (e.g., "http://localhost:8000")
      * @param apiKey The API key for authentication (can be null for local deployments without
@@ -54,7 +71,7 @@ public class Mem0Client {
     }
 
     /**
-     * Creates a new Mem0Client with custom timeout.
+     * Creates a new Mem0Client with custom timeout (defaults to Platform Mem0).
      *
      * @param apiBaseUrl The base URL of the Mem0 API
      * @param apiKey The API key for authentication (can be null for local deployments without
@@ -62,6 +79,19 @@ public class Mem0Client {
      * @param timeout HTTP request timeout duration
      */
     public Mem0Client(String apiBaseUrl, String apiKey, Duration timeout) {
+        this(apiBaseUrl, apiKey, Mem0ApiType.PLATFORM, timeout);
+    }
+
+    /**
+     * Creates a new Mem0Client with API type specification.
+     *
+     * @param apiBaseUrl The base URL of the Mem0 API
+     * @param apiKey The API key for authentication (can be null for local deployments without
+     *     authentication)
+     * @param apiType API type enum
+     * @param timeout HTTP request timeout duration
+     */
+    public Mem0Client(String apiBaseUrl, String apiKey, Mem0ApiType apiType, Duration timeout) {
         this.apiBaseUrl =
                 apiBaseUrl.endsWith("/")
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
@@ -76,6 +106,19 @@ public class Mem0Client {
                         .readTimeout(timeout)
                         .writeTimeout(Duration.ofSeconds(30))
                         .build();
+
+        // Determine API type (default to PLATFORM if null)
+        Mem0ApiType resolvedApiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
+
+        // Select endpoints based on API type
+        if (resolvedApiType == Mem0ApiType.SELF_HOSTED) {
+            this.addEndpoint = SELF_HOSTED_MEMORIES_ENDPOINT;
+            this.searchEndpoint = SELF_HOSTED_SEARCH_ENDPOINT;
+        } else {
+            // Default to platform endpoints
+            this.addEndpoint = PLATFORM_MEMORIES_ENDPOINT;
+            this.searchEndpoint = PLATFORM_SEARCH_ENDPOINT;
+        }
     }
 
     /**
@@ -129,6 +172,12 @@ public class Mem0Client {
 
                                 // Return raw response body
                                 return response.body().string();
+                            } catch (IOException e) {
+                                // Re-throw IOException as-is (it already contains status code info)
+                                throw e;
+                            } catch (Exception e) {
+                                // Wrap other exceptions
+                                throw new IOException("Mem0 API " + operationName + " failed", e);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -177,7 +226,7 @@ public class Mem0Client {
      * @return A Mono emitting the response with extracted memories
      */
     public Mono<Mem0AddResponse> add(Mem0AddRequest request) {
-        return executePost(MEMORIES_ENDPOINT, request, Mem0AddResponse.class, "add request");
+        return executePost(addEndpoint, request, Mem0AddResponse.class, "add request");
     }
 
     /**
@@ -200,25 +249,37 @@ public class Mem0Client {
      * @return A Mono emitting the search response with relevant memories
      */
     public Mono<Mem0SearchResponse> search(Mem0SearchRequest request) {
-        return executePostRaw(SEARCH_ENDPOINT, request, "search request")
+        return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
                             try {
-                                // Parse response as array
-                                List<Mem0SearchResult> results =
-                                        objectMapper.readValue(
-                                                responseBody,
-                                                objectMapper
-                                                        .getTypeFactory()
-                                                        .constructCollectionType(
-                                                                List.class,
-                                                                Mem0SearchResult.class));
+                                // Platform Mem0 uses /v2/memories/search/ endpoint and returns
+                                // direct array
+                                // Self-hosted Mem0 uses /search endpoint and returns wrapped format
+                                if (searchEndpoint.contains("/v2/")) {
+                                    // Platform Mem0 returns direct array
+                                    List<Mem0SearchResult> results =
+                                            objectMapper.readValue(
+                                                    responseBody,
+                                                    objectMapper
+                                                            .getTypeFactory()
+                                                            .constructCollectionType(
+                                                                    List.class,
+                                                                    Mem0SearchResult.class));
 
-                                // Wrap in Mem0SearchResponse for consistency
-                                Mem0SearchResponse searchResponse = new Mem0SearchResponse();
-                                searchResponse.setResults(results);
-                                return searchResponse;
-                            } catch (IOException e) {
+                                    // Wrap in Mem0SearchResponse for consistency
+                                    Mem0SearchResponse searchResponse = new Mem0SearchResponse();
+                                    searchResponse.setResults(results);
+                                    return searchResponse;
+                                } else {
+                                    // Self-hosted Mem0 returns response wrapped in {"results":
+                                    // [...]}
+                                    Mem0SearchResponse searchResponse =
+                                            objectMapper.readValue(
+                                                    responseBody, Mem0SearchResponse.class);
+                                    return searchResponse;
+                                }
+                            } catch (Exception e) {
                                 throw new RuntimeException("Failed to parse search response", e);
                             }
                         });

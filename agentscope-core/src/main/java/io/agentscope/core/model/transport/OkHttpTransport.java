@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,8 +19,15 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import okhttp3.ConnectionPool;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -87,16 +94,70 @@ public class OkHttpTransport implements HttpTransport {
     }
 
     private OkHttpClient buildClient(HttpTransportConfig config) {
-        return new OkHttpClient.Builder()
-                .connectTimeout(config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .connectionPool(
-                        new ConnectionPool(
-                                config.getMaxIdleConnections(),
-                                config.getKeepAliveDuration().toMillis(),
-                                TimeUnit.MILLISECONDS))
-                .build();
+        OkHttpClient.Builder builder =
+                new OkHttpClient.Builder()
+                        .connectTimeout(
+                                config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .connectionPool(
+                                new ConnectionPool(
+                                        config.getMaxIdleConnections(),
+                                        config.getKeepAliveDuration().toMillis(),
+                                        TimeUnit.MILLISECONDS));
+
+        // Configure SSL (optionally ignore certificate verification)
+        if (config.isIgnoreSsl()) {
+            log.warn(
+                    "SSL certificate verification is disabled. This is not recommended for"
+                            + " production.");
+            builder =
+                    builder.sslSocketFactory(
+                                    createTrustAllSslSocketFactory(), createTrustAllTrustManager())
+                            .hostnameVerifier((hostname, session) -> true);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Create a trust-all SSL socket factory.
+     *
+     * @return the SSL socket factory
+     */
+    private static javax.net.ssl.SSLSocketFactory createTrustAllSslSocketFactory() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(
+                    null, new TrustManager[] {createTrustAllTrustManager()}, new SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            throw new RuntimeException("Failed to create trust-all SSL socket factory", e);
+        }
+    }
+
+    /**
+     * Create a trust-all X509 trust manager.
+     *
+     * @return the trust manager
+     */
+    private static X509TrustManager createTrustAllTrustManager() {
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
     }
 
     @Override
@@ -113,6 +174,10 @@ public class OkHttpTransport implements HttpTransport {
     @Override
     public Flux<String> stream(HttpRequest request) {
         Request okHttpRequest = buildOkHttpRequest(request);
+        log.debug(
+                "Streaming request: method={}, url={}",
+                okHttpRequest.method(),
+                okHttpRequest.url());
 
         return Flux.<String>create(
                         sink -> {
@@ -123,6 +188,10 @@ public class OkHttpTransport implements HttpTransport {
 
                                 if (!response.isSuccessful()) {
                                     String errorBody = getResponseBodyString(response);
+                                    log.error(
+                                            "HTTP error: status={}, body={}",
+                                            response.code(),
+                                            errorBody);
                                     sink.error(
                                             new HttpTransportException(
                                                     "HTTP request failed with status "
@@ -188,7 +257,7 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .publishOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override

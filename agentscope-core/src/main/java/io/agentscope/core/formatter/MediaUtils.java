@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter;
 
-import com.openai.models.chat.completions.ChatCompletionContentPartInputAudio;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -26,6 +25,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
@@ -85,8 +85,15 @@ public class MediaUtils {
      * @throws IOException If file cannot be read or exceeds size limit
      */
     public static String fileToBase64(String path) throws IOException {
+        Path filePath = Path.of(path);
+        if (!Files.exists(filePath)) {
+            throw new IOException("File does not exist: " + path);
+        }
+        if (!Files.isReadable(filePath)) {
+            throw new IOException("File is not readable: " + path);
+        }
         checkFileSize(path);
-        byte[] bytes = Files.readAllBytes(Path.of(path));
+        byte[] bytes = Files.readAllBytes(filePath);
         return Base64.getEncoder().encodeToString(bytes);
     }
 
@@ -103,33 +110,36 @@ public class MediaUtils {
         log.debug("Downloading remote URL for base64 encoding: {}", url);
 
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(10000); // 10 seconds
-        connection.setReadTimeout(30000); // 30 seconds
-        connection.connect();
+        try {
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(10000); // 10 seconds
+            connection.setReadTimeout(30000); // 30 seconds
+            connection.connect();
 
-        int responseCode = connection.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
-            throw new IOException("Failed to download URL: HTTP " + responseCode + " for " + url);
-        }
-
-        try (InputStream is = connection.getInputStream()) {
-            byte[] bytes = is.readAllBytes();
-
-            // Check size after download
-            if (bytes.length > MAX_SIZE_BYTES) {
+            int responseCode = connection.getResponseCode();
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 throw new IOException(
-                        "Downloaded content too large: "
-                                + bytes.length
-                                + " bytes (max: "
-                                + MAX_SIZE_BYTES
-                                + ")");
-            }
-            if (bytes.length > WARN_SIZE_BYTES) {
-                log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                        "Failed to download URL: HTTP " + responseCode + " for " + url);
             }
 
-            return Base64.getEncoder().encodeToString(bytes);
+            try (InputStream is = connection.getInputStream()) {
+                byte[] bytes = is.readAllBytes();
+
+                // Check size after download
+                if (bytes.length > MAX_SIZE_BYTES) {
+                    throw new IOException(
+                            "Downloaded content too large: "
+                                    + bytes.length
+                                    + " bytes (max: "
+                                    + MAX_SIZE_BYTES
+                                    + ")");
+                }
+                if (bytes.length > WARN_SIZE_BYTES) {
+                    log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                }
+
+                return Base64.getEncoder().encodeToString(bytes);
+            }
         } finally {
             connection.disconnect();
         }
@@ -175,10 +185,9 @@ public class MediaUtils {
      * @throws IOException If the resource read failed
      */
     public static InputStream urlToInputStream(String url) throws IOException {
-        Path path = Path.of(url);
-        if (Files.exists(path)) {
+        if (isFileExists(url)) {
             // Treat as local file
-            return Files.newInputStream(path);
+            return Files.newInputStream(Path.of(url));
         } else {
             // Treat as web URL
             return URI.create(url).toURL().openStream();
@@ -306,25 +315,34 @@ public class MediaUtils {
     }
 
     /**
-     * Determine OpenAI audio format from file extension.
+     * Determine audio format string from file extension.
+     *
+     * @param path The file path
+     * @return Audio format string ("wav" or "mp3")
      */
-    public static ChatCompletionContentPartInputAudio.InputAudio.Format determineAudioFormat(
-            String path) {
+    public static String determineAudioFormat(String path) {
         String ext = getExtension(path).toLowerCase();
-        return ext.equals("wav")
-                ? ChatCompletionContentPartInputAudio.InputAudio.Format.WAV
-                : ChatCompletionContentPartInputAudio.InputAudio.Format.MP3;
+        return ext.equals("wav") ? "wav" : "mp3";
     }
 
     /**
-     * Infer OpenAI audio format from MIME type.
+     * Infer audio format string from MIME type.
+     *
+     * @param mediaType The MIME type
+     * @return Audio format string ("wav", "mp3", "opus", "flac", etc.)
      */
-    public static ChatCompletionContentPartInputAudio.InputAudio.Format
-            inferAudioFormatFromMediaType(String mediaType) {
-        if (mediaType != null && mediaType.contains("wav")) {
-            return ChatCompletionContentPartInputAudio.InputAudio.Format.WAV;
+    public static String inferAudioFormatFromMediaType(String mediaType) {
+        if (mediaType == null) {
+            return "mp3"; // default
         }
-        return ChatCompletionContentPartInputAudio.InputAudio.Format.MP3; // default
+        if (mediaType.contains("wav")) {
+            return "wav";
+        } else if (mediaType.contains("opus")) {
+            return "opus";
+        } else if (mediaType.contains("flac")) {
+            return "flac";
+        }
+        return "mp3"; // default
     }
 
     /**
@@ -345,11 +363,18 @@ public class MediaUtils {
 
     /**
      * Check if a file exists.
-     * @param path a local file path
-     * @return true: exists, false: not exists
+     * @param path a local file path or URL.
+     * @return true: exists, false: not exists or path is invalid
      */
     public static boolean isFileExists(String path) {
-        return Files.exists(Path.of(path));
+        if (!isLocalFile(path)) {
+            return false;
+        }
+        try {
+            return Files.exists(Path.of(path));
+        } catch (InvalidPathException e) {
+            return false;
+        }
     }
 
     /**

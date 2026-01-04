@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,7 +25,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -194,32 +193,27 @@ public class SubAgentTool implements AgentTool {
     /**
      * Loads agent state from the session storage.
      *
-     * <p>If the session exists, the agent's state is restored using {@link SessionManager}. Any
-     * errors during loading are logged but do not interrupt execution.
+     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
+     * but do not interrupt execution.
      *
      * @param sessionId The session ID to load state from
      * @param agent The state module to restore state into
      */
     private void loadAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
-        if (session.sessionExists(sessionId)) {
-            try {
-                SessionManager.forSessionId(sessionId)
-                        .withSession(session)
-                        .addComponent(agent)
-                        .loadIfExists();
-                logger.debug("Loaded state for session: {}", sessionId);
-            } catch (Exception e) {
-                logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
-            }
+        try {
+            agent.loadIfExists(session, sessionId);
+            logger.debug("Loaded state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
         }
     }
 
     /**
      * Saves agent state to the session storage.
      *
-     * <p>Persists the agent's current state using {@link SessionManager}. Any errors during saving
-     * are logged but do not interrupt execution.
+     * <p>Persists the agent's current state. Any errors during saving are logged but do not
+     * interrupt execution.
      *
      * @param sessionId The session ID to save state under
      * @param agent The state module to save state from
@@ -227,10 +221,7 @@ public class SubAgentTool implements AgentTool {
     private void saveAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            SessionManager.forSessionId(sessionId)
-                    .withSession(session)
-                    .addComponent(agent)
-                    .saveSession();
+            agent.saveTo(session, sessionId);
             logger.debug("Saved state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());

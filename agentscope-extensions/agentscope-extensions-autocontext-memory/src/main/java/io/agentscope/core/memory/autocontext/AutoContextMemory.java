@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,7 +31,9 @@ import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StateModule;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -75,7 +77,7 @@ import reactor.core.publisher.Mono;
  *   <li>Original Memory Storage: Stores complete, uncompressed message history</li>
  * </ul>
  */
-public class AutoContextMemory extends StateModuleBase implements Memory, ContextOffLoader {
+public class AutoContextMemory implements StateModule, Memory, ContextOffLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
 
@@ -142,18 +144,6 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
         compressionEvents = new ArrayList<>();
-        registerState(
-                "workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
-        registerState(
-                "originalMemoryStorage",
-                MsgUtils::serializeMsgList,
-                MsgUtils::deserializeToMsgList);
-        registerState(
-                "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
-        registerState(
-                "compressionEvents",
-                MsgUtils::serializeCompressionEventList,
-                MsgUtils::deserializeToCompressionEventList);
     }
 
     @Override
@@ -1725,5 +1715,64 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      */
     public List<CompressionEvent> getCompressionEvents() {
         return compressionEvents;
+    }
+
+    // ==================== StateModule API ====================
+
+    /**
+     * Save memory state to the session.
+     *
+     * <p>Saves working memory and original memory messages to the session storage.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        session.save(
+                sessionKey,
+                "autoContextMemory_workingMessages",
+                new ArrayList<>(workingMemoryStorage));
+        session.save(
+                sessionKey,
+                "autoContextMemory_originalMessages",
+                new ArrayList<>(originalMemoryStorage));
+
+        // Save offload context (critical for reload functionality)
+        if (!offloadContext.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_offloadContext",
+                    new OffloadContextState(new HashMap<>(offloadContext)));
+        }
+    }
+
+    /**
+     * Load memory state from the session.
+     *
+     * <p>Loads working memory and original memory messages from the session storage.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        List<Msg> loadedWorking =
+                session.getList(sessionKey, "autoContextMemory_workingMessages", Msg.class);
+        workingMemoryStorage.clear();
+        workingMemoryStorage.addAll(loadedWorking);
+
+        List<Msg> loadedOriginal =
+                session.getList(sessionKey, "autoContextMemory_originalMessages", Msg.class);
+        originalMemoryStorage.clear();
+        originalMemoryStorage.addAll(loadedOriginal);
+
+        // Load offload context
+        session.get(sessionKey, "autoContextMemory_offloadContext", OffloadContextState.class)
+                .ifPresent(
+                        state -> {
+                            offloadContext.clear();
+                            offloadContext.putAll(state.offloadContext());
+                        });
     }
 }

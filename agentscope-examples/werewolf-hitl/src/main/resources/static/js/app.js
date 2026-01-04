@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -63,6 +63,22 @@ function getCauseText(cause) {
     return (causeTexts && causeTexts[cause]) || cause;
 }
 
+// ==================== Configuration Modal ====================
+function showConfigModal() {
+    if (gameRunning) return;
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function hideConfigModal() {
+    const modal = document.getElementById('config-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
 // ==================== Role Selection Modal ====================
 function showRoleSelector() {
     if (gameRunning) return;
@@ -86,6 +102,107 @@ function selectRoleAndStart(role) {
     startGame();
 }
 
+// ==================== Configuration ====================
+// Configuration validation constants
+const CONFIG_MIN_PLAYERS = 4;
+const CONFIG_MAX_PLAYERS = 30;
+const CONFIG_MIN_WEREWOLVES = 1;
+
+function validateConfig() {
+    const villager = parseInt(document.getElementById('config-villager').value) || 0;
+    const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
+    const seer = parseInt(document.getElementById('config-seer').value) || 0;
+    const witch = parseInt(document.getElementById('config-witch').value) || 0;
+    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
+    const total = villager + werewolf + seer + witch + hunter;
+    
+    const errors = [];
+    
+    // Validate individual role counts
+    if (villager < 0) errors.push(t('configErrorNegativeVillager') || '村民数量不能为负数');
+    if (werewolf < CONFIG_MIN_WEREWOLVES) {
+        errors.push(t('configErrorMinWerewolf') || `狼人数量至少需要${CONFIG_MIN_WEREWOLVES}个`);
+    }
+    if (seer < 0) errors.push(t('configErrorNegativeSeer') || '预言家数量不能为负数');
+    if (witch < 0) errors.push(t('configErrorNegativeWitch') || '女巫数量不能为负数');
+    if (hunter < 0) errors.push(t('configErrorNegativeHunter') || '猎人数量不能为负数');
+    
+    // Validate total player count
+    if (total < CONFIG_MIN_PLAYERS) {
+        errors.push(t('configErrorMinPlayers') || `总玩家数至少需要${CONFIG_MIN_PLAYERS}人`);
+    }
+    if (total > CONFIG_MAX_PLAYERS) {
+        errors.push(t('configErrorMaxPlayers') || `总玩家数不能超过${CONFIG_MAX_PLAYERS}人`);
+    }
+    
+    // Display errors
+    const errorElement = document.getElementById('config-error');
+    const confirmBtn = document.getElementById('config-confirm-btn');
+    
+    if (errors.length > 0) {
+        errorElement.style.display = 'block';
+        errorElement.textContent = errors.join('；');
+        errorElement.className = 'config-error error';
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+        }
+        return false;
+    } else {
+        errorElement.style.display = 'none';
+        errorElement.textContent = '';
+        errorElement.className = 'config-error';
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+        }
+        return true;
+    }
+}
+
+function updateTotalCount() {
+    const villager = parseInt(document.getElementById('config-villager').value) || 0;
+    const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
+    const seer = parseInt(document.getElementById('config-seer').value) || 0;
+    const witch = parseInt(document.getElementById('config-witch').value) || 0;
+    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
+    const total = villager + werewolf + seer + witch + hunter;
+    document.getElementById('config-total-count').textContent = total;
+    
+    // Validate and show errors
+    validateConfig();
+}
+
+function getGameConfig() {
+    // Validate before getting config
+    if (!validateConfig()) {
+        return null; // Return null if validation fails
+    }
+    
+    const villagerInput = document.getElementById('config-villager').value.trim();
+    const werewolfInput = document.getElementById('config-werewolf').value.trim();
+    const seerInput = document.getElementById('config-seer').value.trim();
+    const witchInput = document.getElementById('config-witch').value.trim();
+    const hunterInput = document.getElementById('config-hunter').value.trim();
+    
+    const villager = villagerInput ? parseInt(villagerInput) : NaN;
+    const werewolf = werewolfInput ? parseInt(werewolfInput) : NaN;
+    const seer = seerInput ? parseInt(seerInput) : NaN;
+    const witch = witchInput ? parseInt(witchInput) : NaN;
+    const hunter = hunterInput ? parseInt(hunterInput) : NaN;
+    
+    const params = new URLSearchParams();
+    params.append('lang', currentLanguage);
+    params.append('role', selectedRole);
+    if (!isNaN(villager)) params.append('villagerCount', villager);
+    if (!isNaN(werewolf)) params.append('werewolfCount', werewolf);
+    if (!isNaN(seer)) params.append('seerCount', seer);
+    if (!isNaN(witch)) params.append('witchCount', witch);
+    if (!isNaN(hunter)) params.append('hunterCount', hunter);
+    
+    return params.toString();
+}
+
 // ==================== Game Control ====================
 async function startGame() {
     if (gameRunning) return;
@@ -103,7 +220,16 @@ async function startGame() {
     abortController = new AbortController();
 
     try {
-        const response = await fetch(`/api/game/start?lang=${currentLanguage}&role=${selectedRole}`, {
+        const configParams = getGameConfig();
+        if (!configParams) {
+            // Validation failed, show error
+            addLog(t('configValidationFailed') || '配置验证失败，请检查输入', 'error');
+            startBtn.disabled = false;
+            startBtn.querySelector('[data-i18n]').textContent = t('startGame');
+            return;
+        }
+        
+        const response = await fetch(`/api/game/start?${configParams}`, {
             method: 'POST',
             signal: abortController.signal
         });
@@ -472,12 +598,12 @@ async function fetchAndRevealRoles() {
         if (!response.ok) return;
 
         const events = await response.json();
-        
+
         // Find GAME_INIT event which contains full player info with roles
         const initEvent = events.find(e => e.type === 'GAME_INIT');
         if (initEvent && initEvent.data && initEvent.data.players) {
             const fullPlayerInfo = initEvent.data.players;
-            
+
             // Update local players array with role info
             fullPlayerInfo.forEach(info => {
                 const player = players.find(p => p.name === info.name);
@@ -487,7 +613,7 @@ async function fetchAndRevealRoles() {
                     player.roleSymbol = info.roleSymbol;
                 }
             });
-            
+
             // Re-render with revealed roles
             revealAllRoles();
         }
@@ -501,7 +627,7 @@ function revealAllRoles() {
         const card = document.getElementById(`player-${player.name}`);
         if (card) {
             const roleSpan = card.querySelector('.player-role');
-            
+
             // Update role text and style
             const roleName = getRoleName(player.role) || player.roleDisplay || '???';
             const roleClass = player.role ? player.role.toLowerCase() : 'hidden';
@@ -594,8 +720,8 @@ function handleReplayEvent(event) {
             addLog(`═══ ${t('round') || '回合'} ${data.round} - ${data.phase === 'night' ? '🌙' : '☀️'} ${phaseText} ═══`, 'system');
             break;
         case 'PLAYER_SPEAK':
-            const contextLabel = data.context === 'werewolf_discussion' 
-                ? `[🐺 ${t('werewolfDiscussion') || '狼人密谋'}]` 
+            const contextLabel = data.context === 'werewolf_discussion'
+                ? `[🐺 ${t('werewolfDiscussion') || '狼人密谋'}]`
                 : `[${t('speak') || '发言'}]`;
             addLog(`<span class="speaker">[${data.player}]</span> ${contextLabel}: ${data.content}`, 'speak');
             break;
@@ -624,8 +750,8 @@ function handleReplayEvent(event) {
             addLog(data.message, 'system');
             break;
         case 'GAME_END':
-            const winnerText = data.winner === 'villagers' 
-                ? (t('villagersWin') || '🎉 村民阵营获胜！') 
+            const winnerText = data.winner === 'villagers'
+                ? (t('villagersWin') || '🎉 村民阵营获胜！')
                 : (t('werewolvesWin') || '🐺 狼人阵营获胜！');
             addLog(`${t('gameEnd') || '游戏结束'} - ${winnerText} ${data.reason}`, 'system');
             break;
@@ -636,6 +762,20 @@ function handleReplayEvent(event) {
 document.addEventListener('DOMContentLoaded', () => {
     applyTranslations();
     updateLanguageButtons();
+
+    // Initialize configuration inputs
+    const configInputs = ['config-villager', 'config-werewolf', 'config-seer', 'config-witch', 'config-hunter'];
+    configInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', updateTotalCount);
+            input.addEventListener('change', updateTotalCount);
+            input.addEventListener('blur', validateConfig);
+        } else {
+            console.warn('Config input not found:', id);
+        }
+    });
+    updateTotalCount();
 
     const placeholderNames = t('placeholderNames') || ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
     players = placeholderNames.map(name => ({

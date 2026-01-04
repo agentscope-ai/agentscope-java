@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,6 +18,7 @@ package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextHook;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
@@ -28,7 +29,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -78,22 +79,20 @@ public class AutoMemoryExample {
                         .memory(memory)
                         .maxIters(50)
                         .longTermMemory(longTermMemory)
+                        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
                         .enablePlan()
                         .toolkit(toolkit)
                         .hook(new AutoContextHook()) // Register the hook for automatic setup
                         .build();
-        String sessionId = "session111111111111";
+        String sessionId = "123453344";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
-        SessionManager sessionManager =
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent); // Automatically named "agent"
-        if (sessionManager.sessionExists()) {
-            // Load existing session
-            sessionManager.loadIfExists();
-        }
+        Session session = new JsonSession(sessionPath);
+
+        // Load existing session if it exists
+        agent.loadIfExists(session, sessionId);
+
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
         System.out.println("Enter your query (type 'exit' to quit):\n");
@@ -128,7 +127,7 @@ public class AutoMemoryExample {
 
                 // Output response
                 System.out.println("Assistant: " + response.getTextContent() + "\n");
-                sessionManager.saveSession();
+                agent.saveTo(session, sessionId);
             }
 
         } catch (Throwable e) {
@@ -137,7 +136,7 @@ public class AutoMemoryExample {
         } finally {
             System.out.println("save session: ");
 
-            sessionManager.saveSession();
+            agent.saveTo(session, sessionId);
         }
         scanner.close();
     }

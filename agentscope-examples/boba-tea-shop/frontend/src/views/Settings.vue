@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -18,14 +18,14 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { 
-  Card, 
-  Form, 
-  Input, 
-  Button, 
-  Space, 
-  Typography, 
-  message, 
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Space,
+  Typography,
+  message,
   Divider,
   Row,
   Col,
@@ -97,15 +97,15 @@ const testConnection = async () => {
     // Temporarily update config for testing
     const originalBaseUrl = configStore.baseUrl
     configStore.updateConfig({ baseUrl: formData.value.baseUrl })
-    
+
     const success = await chatApiService.testConnection()
-    
+
     if (success) {
       message.success(t('settings.apiConfig.connectionSuccess'))
     } else {
       message.error(t('settings.apiConfig.connectionFailed'))
     }
-    
+
     // Restore original config
     configStore.updateConfig({ baseUrl: originalBaseUrl })
   } catch (error) {
@@ -119,23 +119,23 @@ const testConnection = async () => {
 const saveConfig = async () => {
   try {
     await formRef.value.validate()
-    
+
     loading.value = true
-    
+
     configStore.updateConfig({
       baseUrl: formData.value.baseUrl,
       userId: formData.value.userId,
       chatId: formData.value.chatId || configStore.chatId
     })
-    
+
     message.success(t('settings.saveSuccess'))
-    
+
     // Generate new chat ID if not provided
     if (!formData.value.chatId) {
       configStore.generateNewChatId()
       formData.value.chatId = configStore.chatId
     }
-    
+
   } catch (error) {
     console.error('Save config error:', error)
     message.error(t('settings.saveFailed'))
@@ -159,8 +159,8 @@ onMounted(() => {
       <!-- Header -->
       <div class="settings-header">
         <div class="header-left">
-          <Button 
-            type="text" 
+          <Button
+            type="text"
             @click="goBack"
             class="back-button"
           >
@@ -183,8 +183,8 @@ onMounted(() => {
             </Button>
             <template #overlay>
               <div class="lang-menu">
-                <div 
-                  v-for="item in languageMenuItems" 
+                <div
+                  v-for="item in languageMenuItems"
                   :key="item.key"
                   class="lang-menu-item"
                   :class="{ active: currentLocale === item.key }"
@@ -201,8 +201,8 @@ onMounted(() => {
       <Row :gutter="[24, 24]">
         <!-- API Configuration -->
         <Col :xs="24" :lg="12">
-          <Card 
-            :title="t('settings.apiConfig.title')" 
+          <Card
+            :title="t('settings.apiConfig.title')"
             class="config-card"
             :bordered="false"
           >
@@ -212,19 +212,19 @@ onMounted(() => {
               :rules="formRules"
               layout="vertical"
             >
-              <Form.Item 
-                :label="t('settings.apiConfig.baseUrl')" 
+              <Form.Item
+                :label="t('settings.apiConfig.baseUrl')"
                 name="baseUrl"
                 :extra="t('settings.apiConfig.baseUrlPlaceholder')"
               >
-                <Input 
+                <Input
                   v-model:value="formData.baseUrl"
                   :placeholder="t('settings.apiConfig.baseUrlPlaceholder')"
                 />
               </Form.Item>
-              
+
               <Form.Item>
-                <Button 
+                <Button
                   :loading="testing"
                   @click="testConnection"
                   class="test-button"
@@ -241,8 +241,8 @@ onMounted(() => {
 
         <!-- User Configuration -->
         <Col :xs="24" :lg="12">
-          <Card 
-            :title="t('settings.userConfig.title')" 
+          <Card
+            :title="t('settings.userConfig.title')"
             class="config-card"
             :bordered="false"
           >
@@ -250,23 +250,23 @@ onMounted(() => {
               :model="formData"
               layout="vertical"
             >
-              <Form.Item 
-                :label="t('settings.userConfig.userId')" 
+              <Form.Item
+                :label="t('settings.userConfig.userId')"
                 name="userId"
                 :extra="t('settings.userConfig.userIdPlaceholder')"
               >
-                <Input 
+                <Input
                   v-model:value="formData.userId"
                   :placeholder="t('settings.userConfig.userIdPlaceholder')"
                 />
               </Form.Item>
-              
-              <Form.Item 
-                :label="t('settings.userConfig.chatId')" 
+
+              <Form.Item
+                :label="t('settings.userConfig.chatId')"
                 name="chatId"
                 :extra="t('settings.userConfig.chatIdPlaceholder')"
               >
-                <Input 
+                <Input
                   v-model:value="formData.chatId"
                   :placeholder="t('settings.userConfig.chatIdPlaceholder')"
                 />
@@ -281,8 +281,8 @@ onMounted(() => {
         <Divider />
         <div class="save-actions">
           <Space>
-            <Button 
-              type="primary" 
+            <Button
+              type="primary"
               :loading="loading"
               @click="saveConfig"
               size="large"
@@ -292,7 +292,7 @@ onMounted(() => {
               </template>
               {{ t('settings.saveConfig') }}
             </Button>
-            <Button 
+            <Button
               @click="loadConfig"
               size="large"
             >
@@ -517,7 +517,7 @@ onMounted(() => {
   .settings-page {
     padding: 16px;
   }
-  
+
   .settings-header {
     flex-direction: column;
     align-items: flex-start;
@@ -534,7 +534,7 @@ onMounted(() => {
   .header-right {
     align-self: flex-end;
   }
-  
+
   .page-title {
     font-size: 20px;
   }
