@@ -33,11 +33,9 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * Stateless OpenAI Chat Model using native HTTP API.
+ * OpenAI Chat Model using native HTTP API.
  *
- * <p>This implementation uses direct HTTP calls to OpenAI-compatible APIs. All configuration
- * (API key, base URL, model name, streaming mode) is passed per-request via {@link GenerateOptions},
- * making this model stateless and safe to share across multiple threads.
+ * <p>This implementation uses direct HTTP calls to OpenAI-compatible APIs.
  *
  * <p>Features:
  * <ul>
@@ -47,26 +45,6 @@ import reactor.core.publisher.Flux;
  *   <li>Timeout and retry configuration</li>
  *   <li>Multi-provider support (OpenAI, GLM, DeepSeek, Doubao, etc.)</li>
  * </ul>
- *
- * <p><b>Usage example:</b>
- * <pre>{@code
- * // Create a stateless model instance
- * OpenAIChatModel model = new OpenAIChatModel();
- *
- * // Configure once
- * OpenAIConfig config = OpenAIConfig.builder()
- *     .apiKey("sk-xxx")
- *     .baseUrl("https://api.openai.com/v1")
- *     .stream(true)
- *     .build();
- *
- * // Use with different models
- * GenerateOptions opts1 = config.toOptions().modelName("gpt-4").build();
- * GenerateOptions opts2 = config.toOptions().modelName("gpt-3.5-turbo").build();
- *
- * model.stream(messages1, null, opts1);
- * model.stream(messages2, null, opts2);
- * }</pre>
  */
 public class OpenAIChatModel extends ChatModelBase {
 
@@ -368,14 +346,8 @@ public class OpenAIChatModel extends ChatModelBase {
     /**
      * Creates a new builder for OpenAIChatModel.
      *
-     * <p>The builder provides backward compatibility with the old API by creating a model
-     * with embedded configuration. The built model wraps the configuration in a way that
-     * each call uses the configured values.
-     *
      * @return a new Builder instance
-     * @deprecated Use {@link OpenAIConfig} with {@link GenerateOptions} for stateless usage
      */
-    @Deprecated
     public static Builder builder() {
         return new Builder();
     }
@@ -383,12 +355,9 @@ public class OpenAIChatModel extends ChatModelBase {
     /**
      * Builder for OpenAIChatModel.
      *
-     * <p>Provides backward compatibility with the old API. The built model internally wraps
-     * the configuration so that calls without explicit options use the builder-provided values.
-     *
-     * @deprecated Use {@link OpenAIConfig} with {@link GenerateOptions} for stateless usage
+     * <p>The built model internally wraps the configuration so that calls without explicit
+     * options use the builder-provided values.
      */
-    @Deprecated
     public static class Builder {
         private String apiKey;
         private String modelName;

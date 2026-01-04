@@ -296,3 +296,77 @@ toolkit.registerMetaTool();
 ```
 
 当工具组较多时，可让智能体根据任务需求自主选择激活哪些工具组。
+
+## 工具挂起（Tool Suspend）
+
+工具执行时抛出 `ToolSuspendException`，可暂停 Agent 执行并返回给调用方，由外部完成实际执行后再恢复。
+
+**使用场景**：
+- 工具需要外部系统执行（如远程 API、用户手动操作）
+- 需要异步等待外部结果
+
+**使用方式**：
+
+```java
+@Tool(name = "external_api", description = "调用外部 API")
+public ToolResultBlock callExternalApi(
+        @ToolParam(name = "url") String url) {
+    // 抛出异常，暂停执行
+    throw new ToolSuspendException("等待外部 API 响应: " + url);
+}
+```
+
+**恢复执行**：
+
+```java
+Msg response = agent.call(userMsg).block();
+
+// 检查是否被挂起
+if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+    // 获取待执行的工具调用
+    List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
+
+    // 外部执行后，提供结果
+    Msg toolResult = Msg.builder()
+        .role(MsgRole.TOOL)
+        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+            TextBlock.builder().text("外部执行结果").build()))
+        .build();
+
+    // 恢复执行
+    response = agent.call(toolResult).block();
+}
+```
+
+## 仅 Schema 工具（Schema Only Tool）
+
+只注册工具的 Schema（名称、描述、参数），不提供执行逻辑。当 LLM 调用该工具时，框架自动触发挂起，返回给调用方执行。
+
+**使用场景**：
+- 工具由外部系统实现（如前端、其他服务）
+- 动态注册第三方工具
+
+**使用方式**：
+
+```java
+// 方式一：使用 ToolSchema
+ToolSchema schema = ToolSchema.builder()
+    .name("query_database")
+    .description("查询外部数据库")
+    .parameters(Map.of(
+        "type", "object",
+        "properties", Map.of("sql", Map.of("type", "string")),
+        "required", List.of("sql")
+    ))
+    .build();
+
+toolkit.registerSchema(schema);
+
+// 方式二：批量注册
+toolkit.registerSchemas(List.of(schema1, schema2));
+
+// 检查是否为外部工具
+boolean isExternal = toolkit.isExternalTool("query_database");  // true
+```
+
+调用流程与工具挂起相同：LLM 调用 → 返回 `TOOL_SUSPENDED` → 外部执行 → 提供结果恢复。

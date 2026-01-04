@@ -32,5 +32,7 @@ build-backend = "setuptools.build_meta"
 dev = [
     "jupyter-book>=1.0.4.post1,<2.0.0",
     "sphinx-autoapi>=3.6.0",
+    "sphinx-llms-txt>=0.5.3",
+    "sphinx-sitemap>=2.5.0",
     "furo>=2025.7.19",
 ]

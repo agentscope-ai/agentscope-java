@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.tool.ToolSuspendException;
 import java.util.List;
 import java.util.Map;
 
@@ -30,6 +31,9 @@ import java.util.Map;
  * Supports metadata for passing additional execution information.
  */
 public final class ToolResultBlock extends ContentBlock {
+
+    /** Metadata key indicating this result is suspended for external execution. */
+    public static final String METADATA_SUSPENDED = "agentscope_suspended";
 
     private final String id;
     private final String name;
@@ -104,6 +108,50 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    /**
+     * Checks if this result is suspended for external execution.
+     *
+     * <p>A suspended result is created when a tool throws {@link ToolSuspendException},
+     * indicating that the tool execution needs to be handled externally by the user.
+     *
+     * @return true if this result is suspended, false otherwise
+     */
+    public boolean isSuspended() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+    }
+
+    /**
+     * Creates a suspended tool result from a ToolSuspendException.
+     *
+     * <p>This method is used by the framework to convert a {@link ToolSuspendException}
+     * into a suspended result that will be returned to the user for external execution.
+     *
+     * @param toolUse The tool use block that triggered the exception
+     * @param exception The exception thrown by the tool
+     * @return A suspended ToolResultBlock
+     */
+    public static ToolResultBlock suspended(ToolUseBlock toolUse, ToolSuspendException exception) {
+        String content =
+                exception.getReason() != null
+                        ? exception.getReason()
+                        : "[Awaiting external execution]";
+        return new ToolResultBlock(
+                toolUse.getId(),
+                toolUse.getName(),
+                List.of(TextBlock.builder().text(content).build()),
+                Map.of(METADATA_SUSPENDED, true));
+    }
+
+    /**
+     * Creates a suspended tool result with default message.
+     *
+     * @param toolUse The tool use block that requires external execution
+     * @return A suspended ToolResultBlock
+     */
+    public static ToolResultBlock suspended(ToolUseBlock toolUse) {
+        return suspended(toolUse, new ToolSuspendException());
     }
 
     /**

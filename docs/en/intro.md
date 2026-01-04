@@ -111,15 +111,15 @@ Once you're familiar with the basics, explore these features:
 
 ## AI-Powered Development
 
-AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Windsurf, and GitHub Copilot. This guide helps AI assistants understand AgentScope Java's APIs, patterns, and best practices to generate accurate code.
+AgentScope documentation supports the [`llms.txt` standard](https://llmstxt.org/), enabling AI coding assistants like Claude Code, Cursor, and Windsurf to understand AgentScope APIs and generate accurate code.
 
 **Quick Setup for Cursor:**
 
 1. Open Cursor Settings -> Features -> Docs
 2. Click "+ Add new Doc"
-3. Add URL: `https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
+3. Add URL: `https://java.agentscope.io/llms-full.txt`
 
-For detailed setup instructions for other AI IDEs and best practices, see [Using AgentScope Java with AI Code Assistants](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md).
+For other tools and detailed configuration, see **[Coding with AI](task/ai-coding.md)**.
 
 ## Community
 

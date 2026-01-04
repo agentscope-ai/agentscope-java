@@ -99,6 +99,9 @@
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
+        <json-schema-validator.version>3.0.0</json-schema-validator.version>
+        <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
+        <snakeyaml.version>2.4</snakeyaml.version>
 
 
         <spotless.version>3.1.0</spotless.version>
@@ -347,6 +350,34 @@
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
+            </dependency>
+
+            <!-- JSON Schema Validator (networknt) -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
+            </dependency>
+
+            <!-- SnakeYAML for YAML parsing -->
+            <dependency>
+                <groupId>org.yaml</groupId>
+                <artifactId>snakeyaml</artifactId>
+                <version>${snakeyaml.version}</version>
+            </dependency>
+
+            <!-- Victools JSON Schema Generator -->
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-generator</artifactId>
+                <version>${jsonschema-generator.version}</version>
+            </dependency>
+
+            <!-- Victools JSON Schema Module for Jackson annotations support -->
+            <dependency>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-module-jackson</artifactId>
+                <version>${jsonschema-generator.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
