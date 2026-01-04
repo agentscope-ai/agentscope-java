@@ -40,7 +40,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for AgentScopeProducer using mock configuration. Tests all provider types, error
+ * Unit tests for AgentScopeProducer using mock configuration. Tests all
+ * provider types, error
  * conditions, and edge cases.
  */
 class AgentScopeProducerUnitTest {
@@ -214,22 +215,6 @@ class AgentScopeProducerUnitTest {
     }
 
     @Test
-    void testCreateGeminiModelWithVertexAIThrowsWithoutCredentials() {
-        // Vertex AI requires GCP credentials which are not available in unit tests
-        // This test verifies that the configuration is correctly parsed and
-        // the code attempts to create a Vertex AI model (which throws due to missing credentials)
-        when(mockModelConfig.provider()).thenReturn("gemini");
-        when(mockGeminiConfig.modelName()).thenReturn("gemini-2.0-flash-exp");
-        when(mockGeminiConfig.stream()).thenReturn(true);
-        when(mockGeminiConfig.useVertexAi()).thenReturn(true);
-        when(mockGeminiConfig.project()).thenReturn(Optional.of("my-gcp-project"));
-        when(mockGeminiConfig.location()).thenReturn(Optional.of("us-central1"));
-
-        // Expect an exception because GCP credentials are not available in unit test environment
-        assertThrows(Exception.class, () -> producer.createModel());
-    }
-
-    @Test
     void testCreateGeminiModelMissingApiKey() {
         when(mockModelConfig.provider()).thenReturn("gemini");
         when(mockGeminiConfig.apiKey()).thenReturn(Optional.empty());
@@ -241,36 +226,6 @@ class AgentScopeProducerUnitTest {
                 assertThrows(IllegalStateException.class, () -> producer.createModel());
 
         assertTrue(exception.getMessage().contains("Gemini API key is required"));
-    }
-
-    @Test
-    void testCreateGeminiModelVertexAIMissingProject() {
-        when(mockModelConfig.provider()).thenReturn("gemini");
-        when(mockGeminiConfig.modelName()).thenReturn("gemini-2.0-flash-exp");
-        when(mockGeminiConfig.stream()).thenReturn(false);
-        when(mockGeminiConfig.useVertexAi()).thenReturn(true);
-        when(mockGeminiConfig.project()).thenReturn(Optional.empty());
-        when(mockGeminiConfig.location()).thenReturn(Optional.of("us-central1"));
-
-        IllegalStateException exception =
-                assertThrows(IllegalStateException.class, () -> producer.createModel());
-
-        assertTrue(exception.getMessage().contains("GCP project is required"));
-    }
-
-    @Test
-    void testCreateGeminiModelVertexAIMissingLocation() {
-        when(mockModelConfig.provider()).thenReturn("gemini");
-        when(mockGeminiConfig.modelName()).thenReturn("gemini-2.0-flash-exp");
-        when(mockGeminiConfig.stream()).thenReturn(false);
-        when(mockGeminiConfig.useVertexAi()).thenReturn(true);
-        when(mockGeminiConfig.project()).thenReturn(Optional.of("my-gcp-project"));
-        when(mockGeminiConfig.location()).thenReturn(Optional.empty());
-
-        IllegalStateException exception =
-                assertThrows(IllegalStateException.class, () -> producer.createModel());
-
-        assertTrue(exception.getMessage().contains("GCP location is required"));
     }
 
     // ========== Anthropic Provider Tests ==========

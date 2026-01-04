@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.e2e.providers;
 
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
@@ -52,6 +51,12 @@ public class GeminiProvider extends BaseModelProvider {
     protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
         String baseUrl = System.getenv(BASE_URL_ENV);
 
+    public ReActAgent createAgent(String name, Toolkit toolkit) {
+        String apiKey = System.getenv("GOOGLE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalStateException("GOOGLE_API_KEY environment variable is required");
+        }
+
         GeminiChatModel.Builder builder =
                 GeminiChatModel.builder()
                         .apiKey(apiKey)
@@ -62,10 +67,6 @@ public class GeminiProvider extends BaseModelProvider {
                                         : new GeminiChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
 
-        if (baseUrl != null && !baseUrl.isEmpty()) {
-            builder.httpOptions(HttpOptions.builder().baseUrl(baseUrl).build());
-        }
-
         return ReActAgent.builder()
                 .name(name)
                 .model(builder.build())
@@ -74,8 +75,34 @@ public class GeminiProvider extends BaseModelProvider {
     }
 
     @Override
+    public ReActAgent createAgent(String name, Toolkit toolkit, String sysPrompt) {
+        String apiKey = System.getenv("GOOGLE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalStateException("GOOGLE_API_KEY environment variable is required");
+        }
+
+        GeminiChatModel.Builder builder =
+                GeminiChatModel.builder()
+                        .apiKey(apiKey)
+                        .modelName(modelName)
+                        .formatter(
+                                multiAgentFormatter
+                                        ? new GeminiMultiAgentFormatter()
+                                        : new GeminiChatFormatter())
+                        .defaultOptions(GenerateOptions.builder().build());
+
+        return ReActAgent.builder()
+                .name(name)
+                .sysPrompt(sysPrompt)
+                .model(builder.build())
+                .toolkit(toolkit)
+                .memory(new InMemoryMemory())
+                .build();
+    }
+
+    @Override
     public String getProviderName() {
-        return "Gemini";
+        return "Google";
     }
 
     @Override
@@ -100,6 +127,70 @@ public class GeminiProvider extends BaseModelProvider {
         ModelCapability.VIDEO,
         ModelCapability.THINKING
     })
+    public static class Gemini3ProGemini extends GeminiProvider {
+        public Gemini3ProGemini() {
+            super("gemini-3-pro-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Pro supports thinking
+        }
+    }
+
+    public static class Gemini3ProMultiAgentGemini extends GeminiProvider {
+        public Gemini3ProMultiAgentGemini() {
+            super("gemini-3-pro-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Pro supports thinking
+        }
+    }
+
+    public static class Gemini3FlashMultiAgentGemini extends GeminiProvider {
+        public Gemini3FlashMultiAgentGemini() {
+            super("gemini-3-flash-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 flush supports thinking
+        }
+    }
+
+    public static class Gemini3FlashGemini extends GeminiProvider {
+        public Gemini3FlashGemini() {
+            super("gemini-3-flash-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Flash supports thinking
+        }
+    }
+
     public static class Gemini25FlashGemini extends GeminiProvider {
         public Gemini25FlashGemini() {
             super("gemini-2.5-flash", false);
@@ -108,6 +199,11 @@ public class GeminiProvider extends BaseModelProvider {
         @Override
         public String getProviderName() {
             return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 2.5 Flash supports thinking
         }
     }
 

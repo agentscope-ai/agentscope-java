@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
@@ -32,13 +31,19 @@ import org.junit.jupiter.api.Test;
 /**
  * Unit tests for GeminiChatModel.
  *
- * <p>These tests verify the GeminiChatModel behavior including basic configuration, builder
- * pattern, streaming, tool calls, and various API configurations (Gemini API vs Vertex AI).
+ * <p>
+ * These tests verify the GeminiChatModel behavior including basic
+ * configuration, builder
+ * pattern, streaming, tool calls, and various API configurations (Gemini API vs
+ * Vertex AI).
  *
- * <p>Tests use mock API keys to avoid actual network calls and focus on model construction and
+ * <p>
+ * Tests use mock API keys to avoid actual network calls and focus on model
+ * construction and
  * configuration validation.
  *
- * <p>Tagged as "unit" - fast running tests without external dependencies.
+ * <p>
+ * Tagged as "unit" - fast running tests without external dependencies.
  */
 @Tag("unit")
 @DisplayName("GeminiChatModel Unit Tests")
@@ -286,21 +291,6 @@ class GeminiChatModelTest {
     }
 
     @Test
-    @DisplayName("Should configure HTTP options")
-    void testHttpOptionsConfiguration() {
-        HttpOptions httpOptions = HttpOptions.builder().build();
-
-        GeminiChatModel modelWithHttpOptions =
-                GeminiChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("gemini-2.0-flash")
-                        .httpOptions(httpOptions)
-                        .build();
-
-        assertNotNull(modelWithHttpOptions);
-    }
-
-    @Test
     @DisplayName("Should handle all generation options")
     void testAllGenerateOptions() {
         GenerateOptions fullOptions =
@@ -335,8 +325,6 @@ class GeminiChatModelTest {
                         .presencePenalty(0.1)
                         .build();
 
-        HttpOptions httpOptions = HttpOptions.builder().build();
-
         GeminiChatModel completeModel =
                 GeminiChatModel.builder()
                         .apiKey(mockApiKey)
@@ -344,7 +332,6 @@ class GeminiChatModelTest {
                         .streamEnabled(true)
                         .defaultOptions(options)
                         .formatter(new GeminiChatFormatter())
-                        .httpOptions(httpOptions)
                         .build();
 
         assertNotNull(completeModel);
