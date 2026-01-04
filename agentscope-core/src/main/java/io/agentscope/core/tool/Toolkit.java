@@ -642,6 +642,25 @@ public class Toolkit {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
+    // ==================== Deep Copy ====================
+
+    /**
+     * Create a deep copy of this toolkit.
+     *
+     * @return A new Toolkit instance with copied state
+     */
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        return copy;
+    }
+
     /**
      * Fluent builder for registering tools with optional configuration.
      *
