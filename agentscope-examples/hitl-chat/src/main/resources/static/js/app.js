@@ -267,7 +267,7 @@ async function processSSEStream(response) {
                         try {
                             handleChatEvent(JSON.parse(data));
                         } catch (e) {
-                            console.error('解析事件失败:', data, e);
+                            console.error('Failed:', data, e);
                         }
                     }
                 }
@@ -546,7 +546,6 @@ function updateTransportOptions() {
     elements.httpOptions.classList.toggle('hidden', transport === 'STDIO');
 }
 
-// 工具功能
 async function loadTools() {
     try {
         const response = await fetch('/api/tools');

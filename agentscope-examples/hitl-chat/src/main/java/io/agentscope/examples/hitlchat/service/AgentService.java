@@ -34,6 +34,7 @@ import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.examples.hitlchat.dto.ChatEvent;
 import io.agentscope.examples.hitlchat.dto.ChatEvent.PendingToolCall;
 import io.agentscope.examples.hitlchat.dto.ToolConfirmRequest.ToolCallInfo;
@@ -86,8 +87,10 @@ public class AgentService {
     public void init() {
         sharedToolkit = new Toolkit();
         sharedToolkit.registerTool(new BuiltinTools());
+        sharedToolkit.registerTool(new ReadFileTool());
         Set<String> defaultDangerousTools = new HashSet<>();
-        defaultDangerousTools.add("read_file");
+        defaultDangerousTools.add("view_text_file");
+        defaultDangerousTools.add("list_directory");
         confirmationHook = new ToolConfirmationHook(defaultDangerousTools);
     }
 

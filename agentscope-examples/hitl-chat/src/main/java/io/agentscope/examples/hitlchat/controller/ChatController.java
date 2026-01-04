@@ -27,7 +27,6 @@ import java.util.Set;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,7 +50,6 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*")
 public class ChatController {
 
     private final AgentService agentService;

@@ -18,12 +18,9 @@ package io.agentscope.examples.hitlchat.tools;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.Random;
-import java.util.stream.Collectors;
 
 /**
  * Built-in tools for the HITL Chat example.
@@ -48,41 +45,6 @@ public class BuiltinTools {
     }
 
     /**
-     * List files in a directory.
-     *
-     * @param path The directory path to list
-     * @return List of files and directories
-     */
-    @Tool(name = "list_files", description = "List files and directories in the specified path")
-    public ToolResultBlock listFiles(
-            @ToolParam(name = "path", description = "The directory path to list (e.g., '/tmp')")
-                    String path) {
-        File dir = new File(path);
-        if (!dir.exists()) {
-            return ToolResultBlock.error("Directory not found: " + path);
-        }
-        if (!dir.isDirectory()) {
-            return ToolResultBlock.error("Path is not a directory: " + path);
-        }
-
-        File[] files = dir.listFiles();
-        if (files == null || files.length == 0) {
-            return ToolResultBlock.text("Directory is empty: " + path);
-        }
-
-        String fileList =
-                Arrays.stream(files)
-                        .map(
-                                f ->
-                                        String.format(
-                                                "%s %s",
-                                                f.isDirectory() ? "[DIR]" : "[FILE]", f.getName()))
-                        .collect(Collectors.joining("\n"));
-
-        return ToolResultBlock.text("Files in " + path + ":\n" + fileList);
-    }
-
-    /**
      * Generate a random number within a specified range.
      *
      * @param min Minimum value (inclusive)
@@ -100,34 +62,5 @@ public class BuiltinTools {
         }
         int result = random.nextInt(max - min + 1) + min;
         return ToolResultBlock.text("Random number between " + min + " and " + max + ": " + result);
-    }
-
-    /**
-     * Read file content (dangerous - may expose sensitive data).
-     *
-     * @param path The file path to read
-     * @return File content
-     */
-    @Tool(name = "read_file", description = "Read the content of a text file")
-    public ToolResultBlock readFile(
-            @ToolParam(name = "path", description = "The file path to read") String path) {
-        File file = new File(path);
-        if (!file.exists()) {
-            return ToolResultBlock.error("File not found: " + path);
-        }
-        if (file.isDirectory()) {
-            return ToolResultBlock.error("Cannot read directory: " + path);
-        }
-
-        try {
-            String content = java.nio.file.Files.readString(file.toPath());
-            // Limit content length for safety
-            if (content.length() > 10000) {
-                content = content.substring(0, 10000) + "\n... (truncated)";
-            }
-            return ToolResultBlock.text("Content of " + path + ":\n" + content);
-        } catch (Exception e) {
-            return ToolResultBlock.error("Failed to read file: " + e.getMessage());
-        }
     }
 }

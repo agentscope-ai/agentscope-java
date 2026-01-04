@@ -22,7 +22,7 @@ spring:
 # DashScope API configuration
 # Set DASHSCOPE_API_KEY environment variable or configure here
 dashscope:
-  api-key: ${DASHSCOPE_API_KEY:}
+  api-key: ${DASHSCOPE_API_KEY}
   model-name: qwen-plus
 
 # Logging
