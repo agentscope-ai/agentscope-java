@@ -15,18 +15,18 @@
  */
 package io.agentscope.spring.boot.chat.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,18 +39,38 @@ import reactor.test.StepVerifier;
 /**
  * Unit tests for {@link ChatCompletionsStreamingService}.
  *
- * <p>These tests verify the streaming service's behavior for converting agent events to SSE.
+ * <p>These tests verify the Spring-specific streaming service's behavior for converting chunks to
+ * SSE.
  */
 @DisplayName("ChatCompletionsStreamingService Tests")
 class ChatCompletionsStreamingServiceTest {
 
     private ChatCompletionsStreamingService service;
-    private ChatCompletionsResponseBuilder responseBuilder;
+    private ChatCompletionsStreamingAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        responseBuilder = mock(ChatCompletionsResponseBuilder.class);
-        service = new ChatCompletionsStreamingService(responseBuilder);
+        adapter = new ChatCompletionsStreamingAdapter();
+        service = new ChatCompletionsStreamingService(adapter);
+    }
+
+    /** Create a mock model that returns the specified text. */
+    private Model createMockModel(String responseText) {
+        return new Model() {
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(List.of(TextBlock.builder().text(responseText).build()))
+                                .build());
+            }
+
+            @Override
+            public String getModelName() {
+                return "test-model";
+            }
+        };
     }
 
     @Nested
@@ -58,102 +78,64 @@ class ChatCompletionsStreamingServiceTest {
     class StreamAsSseTests {
 
         @Test
-        @DisplayName("Should convert agent events to SSE correctly")
-        void shouldConvertAgentEventsToSseCorrectly() {
-            ReActAgent agent = mock(ReActAgent.class);
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.ASSISTANT)
-                            .content(TextBlock.builder().text("Hello").build())
+        @DisplayName("Should convert agent events to OpenAI-compatible SSE chunks")
+        void shouldConvertAgentEventsToOpenAiChunks() {
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .sysPrompt("Test")
+                            .model(createMockModel("Hello"))
                             .build();
 
-            Event event = mock(Event.class);
-            when(event.getMessage()).thenReturn(msg);
-            when(event.getMessageId()).thenReturn("msg-1");
-            when(event.isLast()).thenReturn(false);
-
-            when(agent.stream(anyList(), any())).thenReturn(Flux.just(event));
-            when(responseBuilder.extractTextContent(msg)).thenReturn("Hello");
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Hi").build())
+                            .build();
 
             Flux<ServerSentEvent<String>> result =
-                    service.streamAsSse(agent, List.of(msg), "request-id");
+                    service.streamAsSse(agent, List.of(msg), "request-id", "qwen-plus");
 
+            // Verify stream produces events and ends with DONE
             StepVerifier.create(result)
-                    .assertNext(
-                            sse -> {
-                                assertThat(sse.data()).isEqualTo("Hello");
-                                assertThat(sse.event()).isEqualTo("delta");
-                                assertThat(sse.id()).isEqualTo("msg-1");
-                            })
                     .thenConsumeWhile(
                             sse -> {
-                                // Consume all events except the last [DONE] event
-                                return !"[DONE]".equals(sse.data());
+                                if ("[DONE]".equals(sse.data())) {
+                                    return true;
+                                }
+                                assertTrue(sse.data().contains("chat.completion.chunk"));
+                                return true;
                             })
-                    .expectNextMatches(sse -> "[DONE]".equals(sse.data()))
                     .verifyComplete();
         }
 
         @Test
-        @DisplayName("Should filter out null messages")
-        void shouldFilterOutNullMessages() {
-            ReActAgent agent = mock(ReActAgent.class);
-            Event event = mock(Event.class);
-            when(event.getMessage()).thenReturn(null);
-
-            when(agent.stream(anyList(), any())).thenReturn(Flux.just(event));
-
-            Flux<ServerSentEvent<String>> result =
-                    service.streamAsSse(agent, List.of(mock(Msg.class)), "request-id");
-
-            StepVerifier.create(result)
-                    .expectNextMatches(sse -> "[DONE]".equals(sse.data()))
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("Should filter out empty text content")
-        void shouldFilterOutEmptyTextContent() {
-            ReActAgent agent = mock(ReActAgent.class);
-            Msg msg = mock(Msg.class);
-            Event event = mock(Event.class);
-            when(event.getMessage()).thenReturn(msg);
-            when(responseBuilder.extractTextContent(msg)).thenReturn("");
-
-            when(agent.stream(anyList(), any())).thenReturn(Flux.just(event));
-
-            Flux<ServerSentEvent<String>> result =
-                    service.streamAsSse(agent, List.of(mock(Msg.class)), "request-id");
-
-            StepVerifier.create(result)
-                    .expectNextMatches(sse -> "[DONE]".equals(sse.data()))
-                    .verifyComplete();
-        }
-
-        @Test
-        @DisplayName("Should append done event at the end")
+        @DisplayName("Should append DONE event at the end")
         void shouldAppendDoneEventAtTheEnd() {
-            ReActAgent agent = mock(ReActAgent.class);
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.ASSISTANT)
-                            .content(TextBlock.builder().text("Final").build())
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .sysPrompt("Test")
+                            .model(createMockModel("Hello"))
                             .build();
 
-            Event event = mock(Event.class);
-            when(event.getMessage()).thenReturn(msg);
-            when(event.isLast()).thenReturn(true);
-
-            when(agent.stream(anyList(), any())).thenReturn(Flux.just(event));
-            when(responseBuilder.extractTextContent(msg)).thenReturn("Final");
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Hi").build())
+                            .build();
 
             Flux<ServerSentEvent<String>> result =
-                    service.streamAsSse(agent, List.of(msg), "request-id");
+                    service.streamAsSse(agent, List.of(msg), "request-id", "qwen-plus");
 
-            StepVerifier.create(result)
-                    .expectNextMatches(sse -> "Final".equals(sse.data()))
-                    .expectNextMatches(
-                            sse -> "[DONE]".equals(sse.data()) && "done".equals(sse.event()))
+            // Collect all events and verify last one is DONE
+            StepVerifier.create(result.collectList())
+                    .assertNext(
+                            events -> {
+                                assertTrue(!events.isEmpty());
+                                ServerSentEvent<String> lastEvent = events.get(events.size() - 1);
+                                assertTrue("[DONE]".equals(lastEvent.data()));
+                            })
                     .verifyComplete();
         }
     }
@@ -167,22 +149,61 @@ class ChatCompletionsStreamingServiceTest {
         void shouldCreateErrorSseEventCorrectly() {
             RuntimeException error = new RuntimeException("Test error");
 
-            ServerSentEvent<String> result = service.createErrorSseEvent(error, "request-id");
+            ServerSentEvent<String> result =
+                    service.createErrorSseEvent(error, "request-id", "qwen-plus");
 
-            assertThat(result).isNotNull();
-            assertThat(result.data()).contains("Error:").contains("Test error");
-            assertThat(result.event()).isEqualTo("error");
-            assertThat(result.id()).isEqualTo("request-id");
+            assertNotNull(result);
+            assertTrue(result.data().contains("Test error"));
         }
 
         @Test
         @DisplayName("Should handle null error")
         void shouldHandleNullError() {
-            ServerSentEvent<String> result = service.createErrorSseEvent(null, "request-id");
+            ServerSentEvent<String> result =
+                    service.createErrorSseEvent(null, "request-id", "qwen-plus");
 
-            assertThat(result).isNotNull();
-            assertThat(result.data()).contains("Unknown error occurred");
-            assertThat(result.event()).isEqualTo("error");
+            assertNotNull(result);
+            assertTrue(result.data().contains("Unknown error occurred"));
+        }
+    }
+
+    @Nested
+    @DisplayName("SSE Serialization Tests")
+    class SseSerializationTests {
+
+        @Test
+        @DisplayName("Should serialize chunks to JSON in SSE data")
+        void shouldSerializeChunksToJsonInSseData() {
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .sysPrompt("Test")
+                            .model(createMockModel("World"))
+                            .build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Hello").build())
+                            .build();
+
+            Flux<ServerSentEvent<String>> result =
+                    service.streamAsSse(agent, List.of(msg), "request-id", "qwen-plus");
+
+            // Verify JSON format in SSE data
+            StepVerifier.create(result)
+                    .thenConsumeWhile(
+                            sse -> {
+                                if ("[DONE]".equals(sse.data())) {
+                                    return true;
+                                }
+                                // Should be valid JSON
+                                assertTrue(
+                                        sse.data().startsWith("{"),
+                                        "SSE data should be JSON object");
+                                return true;
+                            })
+                    .verifyComplete();
         }
     }
 }

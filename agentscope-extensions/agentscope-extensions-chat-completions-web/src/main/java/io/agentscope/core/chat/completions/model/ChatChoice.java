@@ -15,14 +15,53 @@
  */
 package io.agentscope.core.chat.completions.model;
 
-/** Single choice in a Chat Completions style response. */
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * Single choice in a Chat Completions style response.
+ *
+ * <p>This class follows OpenAI's Chat Completions API format.
+ *
+ * <p>Example:
+ *
+ * <pre>{@code
+ * {
+ *   "index": 0,
+ *   "message": {
+ *     "role": "assistant",
+ *     "content": "Hello! How can I help you?"
+ *   },
+ *   "finish_reason": "stop"
+ * }
+ * }</pre>
+ *
+ * <p>Possible finish_reason values:
+ *
+ * <ul>
+ *   <li>"stop" - Natural end of message
+ *   <li>"length" - Max tokens reached
+ *   <li>"tool_calls" - Model wants to call tools
+ *   <li>"content_filter" - Content was filtered
+ * </ul>
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatChoice {
 
     private int index;
 
+    /** The message content for non-streaming responses. */
     private ChatMessage message;
 
+    /** The delta content for streaming responses. */
+    private ChatMessage delta;
+
+    /** Reason the model stopped generating. Uses snake_case per OpenAI spec. */
+    @JsonProperty("finish_reason")
     private String finishReason;
+
+    /** Log probability information (optional, OpenAI field). */
+    private Object logprobs;
 
     public int getIndex() {
         return index;
@@ -40,11 +79,27 @@ public class ChatChoice {
         this.message = message;
     }
 
+    public ChatMessage getDelta() {
+        return delta;
+    }
+
+    public void setDelta(ChatMessage delta) {
+        this.delta = delta;
+    }
+
     public String getFinishReason() {
         return finishReason;
     }
 
     public void setFinishReason(String finishReason) {
         this.finishReason = finishReason;
+    }
+
+    public Object getLogprobs() {
+        return logprobs;
+    }
+
+    public void setLogprobs(Object logprobs) {
+        this.logprobs = logprobs;
     }
 }

@@ -15,110 +15,226 @@
  */
 package io.agentscope.core.chat.completions.streaming;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
+import io.agentscope.core.chat.completions.model.ToolCall;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiFunction;
-import java.util.function.Function;
+import java.util.Map;
 import reactor.core.publisher.Flux;
 
 /**
- * Adapter for handling streaming chat completion responses.
+ * Framework-agnostic adapter for handling streaming chat completion responses.
  *
- * <p>This adapter converts agent events to streaming format. The actual streaming format
- * (e.g., SSE) is determined by the implementation.
+ * <p>This adapter converts agent events to OpenAI-compatible {@link ChatCompletionsChunk} objects.
+ * It is designed to be used by framework-specific adapters (e.g., Spring SSE, Quarkus Multi) that
+ * handle the final serialization and transport.
  *
- * @param <T> The type of streaming event (e.g., ServerSentEvent for SSE)
+ * <p><b>Design Philosophy:</b>
+ *
+ * <ul>
+ *   <li>Core streaming logic is framework-agnostic
+ *   <li>Returns {@link Flux} of {@link ChatCompletionsChunk} (not framework-specific types)
+ *   <li>Framework adapters (in starter modules) handle SSE/transport specifics
+ * </ul>
+ *
+ * <p><b>Supported Event Types:</b>
+ *
+ * <ul>
+ *   <li>{@link EventType#REASONING} - Text content and tool call decisions
+ *   <li>{@link EventType#TOOL_RESULT} - Tool execution results
+ * </ul>
+ *
+ * <p><b>Output Chunk Types:</b>
+ *
+ * <ul>
+ *   <li>Text chunks - Incremental text content
+ *   <li>Tool call chunks - When agent decides to call tools
+ *   <li>Finish chunks - Stream completion with finish_reason
+ * </ul>
  */
-public class ChatCompletionsStreamingAdapter<T> {
+public class ChatCompletionsStreamingAdapter {
 
-    private final ChatCompletionsResponseBuilder responseBuilder;
-    private final Function<Event, T> eventConverter;
-    private final Function<String, T> doneEventFactory;
-    private final BiFunction<Throwable, String, T> errorEventFactory;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    /**
-     * Constructs a new {@code ChatCompletionsStreamingAdapter} with the specified components
-     * for converting agent events to framework-specific streaming events.
-     *
-     * <p>This adapter is generic to support different streaming formats (e.g., SSE for Spring,
-     * Multi for Quarkus).
-     *
-     * @param responseBuilder Builder for extracting text content from agent messages
-     * @param eventConverter Function to convert agent events to streaming events of type T
-     * @param doneEventFactory Function to create the completion event with the given requestId
-     * @param errorEventFactory Function to create an error event from a Throwable and requestId
-     */
-    public ChatCompletionsStreamingAdapter(
-            ChatCompletionsResponseBuilder responseBuilder,
-            Function<Event, T> eventConverter,
-            Function<String, T> doneEventFactory,
-            BiFunction<Throwable, String, T> errorEventFactory) {
-        this.responseBuilder = responseBuilder;
-        this.eventConverter = eventConverter;
-        this.doneEventFactory = doneEventFactory;
-        this.errorEventFactory = errorEventFactory;
-    }
+    /** Constructs a new {@code ChatCompletionsStreamingAdapter}. */
+    public ChatCompletionsStreamingAdapter() {}
 
     /**
-     * Stream agent events as streaming events.
+     * Stream agent events as OpenAI-compatible chunks.
      *
-     * <p>Each event contains a text delta from a REASONING event. Clients can
-     * accumulate these deltas to reconstruct the full assistant message, similar to OpenAI
-     * streaming.
+     * <p>Subscribes to agent's event stream and converts each event to one or more {@link
+     * ChatCompletionsChunk} objects following OpenAI's streaming format.
      *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
-     * @param requestId The request ID for tracking
-     * @return A {@link Flux} of streaming events of type T containing text deltas,
-     *     followed by a completion event when the stream ends
+     * @param requestId The request ID for tracking (used as chunk ID)
+     * @param model The model name to include in chunks
+     * @return A {@link Flux} of {@link ChatCompletionsChunk} objects
      */
-    public Flux<T> stream(ReActAgent agent, List<Msg> messages, String requestId) {
+    public Flux<ChatCompletionsChunk> stream(
+            ReActAgent agent, List<Msg> messages, String requestId, String model) {
         StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.REASONING).incremental(true).build();
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                        .incremental(true)
+                        .build();
 
         return agent.stream(messages, options)
                 .filter(event -> event.getMessage() != null)
-                .flatMap(
-                        event -> {
-                            T streamingEvent = convertEvent(event, requestId);
-                            if (streamingEvent == null) {
-                                return Flux.empty();
-                            }
-                            return Flux.just(streamingEvent);
-                        })
-                .concatWith(Flux.just(doneEventFactory.apply(requestId)));
+                .flatMap(event -> convertEventToChunks(event, requestId, model));
     }
 
     /**
-     * Convert an agent event to a streaming event.
+     * Convert an agent event to one or more streaming chunks.
+     *
+     * <p>A single event may produce multiple chunks if it contains both text and tool calls.
      *
      * @param event The agent event
-     * @param requestId The request ID for tracking
-     * @return The streaming event, or null if no text content
+     * @param requestId The request ID
+     * @param model The model name
+     * @return Flux of ChatCompletionsChunk objects
      */
-    private T convertEvent(Event event, String requestId) {
-        String text = responseBuilder.extractTextContent(event.getMessage());
-
-        if (text == null || text.isEmpty()) {
-            return null;
+    public Flux<ChatCompletionsChunk> convertEventToChunks(
+            Event event, String requestId, String model) {
+        Msg msg = event.getMessage();
+        if (msg == null) {
+            return Flux.empty();
         }
 
-        return eventConverter.apply(event);
+        List<ContentBlock> contentBlocks = msg.getContent();
+        if (contentBlocks == null || contentBlocks.isEmpty()) {
+            return Flux.empty();
+        }
+
+        List<ChatCompletionsChunk> chunks = new ArrayList<>();
+
+        // Extract text content
+        StringBuilder textBuilder = new StringBuilder();
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof TextBlock) {
+                String text = ((TextBlock) block).getText();
+                if (text != null && !text.isEmpty()) {
+                    textBuilder.append(text);
+                }
+            }
+        }
+
+        String textContent = textBuilder.toString();
+        if (!textContent.isEmpty()) {
+            chunks.add(ChatCompletionsChunk.textChunk(requestId, model, textContent));
+        }
+
+        // Extract tool calls (only for REASONING events from assistant)
+        if (event.getType() == EventType.REASONING) {
+            List<ToolCall> toolCalls = new ArrayList<>();
+            for (ContentBlock block : contentBlocks) {
+                if (block instanceof ToolUseBlock) {
+                    ToolUseBlock toolUseBlock = (ToolUseBlock) block;
+                    String argumentsJson = serializeMapToJson(toolUseBlock.getInput());
+                    toolCalls.add(
+                            new ToolCall(
+                                    toolUseBlock.getId(), toolUseBlock.getName(), argumentsJson));
+                }
+            }
+
+            if (!toolCalls.isEmpty()) {
+                chunks.add(ChatCompletionsChunk.toolCallChunk(requestId, model, toolCalls));
+            }
+        }
+
+        // Extract tool results (only for TOOL_RESULT events)
+        if (event.getType() == EventType.TOOL_RESULT) {
+            for (ContentBlock block : contentBlocks) {
+                if (block instanceof ToolResultBlock) {
+                    ToolResultBlock resultBlock = (ToolResultBlock) block;
+                    String resultContent = extractToolResultContent(resultBlock);
+                    chunks.add(
+                            ChatCompletionsChunk.toolResultChunk(
+                                    requestId,
+                                    model,
+                                    resultBlock.getId(),
+                                    resultBlock.getName(),
+                                    resultContent));
+                }
+            }
+        }
+
+        // Add finish chunk if this is the last event
+        if (event.isLast()) {
+            boolean hasToolCalls =
+                    contentBlocks.stream().anyMatch(block -> block instanceof ToolUseBlock);
+            String finishReason = hasToolCalls ? "tool_calls" : "stop";
+            chunks.add(ChatCompletionsChunk.finishChunk(requestId, model, finishReason));
+        }
+
+        return Flux.fromIterable(chunks);
     }
 
     /**
-     * Create an error streaming event.
+     * Create an error chunk.
+     *
+     * <p>This can be used by framework adapters to handle errors in a consistent way.
      *
      * @param error The error that occurred
      * @param requestId The request ID for tracking
-     * @return A streaming event of type T representing the error, containing the error message
+     * @param model The model name
+     * @return A ChatCompletionsChunk representing the error
      */
-    public T createErrorEvent(Throwable error, String requestId) {
-        return errorEventFactory.apply(error, requestId);
+    public ChatCompletionsChunk createErrorChunk(Throwable error, String requestId, String model) {
+        String errorMessage = error != null ? error.getMessage() : "Unknown error occurred";
+        return ChatCompletionsChunk.textChunk(requestId, model, "Error: " + errorMessage);
+    }
+
+    /**
+     * Extract content from a ToolResultBlock.
+     *
+     * <p>Concatenates all TextBlock content from the tool result's output.
+     *
+     * @param resultBlock The tool result block
+     * @return The extracted content as a string
+     */
+    private String extractToolResultContent(ToolResultBlock resultBlock) {
+        if (resultBlock.getOutput() == null || resultBlock.getOutput().isEmpty()) {
+            return "";
+        }
+
+        StringBuilder contentBuilder = new StringBuilder();
+        for (ContentBlock outputBlock : resultBlock.getOutput()) {
+            if (outputBlock instanceof TextBlock) {
+                String text = ((TextBlock) outputBlock).getText();
+                if (text != null && !text.isEmpty()) {
+                    contentBuilder.append(text);
+                }
+            }
+        }
+        return contentBuilder.toString();
+    }
+
+    /**
+     * Serialize a Map to a JSON string.
+     *
+     * @param map The map to serialize
+     * @return JSON string representation, or "{}" if serialization fails
+     */
+    private String serializeMapToJson(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            return "{}";
+        }
     }
 }

@@ -16,12 +16,17 @@
 package io.agentscope.core.chat.completions.converter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.chat.completions.model.ChatMessage;
+import io.agentscope.core.chat.completions.model.ToolCall;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,12 +90,15 @@ class ChatMessageConverterTest {
         @Test
         @DisplayName("Should convert tool message correctly")
         void shouldConvertToolMessageCorrectly() {
-            ChatMessage chatMsg = new ChatMessage("tool", "Tool result");
+            // Tool messages require tool_call_id for proper conversion
+            ChatMessage chatMsg = ChatMessage.toolResult("call-123", "get_weather", "Tool result");
             List<Msg> result = converter.convertMessages(List.of(chatMsg));
 
             assertEquals(1, result.size());
             assertEquals(MsgRole.TOOL, result.get(0).getRole());
-            assertEquals("Tool result", result.get(0).getTextContent());
+            // Tool result content is stored in ToolResultBlock, not directly accessible via
+            // getTextContent()
+            // The role being TOOL is the key verification
         }
 
         @Test
@@ -203,6 +211,180 @@ class ChatMessageConverterTest {
                             IllegalArgumentException.class,
                             () -> converter.convertMessages(List.of(chatMsg)));
             assertTrue(exception.getMessage().contains("Unknown message role"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Tool Call Conversion Tests")
+    class ToolCallConversionTests {
+
+        @Test
+        @DisplayName("Should convert assistant message with tool calls")
+        void shouldConvertAssistantMessageWithToolCalls() {
+            ToolCall toolCall = new ToolCall("call-123", "get_weather", "{\"city\":\"Beijing\"}");
+            ChatMessage chatMsg =
+                    ChatMessage.assistantWithToolCalls("Checking weather", List.of(toolCall));
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.ASSISTANT, result.get(0).getRole());
+
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+            assertNotNull(contentBlocks);
+            assertTrue(contentBlocks.size() >= 1);
+
+            // Check for ToolUseBlock
+            boolean hasToolUseBlock =
+                    contentBlocks.stream().anyMatch(ToolUseBlock.class::isInstance);
+            assertTrue(hasToolUseBlock);
+
+            ToolUseBlock toolUseBlock =
+                    contentBlocks.stream()
+                            .filter(ToolUseBlock.class::isInstance)
+                            .map(ToolUseBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+
+            assertEquals("call-123", toolUseBlock.getId());
+            assertEquals("get_weather", toolUseBlock.getName());
+        }
+
+        @Test
+        @DisplayName("Should convert assistant message with multiple tool calls")
+        void shouldConvertAssistantMessageWithMultipleToolCalls() {
+            List<ToolCall> toolCalls =
+                    List.of(
+                            new ToolCall("call-1", "get_weather", "{\"city\":\"Beijing\"}"),
+                            new ToolCall("call-2", "get_time", "{}"));
+            ChatMessage chatMsg = ChatMessage.assistantWithToolCalls(null, toolCalls);
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+
+            long toolUseCount =
+                    contentBlocks.stream().filter(ToolUseBlock.class::isInstance).count();
+            assertEquals(2, toolUseCount);
+        }
+
+        @Test
+        @DisplayName("Should convert tool result message to ToolResultBlock")
+        void shouldConvertToolResultMessageToToolResultBlock() {
+            ChatMessage chatMsg = ChatMessage.toolResult("call-123", "get_weather", "25°C sunny");
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            assertEquals(MsgRole.TOOL, result.get(0).getRole());
+
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+            assertNotNull(contentBlocks);
+            assertEquals(1, contentBlocks.size());
+            assertTrue(contentBlocks.get(0) instanceof ToolResultBlock);
+
+            ToolResultBlock resultBlock = (ToolResultBlock) contentBlocks.get(0);
+            assertEquals("call-123", resultBlock.getId());
+        }
+
+        @Test
+        @DisplayName("Should handle tool call with invalid JSON arguments")
+        void shouldHandleToolCallWithInvalidJsonArguments() {
+            ToolCall toolCall = new ToolCall("call-123", "func", "invalid json");
+            ChatMessage chatMsg = ChatMessage.assistantWithToolCalls(null, List.of(toolCall));
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            // Should parse but with empty map for invalid JSON
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+            ToolUseBlock toolUseBlock =
+                    contentBlocks.stream()
+                            .filter(ToolUseBlock.class::isInstance)
+                            .map(ToolUseBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertTrue(toolUseBlock.getInput().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle tool call with empty arguments")
+        void shouldHandleToolCallWithEmptyArguments() {
+            ToolCall toolCall = new ToolCall("call-123", "func", "");
+            ChatMessage chatMsg = ChatMessage.assistantWithToolCalls(null, List.of(toolCall));
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+            ToolUseBlock toolUseBlock =
+                    contentBlocks.stream()
+                            .filter(ToolUseBlock.class::isInstance)
+                            .map(ToolUseBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertTrue(toolUseBlock.getInput().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle tool call with null arguments")
+        void shouldHandleToolCallWithNullArguments() {
+            ToolCall toolCall = new ToolCall("call-123", "func", null);
+            ChatMessage chatMsg = ChatMessage.assistantWithToolCalls(null, List.of(toolCall));
+
+            List<Msg> result = converter.convertMessages(List.of(chatMsg));
+
+            assertEquals(1, result.size());
+            List<ContentBlock> contentBlocks = result.get(0).getContent();
+            ToolUseBlock toolUseBlock =
+                    contentBlocks.stream()
+                            .filter(ToolUseBlock.class::isInstance)
+                            .map(ToolUseBlock.class::cast)
+                            .findFirst()
+                            .orElseThrow();
+            assertTrue(toolUseBlock.getInput().isEmpty());
+        }
+    }
+
+    @Nested
+    @DisplayName("Full Conversation Flow Tests")
+    class FullConversationFlowTests {
+
+        @Test
+        @DisplayName("Should convert full conversation with tool calls")
+        void shouldConvertFullConversationWithToolCalls() {
+            List<ChatMessage> messages =
+                    List.of(
+                            new ChatMessage("system", "You are a helpful assistant"),
+                            new ChatMessage("user", "What's the weather in Beijing?"),
+                            ChatMessage.assistantWithToolCalls(
+                                    null,
+                                    List.of(
+                                            new ToolCall(
+                                                    "call-1",
+                                                    "get_weather",
+                                                    "{\"city\":\"Beijing\"}"))),
+                            ChatMessage.toolResult("call-1", "get_weather", "25°C sunny"),
+                            new ChatMessage(
+                                    "assistant", "The weather in Beijing is 25°C and sunny!"));
+
+            List<Msg> result = converter.convertMessages(messages);
+
+            assertEquals(5, result.size());
+            assertEquals(MsgRole.SYSTEM, result.get(0).getRole());
+            assertEquals(MsgRole.USER, result.get(1).getRole());
+            assertEquals(MsgRole.ASSISTANT, result.get(2).getRole());
+            assertEquals(MsgRole.TOOL, result.get(3).getRole());
+            assertEquals(MsgRole.ASSISTANT, result.get(4).getRole());
+
+            // Verify tool call in assistant message
+            List<ContentBlock> toolCallBlocks = result.get(2).getContent();
+            assertTrue(toolCallBlocks.stream().anyMatch(ToolUseBlock.class::isInstance));
+
+            // Verify tool result
+            List<ContentBlock> toolResultBlocks = result.get(3).getContent();
+            assertTrue(toolResultBlocks.get(0) instanceof ToolResultBlock);
         }
     }
 }

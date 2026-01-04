@@ -15,18 +15,17 @@
  */
 package io.agentscope.spring.boot.chat.config;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.core.session.Session;
-import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
@@ -54,60 +53,17 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldCreateDefaultBeansWhenEnabled() {
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
-                    assertThat(context).hasSingleBean(ChatMessageConverter.class);
-                    assertThat(context).hasSingleBean(ChatCompletionsResponseBuilder.class);
-                    assertThat(context).hasSingleBean(ChatCompletionsStreamingService.class);
-                    assertThat(context).hasSingleBean(ChatCompletionsController.class);
-                    assertThat(context).hasSingleBean(Session.class);
+                    assertTrue(context.containsBean("chatMessageConverter"));
+                    assertTrue(context.containsBean("chatCompletionsResponseBuilder"));
+                    assertTrue(context.containsBean("chatCompletionsStreamingAdapter"));
+                    assertTrue(context.containsBean("chatCompletionsStreamingService"));
+                    assertTrue(context.containsBean("chatCompletionsController"));
+                    assertNotNull(context.getBean(ChatMessageConverter.class));
+                    assertNotNull(context.getBean(ChatCompletionsResponseBuilder.class));
+                    assertNotNull(context.getBean(ChatCompletionsStreamingAdapter.class));
+                    assertNotNull(context.getBean(ChatCompletionsStreamingService.class));
+                    assertNotNull(context.getBean(ChatCompletionsController.class));
                 });
-    }
-
-    @Test
-    void shouldCreateAgentServiceWithSessionSupport() {
-        contextRunner.run(
-                context -> {
-                    assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
-                    ChatCompletionsAgentService agentService =
-                            context.getBean(ChatCompletionsAgentService.class);
-                    assertThat(agentService).isNotNull();
-
-                    // Test that resolveSessionId works
-                    String resolved = agentService.resolveSessionId(null);
-                    assertThat(resolved).isNotNull().isNotEmpty();
-
-                    // Test that resolveSessionId returns the same ID if provided
-                    String customId = "custom-session-id";
-                    assertThat(agentService.resolveSessionId(customId)).isEqualTo(customId);
-
-                    // Test that session is available
-                    assertThat(agentService.getSession()).isNotNull();
-                });
-    }
-
-    @Test
-    void shouldUseCustomAgentServiceWhenProvided() {
-        // Create mock objects for the constructor
-        @SuppressWarnings("unchecked")
-        ObjectProvider<ReActAgent> mockAgentProvider = mock(ObjectProvider.class);
-        Session mockSession = mock(Session.class);
-
-        ChatCompletionsAgentService customService =
-                new ChatCompletionsAgentService(mockAgentProvider, mockSession) {
-                    @Override
-                    public ReActAgent getAgent(String sessionId) {
-                        return null;
-                    }
-                };
-
-        contextRunner
-                .withBean(ChatCompletionsAgentService.class, () -> customService)
-                .run(
-                        context -> {
-                            assertThat(context).hasSingleBean(ChatCompletionsAgentService.class);
-                            assertThat(context.getBean(ChatCompletionsAgentService.class))
-                                    .isSameAs(customService);
-                        });
     }
 
     @Test
@@ -118,11 +74,12 @@ class ChatCompletionsWebAutoConfigurationTest {
                         "agentscope.chat-completions.base-path=/api/chat")
                 .run(
                         context -> {
-                            assertThat(context).hasSingleBean(ChatCompletionsProperties.class);
+                            // ChatCompletionsProperties bean name may vary - check by type
+                            assertNotNull(context.getBean(ChatCompletionsProperties.class));
                             ChatCompletionsProperties properties =
                                     context.getBean(ChatCompletionsProperties.class);
-                            assertThat(properties.isEnabled()).isTrue();
-                            assertThat(properties.getBasePath()).isEqualTo("/api/chat");
+                            assertTrue(properties.isEnabled());
+                            assertEquals("/api/chat", properties.getBasePath());
                         });
     }
 
@@ -132,10 +89,10 @@ class ChatCompletionsWebAutoConfigurationTest {
                 .withPropertyValues("agentscope.chat-completions.enabled=true")
                 .run(
                         context -> {
-                            assertThat(context).hasSingleBean(ChatCompletionsController.class);
+                            assertTrue(context.containsBean("chatCompletionsController"));
                             ChatCompletionsProperties properties =
                                     context.getBean(ChatCompletionsProperties.class);
-                            assertThat(properties.getBasePath()).isEqualTo("/v1/chat/completions");
+                            assertEquals("/v1/chat/completions", properties.getBasePath());
                         });
     }
 }

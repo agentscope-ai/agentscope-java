@@ -18,9 +18,7 @@ package io.agentscope.spring.boot.chat.config;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
-import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.session.Session;
-import io.agentscope.spring.boot.chat.service.ChatCompletionsAgentService;
+import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.springframework.beans.factory.ObjectProvider;
@@ -37,9 +35,19 @@ import org.springframework.context.annotation.Bean;
  * <p>This configuration assumes that the core {@code agentscope-spring-boot-starter} is already on
  * the classpath and has configured a prototype-scoped {@link ReActAgent} bean.
  *
- * <p><b>Simplified Design:</b> This configuration uses {@link ChatCompletionsAgentService} in the
- * service layer to manage agent lifecycle and state persistence, creating a new prototype-scoped
- * agent for each request and loading/saving state from/to the configured {@link Session}.
+ * <p><b>Stateless API Design:</b>
+ *
+ * <p>This API is <b>100% stateless</b>, fully compatible with OpenAI's Chat Completions API:
+ *
+ * <ul>
+ *   <li>Each request is independent - no server-side state
+ *   <li>Client sends complete conversation history in {@code messages}
+ *   <li>Server creates a fresh agent, processes messages, and returns response
+ *   <li>Client appends response to their history for next request
+ * </ul>
+ *
+ * <p>For clients that need server-side session management, consider using a different API design
+ * pattern such as the OpenAI Assistants API or implementing session management in a higher layer.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ChatCompletionsProperties.class)
@@ -76,58 +84,40 @@ public class ChatCompletionsWebAutoConfiguration {
     }
 
     /**
-     * Create the default Session bean for agent state management.
+     * Create the streaming adapter bean.
      *
-     * <p>This bean provides in-memory session storage. Users can override by providing their own
-     * {@link Session} bean (e.g., JsonSession, MysqlSession, RedisSession).
+     * <p>This is the framework-agnostic adapter that handles core streaming logic.
      *
-     * @return A new {@link InMemorySession} instance
-     */
-    @Bean
-    @ConditionalOnMissingBean(Session.class)
-    public Session chatCompletionsSession() {
-        return new InMemorySession();
-    }
-
-    /**
-     * Create the agent service bean for managing agent lifecycle and state.
-     *
-     * <p>This service:
-     *
-     * <ul>
-     *   <li>Creates a new prototype-scoped agent for each request via {@link ObjectProvider}
-     *   <li>Loads agent state from {@link Session} if the session exists
-     *   <li>Saves agent state to {@link Session} after request completes
-     * </ul>
-     *
-     * @param agentProvider Provider for creating new ReActAgent instances (prototype-scoped)
-     * @param session The Session bean for state storage
-     * @return A new {@link ChatCompletionsAgentService} instance
+     * @return A new {@link ChatCompletionsStreamingAdapter} instance
      */
     @Bean
     @ConditionalOnMissingBean
-    public ChatCompletionsAgentService chatCompletionsAgentService(
-            ObjectProvider<ReActAgent> agentProvider, Session session) {
-        return new ChatCompletionsAgentService(agentProvider, session);
+    public ChatCompletionsStreamingAdapter chatCompletionsStreamingAdapter() {
+        return new ChatCompletionsStreamingAdapter();
     }
 
     /**
      * Create the streaming service bean.
      *
-     * @param responseBuilder Builder for extracting text content from agent messages
+     * <p>This is the Spring-specific adapter that converts chunks to SSE events.
+     *
+     * @param streamingAdapter The framework-agnostic streaming adapter
      * @return A new {@link ChatCompletionsStreamingService} instance
      */
     @Bean
     @ConditionalOnMissingBean
     public ChatCompletionsStreamingService chatCompletionsStreamingService(
-            ChatCompletionsResponseBuilder responseBuilder) {
-        return new ChatCompletionsStreamingService(responseBuilder);
+            ChatCompletionsStreamingAdapter streamingAdapter) {
+        return new ChatCompletionsStreamingService(streamingAdapter);
     }
 
     /**
      * Create the chat completions controller bean.
      *
-     * @param agentService Service for managing agent lifecycle and state persistence
+     * <p>The controller uses {@link ObjectProvider} to create a fresh prototype-scoped agent for
+     * each request, ensuring stateless operation.
+     *
+     * @param agentProvider Provider for creating prototype-scoped ReActAgent instances
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
@@ -136,11 +126,11 @@ public class ChatCompletionsWebAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ChatCompletionsController chatCompletionsController(
-            ChatCompletionsAgentService agentService,
+            ObjectProvider<ReActAgent> agentProvider,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
         return new ChatCompletionsController(
-                agentService, messageConverter, responseBuilder, streamingService);
+                agentProvider, messageConverter, responseBuilder, streamingService);
     }
 }

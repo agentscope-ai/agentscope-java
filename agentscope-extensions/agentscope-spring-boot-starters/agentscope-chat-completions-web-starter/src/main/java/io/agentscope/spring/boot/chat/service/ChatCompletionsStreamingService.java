@@ -15,96 +15,98 @@
  */
 package io.agentscope.spring.boot.chat.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
 import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 /**
- * Service for handling streaming chat completion responses.
+ * Spring-specific service for streaming chat completion responses.
  *
- * <p>This service converts agent events to Server-Sent Events (SSE) format for streaming
- * responses.
+ * <p>This service is a thin adapter layer that:
  *
- * <p>This component is automatically discovered by Spring Boot's component scanning.
+ * <ul>
+ *   <li>Delegates core streaming logic to {@link ChatCompletionsStreamingAdapter}
+ *   <li>Converts {@link ChatCompletionsChunk} to Spring's {@link ServerSentEvent}
+ *   <li>Handles JSON serialization for SSE data field
+ * </ul>
+ *
+ * <p><b>Architecture:</b>
+ *
+ * <pre>
+ * ChatCompletionsStreamingAdapter (framework-agnostic, in extension-core)
+ *           ↓ Flux&lt;ChatCompletionsChunk&gt;
+ * ChatCompletionsStreamingService (Spring-specific, in starter)
+ *           ↓ Flux&lt;ServerSentEvent&lt;String&gt;&gt;
+ * HTTP Response (SSE stream)
+ * </pre>
+ *
+ * <p>This design allows the core streaming logic to be reused across different frameworks (Spring,
+ * Quarkus, etc.) while keeping framework-specific concerns in the starter modules.
  */
-@Service
 public class ChatCompletionsStreamingService {
 
-    private final ChatCompletionsResponseBuilder responseBuilder;
-    private final ChatCompletionsStreamingAdapter<ServerSentEvent<String>> adapter;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private final ChatCompletionsStreamingAdapter streamingAdapter;
 
     /**
-     * Constructs a new {@code ChatCompletionsStreamingService} and initializes the underlying
-     * streaming adapter using the provided {@link ChatCompletionsResponseBuilder}.
+     * Constructs a new {@code ChatCompletionsStreamingService}.
      *
-     * @param responseBuilder The builder used to extract text content from agent messages
+     * @param streamingAdapter The framework-agnostic streaming adapter
      */
-    public ChatCompletionsStreamingService(ChatCompletionsResponseBuilder responseBuilder) {
-        this.responseBuilder = responseBuilder;
-        this.adapter =
-                new ChatCompletionsStreamingAdapter<>(
-                        responseBuilder,
-                        this::eventToSse,
-                        this::createDoneSseEvent,
-                        this::createErrorSseEvent);
+    public ChatCompletionsStreamingService(ChatCompletionsStreamingAdapter streamingAdapter) {
+        this.streamingAdapter = streamingAdapter;
     }
 
     /**
-     * Stream agent events as SSE text deltas.
+     * Stream agent events as Server-Sent Events (SSE).
      *
-     * <p>Each SSE "data" field contains a text delta from a REASONING event. Clients can
-     * accumulate these deltas to reconstruct the full assistant message, similar to OpenAI
-     * streaming.
+     * <p>Each SSE "data" field contains a JSON-serialized {@link ChatCompletionsChunk} following
+     * OpenAI's streaming format. The stream ends with a "data: [DONE]" event.
      *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
      * @param requestId The request ID for tracking
-     * @return A {@link Flux} of {@link ServerSentEvent} objects containing text deltas,
-     *     followed by a "done" event when the stream completes
+     * @param model The model name for the response
+     * @return A {@link Flux} of {@link ServerSentEvent} objects
      */
     public Flux<ServerSentEvent<String>> streamAsSse(
-            ReActAgent agent, List<Msg> messages, String requestId) {
-        return adapter.stream(agent, messages, requestId);
+            ReActAgent agent, List<Msg> messages, String requestId, String model) {
+        return streamingAdapter.stream(agent, messages, requestId, model)
+                .map(this::chunkToSseEvent)
+                .concatWith(Flux.just(createDoneSseEvent()));
     }
 
     /**
-     * Convert an agent event to a Server-Sent Event.
+     * Convert a chunk to an SSE event.
      *
-     * @param event The agent event
-     * @return The SSE event, or null if no text content
+     * @param chunk The chunk to convert
+     * @return SSE event with JSON data
      */
-    private ServerSentEvent<String> eventToSse(Event event) {
-        String text = responseBuilder.extractTextContent(event.getMessage());
-
-        if (text == null || text.isEmpty()) {
-            return null;
+    private ServerSentEvent<String> chunkToSseEvent(ChatCompletionsChunk chunk) {
+        try {
+            String json = OBJECT_MAPPER.writeValueAsString(chunk);
+            return ServerSentEvent.<String>builder().data(json).build();
+        } catch (JsonProcessingException e) {
+            return ServerSentEvent.<String>builder()
+                    .data("{\"error\":\"Serialization error\"}")
+                    .build();
         }
-
-        String requestId = event.getMessageId() != null ? event.getMessageId() : "unknown";
-        ServerSentEvent.Builder<String> builder =
-                ServerSentEvent.<String>builder().data(text).event("delta").id(requestId);
-
-        if (event.isLast()) {
-            builder.comment("end");
-        }
-
-        return builder.build();
     }
 
     /**
      * Create a done event to signal stream completion.
      *
-     * @param requestId The request ID
-     * @return The done SSE event
+     * @return The done SSE event with "[DONE]" data
      */
-    private ServerSentEvent<String> createDoneSseEvent(String requestId) {
-        return ServerSentEvent.<String>builder().data("[DONE]").event("done").id(requestId).build();
+    private ServerSentEvent<String> createDoneSseEvent() {
+        return ServerSentEvent.<String>builder().data("[DONE]").build();
     }
 
     /**
@@ -112,14 +114,13 @@ public class ChatCompletionsStreamingService {
      *
      * @param error The error that occurred
      * @param requestId The request ID for tracking
-     * @return A {@link ServerSentEvent} with event type "error" containing the error message
+     * @param model The model name
+     * @return A {@link ServerSentEvent} with error information
      */
-    public ServerSentEvent<String> createErrorSseEvent(Throwable error, String requestId) {
-        String errorMessage = error != null ? error.getMessage() : "Unknown error occurred";
-        return ServerSentEvent.<String>builder()
-                .data("Error: " + errorMessage)
-                .event("error")
-                .id(requestId)
-                .build();
+    public ServerSentEvent<String> createErrorSseEvent(
+            Throwable error, String requestId, String model) {
+        ChatCompletionsChunk errorChunk =
+                streamingAdapter.createErrorChunk(error, requestId, model);
+        return chunkToSseEvent(errorChunk);
     }
 }

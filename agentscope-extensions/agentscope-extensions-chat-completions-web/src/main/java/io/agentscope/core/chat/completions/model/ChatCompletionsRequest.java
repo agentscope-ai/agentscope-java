@@ -17,19 +17,58 @@ package io.agentscope.core.chat.completions.model;
 
 import java.util.List;
 
-/** Request payload for the Chat Completions HTTP API. */
+/**
+ * Request payload for the Chat Completions HTTP API.
+ *
+ * <p>This request is <b>100% compatible with OpenAI's Chat Completions API</b>. All fields follow
+ * the official OpenAI specification exactly.
+ *
+ * <p><b>Stateless Operation:</b>
+ *
+ * <p>This API is fully stateless, just like OpenAI's standard API. The client is responsible for
+ * maintaining conversation history and sending the complete {@code messages} array with each
+ * request.
+ *
+ * <p><b>Example Request:</b>
+ *
+ * <pre>{@code
+ * {
+ *   "model": "gpt-4",
+ *   "messages": [
+ *     {"role": "system", "content": "You are a helpful assistant."},
+ *     {"role": "user", "content": "What's the weather in Hangzhou?"},
+ *     {"role": "assistant", "content": "Let me check...", "tool_calls": [...]},
+ *     {"role": "tool", "tool_call_id": "call_xxx", "content": "25°C sunny"},
+ *     {"role": "user", "content": "Thanks! And tomorrow?"}
+ *   ],
+ *   "stream": false
+ * }
+ * }</pre>
+ *
+ * <p><b>Tool Call Flow:</b>
+ *
+ * <p>When the assistant calls tools, the response includes {@code tool_calls}. The client should:
+ *
+ * <ol>
+ *   <li>Append the assistant message (with tool_calls) to history
+ *   <li>Append tool result messages for each tool call
+ *   <li>Send the updated history in the next request
+ * </ol>
+ */
 public class ChatCompletionsRequest {
 
-    /** Optional model name override; if null, uses the default configured model. */
+    /** Model ID to use for generation. Required field per OpenAI spec. */
     private String model;
 
-    /** Conversation history, in order. The last user message is typically the question. */
+    /**
+     * A list of messages comprising the conversation so far.
+     *
+     * <p>Required field. The client must send the complete conversation history for stateless
+     * operation.
+     */
     private List<ChatMessage> messages;
 
-    /** Optional session identifier for stateful agents. */
-    private String sessionId;
-
-    /** Whether to stream responses via Server-Sent Events (SSE). */
+    /** Whether to stream responses via Server-Sent Events (SSE). Optional, defaults to false. */
     private Boolean stream;
 
     public String getModel() {
@@ -46,14 +85,6 @@ public class ChatCompletionsRequest {
 
     public void setMessages(List<ChatMessage> messages) {
         this.messages = messages;
-    }
-
-    public String getSessionId() {
-        return sessionId;
-    }
-
-    public void setSessionId(String sessionId) {
-        this.sessionId = sessionId;
     }
 
     public Boolean getStream() {
