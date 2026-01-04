@@ -55,6 +55,8 @@ public final class GenAiIncubatingAttributes {
 
     static final AttributeKey<String> GEN_AI_PROVIDER_NAME = stringKey("gen_ai.provider.name");
 
+    static final AttributeKey<String> GEN_AI_SPAN_KIND = stringKey("gen_ai.span.kind");
+
     static final AttributeKey<Long> GEN_AI_REQUEST_CHOICE_COUNT =
             longKey("gen_ai.request.choice.count");
 

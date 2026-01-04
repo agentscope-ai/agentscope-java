@@ -284,7 +284,7 @@ final class AttributesExtractors {
             internalSet(builder, GEN_AI_TOOL_CALL_RESULT, getToolCallResult(result.getOutput()));
         }
 
-        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(result));
+        internalSet(builder, AGENTSCOPE_FUNCTION_OUTPUT, serializeToStr(result));
         return builder.build();
     }
 

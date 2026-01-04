@@ -37,11 +37,23 @@ public class StudioExample {
         System.out.println("Connecting to Studio at http://localhost:3000...");
         StudioManager.init()
                 .studioUrl("http://localhost:3000")
-                .project("JavaExamples")
-                .runName("studio_demo_" + System.currentTimeMillis())
+                .project("AgentScope")
+                .runName("Java - Demo - 2026")
                 .initialize()
                 .block();
+
         System.out.println("Connected to Studio\n");
+
+        // Create user agent
+        System.out.println("Creating user agent...");
+        StudioUserAgent user =
+                StudioUserAgent.builder()
+                        .name("User")
+                        .studioClient(StudioManager.getClient())
+                        .webSocketClient(StudioManager.getWebSocketClient())
+                        .build();
+
+        System.out.println("User agent ready\n");
 
         // Create agent with Studio hook
         System.out.println("Creating agent with Studio integration...");
@@ -57,16 +69,6 @@ public class StudioExample {
                                         .build())
                         .build();
         System.out.println("Agent created\n");
-
-        // Create user agent
-        System.out.println("Creating user agent...");
-        StudioUserAgent user =
-                StudioUserAgent.builder()
-                        .name("User")
-                        .studioClient(StudioManager.getClient())
-                        .webSocketClient(StudioManager.getWebSocketClient())
-                        .build();
-        System.out.println("User agent ready\n");
 
         // Conversation loop
         System.out.println("Starting conversation (type 'exit' to quit)");

@@ -36,6 +36,8 @@ public class AgentScopeIncubatingAttributes {
 
     static final AttributeKey<String> AGENTSCOPE_FORMAT_COUNT =
             stringKey("agentscope.format.count");
+    static final AttributeKey ARMS_GEN_APP_KEY = stringKey("acs.arms.service.feature");
+    static final AttributeKey ARMS_HOST_IP_KEY = stringKey("host.ip");
 
     static final class GenAiOperationNameAgentScopeIncubatingValues {
         static final String FORMAT = "format";

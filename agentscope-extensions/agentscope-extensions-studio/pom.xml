@@ -70,7 +70,6 @@
         <dependency>
             <groupId>io.opentelemetry.semconv</groupId>
             <artifactId>opentelemetry-semconv-incubating</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
