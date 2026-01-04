@@ -246,4 +246,21 @@ public final class EmbeddingUtils {
         }
         return array;
     }
+
+    /**
+     * Converts a float array to a double array.
+     *
+     * <p>This method is used to convert embedding vectors returned by Ollama SDK
+     * (which uses float[]) to the standard double[] format used by EmbeddingModel.
+     *
+     * @param values the float array
+     * @return the double array
+     */
+    public static double[] convertFloatArrayToDoubleArray(float[] values) {
+        double[] array = new double[values.length];
+        for (int i = 0; i < values.length; i++) {
+            array[i] = values[i];
+        }
+        return array;
+    }
 }
