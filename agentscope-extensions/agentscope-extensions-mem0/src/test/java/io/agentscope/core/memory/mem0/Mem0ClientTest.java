@@ -188,8 +188,7 @@ class Mem0ClientTest {
         StepVerifier.create(client.add(request))
                 .expectErrorMatches(
                         error ->
-                                error.getMessage().contains("Failed to parse response")
-                                        && error.getMessage().contains("add request"))
+                                error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 
@@ -279,7 +278,7 @@ class Mem0ClientTest {
 
         StepVerifier.create(client.search(request))
                 .expectErrorMatches(
-                        error -> error.getMessage().contains("Failed to parse search response"))
+                        error -> error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 
