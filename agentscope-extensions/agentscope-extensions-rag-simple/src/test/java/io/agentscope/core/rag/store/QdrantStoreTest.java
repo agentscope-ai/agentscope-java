@@ -18,10 +18,31 @@ package io.agentscope.core.rag.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.when;
 
+import com.google.common.util.concurrent.Futures;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.DocumentMetadata;
+import io.qdrant.client.QdrantClient;
+import io.qdrant.client.QdrantGrpcClient;
+import io.qdrant.client.grpc.Common.PointId;
+import io.qdrant.client.grpc.JsonWithInt.Struct;
+import io.qdrant.client.grpc.JsonWithInt.Value;
+import io.qdrant.client.grpc.Points.ScoredPoint;
+import io.qdrant.client.grpc.Points.SearchPoints;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 
 /**
  * Unit tests for QdrantStore.
@@ -40,6 +61,16 @@ class QdrantStoreTest {
     private static final String TEST_LOCATION = "http://localhost:6333";
     private static final String TEST_COLLECTION = "test_collection";
     private static final int TEST_DIMENSIONS = 1024;
+
+    private QdrantStore store;
+
+    @AfterEach
+    void tearDown() {
+        if (store != null) {
+            store.close();
+            store = null;
+        }
+    }
 
     @Test
     @DisplayName("Should create builder instance")
@@ -283,5 +314,247 @@ class QdrantStoreTest {
                 true,
                 "Integration tests should be created with @Tag(\"integration\") to test"
                         + " add/search/delete operations");
+    }
+
+    // ==================== Helper Methods ====================
+
+    /**
+     * Creates a mocked QdrantStore for payload testing.
+     *
+     * <p>This method uses Mockito to mock the QdrantClient and QdrantGrpcClient,
+     * allowing tests to run without a real Qdrant server. The mock returns
+     * pre-constructed search results with payload data.
+     *
+     * @return a mocked QdrantStore instance
+     * @throws Exception if store creation fails
+     */
+    private QdrantStore createMockStoreForPayloadTest() throws Exception {
+        try (MockedConstruction<QdrantGrpcClient> ignoredGrpc =
+                        mockConstruction(QdrantGrpcClient.class);
+                MockedConstruction<QdrantClient> ignoredClient =
+                        mockConstruction(
+                                QdrantClient.class,
+                                (mock, context) -> {
+                                    // Mock collection exists check
+                                    when(mock.collectionExistsAsync(anyString()))
+                                            .thenReturn(Futures.immediateFuture(true));
+
+                                    // Mock upsert operation
+                                    when(mock.upsertAsync(anyString(), anyList()))
+                                            .thenReturn(Futures.immediateFuture(null));
+
+                                    // Mock search operation with payload
+                                    ScoredPoint mockPoint = createMockScoredPoint();
+                                    when(mock.searchAsync(any(SearchPoints.class)))
+                                            .thenReturn(
+                                                    Futures.immediateFuture(List.of(mockPoint)));
+                                })) {
+            return QdrantStore.builder()
+                    .location(TEST_LOCATION)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .useTransportLayerSecurity(false)
+                    .build();
+        }
+    }
+
+    /**
+     * Creates a mock ScoredPoint with payload data for testing.
+     *
+     * @return a mocked ScoredPoint
+     */
+    private ScoredPoint createMockScoredPoint() {
+        // Create payload map
+        Map<String, Value> payloadMap = new HashMap<>();
+
+        // Add doc_id
+        payloadMap.put("doc_id", Value.newBuilder().setStringValue("doc-payload-test").build());
+
+        // Add chunk_id
+        payloadMap.put("chunk_id", Value.newBuilder().setStringValue("0").build());
+
+        // Add content (as a struct representing TextBlock)
+        Struct.Builder contentStruct = Struct.newBuilder();
+        contentStruct.putFields("type", Value.newBuilder().setStringValue("text").build());
+        contentStruct.putFields(
+                "text", Value.newBuilder().setStringValue("Test document content").build());
+        payloadMap.put("content", Value.newBuilder().setStructValue(contentStruct).build());
+
+        // Add payload (custom fields)
+        Struct.Builder customPayloadStruct = Struct.newBuilder();
+        customPayloadStruct.putFields(
+                "filename", Value.newBuilder().setStringValue("report.pdf").build());
+        customPayloadStruct.putFields(
+                "department", Value.newBuilder().setStringValue("Engineering").build());
+        customPayloadStruct.putFields(
+                "author", Value.newBuilder().setStringValue("John Doe").build());
+        customPayloadStruct.putFields("priority", Value.newBuilder().setIntegerValue(1L).build());
+
+        // Add tags list
+        io.qdrant.client.grpc.JsonWithInt.ListValue.Builder tagsList =
+                io.qdrant.client.grpc.JsonWithInt.ListValue.newBuilder();
+        tagsList.addValues(Value.newBuilder().setStringValue("urgent").build());
+        tagsList.addValues(Value.newBuilder().setStringValue("quarterly").build());
+        customPayloadStruct.putFields("tags", Value.newBuilder().setListValue(tagsList).build());
+
+        // Add custom object
+        Struct.Builder customObjectStruct = Struct.newBuilder();
+        customObjectStruct.putFields(
+                "author", Value.newBuilder().setStringValue("John Doe").build());
+        customObjectStruct.putFields("version", Value.newBuilder().setIntegerValue(1L).build());
+        customObjectStruct.putFields("active", Value.newBuilder().setBoolValue(true).build());
+
+        io.qdrant.client.grpc.JsonWithInt.ListValue.Builder customTagsList =
+                io.qdrant.client.grpc.JsonWithInt.ListValue.newBuilder();
+        customTagsList.addValues(Value.newBuilder().setStringValue("urgent").build());
+        customTagsList.addValues(Value.newBuilder().setStringValue("quarterly").build());
+        customObjectStruct.putFields(
+                "tags", Value.newBuilder().setListValue(customTagsList).build());
+
+        customPayloadStruct.putFields(
+                "custom", Value.newBuilder().setStructValue(customObjectStruct).build());
+
+        payloadMap.put("payload", Value.newBuilder().setStructValue(customPayloadStruct).build());
+
+        // Create PointId
+        PointId pointId =
+                PointId.newBuilder().setUuid("550e8400-e29b-41d4-a716-446655440000").build();
+
+        // Build ScoredPoint
+        return ScoredPoint.newBuilder()
+                .setId(pointId)
+                .setScore(0.95f)
+                .putAllPayload(payloadMap)
+                .build();
+    }
+
+    // ==================== Integration Tests ====================
+
+    /**
+     * Integration test for document metadata payload functionality.
+     *
+     * <p>This test verifies that custom payload fields in DocumentMetadata are correctly stored
+     * to and loaded from Qdrant. It requires a running Qdrant server at http://localhost:6333.
+     */
+    @Test
+    @Tag("integration")
+    @DisplayName("Should store and load document metadata payload")
+    void testDocumentMetadataPayload() throws Exception {
+        store = createMockStoreForPayloadTest();
+
+        // Create document with custom payload
+        TextBlock content = TextBlock.builder().text("Test document content").build();
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "report.pdf");
+        payload.put("department", "Engineering");
+        payload.put("author", "John Doe");
+        payload.put("priority", 1L);
+        payload.put("tags", List.of("urgent", "quarterly"));
+
+        CustomObject customObject = new CustomObject();
+        customObject.setAuthor("John Doe");
+        customObject.setVersion(1);
+        customObject.setActive(true);
+        customObject.setTags(List.of("urgent", "quarterly"));
+        payload.put("custom", customObject);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-payload-test", "0", payload);
+        Document doc = new Document(metadata);
+        double[] embedding = new double[TEST_DIMENSIONS];
+        embedding[0] = 1.0;
+        doc.setEmbedding(embedding);
+        store.add(List.of(doc)).block();
+
+        // Search for the document
+        double[] query = new double[TEST_DIMENSIONS];
+        query[0] = 1.0;
+        List<Document> results = store.search(query, 10, null).block();
+
+        // Verify results
+        assertNotNull(results, "Search results should not be null");
+        assertEquals(1L, results.size(), "Should find exactly one document");
+
+        Document retrievedDoc = results.get(0);
+        assertNotNull(retrievedDoc, "Retrieved document should not be null");
+
+        // Verify payload fields are correctly loaded
+        assertEquals(
+                "report.pdf", retrievedDoc.getPayloadValue("filename"), "Filename should match");
+        assertEquals(
+                "Engineering",
+                retrievedDoc.getPayloadValue("department"),
+                "Department should match");
+        assertEquals("John Doe", retrievedDoc.getPayloadValue("author"), "Author should match");
+        assertEquals(1L, retrievedDoc.getPayloadValue("priority"), "Priority should match");
+
+        // Verify tags list
+        Object tagsObj = retrievedDoc.getPayloadValue("tags");
+        assertNotNull(tagsObj, "Tags should not be null");
+        assertEquals(true, tagsObj instanceof List, "Tags should be a List");
+        @SuppressWarnings("unchecked")
+        List<String> tags = (List<String>) tagsObj;
+        assertEquals(2, tags.size(), "Should have 2 tags");
+        assertEquals(true, tags.contains("urgent"), "Should contain 'urgent' tag");
+        assertEquals(true, tags.contains("quarterly"), "Should contain 'quarterly' tag");
+
+        // Verify payload key existence
+        assertEquals(true, retrievedDoc.hasPayloadKey("filename"), "Should have filename key");
+        assertEquals(
+                false,
+                retrievedDoc.hasPayloadKey("nonexistent"),
+                "Should not have nonexistent key");
+
+        // Verify content is preserved
+        assertEquals(
+                "Test document content",
+                retrievedDoc.getMetadata().getContentText(),
+                "Content should match");
+
+        // Verify custom object
+        CustomObject customObj = retrievedDoc.getPayloadValueAs("custom", CustomObject.class);
+        assertNotNull(customObj, "Custom object should not be null");
+    }
+
+    /**
+     * Custom object class for testing payload serialization
+     */
+    static class CustomObject {
+        private String author;
+        private int version;
+        private boolean active;
+        private List<String> tags;
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public void setAuthor(String author) {
+            this.author = author;
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public void setVersion(int version) {
+            this.version = version;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
+
+        public void setActive(boolean active) {
+            this.active = active;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+
+        public void setTags(List<String> tags) {
+            this.tags = tags;
+        }
     }
 }

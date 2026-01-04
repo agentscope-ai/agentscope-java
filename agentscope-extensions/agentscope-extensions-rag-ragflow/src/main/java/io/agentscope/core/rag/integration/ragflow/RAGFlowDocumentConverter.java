@@ -20,7 +20,9 @@ import io.agentscope.core.rag.integration.ragflow.model.RAGFlowChunk;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,9 +92,12 @@ public class RAGFlowDocumentConverter {
                 chunkId = "0";
             }
 
-            // Build DocumentMetadata
+            // Build payload from chunk metadata
+            Map<String, Object> payload = buildPayloadFromChunk(chunk);
+
+            // Build DocumentMetadata with payload
             TextBlock content = TextBlock.builder().text(text).build();
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
+            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId, payload);
 
             // Create Document
             Document document = new Document(metadata);
@@ -104,10 +109,90 @@ public class RAGFlowDocumentConverter {
                 document.setScore(0.0);
             }
 
+            logger.debug(
+                    "Converted RAGFlow chunk to document: id={}, docName={}, score={},"
+                            + " contentLength={}",
+                    docId,
+                    payload.getOrDefault("document_name", "unknown"),
+                    chunk.getScore(),
+                    text.length());
+
             return document;
         } catch (Exception e) {
             logger.warn("Failed to convert RAGFlow chunk to document: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Builds payload map from RAGFlow chunk metadata.
+     *
+     * <p>This method extracts relevant metadata fields from the RAGFlow Chunk object
+     * and converts them into a payload map, preserving the original structure and naming.
+     *
+     * <p>Key principles:
+     * <ul>
+     *   <li>Use underscore naming as in API response</li>
+     *   <li>Skip fields already used (id, document_id, content)</li>
+     *   <li>Preserve all other metadata fields</li>
+     * </ul>
+     *
+     * @param chunk the RAGFlow chunk containing metadata fields
+     * @return a map of metadata key-value pairs (never null)
+     */
+    private static Map<String, Object> buildPayloadFromChunk(RAGFlowChunk chunk) {
+        Map<String, Object> payload = new HashMap<>();
+
+        // Document information (skip document_id as it's already used as docId)
+        if (chunk.getDocumentKeyword() != null) {
+            payload.put("document_keyword", chunk.getDocumentKeyword());
+        }
+        if (chunk.getKbId() != null) {
+            payload.put("kb_id", chunk.getKbId());
+        }
+
+        // Chunk information (skip id and content as they're already used)
+        if (chunk.getContentLtks() != null && !chunk.getContentLtks().isEmpty()) {
+            payload.put("content_ltks", chunk.getContentLtks());
+        }
+        if (chunk.getHighlight() != null && !chunk.getHighlight().isEmpty()) {
+            payload.put("highlight", chunk.getHighlight());
+        }
+
+        // Similarity scores
+        if (chunk.getVectorSimilarity() != null) {
+            payload.put("vector_similarity", chunk.getVectorSimilarity());
+        }
+        if (chunk.getTermSimilarity() != null) {
+            payload.put("term_similarity", chunk.getTermSimilarity());
+        }
+
+        // Position information
+        if (chunk.getPositions() != null && !chunk.getPositions().isEmpty()) {
+            payload.put("positions", chunk.getPositions());
+        }
+
+        // Additional fields
+        if (chunk.getImageId() != null && !chunk.getImageId().isEmpty()) {
+            payload.put("image_id", chunk.getImageId());
+        }
+        if (chunk.getImportantKeywords() != null && !chunk.getImportantKeywords().isEmpty()) {
+            payload.put("important_keywords", chunk.getImportantKeywords());
+        }
+
+        // Custom metadata (if any) - preserve as nested object
+        if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
+            payload.put("metadata", chunk.getMetadata());
+        }
+
+        if (chunk.getDatasetId() != null) {
+            payload.put("dataset_id", chunk.getDatasetId());
+        }
+
+        if (chunk.getDocumentName() != null) {
+            payload.put("document_name", chunk.getDocumentName());
+        }
+
+        return payload;
     }
 }

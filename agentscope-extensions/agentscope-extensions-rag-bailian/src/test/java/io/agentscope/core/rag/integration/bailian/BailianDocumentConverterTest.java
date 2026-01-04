@@ -225,4 +225,62 @@ class BailianDocumentConverterTest {
         assertEquals("First document", documents.get(0).getMetadata().getContentText());
         assertEquals("Second document", documents.get(1).getMetadata().getContentText());
     }
+
+    @Test
+    void testFromBailianNodeWithPayload() {
+        RetrieveResponseBody.RetrieveResponseBodyDataNodes node =
+                new RetrieveResponseBody.RetrieveResponseBodyDataNodes();
+        node.setText("Test content with metadata");
+        node.setScore(0.95);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("doc_id", "doc123");
+        metadata.put("_id", "chunk456");
+        // Add custom metadata fields
+        metadata.put("doc_name", "test.pdf");
+        metadata.put("workspace_id", "ws_***");
+        metadata.put("hier_title", "bailian");
+        metadata.put("pipeline_id", "rhd***");
+        metadata.put("image_url", List.of("http://***"));
+        node.setMetadata(metadata);
+
+        Document doc = BailianDocumentConverter.fromBailianNode(node);
+
+        assertNotNull(doc);
+        assertEquals("doc123", doc.getMetadata().getDocId());
+        assertEquals("chunk456", doc.getMetadata().getChunkId());
+        assertEquals(0.95, doc.getScore());
+
+        // Verify reserved fields are NOT in payload
+        assertNull(doc.getPayloadValue("doc_id"));
+        assertNull(doc.getPayloadValue("_id"));
+
+        // Verify payload fields (excluding reserved fields doc_id, _id)
+        assertEquals("test.pdf", doc.getPayloadValue("doc_name"));
+        assertEquals("ws_***", doc.getPayloadValue("workspace_id"));
+        assertEquals("bailian", doc.getPayloadValue("hier_title"));
+        assertEquals("rhd***", doc.getPayloadValue("pipeline_id"));
+        assertEquals(List.of("http://***"), doc.getPayloadValue("image_url"));
+    }
+
+    @Test
+    void testFromBailianNodeWithEmptyPayload() {
+        RetrieveResponseBody.RetrieveResponseBodyDataNodes node =
+                new RetrieveResponseBody.RetrieveResponseBodyDataNodes();
+        node.setText("Minimal content");
+        node.setScore(0.75);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("doc_id", "doc-minimal");
+        metadata.put("_id", "chunk-minimal");
+        // No additional fields
+        node.setMetadata(metadata);
+
+        Document doc = BailianDocumentConverter.fromBailianNode(node);
+
+        assertNotNull(doc);
+        assertNotNull(doc.getPayload());
+        // Payload should be empty since only reserved fields were provided
+        assertTrue(doc.getPayload().isEmpty());
+    }
 }

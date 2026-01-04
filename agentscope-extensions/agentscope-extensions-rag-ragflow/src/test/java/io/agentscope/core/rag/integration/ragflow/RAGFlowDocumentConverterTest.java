@@ -263,5 +263,61 @@ class RAGFlowDocumentConverterTest {
             assertEquals(0.92, result.getScore(), 0.001);
             assertTrue(result.getMetadata().getContentText().contains("Full content"));
         }
+
+        @Test
+        void shouldBuildPayloadFromChunk() {
+            RAGFlowChunk chunk = new RAGFlowChunk();
+            chunk.setId("chunk-123");
+            chunk.setContent("Test content");
+            chunk.setDocumentId("doc-456");
+            chunk.setDocumentKeyword("test.pdf");
+            chunk.setDocumentName("Test Document");
+            chunk.setDatasetId("dataset-789");
+            chunk.setKbId("kb-101");
+            chunk.setScore(0.95);
+            chunk.setSimilarity(0.95);
+            chunk.setVectorSimilarity(0.90);
+            chunk.setTermSimilarity(0.85);
+            chunk.setHighlight("<em>highlighted</em> content");
+            chunk.setImageId("image-123");
+
+            Document result = RAGFlowDocumentConverter.convertToDocument(chunk);
+
+            assertNotNull(result);
+            assertEquals(0.95, result.getScore(), 0.001);
+
+            // Verify reserved fields are NOT in payload
+            assertNull(result.getPayloadValue("id"));
+            assertNull(result.getPayloadValue("document_id"));
+            assertNull(result.getPayloadValue("content"));
+
+            // Verify payload fields
+            assertEquals("test.pdf", result.getPayloadValue("document_keyword"));
+            assertEquals("test.pdf", result.getPayloadValue("document_name"));
+            assertEquals("kb-101", result.getPayloadValue("dataset_id"));
+            assertEquals("kb-101", result.getPayloadValue("kb_id"));
+            assertEquals(0.90, result.getPayloadValue("vector_similarity"));
+            assertEquals(0.85, result.getPayloadValue("term_similarity"));
+            assertEquals("<em>highlighted</em> content", result.getPayloadValue("highlight"));
+            assertEquals("image-123", result.getPayloadValue("image_id"));
+        }
+
+        @Test
+        void shouldHandleEmptyPayload() {
+            RAGFlowChunk chunk = new RAGFlowChunk();
+            chunk.setId("chunk-minimal");
+            chunk.setContent("Minimal content");
+            chunk.setDocumentId("doc-minimal");
+            chunk.setScore(0.75);
+
+            Document result = RAGFlowDocumentConverter.convertToDocument(chunk);
+
+            assertNotNull(result);
+            assertNotNull(result.getPayload());
+            // Payload should be empty or contain only null-checked fields
+            assertTrue(
+                    result.getPayload().isEmpty()
+                            || result.getPayload().values().stream().allMatch(v -> v == null));
+        }
     }
 }

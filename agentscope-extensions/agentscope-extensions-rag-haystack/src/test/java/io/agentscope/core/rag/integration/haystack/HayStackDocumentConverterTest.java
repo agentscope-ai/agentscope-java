@@ -283,5 +283,49 @@ class HayStackDocumentConverterTest {
             assertNotNull(result);
             assertNull(result.getEmbedding());
         }
+
+        @Test
+        void shouldBuildPayloadFromMeta() {
+            HayStackDocument doc = new HayStackDocument();
+            doc.setId("chunk-123");
+            doc.setContent("Test content");
+            doc.setScore(0.95);
+
+            Map<String, Object> meta = new java.util.HashMap<>();
+            meta.put("file_path", "test.pdf");
+            meta.put("kb_id", "kb-789");
+            meta.put("page_number", 10);
+            meta.put("author", "Alice");
+            meta.put("tags", List.of("AI", "RAG"));
+            doc.setMeta(meta);
+
+            Document result = HayStackDocumentConverter.convertToDocument(doc);
+
+            assertNotNull(result);
+            assertEquals(0.95, result.getScore());
+
+            // Verify payload fields (all meta fields should be in payload)
+            assertEquals("test.pdf", result.getPayloadValue("file_path"));
+            assertEquals("kb-789", result.getPayloadValue("kb_id"));
+            assertEquals(10, result.getPayloadValue("page_number"));
+            assertEquals("Alice", result.getPayloadValue("author"));
+            assertEquals(List.of("AI", "RAG"), result.getPayloadValue("tags"));
+        }
+
+        @Test
+        void shouldHandleEmptyPayload() {
+            HayStackDocument doc = new HayStackDocument();
+            doc.setId("chunk-minimal");
+            doc.setContent("Minimal content");
+            doc.setScore(0.75);
+            doc.setMeta(null);
+
+            Document result = HayStackDocumentConverter.convertToDocument(doc);
+
+            assertNotNull(result);
+            assertNotNull(result.getPayload());
+            // Payload should be empty when meta is null
+            assertTrue(result.getPayload().isEmpty());
+        }
     }
 }

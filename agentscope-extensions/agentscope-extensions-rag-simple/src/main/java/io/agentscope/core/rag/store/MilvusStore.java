@@ -40,6 +40,7 @@ import io.milvus.v2.service.vector.response.SearchResp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -112,6 +113,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private static final String FIELD_DOC_ID = "doc_id";
     private static final String FIELD_CHUNK_ID = "chunk_id";
     private static final String FIELD_CONTENT = "content";
+    private static final String FIELD_PAYLOAD = "payload";
 
     // Default configuration values
     private static final long DEFAULT_CONNECT_TIMEOUT_MS = 30000L;
@@ -414,6 +416,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                         .maxLength(65535)
                         .build());
 
+        // Add payload field for storing custom payload as JSON
+        schema.addField(
+                AddFieldReq.builder().fieldName(FIELD_PAYLOAD).dataType(DataType.JSON).build());
+
         // Create index parameters for vector field
         List<IndexParam> indexParams = new ArrayList<>();
         indexParams.add(
@@ -474,6 +480,13 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             }
             row.addProperty(FIELD_CONTENT, contentJson);
 
+            // Add custom payload fields as dynamic fields
+            Map<String, Object> customPayload = metadata.getPayload();
+            if (customPayload != null && !customPayload.isEmpty()) {
+                JsonObject payloadObject = GSON.toJsonTree(customPayload).getAsJsonObject();
+                row.add(FIELD_PAYLOAD, payloadObject);
+            }
+
             rows.add(row);
         }
 
@@ -513,7 +526,11 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                         .topK(limit)
                         .outputFields(
                                 Arrays.asList(
-                                        FIELD_ID, FIELD_DOC_ID, FIELD_CHUNK_ID, FIELD_CONTENT));
+                                        FIELD_ID,
+                                        FIELD_DOC_ID,
+                                        FIELD_CHUNK_ID,
+                                        FIELD_CONTENT,
+                                        FIELD_PAYLOAD));
 
         SearchReq searchReq = searchBuilder.build();
 
@@ -574,8 +591,24 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                 content = TextBlock.builder().text(contentJson).build();
             }
 
-            // Create metadata and document
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
+            // Deserialize custom payload from payload field
+            Map<String, Object> customPayload = new HashMap<>();
+            Object payloadObj = entity.get(FIELD_PAYLOAD);
+            if (payloadObj != null) {
+                String payloadJson = String.valueOf(payloadObj);
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> deserializedPayload =
+                            OBJECT_MAPPER.readValue(payloadJson, Map.class);
+                    customPayload = deserializedPayload;
+                } catch (Exception e) {
+                    log.warn("Failed to deserialize payload, using empty map", e);
+                }
+            }
+
+            // Create metadata and document with payload
+            DocumentMetadata metadata =
+                    new DocumentMetadata(content, docId, chunkId, customPayload);
             Document document = new Document(metadata);
             document.setScore(score);
 
