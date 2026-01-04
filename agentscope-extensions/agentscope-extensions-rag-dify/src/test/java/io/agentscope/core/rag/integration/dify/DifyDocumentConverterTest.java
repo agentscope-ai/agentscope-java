@@ -24,6 +24,7 @@ import io.agentscope.core.rag.integration.dify.model.DifyResponse;
 import io.agentscope.core.rag.model.Document;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class DifyDocumentConverterTest {
@@ -209,5 +210,74 @@ class DifyDocumentConverterTest {
         assertEquals(0.88, doc.getScore());
         assertEquals("doc-456", doc.getMetadata().getDocId());
         assertEquals("Test content from PDF", doc.getMetadata().getContentText());
+    }
+
+    @Test
+    void testFromDifyRecordWithPayload() {
+        DifyResponse.Segment segment = new DifyResponse.Segment();
+        segment.setId("segment-123");
+        segment.setDocumentId("doc-456");
+        segment.setContent("Test content with metadata");
+        segment.setPosition(5);
+        segment.setWordCount(100);
+        segment.setTokens(50);
+        segment.setKeywords(List.of("AI", "RAG", "Knowledge"));
+        segment.setHitCount(10);
+
+        DifyResponse.DocumentInfo docInfo = new DifyResponse.DocumentInfo();
+        docInfo.setId("doc-456");
+        docInfo.setName("test.pdf");
+        docInfo.setDataSourceType("upload_file");
+        segment.setDocument(docInfo);
+
+        DifyResponse.Record record = new DifyResponse.Record();
+        record.setSegment(segment);
+        record.setScore(0.95);
+
+        Document doc = DifyDocumentConverter.fromDifyRecord(record);
+
+        assertNotNull(doc);
+        assertEquals(0.95, doc.getScore());
+
+        // Verify reserved fields are NOT in payload
+        assertNull(doc.getPayloadValue("id"));
+        assertNull(doc.getPayloadValue("document_id"));
+        assertNull(doc.getPayloadValue("content"));
+
+        // Verify payload fields
+        assertEquals(5, doc.getPayloadValue("position"));
+        assertEquals(100, doc.getPayloadValue("word_count"));
+        assertEquals(50, doc.getPayloadValue("tokens"));
+        assertEquals(List.of("AI", "RAG", "Knowledge"), doc.getPayloadValue("keywords"));
+        assertEquals(10, doc.getPayloadValue("hit_count"));
+
+        // Verify nested document information in payload
+        @SuppressWarnings("unchecked")
+        Map<String, Object> docInfoPayload = (Map<String, Object>) doc.getPayloadValue("document");
+        assertNotNull(docInfoPayload);
+        assertEquals("doc-456", docInfoPayload.get("id"));
+        assertEquals("test.pdf", docInfoPayload.get("name"));
+        assertEquals("upload_file", docInfoPayload.get("data_source_type"));
+    }
+
+    @Test
+    void testFromDifyRecordWithEmptyPayload() {
+        DifyResponse.Segment segment = new DifyResponse.Segment();
+        segment.setId("segment-minimal");
+        segment.setDocumentId("doc-minimal");
+        segment.setContent("Minimal content");
+
+        DifyResponse.Record record = new DifyResponse.Record();
+        record.setSegment(segment);
+        record.setScore(0.75);
+
+        Document doc = DifyDocumentConverter.fromDifyRecord(record);
+
+        assertNotNull(doc);
+        assertNotNull(doc.getPayload());
+        // Payload should be empty or contain only null-checked fields
+        assertTrue(
+                doc.getPayload().isEmpty()
+                        || doc.getPayload().values().stream().allMatch(v -> v == null));
     }
 }
