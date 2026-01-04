@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
 import java.util.List;
@@ -30,6 +31,7 @@ import java.util.Map;
  *
  * Supports metadata for passing additional execution information.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class ToolResultBlock extends ContentBlock {
 
     /** Metadata key indicating this result is suspended for external execution. */
@@ -39,17 +41,25 @@ public final class ToolResultBlock extends ContentBlock {
     private final String name;
     private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
+    private final Boolean suspended;
 
     @JsonCreator
     public ToolResultBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("output") List<ContentBlock> output,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            @JsonProperty("metadata") Map<String, Object> metadata,
+            @JsonProperty("suspended") Boolean suspended) {
         this.id = id;
         this.name = name;
         this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        this.suspended = suspended != null ? suspended : false;
+    }
+
+    public ToolResultBlock(
+            String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
+        this(id, name, output, metadata, null);
     }
 
     /**
@@ -119,7 +129,8 @@ public final class ToolResultBlock extends ContentBlock {
      * @return true if this result is suspended, false otherwise
      */
     public boolean isSuspended() {
-        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
+        return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED))
+                || (suspended != null && suspended);
     }
 
     /**
