@@ -16,11 +16,18 @@
 package io.agentscope.core.rag.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.URLSource;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -96,5 +103,187 @@ class DocumentMetadataTest {
         assertEquals("0", metadata1.getChunkId());
         assertEquals("1", metadata2.getChunkId());
         assertEquals("2", metadata3.getChunkId());
+    }
+
+    // ==================== Payload Tests ====================
+
+    @Test
+    @DisplayName("Should create DocumentMetadata with custom payload")
+    void testCreateMetadataWithPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "report.pdf");
+        payload.put("department", "Finance");
+        payload.put("author", "John Doe");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+
+        assertNotNull(metadata.getPayload());
+        assertEquals(3, metadata.getPayload().size());
+        assertEquals("report.pdf", metadata.getPayloadValue("filename"));
+        assertEquals("Finance", metadata.getPayloadValue("department"));
+        assertEquals("John Doe", metadata.getPayloadValue("author"));
+    }
+
+    @Test
+    @DisplayName("Should handle null payload gracefully")
+    void testCreateMetadataWithNullPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", null);
+
+        assertNotNull(metadata.getPayload());
+        assertTrue(metadata.getPayload().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return immutable payload map")
+    void testPayloadImmutability() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("key1", "value1");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+        Map<String, Object> retrievedPayload = metadata.getPayload();
+
+        // Try to modify the retrieved payload - should throw exception
+        assertThrows(
+                UnsupportedOperationException.class, () -> retrievedPayload.put("key2", "value2"));
+    }
+
+    @Test
+    @DisplayName("Should get payload value by key")
+    void testGetPayloadValue() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "document.txt");
+        payload.put("size", 1024);
+        payload.put("tags", Arrays.asList("important", "urgent"));
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+
+        assertEquals("document.txt", metadata.getPayloadValue("filename"));
+        assertEquals(1024, metadata.getPayloadValue("size"));
+        assertEquals(Arrays.asList("important", "urgent"), metadata.getPayloadValue("tags"));
+    }
+
+    @Test
+    @DisplayName("Should return null for non-existent payload key")
+    void testGetPayloadValueNonExistent() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("key1", "value1");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+
+        assertNull(metadata.getPayloadValue("nonExistentKey"));
+    }
+
+    @Test
+    @DisplayName("Should check if payload key exists")
+    void testHasPayloadKey() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "test.pdf");
+        payload.put("author", "Alice");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+
+        assertTrue(metadata.hasPayloadKey("filename"));
+        assertTrue(metadata.hasPayloadKey("author"));
+        assertFalse(metadata.hasPayloadKey("nonExistent"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when checking null key")
+    void testHasPayloadKeyNull() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
+
+        assertThrows(NullPointerException.class, () -> metadata.hasPayloadKey(null));
+    }
+
+    @Test
+    @DisplayName("Should build DocumentMetadata with Builder pattern")
+    void testBuilderPattern() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+
+        DocumentMetadata metadata =
+                DocumentMetadata.builder()
+                        .content(content)
+                        .docId("doc-1")
+                        .chunkId("0")
+                        .addPayload("filename", "report.pdf")
+                        .addPayload("department", "HR")
+                        .addPayload("priority", 5)
+                        .build();
+
+        assertNotNull(metadata);
+        assertEquals(content, metadata.getContent());
+        assertEquals("doc-1", metadata.getDocId());
+        assertEquals("0", metadata.getChunkId());
+        assertEquals(3, metadata.getPayload().size());
+        assertEquals("report.pdf", metadata.getPayloadValue("filename"));
+        assertEquals("HR", metadata.getPayloadValue("department"));
+        assertEquals(5, metadata.getPayloadValue("priority"));
+    }
+
+    @Test
+    @DisplayName("Should build DocumentMetadata without payload using Builder")
+    void testBuilderWithoutPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+
+        DocumentMetadata metadata =
+                DocumentMetadata.builder().content(content).docId("doc-1").chunkId("0").build();
+
+        assertNotNull(metadata);
+        assertNotNull(metadata.getPayload());
+        assertTrue(metadata.getPayload().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should throw exception when building with null required fields")
+    void testBuilderValidation() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+
+        // Missing content
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DocumentMetadata.builder().docId("doc-1").chunkId("0").build());
+
+        // Missing docId
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DocumentMetadata.builder().content(content).chunkId("0").build());
+
+        // Missing chunkId
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DocumentMetadata.builder().content(content).docId("doc-1").build());
+    }
+
+    @Test
+    @DisplayName("Should support complex payload types")
+    void testComplexPayloadTypes() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> nestedMap = new HashMap<>();
+        nestedMap.put("city", "Beijing");
+        nestedMap.put("country", "China");
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("string", "text");
+        payload.put("integer", 42);
+        payload.put("double", 3.14);
+        payload.put("boolean", true);
+        payload.put("list", Arrays.asList("a", "b", "c"));
+        payload.put("map", nestedMap);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+
+        assertEquals("text", metadata.getPayloadValue("string"));
+        assertEquals(42, metadata.getPayloadValue("integer"));
+        assertEquals(3.14, metadata.getPayloadValue("double"));
+        assertEquals(true, metadata.getPayloadValue("boolean"));
+        assertEquals(Arrays.asList("a", "b", "c"), metadata.getPayloadValue("list"));
+        assertEquals(nestedMap, metadata.getPayloadValue("map"));
     }
 }

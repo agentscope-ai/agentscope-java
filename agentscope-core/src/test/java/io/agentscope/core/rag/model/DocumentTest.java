@@ -16,11 +16,15 @@
 package io.agentscope.core.rag.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.TextBlock;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -134,5 +138,113 @@ class DocumentTest {
         assertEquals(true, str.contains("Document"));
         assertEquals(true, str.contains("Test content"));
         assertEquals(true, str.contains("0.950"));
+    }
+
+    // ==================== Payload Tests ====================
+
+    @Test
+    @DisplayName("Should access payload through Document")
+    void testDocumentGetPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "document.pdf");
+        payload.put("author", "Alice");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+        Document document = new Document(metadata);
+
+        assertNotNull(document.getPayload());
+        assertEquals(2, document.getPayload().size());
+        assertEquals("document.pdf", document.getPayload().get("filename"));
+        assertEquals("Alice", document.getPayload().get("author"));
+    }
+
+    @Test
+    @DisplayName("Should get payload value by key through Document")
+    void testDocumentGetPayloadValue() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("department", "Engineering");
+        payload.put("priority", 1);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+        Document document = new Document(metadata);
+
+        assertEquals("Engineering", document.getPayloadValue("department"));
+        assertEquals(1, document.getPayloadValue("priority"));
+        assertNull(document.getPayloadValue("nonExistent"));
+    }
+
+    @Test
+    @DisplayName("Should check payload key existence through Document")
+    void testDocumentHasPayloadKey() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("status", "active");
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0", payload);
+        Document document = new Document(metadata);
+
+        assertTrue(document.hasPayloadKey("status"));
+        assertFalse(document.hasPayloadKey("nonExistent"));
+    }
+
+    @Test
+    @DisplayName("Should handle empty payload in Document")
+    void testDocumentEmptyPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
+        Document document = new Document(metadata);
+
+        assertNotNull(document.getPayload());
+        assertTrue(document.getPayload().isEmpty());
+        assertNull(document.getPayloadValue("anyKey"));
+        assertFalse(document.hasPayloadKey("anyKey"));
+    }
+
+    @Test
+    @DisplayName("Should generate same ID for documents with same content but different payload")
+    void testDocumentIdWithPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+
+        Map<String, Object> payload1 = new HashMap<>();
+        payload1.put("key1", "value1");
+
+        Map<String, Object> payload2 = new HashMap<>();
+        payload2.put("key2", "value2");
+
+        DocumentMetadata metadata1 = new DocumentMetadata(content, "doc-1", "0", payload1);
+        DocumentMetadata metadata2 = new DocumentMetadata(content, "doc-1", "0", payload2);
+
+        Document doc1 = new Document(metadata1);
+        Document doc2 = new Document(metadata2);
+
+        // ID should be the same because it's based on content, docId, chunkId (not payload)
+        assertEquals(doc1.getId(), doc2.getId());
+
+        // But payload should be different
+        assertEquals("value1", doc1.getPayloadValue("key1"));
+        assertEquals("value2", doc2.getPayloadValue("key2"));
+    }
+
+    @Test
+    @DisplayName("Should create Document with Builder pattern including payload")
+    void testDocumentWithBuilderAndPayload() {
+        TextBlock content = TextBlock.builder().text("Test content").build();
+
+        DocumentMetadata metadata =
+                DocumentMetadata.builder()
+                        .content(content)
+                        .docId("doc-1")
+                        .chunkId("0")
+                        .addPayload("filename", "test.txt")
+                        .addPayload("size", 2048)
+                        .build();
+
+        Document document = new Document(metadata);
+
+        assertNotNull(document.getId());
+        assertEquals("test.txt", document.getPayloadValue("filename"));
+        assertEquals(2048, document.getPayloadValue("size"));
     }
 }

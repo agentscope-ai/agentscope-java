@@ -112,6 +112,77 @@ public class Document {
     }
 
     /**
+     * Gets the custom payload from document metadata.
+     *
+     * <p>This is a convenience method that delegates to the metadata's getPayload().
+     * The payload contains business-specific fields such as filename, department,
+     * author, tags, and other custom metadata.
+     *
+     * @return an unmodifiable map of custom metadata fields (never null)
+     */
+    public Map<String, Object> getPayload() {
+        return metadata.getPayload();
+    }
+
+    /**
+     * Gets a specific payload value by key.
+     *
+     * <p>This is a convenience method that delegates to the metadata's getPayloadValue().
+     * Use this to retrieve individual payload values without accessing the entire map.
+     *
+     * @param key the payload key
+     * @return the payload value, or null if the key doesn't exist
+     * @throws NullPointerException if key is null
+     */
+    public Object getPayloadValue(String key) {
+        return metadata.getPayloadValue(key);
+    }
+
+    /**
+     * Gets a specific payload value by key and converts it to the specified type.
+     *
+     * <p>This method is useful when the payload contains complex objects (like custom POJOs)
+     * that were serialized to Map during storage. It uses Jackson's ObjectMapper to convert
+     * the Map back to the original type.
+     *
+     * @param <T> the target type
+     * @param key the payload key
+     * @param targetClass the target class to convert to
+     * @return the payload value converted to the specified type, or null if the key doesn't exist
+     * @throws IllegalArgumentException if the value cannot be converted to the target type
+     * @throws NullPointerException if key or clazz is null
+     */
+    public <T> T getPayloadValueAs(String key, Class<T> targetClass) {
+        Object value = getPayloadValue(key);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.convertValue(value, targetClass);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException(
+                    String.format(
+                            "Failed to convert payload value for key '%s' to type %s",
+                            key, targetClass.getName()),
+                    e);
+        }
+    }
+
+    /**
+     * Checks if the document payload contains a specific key.
+     *
+     * <p>This is a convenience method that delegates to the metadata's hasPayloadKey().
+     * Use this to safely check for the existence of a payload field before retrieving it.
+     *
+     * @param key the payload key to check
+     * @return true if the key exists in the payload, false otherwise
+     * @throws NullPointerException if key is null
+     */
+    public boolean hasPayloadKey(String key) {
+        return metadata.hasPayloadKey(key);
+    }
+
+    /**
      * Generates a deterministic document ID based on metadata.
      *
      * <p>This method creates a UUID v3 (name-based with MD5) from a JSON representation
