@@ -17,11 +17,8 @@ package io.agentscope.core.formatter.openai;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
-import io.agentscope.core.formatter.openai.dto.OpenAITool;
-import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ToolChoice;
-import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -35,7 +32,7 @@ import org.slf4j.LoggerFactory;
  *   <li>At least one user message is required (error 1214 otherwise)</li>
  *   <li>Only supports "auto" for tool_choice</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
- *   <li>Supports all sampling parameters (temperature, top_p, etc.)</li>
+ *   <li>Supports temperature, top_p, max_tokens, seed (but not frequency/presence penalty)</li>
  * </ul>
  *
  * <p>Usage:
@@ -58,88 +55,66 @@ public class GLMFormatter extends OpenAIChatFormatter {
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        // First, use parent's formatting
         List<OpenAIMessage> messages = super.doFormat(msgs);
-
-        // Then ensure at least one user message exists
         return ensureUserMessage(messages);
+    }
+
+    @Override
+    protected boolean supportsStrict() {
+        return false;
+    }
+
+    @Override
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        applyGLMToolChoice(request, toolChoice);
     }
 
     /**
      * Ensure at least one user message exists in the conversation.
      *
-     * <p>GLM API requires at least one user message in the conversation.
-     * If no user message exists, a placeholder is added at the end.
+     * <p>GLM API requires at least one user message. If no user message exists, a placeholder is
+     * added at the end.
+     *
+     * <p>This method is static to allow sharing with {@link GLMMultiAgentFormatter}.
+     *
+     * @param messages the messages to check
+     * @return messages with a user message ensured
      */
-    private List<OpenAIMessage> ensureUserMessage(List<OpenAIMessage> messages) {
-        boolean hasUserMessage = false;
-        for (OpenAIMessage msg : messages) {
-            if ("user".equals(msg.getRole())) {
-                hasUserMessage = true;
-                break;
-            }
-        }
+    static List<OpenAIMessage> ensureUserMessage(List<OpenAIMessage> messages) {
+        boolean hasUserMessage = messages.stream().anyMatch(msg -> "user".equals(msg.getRole()));
 
         if (hasUserMessage) {
             return messages;
         }
 
         // GLM API returns error 1214 if there's no user message
-        // Add a placeholder user message at the end
         log.debug("GLM: adding placeholder user message to satisfy API requirement");
-        List<OpenAIMessage> adjustedMessages = new ArrayList<>(messages);
-        adjustedMessages.add(
-                OpenAIMessage.builder().role("user").content("Please proceed.").build());
-        return adjustedMessages;
+        List<OpenAIMessage> result = new ArrayList<>(messages);
+        result.add(OpenAIMessage.builder().role("user").content("").build());
+        return result;
     }
 
-    @Override
-    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return;
-        }
-
-        List<OpenAITool> openAITools = new ArrayList<>();
-
-        try {
-            for (ToolSchema toolSchema : tools) {
-                // GLM does NOT support strict parameter
-                OpenAIToolFunction function =
-                        OpenAIToolFunction.builder()
-                                .name(toolSchema.getName())
-                                .description(toolSchema.getDescription())
-                                .parameters(toolSchema.getParameters())
-                                .build();
-
-                openAITools.add(OpenAITool.function(function));
-                log.debug("Converted tool to GLM format: {}", toolSchema.getName());
-            }
-        } catch (Exception e) {
-            log.error("Failed to convert tools to GLM format: {}", e.getMessage(), e);
-        }
-
-        if (!openAITools.isEmpty()) {
-            request.setTools(openAITools);
-        }
-    }
-
-    @Override
-    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
-        // Only apply tool_choice if tools are present
+    /**
+     * Apply GLM-specific tool choice handling.
+     *
+     * <p>GLM only supports "auto" for tool_choice. All other options are degraded to "auto".
+     *
+     * <p>This method is static to allow sharing with {@link GLMMultiAgentFormatter}.
+     *
+     * @param request the request to apply tool choice to
+     * @param toolChoice the requested tool choice
+     */
+    static void applyGLMToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         if (request.getTools() == null || request.getTools().isEmpty()) {
             return;
         }
 
-        // GLM only supports "auto" for tool_choice
-        // All other options are degraded to "auto"
         if (toolChoice != null && !(toolChoice instanceof ToolChoice.Auto)) {
             log.info(
-                    "GLM does not support tool_choice='{}', degrading to 'auto'. "
-                            + "For reliable behavior with GLM, avoid using forced tool choice.",
+                    "GLM only supports tool_choice='auto', degrading from '{}'",
                     toolChoice.getClass().getSimpleName());
         }
 
         request.setToolChoice("auto");
-        log.debug("Applied tool choice: auto (GLM only supports auto)");
     }
 }

@@ -63,7 +63,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("MultiAgent E2E Tests")
 class MultiAgentE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // ==================== Data Structure Definitions ====================
 

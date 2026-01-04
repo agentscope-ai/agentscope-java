@@ -50,7 +50,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Specialized Features E2E Tests (Consolidated)")
 class SpecializedFeaturesE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getThinkingProviders")

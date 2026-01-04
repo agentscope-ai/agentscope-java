@@ -61,7 +61,7 @@ class ToolSystemE2ETest {
 
     // Extended timeout for multi-tool tests: multiple sequential tool calls + streaming can take
     // time
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")

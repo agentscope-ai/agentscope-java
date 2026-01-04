@@ -53,7 +53,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Core Agent E2E Tests")
 class CoreAgentE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")

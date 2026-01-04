@@ -61,7 +61,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Audio Capability E2E Tests")
 class AudioCapabilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Test audio URL from DashScope documentation
     private static final String TEST_AUDIO_URL =

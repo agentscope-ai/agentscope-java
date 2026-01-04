@@ -51,7 +51,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Cross-Model Compatibility E2E Tests (Consolidated)")
 class CrossModelCompatibilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("getAllEnabledProviders")

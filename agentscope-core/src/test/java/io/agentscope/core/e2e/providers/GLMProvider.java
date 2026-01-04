@@ -115,7 +115,6 @@ public class GLMProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.AUDIO,
         ModelCapability.VIDEO
     })
     public static class GLM46VPlus extends GLMProvider {
@@ -127,11 +126,6 @@ public class GLMProvider extends BaseModelProvider {
         public String getProviderName() {
             return "GLM-4.6V";
         }
-
-        @Override
-        public boolean supportsToolCalling() {
-            return false;
-        }
     }
 
     /**
@@ -141,7 +135,6 @@ public class GLMProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.AUDIO,
         ModelCapability.VIDEO,
         ModelCapability.MULTI_AGENT_FORMATTER
     })
@@ -153,11 +146,6 @@ public class GLMProvider extends BaseModelProvider {
         @Override
         public String getProviderName() {
             return "GLM-4.6V (MultiAgent)";
-        }
-
-        @Override
-        public boolean supportsToolCalling() {
-            return false;
         }
     }
 

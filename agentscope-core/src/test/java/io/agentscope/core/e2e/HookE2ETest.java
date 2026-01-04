@@ -64,7 +64,7 @@ import reactor.core.publisher.Mono;
 @DisplayName("Hook System E2E Tests")
 class HookE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")

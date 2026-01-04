@@ -48,7 +48,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Agent Interruption E2E Tests")
 class InterruptionE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(120);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")

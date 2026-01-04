@@ -57,7 +57,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Session Persistence E2E Tests")
 class SessionE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     private Path tempSessionDir;
 

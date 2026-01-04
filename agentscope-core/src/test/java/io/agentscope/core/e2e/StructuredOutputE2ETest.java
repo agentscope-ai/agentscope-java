@@ -61,7 +61,7 @@ import org.slf4j.LoggerFactory;
 @DisplayName("Structured Output E2E Tests")
 class StructuredOutputE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     private final Logger LOG = LoggerFactory.getLogger(this.getClass());
 

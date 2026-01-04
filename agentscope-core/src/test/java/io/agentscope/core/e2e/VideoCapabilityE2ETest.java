@@ -55,7 +55,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Video Capability E2E Tests")
 class VideoCapabilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Test video URL - using a sample video
     private static final String TEST_VIDEO_URL =

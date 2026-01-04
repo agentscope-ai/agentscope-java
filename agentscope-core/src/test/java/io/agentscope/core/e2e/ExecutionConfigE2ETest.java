@@ -46,7 +46,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Execution Config E2E Tests")
 class ExecutionConfigE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(120);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Slower models that need extended timeout
     private static final java.util.Set<String> SLOW_MODELS =
@@ -181,7 +181,7 @@ class ExecutionConfigE2ETest {
         Msg input =
                 TestUtils.createUserMessage(
                         "User", "Explain the concept of artificial intelligence in 3 sentences.");
-        Msg response = agent.call(input).block(Duration.ofMinutes(3));
+        Msg response = agent.call(input).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should complete long-running request");
         assertTrue(

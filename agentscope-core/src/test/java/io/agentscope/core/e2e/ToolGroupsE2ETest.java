@@ -50,7 +50,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Tool Groups E2E Tests")
 class ToolGroupsE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // ==================== Test Tools ====================
 

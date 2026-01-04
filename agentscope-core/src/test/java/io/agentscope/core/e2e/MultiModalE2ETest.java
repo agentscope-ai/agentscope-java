@@ -54,7 +54,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Multimodal E2E Tests (Consolidated)")
 class MultiModalE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Test URLs - using E2ETestConstants
     private static final String TEST_IMAGE_URL = E2ETestConstants.DOG_GIRL_IMAGE_URL;

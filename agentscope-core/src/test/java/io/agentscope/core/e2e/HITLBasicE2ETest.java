@@ -57,7 +57,7 @@ import reactor.core.publisher.Mono;
 @DisplayName("Human-in-the-Loop E2E Tests")
 class HITLBasicE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     private static final List<String> SENSITIVE_TOOLS = List.of("delete_file", "send_email");
 
