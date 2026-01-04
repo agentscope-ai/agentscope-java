@@ -27,7 +27,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -361,11 +360,11 @@ class StructuredOutputE2ETest {
                 TestUtils.createUserMessage(
                         "User",
                         """
-                                Please generate result base on the following information:
-                                 - Product Name: iPhone 16 Pro
-                                 - Features: 5G, 6.1-inch display, A16 Bionic chip, 512GB storage, 5G support, 12MP camera
-                                 - Pricing: 799 USD (current price)
-                                """);
+                        Please generate result base on the following information:
+                         - Product Name: iPhone 16 Pro
+                         - Features: 5G, 6.1-inch display, A16 Bionic chip, 512GB storage, 5G support, 12MP camera
+                         - Pricing: 799 USD (current price)
+                        """);
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         // Request structured output with complex nested structure
