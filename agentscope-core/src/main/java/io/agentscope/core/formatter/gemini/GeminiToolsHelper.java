@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
@@ -53,14 +52,10 @@ public class GeminiToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiToolsHelper.class);
 
-    private final ObjectMapper objectMapper;
-
     /**
-     * Creates a new GeminiToolsHelper with default ObjectMapper.
+     * Creates a new GeminiToolsHelper.
      */
-    public GeminiToolsHelper() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public GeminiToolsHelper() {}
 
     /**
      * Convert AgentScope ToolSchema list to Gemini Tool object.

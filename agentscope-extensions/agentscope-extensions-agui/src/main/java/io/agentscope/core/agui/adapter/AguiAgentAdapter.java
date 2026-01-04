@@ -15,12 +15,10 @@
  */
 package io.agentscope.core.agui.adapter;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agui.AguiObjectMapper;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -29,6 +27,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -274,8 +274,8 @@ public class AguiAgentAdapter {
             return "{}";
         }
         try {
-            return AguiObjectMapper.get().writeValueAsString(input);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(input);
+        } catch (JsonException e) {
             return "{}";
         }
     }

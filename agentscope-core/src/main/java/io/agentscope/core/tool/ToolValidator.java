@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
@@ -24,6 +23,7 @@ import com.networknt.schema.SpecificationVersion;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +41,6 @@ import java.util.stream.Collectors;
  */
 public final class ToolValidator {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final SchemaRegistry SCHEMA_REGISTRY =
             SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
 
@@ -76,13 +75,13 @@ public final class ToolValidator {
 
         try {
             // Convert schema to JSON string
-            String schemaJson = OBJECT_MAPPER.writeValueAsString(schema);
+            String schemaJson = JsonUtils.getJsonCodec().toJson(schema);
 
             // Create Schema from the schema string
             Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
             // Convert input to JSON string (handle null input as empty object)
-            String inputJson = input == null ? "{}" : OBJECT_MAPPER.writeValueAsString(input);
+            String inputJson = input == null ? "{}" : JsonUtils.getJsonCodec().toJson(input);
 
             // Validate
             List<Error> errors = jsonSchema.validate(inputJson, InputFormat.JSON);

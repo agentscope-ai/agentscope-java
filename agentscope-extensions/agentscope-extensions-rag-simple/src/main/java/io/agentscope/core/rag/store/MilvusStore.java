@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.rag.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
@@ -23,6 +22,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.util.JsonUtils;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
@@ -104,7 +104,6 @@ import reactor.core.scheduler.Schedulers;
 public class MilvusStore implements VDBStoreBase, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MilvusStore.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Gson GSON = new Gson();
 
     // Field names for Milvus collection schema
@@ -473,7 +472,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             // Serialize content to JSON string
             String contentJson;
             try {
-                contentJson = OBJECT_MAPPER.writeValueAsString(metadata.getContent());
+                contentJson = JsonUtils.getJsonCodec().toJson(metadata.getContent());
             } catch (Exception e) {
                 log.warn("Failed to serialize content, using text representation", e);
                 contentJson = metadata.getContentText();
@@ -585,7 +584,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             // Deserialize content
             ContentBlock content;
             try {
-                content = OBJECT_MAPPER.readValue(contentJson, ContentBlock.class);
+                content = JsonUtils.getJsonCodec().fromJson(contentJson, ContentBlock.class);
             } catch (Exception e) {
                 log.debug("Failed to deserialize ContentBlock, creating TextBlock from content", e);
                 content = TextBlock.builder().text(contentJson).build();
@@ -599,7 +598,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                 try {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> deserializedPayload =
-                            OBJECT_MAPPER.readValue(payloadJson, Map.class);
+                            JsonUtils.getJsonCodec().fromJson(payloadJson, Map.class);
                     customPayload = deserializedPayload;
                 } catch (Exception e) {
                     log.warn("Failed to deserialize payload, using empty map", e);

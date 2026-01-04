@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.studio;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
@@ -23,6 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.studio.pojo.UserInputMetadata;
+import io.agentscope.core.util.JsonUtils;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.Duration;
@@ -73,7 +73,6 @@ import reactor.core.publisher.Mono;
  */
 public class StudioUserAgent extends AgentBase {
     private static final Logger logger = LoggerFactory.getLogger(StudioUserAgent.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final StudioClient studioClient;
     private final StudioWebSocketClient webSocketClient;
@@ -152,8 +151,9 @@ public class StudioUserAgent extends AgentBase {
 
                                                     // Convert POJO to Map for Msg.Builder
                                                     Map<String, Object> metadataMap =
-                                                            OBJECT_MAPPER.convertValue(
-                                                                    metadata, Map.class);
+                                                            JsonUtils.getJsonCodec()
+                                                                    .convertValue(
+                                                                            metadata, Map.class);
 
                                                     // Create message with content blocks
                                                     Msg.Builder msgBuilder =

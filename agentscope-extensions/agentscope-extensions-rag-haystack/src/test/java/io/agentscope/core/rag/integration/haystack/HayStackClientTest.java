@@ -21,9 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.haystack.exception.HayStackApiException;
 import io.agentscope.core.rag.integration.haystack.model.HayStackResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
@@ -39,13 +39,11 @@ import org.junit.jupiter.api.Test;
 class HayStackClientTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -160,7 +158,8 @@ class HayStackClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
 
-        Map<String, Object> parsed = objectMapper.readValue(body, new TypeReference<>() {});
+        Map<String, Object> parsed =
+                JsonUtils.getJsonCodec().fromJson(body, new TypeReference<>() {});
 
         assertEquals("test query", parsed.get("query"));
         assertEquals(3, parsed.get("top_k"));
@@ -176,7 +175,8 @@ class HayStackClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
 
-        Map<String, Object> parsed = objectMapper.readValue(body, new TypeReference<>() {});
+        Map<String, Object> parsed =
+                JsonUtils.getJsonCodec().fromJson(body, new TypeReference<>() {});
 
         assertEquals(10, parsed.get("top_k"));
     }
@@ -200,7 +200,8 @@ class HayStackClientTest {
 
         RecordedRequest request = mockWebServer.takeRequest();
         Map<String, Object> parsed =
-                objectMapper.readValue(request.getBody().readUtf8(), new TypeReference<>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(request.getBody().readUtf8(), new TypeReference<>() {});
 
         assertEquals(true, parsed.get("scale_score"));
         assertEquals(true, parsed.get("return_embedding"));
@@ -262,8 +263,7 @@ class HayStackClientTest {
     void testConstructorWithCustomObjectMapper() {
         mockWebServer.enqueue(successResponse());
 
-        ObjectMapper mapper = new ObjectMapper();
-        HayStackClient client = new HayStackClient(createConfig(), mapper);
+        HayStackClient client = new HayStackClient(createConfig());
 
         HayStackResponse response = client.retrieve("test query", null, null).block();
         assertNotNull(response);

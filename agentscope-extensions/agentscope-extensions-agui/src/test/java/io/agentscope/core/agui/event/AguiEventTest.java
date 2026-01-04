@@ -22,11 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -34,14 +32,6 @@ import org.junit.jupiter.api.Test;
  * Unit tests for all AG-UI event types.
  */
 class AguiEventTest {
-
-    private ObjectMapper objectMapper;
-
-    @BeforeEach
-    void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    }
 
     @Nested
     class RunStartedTest {
@@ -79,10 +69,10 @@ class AguiEventTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"RUN_STARTED\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.RunStarted);
             assertEquals("thread-1", deserialized.getThreadId());
         }
@@ -125,10 +115,10 @@ class AguiEventTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiEvent.RunFinished event = new AguiEvent.RunFinished("thread-2", "run-2");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"RUN_FINISHED\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.RunFinished);
         }
     }
@@ -177,12 +167,12 @@ class AguiEventTest {
             AguiEvent.TextMessageStart event =
                     new AguiEvent.TextMessageStart("thread-1", "run-1", "msg-1", "assistant");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_START\""));
             assertTrue(json.contains("\"messageId\":\"msg-1\""));
             assertTrue(json.contains("\"role\":\"assistant\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.TextMessageStart);
             AguiEvent.TextMessageStart cast = (AguiEvent.TextMessageStart) deserialized;
             assertEquals("msg-1", cast.messageId());
@@ -225,11 +215,11 @@ class AguiEventTest {
             AguiEvent.TextMessageContent event =
                     new AguiEvent.TextMessageContent("thread-1", "run-1", "msg-1", "Hello World");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_CONTENT\""));
             assertTrue(json.contains("\"delta\":\"Hello World\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.TextMessageContent);
             assertEquals("Hello World", ((AguiEvent.TextMessageContent) deserialized).delta());
         }
@@ -268,10 +258,10 @@ class AguiEventTest {
             AguiEvent.TextMessageEnd event =
                     new AguiEvent.TextMessageEnd("thread-1", "run-1", "msg-1");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_END\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.TextMessageEnd);
         }
     }
@@ -318,12 +308,12 @@ class AguiEventTest {
             AguiEvent.ToolCallStart event =
                     new AguiEvent.ToolCallStart("thread-1", "run-1", "tc-1", "get_weather");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TOOL_CALL_START\""));
             assertTrue(json.contains("\"toolCallId\":\"tc-1\""));
             assertTrue(json.contains("\"toolCallName\":\"get_weather\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallStart);
         }
     }
@@ -371,10 +361,10 @@ class AguiEventTest {
             AguiEvent.ToolCallArgs event =
                     new AguiEvent.ToolCallArgs("thread-1", "run-1", "tc-1", "{\"key\":\"value\"}");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TOOL_CALL_ARGS\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallArgs);
         }
     }
@@ -422,11 +412,11 @@ class AguiEventTest {
             AguiEvent.ToolCallEnd event =
                     new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Operation completed");
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"TOOL_CALL_END\""));
             assertTrue(json.contains("\"result\":\"Operation completed\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallEnd);
         }
     }
@@ -478,11 +468,11 @@ class AguiEventTest {
                     new AguiEvent.StateSnapshot(
                             "thread-1", "run-1", Map.of("count", 10, "name", "test"));
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"STATE_SNAPSHOT\""));
             assertTrue(json.contains("\"snapshot\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.StateSnapshot);
         }
     }
@@ -543,10 +533,10 @@ class AguiEventTest {
                                     AguiEvent.JsonPatchOperation.add("/new", "value"),
                                     AguiEvent.JsonPatchOperation.remove("/old")));
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"STATE_DELTA\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.StateDelta);
         }
     }
@@ -624,7 +614,7 @@ class AguiEventTest {
         void testJsonSerialization() throws JsonProcessingException {
             AguiEvent.JsonPatchOperation op = AguiEvent.JsonPatchOperation.add("/path", "value");
 
-            String json = objectMapper.writeValueAsString(op);
+            String json = JsonUtils.getJsonCodec().toJson(op);
             assertTrue(json.contains("\"op\":\"add\""));
             assertTrue(json.contains("\"path\":\"/path\""));
             assertTrue(json.contains("\"value\":\"value\""));
@@ -693,11 +683,11 @@ class AguiEventTest {
             AguiEvent.Raw event =
                     new AguiEvent.Raw("thread-1", "run-1", Map.of("key", "value", "number", 42));
 
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             assertTrue(json.contains("\"type\":\"RAW\""));
             assertTrue(json.contains("\"rawEvent\""));
 
-            AguiEvent deserialized = objectMapper.readValue(json, AguiEvent.class);
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.Raw);
         }
     }

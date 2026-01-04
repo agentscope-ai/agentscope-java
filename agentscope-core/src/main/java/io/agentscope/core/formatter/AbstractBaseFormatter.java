@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -62,11 +61,6 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         implements Formatter<TReq, TResp, TParams> {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractBaseFormatter.class);
-
-    /**
-     * Shared ObjectMapper instance for JSON serialization/deserialization.
-     */
-    protected final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * Format AgentScope messages to provider-specific request format.
