@@ -16,8 +16,8 @@
 package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.openai.OpenRouterFormatter;
-import io.agentscope.core.formatter.openai.OpenRouterMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
@@ -32,11 +32,7 @@ import java.util.Set;
  * <p>OpenRouter provides access to various LLMs through an OpenAI-compatible interface, allowing
  * our OpenAI HTTP implementation to work seamlessly with multiple model providers.
  */
-@ModelCapabilities({
-    ModelCapability.BASIC,
-    ModelCapability.TOOL_CALLING,
-    ModelCapability.STRUCTURED_OUTPUT
-})
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
 public class OpenRouterProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "OPENROUTER_API_KEY";
@@ -84,8 +80,8 @@ public class OpenRouterProvider extends BaseModelProvider {
                         .generateOptions(options)
                         .formatter(
                                 isMultiAgentFormatter()
-                                        ? new OpenRouterMultiAgentFormatter()
-                                        : new OpenRouterFormatter())
+                                        ? new OpenAIMultiAgentFormatter()
+                                        : new OpenAIChatFormatter())
                         .build();
 
         return ReActAgent.builder()
@@ -114,12 +110,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** GPT-5.2 */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING, ModelCapability.IMAGE})
     public static class GPT52 extends OpenRouterProvider {
         public GPT52() {
             super("openai/gpt-5.2", false);
@@ -136,8 +127,7 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class GPT52MultiAgent extends OpenRouterProvider {
         public GPT52MultiAgent() {
@@ -155,12 +145,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** Claude 4.5 Haiku */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING, ModelCapability.IMAGE})
     public static class Claude45Haiku extends OpenRouterProvider {
         public Claude45Haiku() {
             super("anthropic/claude-haiku-4.5", true);
@@ -177,8 +162,7 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class Claude45HaikuMultiAgent extends OpenRouterProvider {
         public Claude45HaikuMultiAgent() {
@@ -226,8 +210,7 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.VIDEO,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.VIDEO
     })
     public static class Qwen3VL extends OpenRouterProvider {
         public Qwen3VL() {
@@ -246,8 +229,7 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.VIDEO,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class Qwen3VLMultiAgent extends OpenRouterProvider {
         public Qwen3VLMultiAgent() {
@@ -351,11 +333,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** DeepSeek V3.2 - DeepSeek's fast and efficient model via OpenRouter. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class DeepSeekV32 extends OpenRouterProvider {
         public DeepSeekV32() {
             super("deepseek/deepseek-v3.2", true);
@@ -371,8 +349,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class DeepSeekV32MultiAgent extends OpenRouterProvider {
         public DeepSeekV32MultiAgent() {
@@ -430,12 +407,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** GLM 4.6V - Zhipu AI's latest GLM model via OpenRouter. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING, ModelCapability.IMAGE})
     public static class GLM46 extends OpenRouterProvider {
         public GLM46() {
             super("z-ai/glm-4.6v", true);
@@ -452,8 +424,7 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class GLM46MultiAgent extends OpenRouterProvider {
         public GLM46MultiAgent() {

@@ -17,15 +17,9 @@ package io.agentscope.core.formatter.openai;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
-import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
-import io.agentscope.core.formatter.openai.dto.OpenAITool;
-import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for DeepSeek Chat models (deepseek-chat, deepseek-coder).
@@ -34,8 +28,8 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>No name field in messages (returns HTTP 400 if present)</li>
  *   <li>System messages should be converted to user messages</li>
- *   <li>Messages should not end with assistant role</li>
  *   <li>Does NOT support strict parameter in tool definitions</li>
+ *   <li>reasoning_content must be kept within current turn but removed for previous turns</li>
  * </ul>
  *
  * <p>Usage:
@@ -47,22 +41,41 @@ import org.slf4j.LoggerFactory;
  *     .apiKey(apiKey)
  *     .build();
  * }</pre>
+ *
+ * @see <a href="https://api-docs.deepseek.com/guides/thinking_mode#tool-calls">DeepSeek Thinking Mode</a>
  */
 public class DeepSeekFormatter extends OpenAIChatFormatter {
 
-    private static final Logger log = LoggerFactory.getLogger(DeepSeekFormatter.class);
+    private final boolean appendEmptyUserIfEndsWithAssistant;
 
     public DeepSeekFormatter() {
+        this(false);
+    }
+
+    /**
+     * Create a DeepSeek formatter with optional empty user message appending.
+     *
+     * @param appendEmptyUserIfEndsWithAssistant if true, append an empty user message when the
+     *     conversation ends with an assistant message to avoid API errors
+     */
+    public DeepSeekFormatter(boolean appendEmptyUserIfEndsWithAssistant) {
         super();
+        this.appendEmptyUserIfEndsWithAssistant = appendEmptyUserIfEndsWithAssistant;
     }
 
     @Override
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
-        // First, use parent's formatting
         List<OpenAIMessage> messages = super.doFormat(msgs);
+        messages = applyDeepSeekFixes(messages);
+        if (appendEmptyUserIfEndsWithAssistant) {
+            messages = appendEmptyUserIfNeeded(messages);
+        }
+        return messages;
+    }
 
-        // Then apply DeepSeek-specific fixes
-        return applyDeepSeekFixes(messages);
+    @Override
+    protected boolean supportsStrict() {
+        return false;
     }
 
     /**
@@ -72,103 +85,88 @@ public class DeepSeekFormatter extends OpenAIChatFormatter {
      * <ul>
      *   <li>No name field in messages</li>
      *   <li>System messages converted to user</li>
-     *   <li>Messages should not end with assistant role</li>
+     *   <li>reasoning_content kept within current turn (after last user message)</li>
+     *   <li>reasoning_content removed for previous turns (before last user message)</li>
      * </ul>
+     *
+     * <p>This method is static to allow sharing with {@link DeepSeekMultiAgentFormatter}.
+     *
+     * @param messages the original OpenAI messages
+     * @return the fixed messages for DeepSeek API
      */
-    private List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
-        boolean needsFix = false;
+    static List<OpenAIMessage> applyDeepSeekFixes(List<OpenAIMessage> messages) {
+        // Find the last user message index to determine current turn boundary
+        int lastUserIndex = findLastUserIndex(messages);
 
-        // Check if any fixes are needed
-        for (OpenAIMessage msg : messages) {
-            if ("system".equals(msg.getRole()) || msg.getName() != null) {
-                needsFix = true;
-                break;
-            }
+        List<OpenAIMessage> result = new ArrayList<>(messages.size());
+        for (int i = 0; i < messages.size(); i++) {
+            result.add(fixMessage(messages.get(i), i >= lastUserIndex));
         }
-
-        // Check if last message is assistant (need to add user message to continue)
-        if (!needsFix
-                && !messages.isEmpty()
-                && "assistant".equals(messages.get(messages.size() - 1).getRole())) {
-            needsFix = true;
-        }
-
-        if (!needsFix) {
-            return messages;
-        }
-
-        log.debug("DeepSeek: applying message format fixes");
-        List<OpenAIMessage> adjustedMessages = new ArrayList<>();
-
-        for (OpenAIMessage msg : messages) {
-            // Convert system message to user
-            String role = msg.getRole();
-            if ("system".equals(role)) {
-                role = "user";
-            }
-
-            // Build new message without name field
-            OpenAIMessage.Builder builder = OpenAIMessage.builder().role(role);
-
-            // Handle content (could be String or List)
-            Object content = msg.getContent();
-            if (content instanceof String) {
-                builder.content((String) content);
-            } else if (content instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<OpenAIContentPart> contentParts = (List<OpenAIContentPart>) content;
-                builder.content(contentParts);
-            }
-
-            // Note: Don't include name field for DeepSeek
-            if (msg.getToolCalls() != null) {
-                builder.toolCalls(msg.getToolCalls());
-            }
-            if (msg.getToolCallId() != null) {
-                builder.toolCallId(msg.getToolCallId());
-            }
-
-            adjustedMessages.add(builder.build());
-        }
-
-        // If last message is assistant, add a user message to continue
-        if (!adjustedMessages.isEmpty()
-                && "assistant"
-                        .equals(adjustedMessages.get(adjustedMessages.size() - 1).getRole())) {
-            adjustedMessages.add(
-                    OpenAIMessage.builder().role("user").content("Please continue.").build());
-        }
-
-        return adjustedMessages;
+        return result;
     }
 
-    @Override
-    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return;
+    /**
+     * Append an empty user message if the conversation ends with an assistant message.
+     *
+     * <p>Some DeepSeek API scenarios require the conversation to not end with an assistant message.
+     *
+     * @param messages the messages to check
+     * @return messages with an empty user message appended if needed
+     */
+    static List<OpenAIMessage> appendEmptyUserIfNeeded(List<OpenAIMessage> messages) {
+        if (messages.isEmpty()
+                || !"assistant".equals(messages.get(messages.size() - 1).getRole())) {
+            return messages;
         }
+        List<OpenAIMessage> result = new ArrayList<>(messages);
+        result.add(OpenAIMessage.builder().role("user").content("").build());
+        return result;
+    }
 
-        List<OpenAITool> openAITools = new ArrayList<>();
-
-        try {
-            for (ToolSchema toolSchema : tools) {
-                // DeepSeek does NOT support strict parameter
-                OpenAIToolFunction function =
-                        OpenAIToolFunction.builder()
-                                .name(toolSchema.getName())
-                                .description(toolSchema.getDescription())
-                                .parameters(toolSchema.getParameters())
-                                .build();
-
-                openAITools.add(OpenAITool.function(function));
-                log.debug("Converted tool to DeepSeek format: {}", toolSchema.getName());
+    private static int findLastUserIndex(List<OpenAIMessage> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if ("user".equals(messages.get(i).getRole())) {
+                return i;
             }
-        } catch (Exception e) {
-            log.error("Failed to convert tools to DeepSeek format: {}", e.getMessage(), e);
+        }
+        return 0; // No user message found, treat all as current turn
+    }
+
+    @SuppressWarnings("unchecked")
+    private static OpenAIMessage fixMessage(OpenAIMessage msg, boolean isCurrentTurn) {
+        boolean isSystem = "system".equals(msg.getRole());
+        boolean hasName = msg.getName() != null;
+        boolean hasReasoning = msg.getReasoningContent() != null;
+        // Remove reasoning_content for previous turns, keep for current turn
+        boolean shouldRemoveReasoning = hasReasoning && !isCurrentTurn;
+
+        if (!isSystem && !hasName && !shouldRemoveReasoning) {
+            return msg;
         }
 
-        if (!openAITools.isEmpty()) {
-            request.setTools(openAITools);
+        // Build new message: convert system to user, remove name field
+        OpenAIMessage.Builder builder =
+                OpenAIMessage.builder().role(isSystem ? "user" : msg.getRole());
+
+        Object content = msg.getContent();
+        if (content instanceof String s) {
+            builder.content(s);
+        } else if (content instanceof List<?> list) {
+            builder.content((List<OpenAIContentPart>) list);
         }
+
+        if (msg.getToolCalls() != null) {
+            builder.toolCalls(msg.getToolCalls());
+        }
+        if (msg.getToolCallId() != null) {
+            builder.toolCallId(msg.getToolCallId());
+        }
+
+        // Keep reasoning_content only for current turn
+        if (hasReasoning && isCurrentTurn) {
+            builder.reasoningContent(msg.getReasoningContent());
+        }
+
+        return builder.build();
     }
 }

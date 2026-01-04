@@ -16,10 +16,11 @@
 package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.openai.DeepSeekReasonerFormatter;
-import io.agentscope.core.formatter.openai.DeepSeekReasonerMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.DeepSeekFormatter;
+import io.agentscope.core.formatter.openai.DeepSeekMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;
 import java.util.HashSet;
 import java.util.Set;
@@ -29,11 +30,7 @@ import java.util.Set;
  *
  * <p>Supports DeepSeek Chat (V3) and DeepSeek R1 (Reasoner) models.
  */
-@ModelCapabilities({
-    ModelCapability.BASIC,
-    ModelCapability.TOOL_CALLING,
-    ModelCapability.STRUCTURED_OUTPUT
-})
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
 public class DeepSeekReasonerProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "DEEPSEEK_API_KEY";
@@ -53,14 +50,15 @@ public class DeepSeekReasonerProvider extends BaseModelProvider {
                         .stream(true)
                         .formatter(
                                 isMultiAgentFormatter()
-                                        ? new DeepSeekReasonerMultiAgentFormatter()
-                                        : new DeepSeekReasonerFormatter())
+                                        ? new DeepSeekMultiAgentFormatter(true)
+                                        : new DeepSeekFormatter(true))
                         .build();
 
         return ReActAgent.builder()
                 .name(name)
                 .model(model)
                 .toolkit(toolkit)
+                .structuredOutputReminder(StructuredOutputReminder.PROMPT)
                 .memory(new InMemoryMemory());
     }
 
@@ -83,7 +81,11 @@ public class DeepSeekReasonerProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** DeepSeek R1 (Reasoner) - Thinking model, does NOT support tool calling. */
-    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.THINKING})
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
+    })
     public static class DeepSeekR1 extends DeepSeekReasonerProvider {
         public DeepSeekR1() {
             super("deepseek-reasoner", false);
@@ -93,16 +95,12 @@ public class DeepSeekReasonerProvider extends BaseModelProvider {
         public String getProviderName() {
             return "DeepSeek R1";
         }
-
-        @Override
-        public boolean supportsToolCalling() {
-            return false;
-        }
     }
 
     /** DeepSeek R1 (Reasoner) with Multi-Agent Formatter. */
     @ModelCapabilities({
         ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
         ModelCapability.THINKING,
         ModelCapability.MULTI_AGENT_FORMATTER
     })
@@ -114,11 +112,6 @@ public class DeepSeekReasonerProvider extends BaseModelProvider {
         @Override
         public String getProviderName() {
             return "DeepSeek R1 (MultiAgent)";
-        }
-
-        @Override
-        public boolean supportsToolCalling() {
-            return false;
         }
     }
 }

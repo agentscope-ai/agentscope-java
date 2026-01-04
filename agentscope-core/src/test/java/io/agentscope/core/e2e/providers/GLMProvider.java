@@ -29,11 +29,7 @@ import java.util.Set;
  *
  * <p>Supports GLM-4, GLM-4V, GLM-Z1, and GLM-4.5 models.
  */
-@ModelCapabilities({
-    ModelCapability.BASIC,
-    ModelCapability.TOOL_CALLING,
-    ModelCapability.STRUCTURED_OUTPUT
-})
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
 public class GLMProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "GLM_API_KEY";
@@ -83,11 +79,7 @@ public class GLMProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** GLM-4.6 */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class GLM46 extends GLMProvider {
         public GLM46() {
             super("glm-4.6", false);
@@ -103,8 +95,7 @@ public class GLMProvider extends BaseModelProvider {
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class GLM46MultiAgent extends GLMProvider {
         public GLM46MultiAgent() {

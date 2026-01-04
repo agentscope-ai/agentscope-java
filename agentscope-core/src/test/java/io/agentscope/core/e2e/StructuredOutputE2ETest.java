@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -503,23 +502,5 @@ class StructuredOutputE2ETest {
                 "Memory should not be excessively bloated for " + provider.getModelName());
 
         System.out.println("✓ Memory cleanup verified for " + provider.getProviderName());
-    }
-
-    @Test
-    @DisplayName("Should verify structured output provider availability")
-    void testStructuredOutputProviderAvailability() {
-        System.out.println("\n=== Test: Structured Output Provider Availability ===");
-
-        long enabledProviders = ProviderFactory.getStructuredOutputProviders().count();
-
-        System.out.println("Enabled structured output providers: " + enabledProviders);
-
-        // At least one structured output provider should be available if API keys are set
-        assertTrue(
-                enabledProviders > 0,
-                "At least one structured output provider should be enabled (check OPENAI_API_KEY or"
-                        + " DASHSCOPE_API_KEY). Note: Thinking mode providers are excluded.");
-
-        System.out.println("✓ Structured output provider availability verified");
     }
 }

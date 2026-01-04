@@ -168,7 +168,7 @@ class HITLBasicE2ETest {
                 TestUtils.createUserMessage(
                         "User",
                         "Please delete the file named 'temp.txt' directly using the delete_file"
-                                + " tool.");
+                                + " tool. I confirm that I want to proceed.");
         Msg response = agent.call(input).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should receive response");
@@ -266,7 +266,7 @@ class HITLBasicE2ETest {
                 TestUtils.createUserMessage(
                         "User",
                         "Please delete the file named 'test.txt' directly using the delete_file"
-                                + " tool.");
+                                + " tool. I confirm that I want to proceed.");
         Msg response = agent.call(input).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should receive first response");

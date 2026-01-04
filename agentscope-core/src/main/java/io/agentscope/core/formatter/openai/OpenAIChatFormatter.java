@@ -132,8 +132,8 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                                 .description(toolSchema.getDescription())
                                 .parameters(toolSchema.getParameters());
 
-                // OpenAI supports the strict parameter
-                if (toolSchema.getStrict() != null) {
+                // Only apply strict parameter if the provider supports it
+                if (supportsStrict() && toolSchema.getStrict() != null) {
                     functionBuilder.strict(toolSchema.getStrict());
                 }
 
@@ -142,7 +142,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                 log.debug(
                         "Converted tool to OpenAI format: {} (strict: {})",
                         toolSchema.getName(),
-                        toolSchema.getStrict());
+                        supportsStrict() ? toolSchema.getStrict() : "not supported");
             }
         } catch (Exception e) {
             log.error("Failed to convert tools to OpenAI format: {}", e.getMessage(), e);
@@ -151,6 +151,19 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         if (!openAITools.isEmpty()) {
             request.setTools(openAITools);
         }
+    }
+
+    /**
+     * Returns whether this formatter's target API supports the strict parameter in tool
+     * definitions.
+     *
+     * <p>Subclasses can override this method to disable strict parameter for providers that don't
+     * support it (e.g., DeepSeek).
+     *
+     * @return true if strict parameter is supported, false otherwise
+     */
+    protected boolean supportsStrict() {
+        return true;
     }
 
     @Override

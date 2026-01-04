@@ -520,7 +520,7 @@ public class OpenAIClient {
 
         // Add User-Agent header with fallback if Version.getUserAgent() returns null
         String userAgent = Version.getUserAgent();
-        headers.put("User-Agent", userAgent != null ? userAgent : "agentscope-java/1.0");
+        headers.put("User-Agent", userAgent);
 
         // Apply additional headers from options
         if (options != null) {

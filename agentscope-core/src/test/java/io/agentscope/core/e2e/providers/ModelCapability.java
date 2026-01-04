@@ -45,13 +45,5 @@ public enum ModelCapability {
     THINKING_BUDGET,
 
     /** Multi-agent formatter support for MsgHub conversations. */
-    MULTI_AGENT_FORMATTER,
-
-    /**
-     * Structured output capability via tool_choice=required.
-     *
-     * <p>Note: This capability is NOT compatible with THINKING mode. Providers with THINKING
-     * capability should NOT be annotated with STRUCTURED_OUTPUT.
-     */
-    STRUCTURED_OUTPUT
+    MULTI_AGENT_FORMATTER
 }

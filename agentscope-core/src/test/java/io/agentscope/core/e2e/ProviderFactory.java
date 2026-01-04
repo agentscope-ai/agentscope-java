@@ -317,18 +317,6 @@ public class ProviderFactory {
         return getProviders(ModelCapability.BASIC, ModelCapability.MULTI_AGENT_FORMATTER);
     }
 
-    /**
-     * Gets all enabled providers that support structured output via tool_choice=required.
-     *
-     * <p>Note: Providers with THINKING capability are excluded since DashScope's thinking mode
-     * does not support tool_choice=required which is needed for structured output.
-     *
-     * @return Stream of enabled providers with structured output capability
-     */
-    public static Stream<ModelProvider> getStructuredOutputProviders() {
-        return getProviders(ModelCapability.BASIC, ModelCapability.STRUCTURED_OUTPUT);
-    }
-
     // ==========================================================================
     // Utility Methods
     // ==========================================================================

@@ -29,11 +29,7 @@ import java.util.Set;
  *
  * <p>Uses the OpenAI-compatible endpoint at dashscope.aliyuncs.com/compatible-mode/v1.
  */
-@ModelCapabilities({
-    ModelCapability.BASIC,
-    ModelCapability.TOOL_CALLING,
-    ModelCapability.STRUCTURED_OUTPUT
-})
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
 public class DashScopeCompatibleProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "DASHSCOPE_API_KEY";
@@ -88,8 +84,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.AUDIO,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.AUDIO
     })
     public static class Qwen3OmniFlashOpenAI extends DashScopeCompatibleProvider {
         public Qwen3OmniFlashOpenAI() {
@@ -108,8 +103,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.AUDIO,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class Qwen3OmniFlashMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public Qwen3OmniFlashMultiAgentOpenAI() {
@@ -127,8 +121,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.VIDEO,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.VIDEO
     })
     public static class Qwen3VlPlusOpenAI extends DashScopeCompatibleProvider {
         public Qwen3VlPlusOpenAI() {
@@ -147,8 +140,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
         ModelCapability.VIDEO,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class Qwen3VlPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public Qwen3VlPlusMultiAgentOpenAI() {
@@ -162,11 +154,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
     }
 
     /** Qwen-Plus - Standard text model via OpenAI compatible API. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class QwenPlusOpenAI extends DashScopeCompatibleProvider {
         public QwenPlusOpenAI() {
             super("qwen-plus", false);
@@ -182,8 +170,7 @@ public class DashScopeCompatibleProvider extends BaseModelProvider {
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class QwenPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
         public QwenPlusMultiAgentOpenAI() {

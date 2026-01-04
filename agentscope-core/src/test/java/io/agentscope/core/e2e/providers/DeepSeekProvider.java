@@ -29,11 +29,7 @@ import java.util.Set;
  *
  * <p>Supports DeepSeek Chat (V3) and DeepSeek R1 (Reasoner) models.
  */
-@ModelCapabilities({
-    ModelCapability.BASIC,
-    ModelCapability.TOOL_CALLING,
-    ModelCapability.STRUCTURED_OUTPUT
-})
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
 public class DeepSeekProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "DEEPSEEK_API_KEY";
@@ -83,11 +79,7 @@ public class DeepSeekProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** DeepSeek Chat (V3). */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.STRUCTURED_OUTPUT
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class DeepSeekChat extends DeepSeekProvider {
         public DeepSeekChat() {
             super("deepseek-chat", false);
@@ -103,8 +95,7 @@ public class DeepSeekProvider extends BaseModelProvider {
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
-        ModelCapability.MULTI_AGENT_FORMATTER,
-        ModelCapability.STRUCTURED_OUTPUT
+        ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class DeepSeekChatMultiAgent extends DeepSeekProvider {
         public DeepSeekChatMultiAgent() {
