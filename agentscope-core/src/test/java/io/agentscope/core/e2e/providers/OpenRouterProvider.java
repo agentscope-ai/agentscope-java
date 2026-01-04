@@ -76,7 +76,7 @@ public class OpenRouterProvider extends BaseModelProvider {
                         .baseUrl(baseUrl)
                         .apiKey(apiKey)
                         .modelName(getModelName())
-                        .stream(false)
+                        .stream(true)
                         .generateOptions(options)
                         .formatter(
                                 isMultiAgentFormatter()

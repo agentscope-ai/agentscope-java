@@ -121,7 +121,15 @@ class OpenAIResponseParserTest {
 
         assertNotNull(result);
         List<ContentBlock> content = result.getContent();
-        assertTrue(content.get(0) instanceof TextBlock);
+        // ThinkingBlock comes first (to store reasoning_details metadata)
+        assertTrue(content.get(0) instanceof ThinkingBlock);
+        ThinkingBlock thinkingBlock = (ThinkingBlock) content.get(0);
+        assertNotNull(thinkingBlock.getMetadata());
+        assertTrue(
+                thinkingBlock.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS));
+        // TextBlock comes second
+        assertTrue(content.get(1) instanceof TextBlock);
+        assertEquals("Answer", ((TextBlock) content.get(1)).getText());
     }
 
     @Test

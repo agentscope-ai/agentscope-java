@@ -364,7 +364,7 @@ class HookE2ETest {
 
         assertNotNull(response, "Should receive response");
         assertTrue(
-                ContentValidator.hasMeaningfulContent(response),
+                ContentValidator.containsKeywords(response, "8"),
                 "Response should have content for " + provider.getModelName());
 
         System.out.println(
