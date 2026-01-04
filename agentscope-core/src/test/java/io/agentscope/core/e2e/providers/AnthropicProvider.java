@@ -22,33 +22,40 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
-public class AnthropicProvider implements ModelProvider {
+/**
+ * Provider for Anthropic Claude API.
+ *
+ * <p>Supports Claude models with multimodal capabilities.
+ */
+@ModelCapabilities({
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.IMAGE,
+    ModelCapability.THINKING
+})
+public class AnthropicProvider extends BaseModelProvider {
 
-    private final String modelName;
-    private final boolean multiAgentFormatter;
+    private static final String API_KEY_ENV = "ANTHROPIC_API_KEY";
+    private static final String BASE_URL_ENV = "ANTHROPIC_BASE_URL";
 
     public AnthropicProvider(String modelName, boolean multiAgentFormatter) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("ANTHROPIC_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("ANTHROPIC_API_KEY environment variable is required");
-        }
-
-        String baseUrl = System.getenv("ANTHROPIC_BASE_URL"); // Optional custom endpoint
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
+        String baseUrl = System.getenv(BASE_URL_ENV);
 
         AnthropicChatModel.Builder builder =
                 AnthropicChatModel.builder()
                         .apiKey(apiKey)
                         .baseUrl(baseUrl)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new AnthropicMultiAgentFormatter()
                                         : new AnthropicChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
@@ -57,8 +64,7 @@ public class AnthropicProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -67,21 +73,25 @@ public class AnthropicProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        return false;
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
+        }
+        return caps;
     }
 
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("ANTHROPIC_API_KEY");
-        return apiKey != null && !apiKey.isEmpty();
-    }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
+    /** Claude Haiku 4.5 - Fast, efficient model. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.THINKING
+    })
     public static class ClaudeHaiku45Anthropic extends AnthropicProvider {
         public ClaudeHaiku45Anthropic() {
             super("claude-haiku-4-5-20251001", false);
@@ -93,6 +103,14 @@ public class AnthropicProvider implements ModelProvider {
         }
     }
 
+    /** Claude Haiku 4.5 with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class ClaudeHaiku45MultiAgentAnthropic extends AnthropicProvider {
         public ClaudeHaiku45MultiAgentAnthropic() {
             super("claude-haiku-4-5-20251001", true);
@@ -100,7 +118,7 @@ public class AnthropicProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "Anthropic";
+            return "Anthropic (Multi-Agent)";
         }
     }
 }

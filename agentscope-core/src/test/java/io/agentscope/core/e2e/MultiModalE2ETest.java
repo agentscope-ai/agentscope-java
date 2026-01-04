@@ -32,7 +32,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,21 +49,19 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("multimodal")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Multimodal E2E Tests (Consolidated)")
 class MultiModalE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
-    // Test URLs from existing tests
-    private static final String TEST_IMAGE_URL =
-            "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241022/emyrja/dog_and_girl.jpeg";
-    private static final String CAT_IMAGE_URL =
-            "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
+    // Test URLs - using E2ETestConstants
+    private static final String TEST_IMAGE_URL = E2ETestConstants.DOG_GIRL_IMAGE_URL;
+    private static final String CAT_IMAGE_URL = E2ETestConstants.CAT_IMAGE_URL;
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getImageProviders")
     @DisplayName("Should analyze image from URL")
     void testImageAnalysisFromURL(ModelProvider provider) {
         System.out.println(
@@ -114,7 +112,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getImageProviders")
     @DisplayName("Should handle follow-up questions about images")
     void testImageFollowUpQuestions(ModelProvider provider) {
         System.out.println(
@@ -183,7 +181,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getImageProviders")
     @DisplayName("Should handle mixed conversation (vision + text)")
     void testMixedVisionConversation(ModelProvider provider) {
         System.out.println(
@@ -244,7 +242,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getMultimodalProviders")
     @DisplayName("Should handle complete multimodal conversation flow")
     void testCompleteMultimodalFlow(ModelProvider provider) {
         System.out.println(
@@ -325,9 +323,9 @@ class MultiModalE2ETest {
     void testMultimodalProviderAvailability() {
         System.out.println("\n=== Test: Multimodal Provider Availability ===");
 
-        long enabledImageProviders = ProviderFactory.getEnabledImageProviders().count();
-        long enabledAudioProviders = ProviderFactory.getEnabledAudioProviders().count();
-        long enabledMultimodalProviders = ProviderFactory.getEnabledMultimodalProviders().count();
+        long enabledImageProviders = ProviderFactory.getImageProviders().count();
+        long enabledAudioProviders = ProviderFactory.getAudioProviders().count();
+        long enabledMultimodalProviders = ProviderFactory.getMultimodalProviders().count();
 
         System.out.println("Enabled image providers: " + enabledImageProviders);
         System.out.println("Enabled audio providers: " + enabledAudioProviders);
@@ -338,7 +336,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getVideoProviders")
     @DisplayName("Should handle video analysis (if supported)")
     void testVideoAnalysis(ModelProvider provider) {
         System.out.println(

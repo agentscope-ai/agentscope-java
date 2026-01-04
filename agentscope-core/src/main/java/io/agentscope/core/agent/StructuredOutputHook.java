@@ -119,15 +119,12 @@ public class StructuredOutputHook implements Hook {
             return;
         }
 
-        // Check if generate_response was called
-        boolean hasCall =
-                msg.getContentBlocks(ToolUseBlock.class).stream()
-                        .anyMatch(tu -> TOOL_NAME.equals(tu.getName()));
+        boolean hasCall = !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
 
         if (!hasCall && retryCount < MAX_RETRIES) {
             retryCount++;
             log.debug(
-                    "Model didn't call generate_response, requesting retry ({}/{})",
+                    "Model didn't call any tool, requesting retry ({}/{})",
                     retryCount,
                     MAX_RETRIES);
             // Always add reminder message and goto reasoning
