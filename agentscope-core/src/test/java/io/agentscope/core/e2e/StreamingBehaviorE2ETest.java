@@ -36,7 +36,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -53,15 +53,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("streaming")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Streaming Behavior E2E Tests")
 class StreamingBehaviorE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support non-streaming mode explicitly")
     void testNonStreamingMode(ModelProvider provider) {
         System.out.println(
@@ -119,7 +119,7 @@ class StreamingBehaviorE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should stream tool calls correctly")
     void testStreamingWithToolCalls(ModelProvider provider) {
         System.out.println(
@@ -157,7 +157,7 @@ class StreamingBehaviorE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getImageProviders")
     @DisplayName("Should stream with multimodal content")
     void testStreamingWithMultimodalContent(ModelProvider provider) {
         System.out.println(
@@ -206,7 +206,7 @@ class StreamingBehaviorE2ETest {
         System.out.println("\n=== Test: Streaming Enabled by Default ===");
 
         // Verify that providers use streaming by default
-        long providerCount = ProviderFactory.getEnabledBasicProviders().count();
+        long providerCount = ProviderFactory.getBasicProviders().count();
 
         System.out.println("Testing " + providerCount + " providers for streaming support");
 

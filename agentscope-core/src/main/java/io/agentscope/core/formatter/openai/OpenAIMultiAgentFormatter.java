@@ -26,12 +26,17 @@ import java.util.List;
  * Multi-agent formatter for OpenAI Chat Completion HTTP API.
  * Converts AgentScope Msg objects to OpenAI DTO types with multi-agent support.
  *
- * <p>This formatter handles conversations between multiple agents by:
- * - Grouping multi-agent messages into conversation history
- * - Using special markup (e.g., history tags) to structure conversations
- * - Consolidating multi-agent conversations into single user messages
+ * <p>This formatter extends {@link OpenAIChatFormatter} and handles conversations
+ * between multiple agents by:
+ * <ul>
+ *   <li>Grouping multi-agent messages into conversation history</li>
+ *   <li>Using special markup (e.g., history tags) to structure conversations</li>
+ *   <li>Consolidating multi-agent conversations into single user messages</li>
+ * </ul>
+ *
+ * <p>Inherits all option, tool, and tool_choice handling from {@link OpenAIChatFormatter}.
  */
-public class OpenAIMultiAgentFormatter extends OpenAIBaseFormatter {
+public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"

@@ -21,14 +21,23 @@ import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
-public class DashScopeProvider implements ModelProvider {
+/**
+ * Provider for DashScope native API.
+ *
+ * <p>Supports models: qwen-plus, qwen-vl-max, qwen3-vl-plus with optional thinking mode.
+ */
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
+public class DashScopeProvider extends BaseModelProvider {
 
-    private final String modelName;
+    private static final String API_KEY_ENV = "DASHSCOPE_API_KEY";
+
     private final boolean enableThinking;
     private final int thinkingBudget;
-    private final boolean multiAgentFormatter;
 
     public DashScopeProvider(String modelName, boolean multiAgentFormatter) {
         this(modelName, false, 0, multiAgentFormatter);
@@ -39,24 +48,18 @@ public class DashScopeProvider implements ModelProvider {
             boolean enableThinking,
             int thinkingBudget,
             boolean multiAgentFormatter) {
-        this.modelName = modelName;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
         this.enableThinking = enableThinking;
         this.thinkingBudget = thinkingBudget;
-        this.multiAgentFormatter = multiAgentFormatter;
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("DASHSCOPE_API_KEY environment variable is required");
-        }
-
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
         DashScopeChatModel.Builder builder =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(getModelName()).stream(true)
                         .enableThinking(enableThinking)
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new DashScopeMultiAgentFormatter()
                                         : new DashScopeChatFormatter());
 
@@ -69,8 +72,11 @@ public class DashScopeProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .structuredOutputReminder(
+                        enableThinking
+                                ? StructuredOutputReminder.PROMPT
+                                : StructuredOutputReminder.PROMPT)
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -79,43 +85,29 @@ public class DashScopeProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        return true; // DashScope supports thinking mode
-    }
-
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        return apiKey != null && !apiKey.isEmpty();
-    }
-
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
-    public static class QwenVlMaxDashScope extends DashScopeProvider {
-        public QwenVlMaxDashScope() {
-            super("qwen-vl-max", false);
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
         }
-
-        @Override
-        public String getProviderName() {
-            return "DashScope";
-        }
+        return caps;
     }
 
-    public static class QwenVlMaxMultiAgentDashScope extends DashScopeProvider {
-        public QwenVlMaxMultiAgentDashScope() {
-            super("qwen-vl-max", true);
-        }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-        @Override
-        public String getProviderName() {
-            return "DashScope";
-        }
-    }
-
+    /**
+     * Qwen3-VL-Plus - Advanced vision model.
+     *
+     * <p>Note: qwen3-vl-plus supports IMAGE and VIDEO but NOT AUDIO.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
     public static class Qwen3VlPlusDashScope extends DashScopeProvider {
         public Qwen3VlPlusDashScope() {
             super("qwen3-vl-plus", false);
@@ -127,6 +119,18 @@ public class DashScopeProvider implements ModelProvider {
         }
     }
 
+    /**
+     * Qwen3-VL-Plus with multi-agent formatter.
+     *
+     * <p>Note: qwen3-vl-plus supports IMAGE and VIDEO but NOT AUDIO.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class Qwen3VlPlusMultiAgentDashScope extends DashScopeProvider {
         public Qwen3VlPlusMultiAgentDashScope() {
             super("qwen3-vl-plus", true);
@@ -134,10 +138,18 @@ public class DashScopeProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "DashScope";
+            return "DashScope (Multi-Agent)";
         }
     }
 
+    /**
+     * Qwen-Plus with thinking mode.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING
+    })
     public static class QwenPlusThinkingDashScope extends DashScopeProvider {
         public QwenPlusThinkingDashScope() {
             super("qwen-plus", true, 5000, false);
@@ -153,6 +165,15 @@ public class DashScopeProvider implements ModelProvider {
         }
     }
 
+    /**
+     * Qwen-Plus with thinking mode and multi-agent formatter.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class QwenPlusThinkingMultiAgentDashScope extends DashScopeProvider {
         public QwenPlusThinkingMultiAgentDashScope() {
             super("qwen-plus", true, 5000, true);
@@ -164,10 +185,14 @@ public class DashScopeProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "DashScope";
+            return "DashScope (Multi-Agent)";
         }
     }
 
+    /**
+     * Qwen-Plus - Standard text model.
+     */
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class QwenPlusDashScope extends DashScopeProvider {
         public QwenPlusDashScope() {
             super("qwen-plus", false);
@@ -179,6 +204,14 @@ public class DashScopeProvider implements ModelProvider {
         }
     }
 
+    /**
+     * Qwen-Plus with multi-agent formatter.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class QwenPlusMultiAgentDashScope extends DashScopeProvider {
         public QwenPlusMultiAgentDashScope() {
             super("qwen-plus", true);
@@ -186,7 +219,7 @@ public class DashScopeProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "DashScope";
+            return "DashScope (Multi-Agent)";
         }
     }
 }

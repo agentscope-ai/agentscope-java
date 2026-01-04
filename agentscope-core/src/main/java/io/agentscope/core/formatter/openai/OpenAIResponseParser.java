@@ -30,6 +30,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.exception.OpenAIException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -127,21 +128,17 @@ public class OpenAIResponseParser {
 
                 if (message != null) {
                     // Order matters! Follow this processing order:
-                    // 1. ThinkingBlock first (reasoning_content)
+                    // 1. ThinkingBlock first (reasoning_content + reasoning_details)
                     // 2. Then TextBlock (content)
                     // 3. Finally ToolUseBlock (tool_calls)
 
-                    // Parse reasoning/thinking content (for o1 models)
-                    String reasoningContent = message.getReasoningContent();
-                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        contentBlocks.add(
-                                ThinkingBlock.builder().thinking(reasoningContent).build());
-                    }
-
                     // Parse reasoning details (OpenRouter/Gemini specific)
+                    // Collect signatures and text content from reasoning_details
                     Map<String, String> reasoningSignatures = new HashMap<>();
                     Map<String, OpenAIReasoningDetail> reasoningDetailMap = new HashMap<>();
                     List<OpenAIReasoningDetail> reasoningDetails = message.getReasoningDetails();
+                    StringBuilder reasoningTextBuilder = new StringBuilder();
+
                     if (reasoningDetails != null) {
                         for (OpenAIReasoningDetail detail : reasoningDetails) {
                             if (detail.getId() != null) {
@@ -149,12 +146,45 @@ public class OpenAIResponseParser {
                             }
                             if ("reasoning.encrypted".equals(detail.getType())
                                     && detail.getData() != null) {
-                                String signature = detail.getData();
+                                // Just collect signature, don't create ToolUseBlock
                                 if (detail.getId() != null) {
-                                    reasoningSignatures.put(detail.getId(), signature);
+                                    reasoningSignatures.put(detail.getId(), detail.getData());
                                 }
+                            } else if ("reasoning.text".equals(detail.getType())
+                                    && detail.getText() != null) {
+                                reasoningTextBuilder.append(detail.getText());
+                            } else if ("reasoning.summary".equals(detail.getType())
+                                    && detail.getText() != null) {
+                                // reasoning.summary also uses the text field
+                                reasoningTextBuilder.append(detail.getText());
                             }
                         }
+                    }
+
+                    // Parse reasoning/thinking content (for o1 models and OpenRouter)
+                    // Combine reasoning_content with text from reasoning_details
+                    String reasoningContent = message.getReasoningContent();
+                    String reasoningText = reasoningTextBuilder.toString();
+                    String thinkingContent =
+                            (reasoningContent != null && !reasoningContent.isEmpty())
+                                    ? reasoningContent
+                                    : reasoningText;
+
+                    // Create ThinkingBlock if we have thinking content or reasoning_details
+                    if (!thinkingContent.isEmpty()
+                            || (reasoningDetails != null && !reasoningDetails.isEmpty())) {
+                        ThinkingBlock.Builder thinkingBuilder = ThinkingBlock.builder();
+                        if (!thinkingContent.isEmpty()) {
+                            thinkingBuilder.thinking(thinkingContent);
+                        }
+                        // Store reasoning_details in metadata for later restoration
+                        if (reasoningDetails != null && !reasoningDetails.isEmpty()) {
+                            Map<String, Object> metadata = new HashMap<>();
+                            metadata.put(
+                                    ThinkingBlock.METADATA_REASONING_DETAILS, reasoningDetails);
+                            thinkingBuilder.metadata(metadata);
+                        }
+                        contentBlocks.add(thinkingBuilder.build());
                     }
 
                     // Parse text content
@@ -291,7 +321,7 @@ public class OpenAIResponseParser {
                             ? error.getMessage()
                             : "Unknown error in streaming response";
             String errorCode = error != null && error.getCode() != null ? error.getCode() : null;
-            throw new io.agentscope.core.model.exception.OpenAIException(
+            throw new OpenAIException(
                     "OpenAI API error in streaming response: " + errorMessage,
                     400,
                     errorCode,
@@ -330,56 +360,76 @@ public class OpenAIResponseParser {
 
                 if (delta != null) {
                     // Order matters! Follow this processing order:
-                    // 1. ThinkingBlock first (reasoning_content)
+                    // 1. ThinkingBlock first (reasoning_content + reasoning_details)
                     // 2. Then TextBlock (content)
                     // 3. Finally ToolUseBlock (tool_calls)
 
-                    // Parse reasoning/thinking content (for o1 models)
-                    String reasoningContent = delta.getReasoningContent();
-                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        contentBlocks.add(
-                                ThinkingBlock.builder().thinking(reasoningContent).build());
-                    }
-
                     // Parse reasoning details (OpenRouter/Gemini specific)
+                    // Collect signatures for tool calls and text content for display
                     Map<String, String> reasoningSignatures = new HashMap<>();
                     Map<Integer, String> reasoningSignaturesByIndex = new HashMap<>();
+                    List<OpenAIReasoningDetail> reasoningDetailsList = new ArrayList<>();
+                    StringBuilder reasoningTextBuilder = new StringBuilder();
+
                     List<OpenAIReasoningDetail> reasoningDetails = delta.getReasoningDetails();
                     if (reasoningDetails != null) {
+                        reasoningDetailsList.addAll(reasoningDetails);
+
                         for (OpenAIReasoningDetail detail : reasoningDetails) {
                             // Handle encrypted reasoning (thought signature)
                             if ("reasoning.encrypted".equals(detail.getType())
                                     && detail.getData() != null) {
-
                                 String signature = detail.getData();
-
+                                // Collect signature for linking to tool calls later
                                 if (detail.getId() != null) {
                                     reasoningSignatures.put(detail.getId(), signature);
-
-                                    // Create a standalone ToolUseBlock for the signature
-                                    // This ensures metadata is preserved even if tool_calls list is
-                                    // empty
-                                    // or if we fail to link them by ID/Index
-                                    Map<String, Object> metadata = new HashMap<>();
-                                    metadata.put(
-                                            ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
-                                    metadata.put("reasoningDetail", detail);
-
-                                    contentBlocks.add(
-                                            ToolUseBlock.builder()
-                                                    .id(detail.getId())
-                                                    .metadata(metadata)
-                                                    .build());
                                 }
-
                                 if (detail.getIndex() != null) {
                                     reasoningSignaturesByIndex.put(detail.getIndex(), signature);
                                 }
-                            }
-                            // Log text reasoning for debugging
-                            else if ("reasoning.text".equals(detail.getType())) {
+                                // Don't create ToolUseBlock here - signatures will be linked
+                                // to actual tool_calls below
+                            } else if ("reasoning.text".equals(detail.getType())
+                                    && detail.getText() != null) {
+                                reasoningTextBuilder.append(detail.getText());
                                 log.debug("Received reasoning text: {}", detail.getText());
+                            } else if ("reasoning.summary".equals(detail.getType())
+                                    && detail.getText() != null) {
+                                // reasoning.summary also uses the text field
+                                reasoningTextBuilder.append(detail.getText());
+                                log.debug("Received reasoning summary: {}", detail.getText());
                             }
+                        }
+                    }
+
+                    // Parse reasoning/thinking content (for o1 models and OpenRouter)
+                    String reasoningContent = delta.getReasoningContent();
+                    String reasoningText = reasoningTextBuilder.toString();
+
+                    // Create ThinkingBlock for reasoning content
+                    // Priority: reasoningContent > reasoning.text/summary from details
+                    if ((reasoningContent != null && !reasoningContent.isEmpty())
+                            || !reasoningText.isEmpty()
+                            || !reasoningDetailsList.isEmpty()) {
+                        String thinkingContent =
+                                (reasoningContent != null && !reasoningContent.isEmpty())
+                                        ? reasoningContent
+                                        : reasoningText;
+
+                        if (!thinkingContent.isEmpty() || !reasoningDetailsList.isEmpty()) {
+                            ThinkingBlock.Builder thinkingBuilder = ThinkingBlock.builder();
+                            if (!thinkingContent.isEmpty()) {
+                                thinkingBuilder.thinking(thinkingContent);
+                            }
+                            // Store reasoning_details in metadata for later restoration
+                            if (!reasoningDetailsList.isEmpty()) {
+                                Map<String, Object> metadata = new HashMap<>();
+                                metadata.put(
+                                        ThinkingBlock.METADATA_REASONING_DETAILS,
+                                        reasoningDetailsList);
+                                thinkingBuilder.metadata(metadata);
+                            }
+                            contentBlocks.add(thinkingBuilder.build());
                         }
                     }
 
