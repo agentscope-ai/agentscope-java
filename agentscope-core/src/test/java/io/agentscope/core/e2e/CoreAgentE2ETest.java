@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
@@ -30,7 +31,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,15 +48,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  * must be set. Tests are dynamically enabled based on available API keys.
  */
 @Tag("e2e")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Core Agent E2E Tests")
 class CoreAgentE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should handle basic conversation across all providers")
     void testBasicConversation(ModelProvider provider) {
         System.out.println(
@@ -84,7 +85,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should handle multi-round conversation with context preservation")
     void testMultiRoundConversation(ModelProvider provider) {
         System.out.println(
@@ -126,7 +127,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle mixed conversation (with and without tools)")
     void testMixedConversation(ModelProvider provider) {
         System.out.println(
@@ -171,9 +172,13 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle simple tool calling")
     void testSimpleToolCalling(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Simple Tool Calling with " + provider.getProviderName() + " ===");
 
@@ -202,9 +207,13 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle tool errors gracefully")
     void testToolErrorHandling(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Tool Error Handling with " + provider.getProviderName() + " ===");
 
@@ -241,8 +250,8 @@ class CoreAgentE2ETest {
     void testProviderConfiguration() {
         System.out.println("\n=== Test: Provider Configuration Verification ===");
 
-        long enabledBasicProviders = ProviderFactory.getEnabledBasicProviders().count();
-        long enabledToolProviders = ProviderFactory.getEnabledToolProviders().count();
+        long enabledBasicProviders = ProviderFactory.getBasicProviders().count();
+        long enabledToolProviders = ProviderFactory.getToolProviders().count();
 
         System.out.println("Enabled basic providers: " + enabledBasicProviders);
         System.out.println("Enabled tool providers: " + enabledToolProviders);

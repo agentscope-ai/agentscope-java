@@ -1,6 +1,6 @@
 ## AgentScope-Java Version
 
-[The version of AgentScope-Java you are working on, e.g. 1.0.4, check your pom.xml dependency version or run `mvn dependency:tree | grep agentscope-parent:pom`(only mac/linux)]
+[The version of AgentScope-Java you are working on, e.g. 1.0.5, check your pom.xml dependency version or run `mvn dependency:tree | grep agentscope-parent:pom`(only mac/linux)]
 
 ## Description
 

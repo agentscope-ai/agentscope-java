@@ -77,7 +77,7 @@ Built for enterprise deployment requirements:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 </dependency>
 ```
 

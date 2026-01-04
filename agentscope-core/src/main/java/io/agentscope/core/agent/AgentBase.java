@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +44,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModule.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -53,7 +53,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>AgentBase provides infrastructure (hooks, subscriptions, interrupt, state) but not domain
  *       logic</li>
  *   <li>Memory management is delegated to concrete agents that need it (e.g., ReActAgent)</li>
- *   <li>State management is inherited from StateModuleBase</li>
+ *   <li>State management implements StateModule interface</li>
  *   <li>Interrupt mechanism uses reactive patterns: subclasses call checkInterruptedAsync()
  *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
  *   <li>Observe pattern: agents can receive messages without generating a reply</li>
@@ -84,7 +84,7 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
-public abstract class AgentBase extends StateModuleBase implements Agent {
+public abstract class AgentBase implements StateModule, Agent {
 
     private final String agentId;
     private final String name;
@@ -127,18 +127,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
-        super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
-
-        // Register basic agent state
-        registerState("id", obj -> this.agentId, obj -> obj);
-        registerState("name", obj -> this.name, obj -> obj);
-        registerState("description", obj -> this.description, obj -> obj);
     }
 
     @Override
@@ -451,6 +445,34 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Add a hook to this agent dynamically.
+     *
+     * <p>Hooks can be added during agent execution to provide temporary functionality.
+     * This is commonly used for structured output handling or other short-lived behaviors.
+     *
+     * @param hook The hook to add
+     */
+    protected void addHook(Hook hook) {
+        if (hook != null) {
+            hooks.add(hook);
+        }
+    }
+
+    /**
+     * Remove a hook from this agent dynamically.
+     *
+     * <p>Hooks should be removed when they are no longer needed to avoid memory leaks
+     * and unintended side effects.
+     *
+     * @param hook The hook to remove
+     */
+    protected void removeHook(Hook hook) {
+        if (hook != null) {
+            hooks.remove(hook);
+        }
+    }
+
+    /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
      *
@@ -600,31 +622,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Stream execution events in real-time as the agent processes the input.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options) {
-        return stream(List.of(msg), options);
-    }
-
-    /**
-     * Stream execution events in real-time as the agent processes the input with structured output.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @param structuredModel Optional class defining the structure of the output
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
-        return stream(List.of(msg), options, structuredModel);
-    }
-
-    /**
      * Stream with multiple input messages.
      *
      * @param msgs Input messages
@@ -685,12 +682,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                             })
                                     .subscribe(
                                             finalMsg -> {
-                                                Event finalEvent =
-                                                        new Event(
-                                                                EventType.AGENT_RESULT,
-                                                                finalMsg,
-                                                                true);
-                                                sink.next(finalEvent);
+                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
+                                                    Event finalEvent =
+                                                            new Event(
+                                                                    EventType.AGENT_RESULT,
+                                                                    finalMsg,
+                                                                    true);
+                                                    sink.next(finalEvent);
+                                                }
 
                                                 // Complete the stream
                                                 sink.complete();
@@ -704,15 +703,5 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
-    }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "agent" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "agent";
     }
 }

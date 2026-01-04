@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
@@ -248,7 +248,7 @@ public class McpClientBuilder {
                             new McpSchema.Implementation(
                                     "agentscope-java",
                                     "AgentScope Java Framework",
-                                    "1.0.5-SNAPSHOT");
+                                    "1.0.6-SNAPSHOT");
 
                     McpSchema.ClientCapabilities clientCapabilities =
                             McpSchema.ClientCapabilities.builder().build();
@@ -279,7 +279,7 @@ public class McpClientBuilder {
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", "1.0.5-SNAPSHOT");
+                        "agentscope-java", "AgentScope Java Framework", "1.0.6-SNAPSHOT");
 
         McpSchema.ClientCapabilities clientCapabilities =
                 McpSchema.ClientCapabilities.builder().build();

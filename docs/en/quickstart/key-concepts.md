@@ -85,6 +85,26 @@ Message is the most fundamental data structure in AgentScope, used for:
 - `ToolUseBlock` - Tool invocation initiated by LLM
 - `ToolResultBlock` - Tool execution result
 
+**Response Metadata**:
+
+Messages returned by Agent contain additional metadata to help understand execution state:
+
+| Method | Description |
+|--------|-------------|
+| `getGenerateReason()` | Reason for message generation, used to determine next actions |
+| `getChatUsage()` | Token usage statistics (input/output tokens, time) |
+
+**GenerateReason Values**:
+
+| Value | Description |
+|-------|-------------|
+| `MODEL_STOP` | Task completed normally |
+| `TOOL_SUSPENDED` | Tool needs external execution, waiting for result |
+| `REASONING_STOP_REQUESTED` | Paused by Hook during Reasoning phase (HITL) |
+| `ACTING_STOP_REQUESTED` | Paused by Hook during Acting phase (HITL) |
+| `INTERRUPTED` | Agent was interrupted |
+| `MAX_ITERATIONS` | Maximum iterations reached |
+
 **Example**:
 
 ```java

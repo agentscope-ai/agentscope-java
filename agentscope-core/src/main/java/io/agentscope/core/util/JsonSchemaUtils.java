@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,16 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.victools.jsonschema.generator.Option;
+import com.github.victools.jsonschema.generator.OptionPreset;
+import com.github.victools.jsonschema.generator.SchemaGenerator;
+import com.github.victools.jsonschema.generator.SchemaGeneratorConfig;
+import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
+import com.github.victools.jsonschema.generator.SchemaVersion;
+import com.github.victools.jsonschema.module.jackson.JacksonModule;
+import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
@@ -30,102 +37,78 @@ import java.util.Map;
 /**
  * Utility class for JSON Schema operations.
  *
- * <p>
- * This class provides utility methods for:
+ * <p>This class provides utility methods for:
  * <ul>
- * <li>Generating JSON schemas from Java classes (for structured output)</li>
- * <li>Converting between Maps and typed objects</li>
- * <li>Mapping Java types to JSON Schema types</li>
+ *   <li>Generating JSON schemas from Java classes (for structured output)</li>
+ *   <li>Converting between Maps and typed objects</li>
+ *   <li>Mapping Java types to JSON Schema types</li>
+ * </ul>
+ *
+ * <p>Supports AgentScope annotations:
+ * <ul>
+ *   <li>{@code @ToolParam(description = ...)} - add property description</li>
+ *   <li>{@code @ToolParam(required = ...)} - mark property as required</li>
+ * </ul>
+ *
+ * <p>Supports Jackson annotations:
+ * <ul>
+ *   <li>{@code @JsonProperty(required = ...)} - mark property as required</li>
+ *   <li>{@code @JsonPropertyDescription(...)} - add property description</li>
+ *   <li>{@code @JsonClassDescription(...)} - add class description</li>
  * </ul>
  *
  * @hidden
  */
 public class JsonSchemaUtils {
 
-    private static final ObjectMapper OBJECT_MAPPER =
-            JsonMapper.builder().addModule(new JavaTimeModule()).build();
-    private static final JsonSchemaGenerator schemaGenerator =
-            new JsonSchemaGenerator(OBJECT_MAPPER);
+	private static final ObjectMapper OBJECT_MAPPER =
+			JsonMapper.builder().addModule(new JavaTimeModule()).build();
+    private static final SchemaGenerator schemaGenerator;
+
+    static {
+        // JacksonModule to support @JsonProperty, @JsonPropertyDescription annotations
+        JacksonModule jacksonModule =
+                new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+
+        SchemaGeneratorConfigBuilder configBuilder =
+                new SchemaGeneratorConfigBuilder(
+                                SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
+                        .with(jacksonModule)
+                        .with(Option.PLAIN_DEFINITION_KEYS)
+                        .without(Option.SCHEMA_VERSION_INDICATOR);
+        SchemaGeneratorConfig config = configBuilder.build();
+        schemaGenerator = new SchemaGenerator(config);
+    }
 
     /**
      * Generate JSON Schema from a Java class.
      * This method is suitable for structured output scenarios where complex nested
      * objects need to be converted to JSON Schema format.
      *
-     * <p><b>Note:</b> This method does NOT support generic types like {@code List<Order>}
-     * due to Java's type erasure. For generic types, use:
-     * <ul>
-     *   <li>{@link #generateSchemaFromType(Type)} with method return type</li>
-     *   <li>{@link #generateSchemaFromTypeReference(TypeReference)} for all generic types</li>
-     * </ul>
-     *
      * @param clazz The class to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
-     *                          Jackson configuration issues, or other processing
-     *                          errors
+     *                          configuration issues, or other processing errors
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            JsonSchema schema = schemaGenerator.generateSchema(clazz);
-            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            JsonNode schemaNode = schemaGenerator.generateSchema(clazz);
+            return OBJECT_MAPPER.convertValue(
+                    schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
     }
 
     /**
-     * Generate JSON Schema from a generic type using TypeReference.
-     * This method supports complex generic types including nested generics.
-     *
-     * <p><b>Usage Examples:</b>
-     * <pre>{@code
-     * // For List<Order>
-     * Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromTypeReference(
-     *     new TypeReference<List<Order>>() {}
-     * );
-     *
-     * // For Map<String, List<Order>>
-     * Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromTypeReference(
-     *     new TypeReference<Map<String, List<Order>>>() {}
-     * );
-     *
-     * // For nested generics: List<Map<String, Order>>
-     * Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromTypeReference(
-     *     new TypeReference<List<Map<String, Order>>>() {}
-     * );
-     * }</pre>
-     *
-     * @param typeReference TypeReference containing the generic type information
-     * @param <T> The generic type
-     * @return JSON Schema as a Map with full generic type information
-     * @throws RuntimeException if schema generation fails
-     */
-    public static <T> Map<String, Object> generateSchemaFromTypeReference(
-            TypeReference<T> typeReference) {
-        try {
-            Type type = typeReference.getType();
-            JavaType javaType = OBJECT_MAPPER.constructType(type);
-            JsonSchema schema = schemaGenerator.generateSchema(javaType);
-            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    "Failed to generate JSON schema for type reference: " + typeReference.getType(),
-                    e);
-        }
-    }
-
-    /**
      * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
      * This method is suitable for structured output scenarios where complex nested
-     * objects
-     * need to be converted to JSON Schema format.
+     * objects need to be converted to JSON Schema format.
      *
      * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
-     *                          Jackson configuration issues, or other processing
-     *                          errors
+     *                          configuration issues, or other processing errors
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
@@ -143,9 +126,9 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JavaType javaType = OBJECT_MAPPER.constructType(type);
-            JsonSchema schema = schemaGenerator.generateSchema(javaType);
-            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            JsonNode schemaNode = schemaGenerator.generateSchema(type);
+            return OBJECT_MAPPER.convertValue(
+                    schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);

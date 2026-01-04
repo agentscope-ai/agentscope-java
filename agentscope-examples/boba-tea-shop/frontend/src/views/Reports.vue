@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -129,7 +129,7 @@ const loadReports = async () => {
   try {
     reports.value = await reportsApiService.getReportsList()
     // Sort by modified time in descending order
-    reports.value.sort((a, b) => 
+    reports.value.sort((a, b) =>
       new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
     )
   } catch (error: any) {
@@ -168,7 +168,7 @@ const goBack = () => {
 
 // Pagination config
 const paginationConfig = computed(() => ({
-  pageSize: 10, 
+  pageSize: 10,
   showSizeChanger: true,
   showQuickJumper: true,
   showTotal: (total: number) => t('reports.totalRecords', { total })
@@ -185,8 +185,8 @@ onMounted(() => {
       <!-- Header -->
       <div class="reports-header">
         <div class="header-left">
-          <Button 
-            type="text" 
+          <Button
+            type="text"
             @click="goBack"
             class="back-button"
           >
@@ -210,8 +210,8 @@ onMounted(() => {
             </Button>
             <template #overlay>
               <div class="lang-menu">
-                <div 
-                  v-for="item in languageMenuItems" 
+                <div
+                  v-for="item in languageMenuItems"
                   :key="item.key"
                   class="lang-menu-item"
                   :class="{ active: currentLocale === item.key }"
@@ -222,7 +222,7 @@ onMounted(() => {
               </div>
             </template>
           </Dropdown>
-          <Button 
+          <Button
             @click="loadReports"
             :loading="loading"
             style="margin-left: 12px;"
@@ -247,8 +247,8 @@ onMounted(() => {
       </div>
 
       <!-- Reports Table -->
-      <Card 
-        :bordered="false" 
+      <Card
+        :bordered="false"
         class="reports-table-card"
         :bodyStyle="{ padding: 0 }"
       >
@@ -258,7 +258,7 @@ onMounted(() => {
             <Tag color="blue">{{ t('reports.reportsCount', { count: reports.length }) }}</Tag>
           </div>
         </template>
-        
+
         <Spin :spinning="loading">
           <Table
             :columns="columns"
@@ -276,8 +276,8 @@ onMounted(() => {
                 </div>
               </template>
               <template v-else-if="column.key === 'action'">
-                <Button 
-                  type="primary" 
+                <Button
+                  type="primary"
                   size="small"
                   @click="viewReportDetail(record.fileName)"
                 >
@@ -288,9 +288,9 @@ onMounted(() => {
                 </Button>
               </template>
             </template>
-            
+
             <template #emptyText>
-              <Empty 
+              <Empty
                 :description="t('reports.noData')"
                 :image="Empty.PRESENTED_IMAGE_SIMPLE"
               />
@@ -322,7 +322,7 @@ onMounted(() => {
           </template>
         </Button>
       </div>
-      
+
       <Spin :spinning="detailLoading" :tip="t('common.loading')">
         <div class="modal-content" v-if="selectedReport">
           <div class="report-meta">

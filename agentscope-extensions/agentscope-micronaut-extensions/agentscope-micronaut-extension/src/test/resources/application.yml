@@ -1,5 +1,5 @@
 #
-# Copyright 2024-2025 the original author or authors.
+# Copyright 2024-2026 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,14 +20,14 @@
 agentscope:
   model:
     provider: dashscope
-  
+
   dashscope:
     enabled: true
     api-key: ${DASHSCOPE_API_KEY:sk-test}
     model-name: qwen-plus
     stream: true
     enable-thinking: true
-  
+
   agent:
     enabled: true
     name: "Assistant"
@@ -38,13 +38,13 @@ agentscope:
 # agentscope:
 #   model:
 #     provider: openai
-#   
+#
 #   openai:
 #     enabled: true
 #     api-key: ${OPENAI_API_KEY}
 #     model-name: gpt-4.1-mini
 #     stream: true
-#   
+#
 #   agent:
 #     enabled: true
 #     name: "Assistant"
@@ -55,13 +55,13 @@ agentscope:
 # agentscope:
 #   model:
 #     provider: gemini
-#   
+#
 #   gemini:
 #     enabled: true
 #     api-key: ${GEMINI_API_KEY}
 #     model-name: gemini-2.0-flash
 #     stream: true
-#   
+#
 #   agent:
 #     enabled: true
 #     name: "Assistant"
@@ -72,7 +72,7 @@ agentscope:
 # agentscope:
 #   model:
 #     provider: gemini
-#   
+#
 #   gemini:
 #     enabled: true
 #     project: your-gcp-project-id
@@ -80,7 +80,7 @@ agentscope:
 #     model-name: gemini-2.0-flash
 #     vertex-ai: true
 #     stream: true
-#   
+#
 #   agent:
 #     enabled: true
 #     name: "Assistant"
@@ -91,13 +91,13 @@ agentscope:
 # agentscope:
 #   model:
 #     provider: anthropic
-#   
+#
 #   anthropic:
 #     enabled: true
 #     api-key: ${ANTHROPIC_API_KEY}
 #     model-name: claude-sonnet-4.5
 #     stream: true
-#   
+#
 #   agent:
 #     enabled: true
 #     name: "Assistant"

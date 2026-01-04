@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -159,8 +159,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Remember this key if it's not a placeholder
             if (block.getName() != null && !isPlaceholder(block.getName())) {
                 lastToolCallKey = key;
-                return key;
             }
+            return key;
         }
 
         // 2. Use tool name (non-placeholder)

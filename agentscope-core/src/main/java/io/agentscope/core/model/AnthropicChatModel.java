@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,7 +171,8 @@ public class AnthropicChatModel extends ChatModelBase {
                                     // Convert the SDK's Stream to Flux
                                     return AnthropicResponseParser.parseStreamEvents(
                                                     Flux.fromStream(streamResponse.stream())
-                                                            .publishOn(Schedulers.boundedElastic()),
+                                                            .subscribeOn(
+                                                                    Schedulers.boundedElastic()),
                                                     startTime)
                                             .doFinally(
                                                     signalType -> {
@@ -206,7 +207,7 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic", log);
+                responseFlux, options, defaultOptions, modelName, "anthropic");
     }
 
     /**

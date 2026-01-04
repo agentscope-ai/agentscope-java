@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -175,10 +175,16 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
 
-        <!-- Jackson JSON Schema module for structured output -->
+        <!-- Victools JSON Schema Generator for structured output -->
         <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jsonSchema</artifactId>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-generator</artifactId>
+        </dependency>
+
+        <!-- Victools JSON Schema Module for Jackson annotations support -->
+        <dependency>
+            <groupId>com.github.victools</groupId>
+            <artifactId>jsonschema-module-jackson</artifactId>
         </dependency>
 
         <!-- SLF4J API -->
@@ -203,6 +209,12 @@
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
             <artifactId>mcp</artifactId>
+        </dependency>
+
+        <!-- JSON Schema Validator for tool input validation -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
         </dependency>
     </dependencies>
 
