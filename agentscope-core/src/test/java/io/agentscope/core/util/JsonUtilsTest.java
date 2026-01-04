@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -99,7 +98,8 @@ class JsonUtilsTest {
 
         assertNotNull(json);
 
-        Map<String, Object> result = codec.fromJson(json, new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> result =
+                codec.fromJson(json, new TypeReference<Map<String, Object>>() {});
         assertEquals("test", result.get("name"));
         assertEquals(123, result.get("value"));
     }

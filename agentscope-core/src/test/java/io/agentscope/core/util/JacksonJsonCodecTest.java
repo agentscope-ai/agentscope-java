@@ -138,7 +138,8 @@ class JacksonJsonCodecTest {
     @Test
     void testFromJsonNested() {
         String json =
-                "{\"title\":\"Test Article\",\"author\":{\"name\":\"Bob\",\"age\":25},\"tags\":[\"java\",\"test\"]}";
+                "{\"title\":\"Test"
+                    + " Article\",\"author\":{\"name\":\"Bob\",\"age\":25},\"tags\":[\"java\",\"test\"]}";
         NestedModel model = codec.fromJson(json, NestedModel.class);
 
         assertNotNull(model);
