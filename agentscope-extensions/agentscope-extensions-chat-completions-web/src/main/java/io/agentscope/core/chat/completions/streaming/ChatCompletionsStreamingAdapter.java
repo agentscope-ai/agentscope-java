@@ -76,6 +76,11 @@ public class ChatCompletionsStreamingAdapter {
      * <p>Subscribes to agent's event stream and converts each event to one or more {@link
      * ChatCompletionsChunk} objects following OpenAI's streaming format.
      *
+     * <p><b>Text Deduplication:</b> In incremental mode, agents send text deltas (isLast=false)
+     * followed by a final accumulated event (isLast=true). To avoid duplication, we filter text
+     * from the last REASONING event if incremental chunks were seen, while preserving tool calls
+     * and finish reasons.
+     *
      * @param agent The agent to stream from
      * @param messages The messages to send to the agent
      * @param requestId The request ID for tracking (used as chunk ID)
@@ -90,9 +95,32 @@ public class ChatCompletionsStreamingAdapter {
                         .incremental(true)
                         .build();
 
+        // Track if we've seen non-last REASONING events (indicates incremental mode)
+        java.util.concurrent.atomic.AtomicBoolean hasSeenIncrementalReasoning =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+
         return agent.stream(messages, options)
                 .filter(event -> event.getMessage() != null)
-                .flatMap(event -> convertEventToChunks(event, requestId, model));
+                .doOnNext(
+                        event -> {
+                            // Track if we see a non-last REASONING event (incremental chunk)
+                            if (event.getType() == EventType.REASONING && !event.isLast()) {
+                                hasSeenIncrementalReasoning.set(true);
+                            }
+                        })
+                .flatMap(
+                        event -> {
+                            // Filter out text from last REASONING events if we've seen incremental
+                            // ones
+                            if (event.getType() == EventType.REASONING
+                                    && event.isLast()
+                                    && hasSeenIncrementalReasoning.get()) {
+                                // This is the final accumulated text event, filter out its text
+                                // but keep tool calls and finish reason
+                                return convertEventToChunksWithoutText(event, requestId, model);
+                            }
+                            return convertEventToChunks(event, requestId, model);
+                        });
     }
 
     /**
@@ -101,12 +129,42 @@ public class ChatCompletionsStreamingAdapter {
      * <p>A single event may produce multiple chunks if it contains both text and tool calls.
      *
      * @param event The agent event
-     * @param requestId The request ID
+     * @param requestId The request ID for tracking
      * @param model The model name
      * @return Flux of ChatCompletionsChunk objects
      */
     public Flux<ChatCompletionsChunk> convertEventToChunks(
             Event event, String requestId, String model) {
+        return convertEventToChunksInternal(event, requestId, model, true);
+    }
+
+    /**
+     * Convert an agent event to chunks, excluding text content.
+     *
+     * <p>This is used for final accumulated events in incremental mode where we want to keep tool
+     * calls and finish reason but filter out duplicate text.
+     *
+     * @param event The agent event
+     * @param requestId The request ID
+     * @param model The model name
+     * @return Flux of ChatCompletionsChunk objects (without text chunks)
+     */
+    private Flux<ChatCompletionsChunk> convertEventToChunksWithoutText(
+            Event event, String requestId, String model) {
+        return convertEventToChunksInternal(event, requestId, model, false);
+    }
+
+    /**
+     * Internal method to convert an agent event to chunks with optional text filtering.
+     *
+     * @param event The agent event
+     * @param requestId The request ID
+     * @param model The model name
+     * @param includeText Whether to include text content
+     * @return Flux of ChatCompletionsChunk objects
+     */
+    private Flux<ChatCompletionsChunk> convertEventToChunksInternal(
+            Event event, String requestId, String model, boolean includeText) {
         Msg msg = event.getMessage();
         if (msg == null) {
             return Flux.empty();
@@ -131,7 +189,7 @@ public class ChatCompletionsStreamingAdapter {
         }
 
         String textContent = textBuilder.toString();
-        if (!textContent.isEmpty()) {
+        if (!textContent.isEmpty() && includeText) {
             chunks.add(ChatCompletionsChunk.textChunk(requestId, model, textContent));
         }
 
