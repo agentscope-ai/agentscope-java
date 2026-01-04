@@ -256,6 +256,24 @@ public class OpenAIMessageConverter {
             if (thinking != null && !thinking.isEmpty()) {
                 builder.reasoningContent(thinking);
             }
+
+            // Restore reasoning_details from ThinkingBlock metadata
+            // This is needed for OpenRouter/Gemini models that use reasoning tokens
+            if (thinkingBlock.getMetadata() != null) {
+                Object detailsObj =
+                        thinkingBlock.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
+                if (detailsObj instanceof List<?> list && !list.isEmpty()) {
+                    List<OpenAIReasoningDetail> details = new ArrayList<>();
+                    for (Object item : list) {
+                        if (item instanceof OpenAIReasoningDetail rd) {
+                            details.add(rd);
+                        }
+                    }
+                    if (!details.isEmpty()) {
+                        builder.reasoningDetails(details);
+                    }
+                }
+            }
         }
 
         if (msg.getName() != null) {

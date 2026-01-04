@@ -32,7 +32,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -50,19 +50,19 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("video")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Video Capability E2E Tests")
 class VideoCapabilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Test video URL - using a sample video
     private static final String TEST_VIDEO_URL =
             "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241115/cqqkru/1.mp4";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getVideoProviders")
     @DisplayName("Should process video input from URL")
     void testVideoInputFromURL(ModelProvider provider) {
         System.out.println(
@@ -112,7 +112,7 @@ class VideoCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getVideoProviders")
     @DisplayName("Should analyze video content")
     void testVideoContentAnalysis(ModelProvider provider) {
         System.out.println(
@@ -162,7 +162,7 @@ class VideoCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getVideoProviders")
     @DisplayName("Should handle video in multi-round conversation")
     void testVideoMultiRoundConversation(ModelProvider provider) {
         System.out.println(
@@ -257,7 +257,7 @@ class VideoCapabilityE2ETest {
     void testVideoProviderAvailability() {
         System.out.println("\n=== Test: Video Provider Availability ===");
 
-        long enabledVideoProviders = ProviderFactory.getEnabledVideoProviders().count();
+        long enabledVideoProviders = ProviderFactory.getVideoProviders().count();
 
         System.out.println("Enabled video providers: " + enabledVideoProviders);
 

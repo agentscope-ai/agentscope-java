@@ -29,20 +29,26 @@ import java.util.List;
 /**
  * Base formatter for OpenAI Chat Completion HTTP API.
  * Provides common functionality for both single-agent and multi-agent formatters.
+ *
+ * <p>Subclasses must implement:
+ * <ul>
+ *   <li>{@link #doFormat(List)} - Convert messages to OpenAI format
+ *   <li>{@link #applyOptions(OpenAIRequest, GenerateOptions, GenerateOptions)} - Apply generation options
+ *   <li>{@link #applyTools(OpenAIRequest, List)} - Apply tool schemas
+ *   <li>{@link #applyToolChoice(OpenAIRequest, ToolChoice)} - Apply tool choice configuration
+ * </ul>
  */
 public abstract class OpenAIBaseFormatter
         extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
     protected final OpenAIMessageConverter messageConverter;
     protected final OpenAIResponseParser responseParser;
-    protected final OpenAIToolsHelper toolsHelper;
 
     protected OpenAIBaseFormatter() {
         this.messageConverter =
                 new OpenAIMessageConverter(
                         this::extractTextContent, this::convertToolResultToString);
         this.responseParser = new OpenAIResponseParser();
-        this.toolsHelper = new OpenAIToolsHelper();
     }
 
     @Override
@@ -50,36 +56,66 @@ public abstract class OpenAIBaseFormatter
         return responseParser.parseResponse(response, startTime);
     }
 
+    /**
+     * Apply generation options to the request.
+     * Subclasses implement provider-specific option handling.
+     *
+     * @param request OpenAI request DTO
+     * @param options Generation options to apply
+     * @param defaultOptions Default options to use if options parameter is null
+     */
     @Override
-    public void applyOptions(
-            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(request, options, defaultOptions);
-    }
+    public abstract void applyOptions(
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions);
 
+    /**
+     * Apply tool schemas to the request.
+     * Subclasses implement provider-specific tool handling.
+     *
+     * @param request OpenAI request DTO
+     * @param tools List of tool schemas to apply (may be null or empty)
+     */
     @Override
-    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
-        toolsHelper.applyTools(request, tools);
-    }
+    public abstract void applyTools(OpenAIRequest request, List<ToolSchema> tools);
 
+    /**
+     * Apply tool choice configuration to the request.
+     * Subclasses implement provider-specific tool choice handling.
+     *
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration (null means auto)
+     */
+    @Override
+    public abstract void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice);
+
+    /**
+     * Apply tool schemas with provider context.
+     * Default implementation delegates to {@link #applyTools(OpenAIRequest, List)}.
+     *
+     * @param request OpenAI request DTO
+     * @param tools Tool schemas to apply
+     * @param baseUrl API base URL (ignored by default)
+     * @param modelName Model name (ignored by default)
+     */
     @Override
     public void applyTools(
             OpenAIRequest request, List<ToolSchema> tools, String baseUrl, String modelName) {
-        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
-        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
-            capability = ProviderCapability.fromModelName(modelName);
-        }
-        toolsHelper.applyTools(request, tools, capability);
+        applyTools(request, tools);
     }
 
-    @Override
-    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(request, toolChoice);
-    }
-
+    /**
+     * Apply tool choice with provider context.
+     * Default implementation delegates to {@link #applyToolChoice(OpenAIRequest, ToolChoice)}.
+     *
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration
+     * @param baseUrl API base URL (ignored by default)
+     * @param modelName Model name (ignored by default)
+     */
     @Override
     public void applyToolChoice(
             OpenAIRequest request, ToolChoice toolChoice, String baseUrl, String modelName) {
-        toolsHelper.applyToolChoice(request, toolChoice, baseUrl, modelName);
+        applyToolChoice(request, toolChoice);
     }
 
     /**

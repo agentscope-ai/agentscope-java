@@ -25,6 +25,7 @@ import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -34,8 +35,10 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -324,5 +327,341 @@ class OpenAIChatFormatterTest {
 
         assertNotNull(request);
         assertNull(request.getToolChoice());
+    }
+
+    @Nested
+    @DisplayName("supportsStrict Tests")
+    class SupportsStrictTests {
+
+        @Test
+        @DisplayName("supportsStrict should return true for OpenAI")
+        void testSupportsStrictReturnsTrue() {
+            assertTrue(formatter.supportsStrict());
+        }
+
+        @Test
+        @DisplayName("applyTools should include strict parameter when set")
+        void testApplyToolsWithStrict() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            ToolSchema tool =
+                    ToolSchema.builder()
+                            .name("test_tool")
+                            .description("Test tool")
+                            .strict(true)
+                            .build();
+
+            formatter.applyTools(request, List.of(tool));
+
+            assertNotNull(request.getTools());
+            assertEquals(1, request.getTools().size());
+            assertTrue(request.getTools().get(0).getFunction().getStrict());
+        }
+
+        @Test
+        @DisplayName("applyTools should not set strict when null")
+        void testApplyToolsWithNullStrict() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            ToolSchema tool =
+                    ToolSchema.builder().name("test_tool").description("Test tool").build();
+
+            formatter.applyTools(request, List.of(tool));
+
+            assertNotNull(request.getTools());
+            assertNull(request.getTools().get(0).getFunction().getStrict());
+        }
+    }
+
+    @Nested
+    @DisplayName("applyAdditionalBodyParams Tests")
+    class ApplyAdditionalBodyParamsTests {
+
+        @Test
+        @DisplayName("Should apply reasoning_effort parameter")
+        void testApplyReasoningEffort() {
+            OpenAIRequest request = OpenAIRequest.builder().model("o1").messages(List.of()).build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("reasoning_effort", "high")
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertEquals("high", request.getReasoningEffort());
+        }
+
+        @Test
+        @DisplayName("Should apply include_reasoning parameter")
+        void testApplyIncludeReasoning() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("deepseek-reasoner").messages(List.of()).build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("include_reasoning", true)
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertTrue(request.getIncludeReasoning());
+        }
+
+        @Test
+        @DisplayName("Should apply stop parameter")
+        void testApplyStopParameter() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("stop", List.of("END", "STOP"))
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertNotNull(request.getStop());
+            @SuppressWarnings("unchecked")
+            List<String> stopList = (List<String>) request.getStop();
+            assertEquals(2, stopList.size());
+            assertTrue(stopList.contains("END"));
+            assertTrue(stopList.contains("STOP"));
+        }
+
+        @Test
+        @DisplayName("Should apply response_format parameter")
+        void testApplyResponseFormat() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            Map<String, Object> responseFormat = Map.of("type", "json_object");
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("response_format", responseFormat)
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertNotNull(request.getResponseFormat());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> format = (Map<String, Object>) request.getResponseFormat();
+            assertEquals("json_object", format.get("type"));
+        }
+
+        @Test
+        @DisplayName("Should add unknown parameters to extraParams")
+        void testApplyUnknownParams() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("custom_param", "custom_value")
+                            .build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertNotNull(request.getExtraParams());
+            assertEquals("custom_value", request.getExtraParams().get("custom_param"));
+        }
+
+        @Test
+        @DisplayName("Should apply params from both options and defaultOptions")
+        void testApplyParamsFromBothOptions() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            GenerateOptions defaultOptions =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("reasoning_effort", "low")
+                            .build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("reasoning_effort", "high")
+                            .build();
+
+            formatter.applyOptions(request, options, defaultOptions);
+
+            // Options should override defaultOptions
+            assertEquals("high", request.getReasoningEffort());
+        }
+
+        @Test
+        @DisplayName("Should handle null options gracefully")
+        void testApplyWithNullOptions() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            formatter.applyAdditionalBodyParams(request, null);
+
+            // Should not throw, request should remain unchanged
+            assertNull(request.getReasoningEffort());
+        }
+    }
+
+    @Nested
+    @DisplayName("Seed Boundary Tests")
+    class SeedBoundaryTests {
+
+        @Test
+        @DisplayName("Should handle seed within Integer range")
+        void testSeedWithinRange() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            GenerateOptions options = GenerateOptions.builder().seed(12345L).build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertEquals(12345, request.getSeed());
+        }
+
+        @Test
+        @DisplayName("Should handle seed at Integer.MAX_VALUE")
+        void testSeedAtMaxValue() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            GenerateOptions options =
+                    GenerateOptions.builder().seed((long) Integer.MAX_VALUE).build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertEquals(Integer.MAX_VALUE, request.getSeed());
+        }
+
+        @Test
+        @DisplayName("Should truncate seed exceeding Integer range")
+        void testSeedExceedingRange() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            // This value exceeds Integer.MAX_VALUE
+            long largeSeed = (long) Integer.MAX_VALUE + 100L;
+            GenerateOptions options = GenerateOptions.builder().seed(largeSeed).build();
+
+            formatter.applyOptions(request, options, null);
+
+            // Should be truncated to int
+            assertNotNull(request.getSeed());
+        }
+    }
+
+    @Nested
+    @DisplayName("Tool Choice Tests")
+    class ToolChoiceTests {
+
+        @Test
+        @DisplayName("Should apply tool choice required")
+        void testApplyToolChoiceRequired() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+            request.setTools(createDummyTools());
+
+            ToolChoice toolChoice = new ToolChoice.Required();
+
+            formatter.applyToolChoice(request, toolChoice);
+
+            assertEquals("required", request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("Should not apply tool choice when no tools")
+        void testNoToolChoiceWithoutTools() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            formatter.applyToolChoice(request, new ToolChoice.Auto());
+
+            assertNull(request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("Should not apply tool choice when tools list is empty")
+        void testNoToolChoiceWithEmptyTools() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder()
+                            .model("gpt-4")
+                            .messages(List.of())
+                            .tools(List.of())
+                            .build();
+
+            formatter.applyToolChoice(request, new ToolChoice.Auto());
+
+            assertNull(request.getToolChoice());
+        }
+
+        @Test
+        @DisplayName("Should default to auto for null tool choice")
+        void testDefaultAutoForNullToolChoice() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+            request.setTools(createDummyTools());
+
+            formatter.applyToolChoice(request, null);
+
+            assertEquals("auto", request.getToolChoice());
+        }
+    }
+
+    @Nested
+    @DisplayName("applyTools Edge Cases")
+    class ApplyToolsEdgeCasesTests {
+
+        @Test
+        @DisplayName("Should handle null tools list")
+        void testApplyNullTools() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            formatter.applyTools(request, null);
+
+            assertNull(request.getTools());
+        }
+
+        @Test
+        @DisplayName("Should handle empty tools list")
+        void testApplyEmptyTools() {
+            OpenAIRequest request =
+                    OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+            formatter.applyTools(request, List.of());
+
+            assertNull(request.getTools());
+        }
+    }
+
+    @Nested
+    @DisplayName("Format Edge Cases")
+    class FormatEdgeCasesTests {
+
+        @Test
+        @DisplayName("Should handle empty message list")
+        void testFormatEmptyMessages() {
+            List<OpenAIMessage> result = formatter.format(List.of());
+
+            assertNotNull(result);
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should handle message with null content")
+        void testFormatMessageWithNullContent() {
+            List<Msg> messages =
+                    List.of(
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .content((List<ContentBlock>) null)
+                                    .build());
+
+            List<OpenAIMessage> result = formatter.format(messages);
+
+            assertNotNull(result);
+            assertEquals(1, result.size());
+        }
     }
 }

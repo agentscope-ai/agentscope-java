@@ -34,7 +34,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,12 +58,12 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("multi-agent")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("MultiAgent E2E Tests")
 class MultiAgentE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // ==================== Data Structure Definitions ====================
 
@@ -111,7 +111,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should handle basic multi-agent conversation with MsgHub")
     void testBasicMultiAgentConversation(ModelProvider provider) {
         if (provider.getClass().getName().contains("MultiAgent")
@@ -137,7 +137,7 @@ class MultiAgentE2ETest {
         Msg announcement =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -248,7 +248,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle multi-agent with tool calling")
     void testMultiAgentWithToolCalling(ModelProvider provider) {
         assumeTrue(
@@ -268,7 +268,7 @@ class MultiAgentE2ETest {
         Msg announcement =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -334,7 +334,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support role-based collaboration (innovator, critic, synthesizer)")
     void testRoleBasedMultiAgentCollaboration(ModelProvider provider) {
         System.out.println(
@@ -351,7 +351,7 @@ class MultiAgentE2ETest {
         Msg topic =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -416,7 +416,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support dynamic participant management")
     void testDynamicParticipantManagement(ModelProvider provider) {
         System.out.println(
@@ -499,7 +499,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should combine multi-agent with structured output")
     void testMultiAgentWithStructuredOutput(ModelProvider provider) {
         assumeTrue(
@@ -520,7 +520,7 @@ class MultiAgentE2ETest {
         Msg topic =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -580,7 +580,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support manual broadcast control")
     void testMsgHubManualBroadcast(ModelProvider provider) {
         System.out.println(
@@ -643,7 +643,7 @@ class MultiAgentE2ETest {
     void testProviderAvailability() {
         System.out.println("\n=== Test: Provider Availability ===");
 
-        long enabledBasicProviders = ProviderFactory.getEnabledBasicProviders().count();
+        long enabledBasicProviders = ProviderFactory.getBasicProviders().count();
 
         System.out.println("Enabled basic providers: " + enabledBasicProviders);
 

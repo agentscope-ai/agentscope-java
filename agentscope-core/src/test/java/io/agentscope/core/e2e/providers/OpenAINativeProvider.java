@@ -35,6 +35,11 @@ public class OpenAINativeProvider implements ModelProvider {
 
     @Override
     public ReActAgent createAgent(String name, Toolkit toolkit) {
+        return createAgentBuilder(name, toolkit).build();
+    }
+
+    @Override
+    public ReActAgent.Builder createAgentBuilder(String name, Toolkit toolkit) {
         String apiKey = System.getenv("OPENAI_API_KEY");
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IllegalStateException("OPENAI_API_KEY environment variable is required");
@@ -48,7 +53,7 @@ public class OpenAINativeProvider implements ModelProvider {
                                 multiAgentFormatter
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
-                        .defaultOptions(GenerateOptions.builder().build());
+                        .generateOptions(GenerateOptions.builder().build());
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
             builder.baseUrl(baseUrl);
@@ -58,8 +63,7 @@ public class OpenAINativeProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override

@@ -300,7 +300,11 @@ public class OpenAIClient {
             if (!httpResponse.isSuccessful()) {
                 int statusCode = httpResponse.getStatusCode();
                 String responseBody = httpResponse.getBody();
-                String errorMessage = "OpenAI API request failed with status " + statusCode;
+                String errorMessage =
+                        "OpenAI API request failed with status "
+                                + statusCode
+                                + " | "
+                                + responseBody;
                 throw OpenAIException.create(statusCode, errorMessage, null, responseBody);
             }
 
@@ -356,18 +360,6 @@ public class OpenAIClient {
         } catch (JsonProcessingException | HttpTransportException e) {
             throw new OpenAIException("Failed to execute request: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Make a streaming API call.
-     *
-     * @param apiKey the API key for authentication
-     * @param baseUrl the base URL (null for default)
-     * @param request the OpenAI request
-     * @return a Flux of OpenAI responses (one per SSE event)
-     */
-    public Flux<OpenAIResponse> stream(String apiKey, String baseUrl, OpenAIRequest request) {
-        return stream(apiKey, baseUrl, request, null);
     }
 
     /**
@@ -447,10 +439,12 @@ public class OpenAIClient {
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof HttpTransportException) {
-                                    return new OpenAIException(
+                                    return OpenAIException.create(
+                                            ((HttpTransportException) ex).getStatusCode(),
                                             "HTTP transport error during streaming: "
                                                     + ex.getMessage(),
-                                            ex);
+                                            null,
+                                            ((HttpTransportException) ex).getResponseBody());
                                 }
                                 return ex;
                             });
@@ -526,7 +520,7 @@ public class OpenAIClient {
 
         // Add User-Agent header with fallback if Version.getUserAgent() returns null
         String userAgent = Version.getUserAgent();
-        headers.put("User-Agent", userAgent != null ? userAgent : "agentscope-java/1.0");
+        headers.put("User-Agent", userAgent);
 
         // Apply additional headers from options
         if (options != null) {
