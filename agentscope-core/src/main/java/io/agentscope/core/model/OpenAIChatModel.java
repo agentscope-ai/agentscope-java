@@ -48,7 +48,6 @@ import reactor.core.publisher.Flux;
  * for your provider:
  * <ul>
  *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
- *   <li>{@link io.agentscope.core.formatter.openai.OpenAIO1Formatter} - OpenAI o1 reasoning models</li>
  *   <li>{@link io.agentscope.core.formatter.openai.DeepSeekFormatter} - DeepSeek Chat models</li>
  *   <li>{@link io.agentscope.core.formatter.openai.GLMFormatter} - Zhipu GLM models</li>
  * </ul>
@@ -264,7 +263,6 @@ public class OpenAIChatModel extends ChatModelBase {
          * <p>Use provider-specific formatters for different providers:
          * <ul>
          *   <li>{@link OpenAIChatFormatter} - Standard OpenAI GPT models</li>
-         *   <li>{@link io.agentscope.core.formatter.openai.OpenAIO1Formatter} - OpenAI o1 reasoning models</li>
          *   <li>{@link io.agentscope.core.formatter.openai.DeepSeekFormatter} - DeepSeek Chat models</li>
          *   <li>{@link io.agentscope.core.formatter.openai.GLMFormatter} - Zhipu GLM models</li>
          * </ul>
