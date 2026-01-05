@@ -32,6 +32,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -343,11 +344,13 @@ class ToolkitTest {
         assertNotNull(tool, "Tool should be registered");
 
         // Try to call the tool via callToolAsync
+        Map<String, Object> addInput = Map.of("a", 1, "b", 2);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-1")
                         .name("add")
-                        .input(Map.of("a", 1, "b", 2))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
         // First, verify it works when in active group
@@ -381,11 +384,13 @@ class ToolkitTest {
         toolkit.registerTool(sampleTools);
 
         // Try to call ungrouped tool
+        Map<String, Object> addInput = Map.of("a", 1, "b", 2);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-1")
                         .name("add")
-                        .input(Map.of("a", 1, "b", 2))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
         ToolResultBlock result =
@@ -404,11 +409,13 @@ class ToolkitTest {
         toolkit.registration().tool(sampleTools).group("activeGroup").apply();
 
         // Try to call the tool
+        Map<String, Object> addInput = Map.of("a", 5, "b", 3);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-1")
                         .name("add")
-                        .input(Map.of("a", 5, "b", 3))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
         ToolResultBlock result =
@@ -424,11 +431,13 @@ class ToolkitTest {
         toolkit.createToolGroup("dynamicGroup", "Dynamic group", true);
         toolkit.registration().tool(sampleTools).group("dynamicGroup").apply();
 
+        Map<String, Object> addInput = Map.of("a", 10, "b", 20);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-1")
                         .name("add")
-                        .input(Map.of("a", 10, "b", 20))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
         // First call should succeed
@@ -500,10 +509,12 @@ class ToolkitTest {
                 "Schema should NOT contain preset parameter userId");
 
         // Call tool with only the query parameter
+        Map<String, Object> queryInput = Map.of("query", "test query");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .name("testWithContext")
-                        .input(Map.of("query", "test query"))
+                        .input(queryInput)
+                        .content(JsonUtils.getJsonCodec().toJson(queryInput))
                         .build();
 
         ToolResultBlock result =
@@ -542,10 +553,12 @@ class ToolkitTest {
         toolkit.registration().tool(new OverrideTool()).presetParameters(presetParams).apply();
 
         // Call with agent providing param1 (should override preset)
+        Map<String, Object> overrideInput = Map.of("param1", "agent_value1");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .name("testOverride")
-                        .input(Map.of("param1", "agent_value1"))
+                        .input(overrideInput)
+                        .content(JsonUtils.getJsonCodec().toJson(overrideInput))
                         .build();
 
         ToolResultBlock result =
@@ -577,8 +590,13 @@ class ToolkitTest {
                 .apply();
 
         // First call
+        Map<String, Object> emptyInput = Map.of();
         ToolUseBlock toolCall1 =
-                ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .name("dynamicContext")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
         ToolResultBlock result1 =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall1).build()).block();
         assertTrue(getResultText(result1).contains("session_001"), "Should use initial session");
@@ -589,7 +607,11 @@ class ToolkitTest {
 
         // Second call should use updated parameters
         ToolUseBlock toolCall2 =
-                ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .name("dynamicContext")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
         ToolResultBlock result2 =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall2).build()).block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");

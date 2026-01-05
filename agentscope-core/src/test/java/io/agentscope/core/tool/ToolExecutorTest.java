@@ -25,6 +25,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -61,17 +62,22 @@ class ToolExecutorTest {
     @Test
     @DisplayName("Should execute multiple tool calls in parallel via Toolkit")
     void shouldExecuteToolsInParallel() {
+        Map<String, Object> addInput = Map.of("a", 10, "b", 20);
+        Map<String, Object> concatInput = Map.of("str1", "Hello", "str2", "World");
+
         ToolUseBlock addCall =
                 ToolUseBlock.builder()
                         .id("call-add")
                         .name("add")
-                        .input(Map.of("a", 10, "b", 20))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
         ToolUseBlock concatCall =
                 ToolUseBlock.builder()
                         .id("call-concat")
                         .name("concat")
-                        .input(Map.of("str1", "Hello", "str2", "World"))
+                        .input(concatInput)
+                        .content(JsonUtils.getJsonCodec().toJson(concatInput))
                         .build();
 
         List<ToolResultBlock> responses =
@@ -98,11 +104,13 @@ class ToolExecutorTest {
     @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
+        Map<String, Object> errorInput = Map.of("message", "test failure");
         ToolUseBlock errorCall =
                 ToolUseBlock.builder()
                         .id("call-error")
                         .name("error_tool")
-                        .input(Map.of("message", "test failure"))
+                        .input(errorInput)
+                        .content(JsonUtils.getJsonCodec().toJson(errorInput))
                         .build();
 
         List<ToolResultBlock> responses =
@@ -151,11 +159,13 @@ class ToolExecutorTest {
                     }
                 });
 
+        Map<String, Object> emptyInput = Map.of();
         ToolUseBlock interruptedCall =
                 ToolUseBlock.builder()
                         .id("call-interrupt")
                         .name("interrupted_tool")
-                        .input(Map.of())
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
                         .build();
 
         List<ToolResultBlock> responses =
@@ -214,15 +224,28 @@ class ToolExecutorTest {
                 });
 
         // Execute multiple calls in parallel
+        Map<String, Object> emptyInput = Map.of();
+        Map<String, Object> addInput = Map.of("a", 1, "b", 2);
         ToolUseBlock call1 =
-                ToolUseBlock.builder().id("call-1").name("flaky_tool").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("flaky_tool")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
         ToolUseBlock call2 =
-                ToolUseBlock.builder().id("call-2").name("flaky_tool").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .id("call-2")
+                        .name("flaky_tool")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
         ToolUseBlock call3 =
                 ToolUseBlock.builder()
                         .id("call-3")
                         .name("add")
-                        .input(Map.of("a", 1, "b", 2))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
         List<ToolResultBlock> responses =
@@ -300,10 +323,21 @@ class ToolExecutorTest {
                 });
 
         // Execute both tools
+        Map<String, Object> emptyInput = Map.of();
         ToolUseBlock npeCall =
-                ToolUseBlock.builder().id("npe").name("null_pointer_tool").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .id("npe")
+                        .name("null_pointer_tool")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
         ToolUseBlock argCall =
-                ToolUseBlock.builder().id("arg").name("illegal_arg_tool").input(Map.of()).build();
+                ToolUseBlock.builder()
+                        .id("arg")
+                        .name("illegal_arg_tool")
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                        .build();
 
         List<ToolResultBlock> responses =
                 toolkit.callTools(List.of(npeCall, argCall), null, null, null).block(TIMEOUT);
