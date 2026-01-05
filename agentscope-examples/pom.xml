@@ -43,6 +43,7 @@
         <module>model-request-compression</module>
         <module>boba-tea-shop</module>
         <module>chat-completions-web</module>
+        <module>hitl-chat</module>
     </modules>
 
     <properties>

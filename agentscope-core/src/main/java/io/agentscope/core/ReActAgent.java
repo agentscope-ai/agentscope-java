@@ -342,6 +342,16 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             }
                         })
                 .then(Mono.defer(() -> Mono.justOrEmpty(context.buildFinalMessage())))
+                .onErrorResume(
+                        InterruptedException.class,
+                        error -> {
+                            // Save accumulated message before propagating interrupt
+                            Msg msg = context.buildFinalMessage();
+                            if (msg != null) {
+                                memory.addMessage(msg);
+                            }
+                            return Mono.error(error);
+                        })
                 .flatMap(this::notifyPostReasoning)
                 .flatMap(
                         event -> {

@@ -12,22 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-codecov:
-  require_ci_to_pass: yes
+server:
+  port: 8080
 
-coverage:
-  precision: 2
-  round: down
-  range: "50...100"
+spring:
+  application:
+    name: hitl-chat
 
-  status:
-    project:
-      default:
-        target: 60%
-        threshold: 1%
-    patch:
-      default:
-        target: 60%
-        threshold: 5%
-ignore:
-  - "agentscope-examples/**/*"
+# DashScope API configuration
+# Set DASHSCOPE_API_KEY environment variable or configure here
+dashscope:
+  api-key: ${DASHSCOPE_API_KEY}
+  model-name: qwen-plus
+
+# Logging
+logging:
+  level:
+    io.agentscope: INFO
+    io.agentscope.examples: DEBUG
