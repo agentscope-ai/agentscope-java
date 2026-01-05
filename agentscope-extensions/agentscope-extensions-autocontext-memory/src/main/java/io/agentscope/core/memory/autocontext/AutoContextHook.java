@@ -113,7 +113,7 @@ public class AutoContextHook implements Hook {
     @Override
     public int priority() {
         // High priority to execute early in the hook chain
-        return 50;
+        return 0;
     }
 
     /**
