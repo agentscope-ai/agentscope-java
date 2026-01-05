@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.types.Candidate;
 import com.google.genai.types.Content;
 import com.google.genai.types.FunctionCall;
@@ -29,6 +28,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -57,14 +57,10 @@ public class GeminiResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiResponseParser.class);
 
-    private final ObjectMapper objectMapper;
-
     /**
-     * Creates a new GeminiResponseParser with default ObjectMapper.
+     * Creates a new GeminiResponseParser.
      */
-    public GeminiResponseParser() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public GeminiResponseParser() {}
 
     /**
      * Parse Gemini GenerateContentResponse to AgentScope ChatResponse.
@@ -192,7 +188,7 @@ public class GeminiResponseParser {
                     argsMap.putAll(args);
                     // Convert to JSON string for raw content
                     try {
-                        rawContent = objectMapper.writeValueAsString(args);
+                        rawContent = JsonUtils.getJsonCodec().toJson(args);
                     } catch (Exception e) {
                         log.warn("Failed to serialize function call arguments: {}", e.getMessage());
                     }

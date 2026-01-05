@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -27,15 +26,13 @@ import io.agentscope.core.studio.pojo.PushMessageRequest;
 import io.agentscope.core.studio.pojo.RegisterRunRequest;
 import io.agentscope.core.studio.pojo.RequestUserInputRequest;
 import io.agentscope.core.studio.pojo.UserInputMetadata;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 @DisplayName("Request POJOs Tests")
 class RequestPojosTest {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     @Test
     @DisplayName("RegisterRunRequest should build and serialize correctly")
     void testRegisterRunRequest() throws Exception {
@@ -59,9 +56,9 @@ class RequestPojosTest {
         assertEquals("/path/to/run", request.getRunDir());
 
         // Test JSON serialization
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
         assertNotNull(json);
-        Map<String, Object> map = objectMapper.readValue(json, Map.class);
+        Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
         assertEquals("run-123", map.get("id"));
         assertEquals("MyProject", map.get("project"));
         assertEquals("my_run", map.get("name"));
@@ -94,9 +91,9 @@ class RequestPojosTest {
         assertEquals(msg, request.getMsg());
 
         // Test JSON serialization
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
         assertNotNull(json);
-        Map<String, Object> map = objectMapper.readValue(json, Map.class);
+        Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
         assertEquals("run-123", map.get("runId"));
         assertEquals("reply-456", map.get("replyId"));
         assertEquals("TestAgent", map.get("name"));
@@ -124,9 +121,9 @@ class RequestPojosTest {
         assertEquals(schema, request.getStructuredInput());
 
         // Test JSON serialization
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
         assertNotNull(json);
-        Map<String, Object> map = objectMapper.readValue(json, Map.class);
+        Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
         assertEquals("req-123", map.get("requestId"));
         assertEquals("run-456", map.get("runId"));
         assertEquals("agent-789", map.get("agentId"));
@@ -164,9 +161,9 @@ class RequestPojosTest {
         assertEquals(structuredInput, metadata.getStructuredInput());
 
         // Test JSON serialization
-        String json = objectMapper.writeValueAsString(metadata);
+        String json = JsonUtils.getJsonCodec().toJson(metadata);
         assertNotNull(json);
-        Map<String, Object> map = objectMapper.readValue(json, Map.class);
+        Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
         assertEquals("studio", map.get("source"));
         assertEquals("req-123", map.get("requestId"));
         assertNotNull(map.get("structuredInput"));
@@ -181,9 +178,9 @@ class RequestPojosTest {
         assertNull(metadata.getStructuredInput());
 
         // Test JSON serialization - structuredInput should be excluded
-        String json = objectMapper.writeValueAsString(metadata);
+        String json = JsonUtils.getJsonCodec().toJson(metadata);
         assertNotNull(json);
-        Map<String, Object> map = objectMapper.readValue(json, Map.class);
+        Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
         assertEquals("studio", map.get("source"));
         assertEquals("req-123", map.get("requestId"));
         // structuredInput should not be in the map due to @JsonInclude(NON_NULL)

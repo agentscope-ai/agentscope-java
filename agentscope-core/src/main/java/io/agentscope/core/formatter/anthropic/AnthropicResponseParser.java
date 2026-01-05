@@ -19,13 +19,13 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,8 +42,6 @@ import reactor.core.publisher.Flux;
 public class AnthropicResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
-
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
@@ -202,7 +200,7 @@ public class AnthropicResponseParser {
         try {
             String jsonString = ObjectMappers.jsonMapper().writeValueAsString(jsonValue);
             @SuppressWarnings("unchecked")
-            Map<String, Object> result = objectMapper.readValue(jsonString, Map.class);
+            Map<String, Object> result = JsonUtils.getJsonCodec().fromJson(jsonString, Map.class);
             return result != null ? result : Map.of();
         } catch (Exception e) {
             log.warn("Failed to parse tool input JSON for tool {}: {}", toolName, e.getMessage());

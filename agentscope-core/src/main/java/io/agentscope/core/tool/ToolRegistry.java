@@ -110,4 +110,18 @@ class ToolRegistry {
     void removeTools(Set<String> toolNames) {
         toolNames.forEach(this::removeTool);
     }
+
+    /**
+     * Copy all tools from this registry to another registry.
+     *
+     * @param target The target registry to copy tools to
+     */
+    void copyTo(ToolRegistry target) {
+        for (Map.Entry<String, AgentTool> entry : tools.entrySet()) {
+            String toolName = entry.getKey();
+            AgentTool tool = entry.getValue();
+            RegisteredToolFunction registered = registeredTools.get(toolName);
+            target.registerTool(toolName, tool, registered);
+        }
+    }
 }

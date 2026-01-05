@@ -16,10 +16,9 @@
 
 package io.agentscope.examples.bobatea.supervisor.tools;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.examples.bobatea.supervisor.entity.Feedback;
 import io.agentscope.examples.bobatea.supervisor.entity.Order;
 import io.agentscope.examples.bobatea.supervisor.entity.Product;
@@ -358,12 +357,7 @@ public class ScheduleAgentTools {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         Map<String, Object> requestBody = createRequestBody("Store Business Report", text);
-        String requestBodyJson = null;
-        try {
-            requestBodyJson = new ObjectMapper().writeValueAsString(requestBody);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
+        String requestBodyJson = JsonUtils.getJsonCodec().toJson(requestBody);
         HttpEntity<String> request = new HttpEntity<>(requestBodyJson, headers);
         ResponseEntity<String> response =
                 restTemplate.postForEntity(

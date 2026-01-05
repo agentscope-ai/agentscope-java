@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.agent.accumulator;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,8 +38,6 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -92,7 +90,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             if (finalArgs.isEmpty() && rawContent.length() > 0) {
                 try {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = MAPPER.readValue(rawContent.toString(), Map.class);
+                    Map<String, Object> parsed =
+                            JsonUtils.getJsonCodec().fromJson(rawContent.toString(), Map.class);
                     if (parsed != null) {
                         finalArgs.putAll(parsed);
                     }

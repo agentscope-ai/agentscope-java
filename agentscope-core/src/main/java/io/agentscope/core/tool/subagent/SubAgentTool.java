@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.tool.subagent;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
@@ -29,6 +27,7 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +56,6 @@ import reactor.core.publisher.Mono;
 public class SubAgentTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(SubAgentTool.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Parameter name for session ID. */
     private static final String PARAM_SESSION_ID = "session_id";
@@ -291,7 +289,7 @@ public class SubAgentTool implements AgentTool {
     /**
      * Forwards an event to the emitter as serialized JSON.
      *
-     * <p>Serializes the event using Jackson ObjectMapper and emits it as a text block. Serialization
+     * <p>Serializes the event using JsonCodec and emits it as a text block. Serialization
      * failures are logged but do not interrupt execution.
      *
      * @param event The event to forward
@@ -300,9 +298,9 @@ public class SubAgentTool implements AgentTool {
      */
     private void forwardEvent(Event event, ToolEmitter emitter, StreamOptions streamOptions) {
         try {
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             emitter.emit(ToolResultBlock.text(json));
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
         }
     }

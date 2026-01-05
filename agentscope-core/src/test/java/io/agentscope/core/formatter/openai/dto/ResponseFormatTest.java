@@ -21,7 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,7 +39,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("ResponseFormat and JsonSchema Unit Tests")
 class ResponseFormatTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonCodec jsonCodec = JsonUtils.getJsonCodec();
 
     @Test
     @DisplayName("Should create text response format")
@@ -219,7 +220,7 @@ class ResponseFormatTest {
     void testSerializeResponseFormat() throws Exception {
         ResponseFormat format = ResponseFormat.jsonObject();
 
-        String json = objectMapper.writeValueAsString(format);
+        String json = jsonCodec.toJson(format);
 
         assertNotNull(json);
         assertTrue(json.contains("\"type\":\"json_object\""));
@@ -235,7 +236,7 @@ class ResponseFormatTest {
 
         ResponseFormat format = ResponseFormat.jsonSchema(schema);
 
-        String json = objectMapper.writeValueAsString(format);
+        String json = jsonCodec.toJson(format);
 
         assertNotNull(json);
         assertTrue(json.contains("\"type\":\"json_schema\""));
@@ -247,7 +248,7 @@ class ResponseFormatTest {
     void testDeserializeResponseFormat() throws Exception {
         String json = "{\"type\":\"json_object\"}";
 
-        ResponseFormat format = objectMapper.readValue(json, ResponseFormat.class);
+        ResponseFormat format = jsonCodec.fromJson(json, ResponseFormat.class);
 
         assertNotNull(format);
         assertEquals("json_object", format.getType());
@@ -260,7 +261,7 @@ class ResponseFormatTest {
         String json =
                 "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"Person\",\"schema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}}}";
 
-        ResponseFormat format = objectMapper.readValue(json, ResponseFormat.class);
+        ResponseFormat format = jsonCodec.fromJson(json, ResponseFormat.class);
 
         assertNotNull(format);
         assertEquals("json_schema", format.getType());
@@ -274,7 +275,7 @@ class ResponseFormatTest {
         ResponseFormat format = new ResponseFormat();
         format.setType("text");
 
-        String json = objectMapper.writeValueAsString(format);
+        String json = jsonCodec.toJson(format);
 
         // JsonSchema should not be included if it's null
         assertFalse(json.contains("\"json_schema\":null"));
@@ -311,7 +312,7 @@ class ResponseFormatTest {
 
         assertNull(format.getJsonSchema());
 
-        String json = objectMapper.writeValueAsString(format);
+        String json = jsonCodec.toJson(format);
         // Should not include json_schema field
         assertFalse(json.contains("json_schema"));
     }

@@ -15,12 +15,12 @@
  */
 package io.agentscope.core.session.redis.jedis;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -59,7 +59,6 @@ public class JedisSession implements Session {
 
     private final JedisPool jedisPool;
     private final String keyPrefix;
-    private final ObjectMapper objectMapper;
 
     private JedisSession(Builder builder) {
         if (builder.keyPrefix == null || builder.keyPrefix.trim().isEmpty()) {
@@ -70,7 +69,6 @@ public class JedisSession implements Session {
         }
         this.keyPrefix = builder.keyPrefix;
         this.jedisPool = builder.jedisPool;
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -89,7 +87,7 @@ public class JedisSession implements Session {
         String keysKey = getKeysKey(sessionId);
 
         try (Jedis jedis = jedisPool.getResource()) {
-            String json = objectMapper.writeValueAsString(value);
+            String json = JsonUtils.getJsonCodec().toJson(value);
             jedis.set(redisKey, json);
             // Track this key in the session's key set
             jedis.sadd(keysKey, key);
@@ -140,14 +138,14 @@ public class JedisSession implements Session {
                 // Delete and recreate the list
                 jedis.del(listKey);
                 for (State item : values) {
-                    String json = objectMapper.writeValueAsString(item);
+                    String json = JsonUtils.getJsonCodec().toJson(item);
                     jedis.rpush(listKey, json);
                 }
             } else if (values.size() > existingCount) {
                 // Incremental append
                 List<? extends State> newItems = values.subList((int) existingCount, values.size());
                 for (State item : newItems) {
-                    String json = objectMapper.writeValueAsString(item);
+                    String json = JsonUtils.getJsonCodec().toJson(item);
                     jedis.rpush(listKey, json);
                 }
             }
@@ -173,7 +171,7 @@ public class JedisSession implements Session {
             if (json == null) {
                 return Optional.empty();
             }
-            return Optional.of(objectMapper.readValue(json, type));
+            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
         } catch (Exception e) {
             throw new RuntimeException("Failed to get state: " + key, e);
         }
@@ -192,7 +190,7 @@ public class JedisSession implements Session {
 
             List<T> result = new ArrayList<>();
             for (String json : jsonList) {
-                T item = objectMapper.readValue(json, itemType);
+                T item = JsonUtils.getJsonCodec().fromJson(json, itemType);
                 result.add(item);
             }
             return result;

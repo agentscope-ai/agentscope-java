@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.memory.reme;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import okhttp3.MediaType;
@@ -38,7 +38,6 @@ public class ReMeClient {
 
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
-    private final ObjectMapper objectMapper;
 
     /**
      * Creates a new ReMeClient with specified configuration.
@@ -60,7 +59,6 @@ public class ReMeClient {
                 apiBaseUrl.endsWith("/")
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
                         : apiBaseUrl;
-        this.objectMapper = new ObjectMapper();
         this.httpClient =
                 new OkHttpClient.Builder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -88,7 +86,7 @@ public class ReMeClient {
         return Mono.fromCallable(
                         () -> {
                             // Serialize request to JSON
-                            String json = objectMapper.writeValueAsString(request);
+                            String json = JsonUtils.getJsonCodec().toJson(request);
 
                             // Build HTTP request
                             Request httpRequest =
@@ -118,14 +116,15 @@ public class ReMeClient {
                                 ResponseBody body = response.body();
                                 if (body == null) {
                                     // Return empty response object if body is null
-                                    return objectMapper.readValue("{}", responseType);
+                                    return JsonUtils.getJsonCodec().fromJson("{}", responseType);
                                 }
                                 String responseBody = body.string();
                                 if (responseBody == null || responseBody.trim().isEmpty()) {
                                     // Return empty response object if body is empty
-                                    return objectMapper.readValue("{}", responseType);
+                                    return JsonUtils.getJsonCodec().fromJson("{}", responseType);
                                 }
-                                return objectMapper.readValue(responseBody, responseType);
+                                return JsonUtils.getJsonCodec()
+                                        .fromJson(responseBody, responseType);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());

@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
@@ -33,7 +32,6 @@ import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -49,11 +47,7 @@ public class DashScopeResponseParser {
     /** Placeholder name for tool call argument fragments in streaming responses. */
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";
 
-    private final ObjectMapper objectMapper;
-
-    public DashScopeResponseParser() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public DashScopeResponseParser() {}
 
     /**
      * Parse DashScopeResponse to AgentScope ChatResponse.
@@ -149,23 +143,6 @@ public class DashScopeResponseParser {
             String name = function.getName();
             String argsJson = function.getArguments();
 
-            Map<String, Object> argsMap = new HashMap<>();
-            String rawContent = null;
-
-            if (argsJson != null && !argsJson.isEmpty()) {
-                rawContent = argsJson;
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
-                    if (parsed != null) {
-                        argsMap.putAll(parsed);
-                    }
-                } catch (Exception ignored) {
-                    // Keep raw content for later aggregation when JSON parsing fails
-                    // This handles streaming tool calls where arguments are fragmented
-                }
-            }
-
             // For DashScope streaming tool calls:
             // - First chunk: has name, id, and partial arguments
             // - Subsequent chunks: only have argument fragments, no name/id
@@ -177,10 +154,10 @@ public class DashScopeResponseParser {
                         ToolUseBlock.builder()
                                 .id(callId)
                                 .name(name)
-                                .input(argsMap)
-                                .content(rawContent)
+                                .input(Map.of())
+                                .content(argsJson)
                                 .build());
-            } else if (rawContent != null) {
+            } else if (argsJson != null) {
                 // Subsequent chunks with only argument fragments
                 String callId =
                         id != null ? id : ("fragment_" + System.currentTimeMillis() + "_" + idx);
@@ -188,8 +165,8 @@ public class DashScopeResponseParser {
                         ToolUseBlock.builder()
                                 .id(callId)
                                 .name(FRAGMENT_PLACEHOLDER)
-                                .input(argsMap)
-                                .content(rawContent)
+                                .input(Map.of())
+                                .content(argsJson)
                                 .build());
             }
             idx++;

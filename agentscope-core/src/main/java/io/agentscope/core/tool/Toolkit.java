@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -95,9 +94,8 @@ public class Toolkit {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        ObjectMapper objectMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
         this.methodInvoker =
-                new ToolMethodInvoker(objectMapper, new DefaultToolResultConverter(objectMapper));
+                new ToolMethodInvoker(new DefaultToolResultConverter());
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -682,6 +680,25 @@ public class Toolkit {
         }
         registered.updatePresetParameters(newPresetParameters);
         logger.debug("Updated preset parameters for tool '{}'", toolName);
+    }
+
+    // ==================== Deep Copy ====================
+
+    /**
+     * Create a deep copy of this toolkit.
+     *
+     * @return A new Toolkit instance with copied state
+     */
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        return copy;
     }
 
     /**

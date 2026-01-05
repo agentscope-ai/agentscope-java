@@ -73,6 +73,12 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         if (temperature != null) {
             request.setTemperature(temperature);
         }
+        // Apply reasoning effort
+        String reasoningEffort =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getReasoningEffort);
+        if (reasoningEffort != null) {
+            request.setReasoningEffort(reasoningEffort);
+        }
 
         // Apply top_p
         Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);

@@ -16,7 +16,6 @@
 package io.agentscope.core.formatter.gemini;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -26,6 +25,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 
@@ -34,8 +34,6 @@ import java.util.Map;
  * Contains message fixtures and expected output data for validation.
  */
 public class GeminiFormatterTestData {
-
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // Mock audio path from Python tests
     public static final String MOCK_AUDIO_PATH =
@@ -588,7 +586,8 @@ public class GeminiFormatterTestData {
      */
     public static List<Map<String, Object>> parseGroundTruth(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+            return JsonUtils.getJsonCodec()
+                    .fromJson(json, new TypeReference<List<Map<String, Object>>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse ground truth JSON", e);
         }

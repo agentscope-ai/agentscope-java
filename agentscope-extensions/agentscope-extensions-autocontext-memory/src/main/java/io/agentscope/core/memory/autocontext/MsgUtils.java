@@ -16,15 +16,13 @@
 package io.agentscope.core.memory.autocontext;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,9 +51,6 @@ import java.util.stream.Collectors;
  */
 public class MsgUtils {
 
-    /** Configured ObjectMapper for handling polymorphic message types. */
-    private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
-
     /** Type reference for deserializing lists of JSON strings. */
     private static final TypeReference<List<String>> MSG_STRING_LIST_TYPE =
             new TypeReference<>() {};
@@ -63,31 +58,6 @@ public class MsgUtils {
     /** Type reference for deserializing maps of string lists. */
     private static final TypeReference<Map<String, List<String>>> MSG_STRING_LIST_MAP_TYPE =
             new TypeReference<>() {};
-
-    /**
-     * Creates and configures an ObjectMapper for serializing/deserializing messages.
-     *
-     * <p>Configuration ensures proper handling of polymorphic types like ContentBlock
-     * and its subtypes (TextBlock, ToolUseBlock, ToolResultBlock, etc.).
-     *
-     * <p>The ObjectMapper automatically recognizes @JsonTypeInfo annotations on ContentBlock
-     * and will include the "type" discriminator field during serialization, which is required
-     * for proper deserialization of polymorphic types.
-     *
-     * @return configured ObjectMapper instance
-     */
-    private static ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        // Configure features for proper polymorphic type handling
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-        // Ensure type information is included in serialization (required for ContentBlock subtypes)
-        mapper.configure(SerializationFeature.WRITE_ENUMS_USING_TO_STRING, false);
-        // The @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY,
-        // property = "type")
-        // annotation on ContentBlock will automatically add "type" field during serialization
-        return mapper;
-    }
 
     /**
      * Serializes a map of message lists to a JSON-compatible format.
@@ -141,10 +111,12 @@ public class MsgUtils {
                     .map(
                             msg -> {
                                 try {
-                                    // Convert Msg to Map using ObjectMapper to handle all
+                                    // Convert Msg to Map using JsonUtils to handle all
                                     // ContentBlock types
-                                    return OBJECT_MAPPER.convertValue(
-                                            msg, new TypeReference<Map<String, Object>>() {});
+                                    return JsonUtils.getJsonCodec()
+                                            .convertValue(
+                                                    msg,
+                                                    new TypeReference<Map<String, Object>>() {});
                                 } catch (Exception e) {
                                     throw new RuntimeException(
                                             "Failed to serialize message: " + msg, e);
@@ -181,8 +153,9 @@ public class MsgUtils {
                             .map(
                                     msgData -> {
                                         try {
-                                            // Convert Map back to Msg using ObjectMapper
-                                            return OBJECT_MAPPER.convertValue(msgData, Msg.class);
+                                            // Convert Map back to Msg using JsonUtils
+                                            return JsonUtils.getJsonCodec()
+                                                    .convertValue(msgData, Msg.class);
                                         } catch (Exception e) {
                                             throw new RuntimeException(
                                                     "Failed to deserialize message: " + msgData, e);
@@ -494,7 +467,7 @@ public class MsgUtils {
                 // Count input parameters (serialize to JSON string for accurate count)
                 if (toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
                     try {
-                        String inputJson = OBJECT_MAPPER.writeValueAsString(toolUse.getInput());
+                        String inputJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
                         charCount += inputJson.length();
                     } catch (Exception e) {
                         // Fallback: estimate based on map size

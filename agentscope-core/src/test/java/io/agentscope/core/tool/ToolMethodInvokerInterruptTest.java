@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -45,14 +44,12 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvokerInterruptTest {
 
     private ToolMethodInvoker invoker;
-    private ObjectMapper objectMapper;
     private ToolResultConverter resultConverter;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        resultConverter = new DefaultToolResultConverter(objectMapper);
-        invoker = new ToolMethodInvoker(objectMapper, resultConverter);
+        resultConverter = new DefaultToolResultConverter();
+        invoker = new ToolMethodInvoker(resultConverter);
     }
 
     private ToolResultBlock invokeWithParam(

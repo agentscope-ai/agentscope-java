@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.util.JsonException;
 import java.time.Duration;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;
@@ -217,9 +218,7 @@ class ReMeClientTest {
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("Failed to parse response")
-                                        || error
-                                                instanceof
-                                                com.fasterxml.jackson.core.JsonProcessingException)
+                                        || error instanceof JsonException)
                 .verify();
     }
 
@@ -378,9 +377,7 @@ class ReMeClientTest {
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("Failed to parse response")
-                                        || error
-                                                instanceof
-                                                com.fasterxml.jackson.core.JsonProcessingException)
+                                        || error instanceof JsonException)
                 .verify();
     }
 

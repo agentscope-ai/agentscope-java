@@ -59,8 +59,6 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
-    private static final ObjectMapper OBJECT_MAPPER =
-            JsonMapper.builder().addModule(new JavaTimeModule()).build();
     private static final SchemaGenerator schemaGenerator;
 
     static {
@@ -91,8 +89,8 @@ public class JsonSchemaUtils {
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
             JsonNode schemaNode = schemaGenerator.generateSchema(clazz);
-            return OBJECT_MAPPER.convertValue(
-                    schemaNode, new TypeReference<Map<String, Object>>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
@@ -110,7 +108,8 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
-            return OBJECT_MAPPER.convertValue(schema, new TypeReference<>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for schema", e);
         }
@@ -125,8 +124,8 @@ public class JsonSchemaUtils {
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
             JsonNode schemaNode = schemaGenerator.generateSchema(type);
-            return OBJECT_MAPPER.convertValue(
-                    schemaNode, new TypeReference<Map<String, Object>>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
@@ -151,17 +150,9 @@ public class JsonSchemaUtils {
         }
 
         try {
-            return OBJECT_MAPPER.convertValue(data, targetClass);
+            return JsonUtils.getJsonCodec().convertValue(data, targetClass);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert metadata to " + targetClass.getName(), e);
         }
-    }
-
-    /**
-     * Get the ObjectMapper instance.
-     * @return ObjectMapper
-     */
-    public static ObjectMapper getJsonScheamObjectMapper() {
-        return OBJECT_MAPPER;
     }
 }

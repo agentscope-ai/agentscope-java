@@ -21,7 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -34,11 +35,11 @@ import org.junit.jupiter.api.Test;
  */
 class DashScopeDtoSerializationTest {
 
-    private ObjectMapper objectMapper;
+    private JsonCodec jsonCodec;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
+        jsonCodec = JsonUtils.getJsonCodec();
     }
 
     @Test
@@ -46,8 +47,8 @@ class DashScopeDtoSerializationTest {
         DashScopeMessage message =
                 DashScopeMessage.builder().role("user").content("Hello, world!").build();
 
-        String json = objectMapper.writeValueAsString(message);
-        DashScopeMessage deserialized = objectMapper.readValue(json, DashScopeMessage.class);
+        String json = jsonCodec.toJson(message);
+        DashScopeMessage deserialized = jsonCodec.fromJson(json, DashScopeMessage.class);
 
         assertEquals("user", deserialized.getRole());
         assertEquals("Hello, world!", deserialized.getContentAsString());
@@ -63,7 +64,7 @@ class DashScopeDtoSerializationTest {
 
         DashScopeMessage message = DashScopeMessage.builder().role("user").content(parts).build();
 
-        String json = objectMapper.writeValueAsString(message);
+        String json = jsonCodec.toJson(message);
         assertTrue(json.contains("text"));
         assertTrue(json.contains("image"));
     }
@@ -86,7 +87,7 @@ class DashScopeDtoSerializationTest {
                         .toolCalls(List.of(toolCall))
                         .build();
 
-        String json = objectMapper.writeValueAsString(message);
+        String json = jsonCodec.toJson(message);
         assertTrue(json.contains("tool_calls"));
         assertTrue(json.contains("call_123"));
         assertTrue(json.contains("get_weather"));
@@ -102,7 +103,7 @@ class DashScopeDtoSerializationTest {
                         .content("The weather in Beijing is sunny, 25°C")
                         .build();
 
-        String json = objectMapper.writeValueAsString(message);
+        String json = jsonCodec.toJson(message);
         assertTrue(json.contains("tool"));
         assertTrue(json.contains("tool_call_id"));
         assertTrue(json.contains("call_123"));
@@ -144,7 +145,7 @@ class DashScopeDtoSerializationTest {
                         .parameters(params)
                         .build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonCodec.toJson(request);
 
         assertTrue(json.contains("qwen-plus"));
         assertTrue(json.contains("Tell me a joke"));
@@ -187,7 +188,7 @@ class DashScopeDtoSerializationTest {
                         .parameters(params)
                         .build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonCodec.toJson(request);
 
         assertTrue(json.contains("tools"));
         assertTrue(json.contains("function"));
@@ -220,7 +221,7 @@ class DashScopeDtoSerializationTest {
                 }
                 """;
 
-        DashScopeResponse response = objectMapper.readValue(json, DashScopeResponse.class);
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
 
         assertEquals("req-123", response.getRequestId());
         assertFalse(response.isError());
@@ -271,7 +272,7 @@ class DashScopeDtoSerializationTest {
                 }
                 """;
 
-        DashScopeResponse response = objectMapper.readValue(json, DashScopeResponse.class);
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
 
         DashScopeMessage message = response.getOutput().getFirstChoice().getMessage();
         assertNull(message.getContentAsString());
@@ -306,7 +307,7 @@ class DashScopeDtoSerializationTest {
                 }
                 """;
 
-        DashScopeResponse response = objectMapper.readValue(json, DashScopeResponse.class);
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
 
         DashScopeMessage message = response.getOutput().getFirstChoice().getMessage();
         assertEquals("Let me think about this...", message.getReasoningContent());
@@ -324,7 +325,7 @@ class DashScopeDtoSerializationTest {
                 }
                 """;
 
-        DashScopeResponse response = objectMapper.readValue(json, DashScopeResponse.class);
+        DashScopeResponse response = jsonCodec.fromJson(json, DashScopeResponse.class);
 
         assertTrue(response.isError());
         assertEquals("InvalidParameter", response.getCode());
