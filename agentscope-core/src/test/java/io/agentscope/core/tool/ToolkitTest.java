@@ -835,6 +835,7 @@ class ToolkitTest {
                 ToolUseBlock.builder()
                         .name("tool_with_custom_converter")
                         .input(Map.of("input", "test"))
+                        .content(JsonUtils.getJsonCodec().toJson(Map.of("input", "test")))
                         .build();
 
         ToolResultBlock result =
@@ -863,6 +864,7 @@ class ToolkitTest {
                 ToolUseBlock.builder()
                         .name("tool_with_default_converter")
                         .input(Map.of("input", "test"))
+                        .content(JsonUtils.getJsonCodec().toJson(Map.of("input", "test")))
                         .build();
 
         ToolResultBlock result =
@@ -927,6 +929,7 @@ class ToolkitTest {
                 ToolUseBlock.builder()
                         .name("tool_with_custom_converter")
                         .input(Map.of("input", "validation"))
+                        .content(JsonUtils.getJsonCodec().toJson(Map.of("input", "validation")))
                         .build();
 
         ToolResultBlock result =
