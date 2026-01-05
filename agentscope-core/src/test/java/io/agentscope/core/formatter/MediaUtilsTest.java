@@ -100,7 +100,7 @@ class MediaUtilsTest {
         // Attempt to make the file unreadable and check if it worked
         boolean setReadableResult = testFile.toFile().setReadable(false);
         boolean isActuallyUnreadable = !Files.isReadable(testFile);
-        
+
         if (setReadableResult && isActuallyUnreadable) {
             // The file was successfully made unreadable, so MediaUtils should throw an exception
             assertThrows(
@@ -112,9 +112,11 @@ class MediaUtilsTest {
             // the file remains readable, so the method should work normally
             // In this case, we're essentially testing the normal operation
             String result = MediaUtils.fileToBase64(testFile.toString());
-            assertNotNull(result, "Should return base64 string for readable file when setReadable doesn't work");
+            assertNotNull(
+                    result,
+                    "Should return base64 string for readable file when setReadable doesn't work");
         }
-        
+
         // Restore file permissions to ensure it's readable again
         testFile.toFile().setReadable(true);
     }
