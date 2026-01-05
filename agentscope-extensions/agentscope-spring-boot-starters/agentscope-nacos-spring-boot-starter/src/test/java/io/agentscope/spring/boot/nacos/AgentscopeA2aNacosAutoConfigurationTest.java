@@ -54,14 +54,6 @@ class AgentscopeA2aNacosAutoConfigurationTest {
         mockAiService = mock(AiService.class);
     }
 
-    private final ApplicationContextRunner contextRunner =
-            new ApplicationContextRunner()
-                    .withConfiguration(
-                            AutoConfigurations.of(AgentscopeA2aNacosAutoConfiguration.class))
-                    .withPropertyValues(
-                            "agentscope.a2a.nacos.server-addr=127.0.0.1:8848",
-                            "agentscope.a2a.nacos.namespace=public");
-
     @Test
     void shouldCreateDefaultBeansWhenEnabled() {
         try (MockedStatic<AiFactory> mockedStatic = Mockito.mockStatic(AiFactory.class)) {

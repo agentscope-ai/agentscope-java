@@ -180,14 +180,25 @@ public class BaseNacosProperties {
         if (null != properties && !properties.isEmpty()) {
             result.putAll(properties);
         }
+        // Set default value if both serverAddr and properties.get(PropertyKeyConst.SERVER_ADDR) are
+        // null
         if (null == serverAddr && null == result.get(PropertyKeyConst.SERVER_ADDR)) {
             serverAddr = DEFAULT_ADDRESS;
         }
-        result.put(PropertyKeyConst.SERVER_ADDR, serverAddr);
+        // If serverAddr is not null, set it to overwrite
+        // properties.get(PropertyKeyConst.SERVER_ADDR)
+        if (null != serverAddr) {
+            result.put(PropertyKeyConst.SERVER_ADDR, serverAddr);
+        }
+        // Set default value if both namespace and properties.get(PropertyKeyConst.NAMESPACE) are
+        // null
         if (null == namespace && null == result.get(PropertyKeyConst.NAMESPACE)) {
             namespace = DEFAULT_NAMESPACE;
         }
-        result.put(PropertyKeyConst.NAMESPACE, namespace);
+        // If namespace is not null, set it to overwrite properties.get(PropertyKeyConst.NAMESPACE)
+        if (null != namespace) {
+            result.put(PropertyKeyConst.NAMESPACE, namespace);
+        }
         if (null != username) {
             result.put(PropertyKeyConst.USERNAME, username);
         }

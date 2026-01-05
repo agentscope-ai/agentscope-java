@@ -27,6 +27,7 @@ import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
 import io.agentscope.spring.boot.nacos.constants.NacosConstants;
 import io.agentscope.spring.boot.nacos.properties.AgentScopeNacosProperties;
 import io.agentscope.spring.boot.nacos.properties.a2a.AgentScopeA2aNacosProperties;
+import jakarta.annotation.PreDestroy;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Properties;
@@ -90,6 +91,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
      * @throws IOException if there is an error during the shutdown process
      */
     @Override
+    @PreDestroy
     public void close() throws IOException {
         if (null != a2aService) {
             try {
@@ -103,7 +105,6 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
     /**
      * Creates a bean for resolving agent cards from Nacos.
      *
-     * @param a2aNacosProperties the A2A Nacos properties
      * @return an instance of {@link NacosAgentCardResolver}
      */
     @Bean
@@ -112,8 +113,7 @@ public class AgentscopeA2aNacosAutoConfiguration implements Closeable {
             name = "enabled",
             havingValue = "true",
             matchIfMissing = true)
-    public AgentCardResolver nacosAgentCardResolver(
-            AgentScopeA2aNacosProperties a2aNacosProperties) {
+    public AgentCardResolver nacosAgentCardResolver() {
         return new NacosAgentCardResolver(a2aService);
     }
 

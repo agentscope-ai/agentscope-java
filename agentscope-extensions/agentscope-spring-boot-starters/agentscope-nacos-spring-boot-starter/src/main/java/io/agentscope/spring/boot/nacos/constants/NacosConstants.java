@@ -26,9 +26,7 @@ import io.agentscope.spring.boot.a2a.properties.Constants;
  */
 public class NacosConstants {
 
-    public static final String AGENTSCOPE_PREFIX = "agentscope";
-
-    public static final String NACOS_PREFIX = AGENTSCOPE_PREFIX + ".nacos";
+    public static final String NACOS_PREFIX = Constants.AGENTSCOPE_PREFIX + ".nacos";
 
     public static final String A2A_NACOS_PREFIX = Constants.A2A_PREFIX + ".nacos";
 

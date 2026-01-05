@@ -29,7 +29,7 @@ package io.agentscope.spring.boot.nacos.properties.a2a;
  *     nacos:
  *       registry:
  *         enabled: true
- *         overwrite-preferred-transport:JSONRPC
+ *         overwrite-preferred-transport: JSONRPC
  * }</pre>
  *
  * <p>The discovery properties see {@link NacosA2aDiscoveryProperties}.

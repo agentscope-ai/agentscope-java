@@ -17,7 +17,7 @@
 package io.agentscope.spring.boot.nacos.properties.a2a;
 
 /**
- * A2a properties for discovering from Nacos A2A Registry.
+ * A2a properties for discovering from Nacos A2A Discovery.
  *
  * <p>This class contains the sub properties for discovering Agents from Nacos A2A Registry. To help developers and users
  * control the discover behaviors according to their requests.
@@ -36,7 +36,7 @@ package io.agentscope.spring.boot.nacos.properties.a2a;
 public class NacosA2aDiscoveryProperties {
 
     /**
-     * Whether to enable Nacos A2A Registry.
+     * Whether to enable Nacos A2A Discovery.
      *
      * <p>Default is {@code true}, which means the program will read the all information about this agent such as
      * AgentCard and A2A Transport information from {@link io.agentscope.core.a2a.server.AgentScopeA2aServer} and
