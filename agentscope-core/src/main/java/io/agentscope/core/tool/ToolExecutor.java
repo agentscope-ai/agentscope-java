@@ -146,7 +146,8 @@ class ToolExecutor {
         }
 
         // Validate input against schema
-        String validationError = ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+        String validationError =
+                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(

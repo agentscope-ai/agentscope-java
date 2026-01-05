@@ -26,11 +26,10 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
-import io.agentscope.core.util.JsonUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -50,7 +49,8 @@ class ToolValidatorTest {
         @DisplayName("Should pass when schema is null")
         void testNullSchema() {
             Map<String, Object> input = Map.of("name", "test");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), null);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), null);
             assertNull(result);
         }
 
@@ -58,7 +58,9 @@ class ToolValidatorTest {
         @DisplayName("Should pass when schema is empty")
         void testEmptySchema() {
             Map<String, Object> input = Map.of("name", "test");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), Collections.emptyMap());
+            String result =
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(input), Collections.emptyMap());
             assertNull(result);
         }
 
@@ -90,7 +92,8 @@ class ToolValidatorTest {
                             "required", List.of("name"));
 
             Map<String, Object> input = Map.of("other", "value");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
             assertTrue(result.contains("name"));
@@ -109,7 +112,8 @@ class ToolValidatorTest {
                             "required", List.of("name", "age"));
 
             Map<String, Object> input = Map.of("name", "John", "age", 30);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -145,7 +149,8 @@ class ToolValidatorTest {
                             Map.of("name", Map.of("type", "string")));
 
             Map<String, Object> input = Map.of("name", 123);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
             assertTrue(result.toLowerCase().contains("type") || result.contains("string"));
@@ -162,7 +167,8 @@ class ToolValidatorTest {
                             Map.of("count", Map.of("type", "integer")));
 
             Map<String, Object> input = Map.of("count", "not a number");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -183,7 +189,8 @@ class ToolValidatorTest {
 
             Map<String, Object> input =
                     Map.of("name", "John", "age", 30, "score", 95.5, "active", true);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -199,12 +206,20 @@ class ToolValidatorTest {
                             Map.of("enabled", Map.of("type", "boolean")));
 
             // Valid boolean
-            assertNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(Map.of("enabled", true)), schema));
-            assertNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(Map.of("enabled", false)), schema));
+            assertNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(Map.of("enabled", true)), schema));
+            assertNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(Map.of("enabled", false)), schema));
 
             // Invalid boolean
-            assertNotNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(Map.of("enabled", "true")), schema));
-            assertNotNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(Map.of("enabled", 1)), schema));
+            assertNotNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(Map.of("enabled", "true")), schema));
+            assertNotNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(Map.of("enabled", 1)), schema));
         }
     }
 
@@ -229,7 +244,8 @@ class ToolValidatorTest {
                                             List.of("active", "inactive", "pending"))));
 
             Map<String, Object> input = Map.of("status", "active");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -251,7 +267,8 @@ class ToolValidatorTest {
                                             List.of("active", "inactive", "pending"))));
 
             Map<String, Object> input = Map.of("status", "unknown");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -272,7 +289,8 @@ class ToolValidatorTest {
                             Map.of("age", Map.of("type", "integer", "minimum", 0)));
 
             Map<String, Object> input = Map.of("age", -1);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -288,7 +306,8 @@ class ToolValidatorTest {
                             Map.of("score", Map.of("type", "number", "maximum", 100)));
 
             Map<String, Object> input = Map.of("score", 150);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -306,7 +325,8 @@ class ToolValidatorTest {
                                     Map.of("type", "number", "minimum", 0, "maximum", 100)));
 
             Map<String, Object> input = Map.of("percentage", 50);
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -327,7 +347,8 @@ class ToolValidatorTest {
                             Map.of("password", Map.of("type", "string", "minLength", 8)));
 
             Map<String, Object> input = Map.of("password", "short");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -343,7 +364,8 @@ class ToolValidatorTest {
                             Map.of("code", Map.of("type", "string", "maxLength", 4)));
 
             Map<String, Object> input = Map.of("code", "toolong");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -361,7 +383,8 @@ class ToolValidatorTest {
                                     Map.of("type", "string", "minLength", 2, "maxLength", 10)));
 
             Map<String, Object> input = Map.of("code", "valid");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -383,7 +406,8 @@ class ToolValidatorTest {
                                             "^[a-z]+@[a-z]+\\.[a-z]+$")));
 
             Map<String, Object> input = Map.of("email", "invalid-email");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -405,7 +429,8 @@ class ToolValidatorTest {
                                             "^[a-z]+@[a-z]+\\.[a-z]+$")));
 
             Map<String, Object> input = Map.of("email", "test@example.com");
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -428,7 +453,8 @@ class ToolValidatorTest {
                                     Map.of("type", "array", "items", Map.of("type", "string"))));
 
             Map<String, Object> input = Map.of("tags", List.of("java", "kotlin", "scala"));
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNull(result);
         }
@@ -446,7 +472,8 @@ class ToolValidatorTest {
                                     Map.of("type", "array", "items", Map.of("type", "integer"))));
 
             Map<String, Object> input = Map.of("numbers", List.of(1, 2, "three"));
-            String result = ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
+            String result =
+                    ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(input), schema);
 
             assertNotNull(result);
         }
@@ -474,11 +501,15 @@ class ToolValidatorTest {
             // Valid nested object
             Map<String, Object> validInput =
                     Map.of("address", Map.of("street", "123 Main St", "city", "Boston"));
-            assertNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(validInput), schema));
+            assertNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(validInput), schema));
 
             // Invalid - missing required nested field
             Map<String, Object> invalidInput = Map.of("address", Map.of("street", "123 Main St"));
-            assertNotNull(ToolValidator.validateInput(JsonUtils.getJsonCodec().toJson(invalidInput), schema));
+            assertNotNull(
+                    ToolValidator.validateInput(
+                            JsonUtils.getJsonCodec().toJson(invalidInput), schema));
         }
     }
 
