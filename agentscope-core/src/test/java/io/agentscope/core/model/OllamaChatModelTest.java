@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.ollama.OllamaChatFormatter;
 import io.agentscope.core.formatter.ollama.OllamaMultiAgentFormatter;
 import io.agentscope.core.message.ContentBlock;
@@ -86,12 +87,9 @@ class OllamaChatModelTest {
 
         // Test builder pattern with minimal args
         OllamaChatModel simpleModel =
-                OllamaChatModel.builder()
-                        .modelName("modelscope.cn/Qwen/Qwen2.5-1.5B-Instruct-GGUF:latest")
-                        .build();
+                OllamaChatModel.builder().modelName("qwen2.5:14b-instruct").build();
         assertNotNull(simpleModel);
-        assertEquals(
-                "modelscope.cn/Qwen/Qwen2.5-1.5B-Instruct-GGUF:latest", simpleModel.getModelName());
+        assertEquals("qwen2.5:14b-instruct", simpleModel.getModelName());
     }
 
     // ========== Configuration Tests ==========
@@ -752,8 +750,7 @@ class OllamaChatModelTest {
         String body = captor.getValue().getBody();
 
         // Parse JSON to verify structure
-        com.fasterxml.jackson.databind.ObjectMapper mapper =
-                new com.fasterxml.jackson.databind.ObjectMapper();
+        ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
 
         // Verify 'think' is at root
@@ -789,7 +786,7 @@ class OllamaChatModelTest {
     void testFetchAllModels() {
         System.out.println("Running testFetchAllModels...");
 
-        // Mock Ollama /api/tags 端点的响应数据
+        // Mock response data for Ollama /api/tags endpoint
         String mockResponse =
                 """
                 {
@@ -828,25 +825,25 @@ class OllamaChatModelTest {
                 }
                 """;
 
-        // 配置 Mock 对象的返回值
+        // Configure return value for Mock object
         when(httpTransport.execute(any(HttpRequest.class)))
                 .thenReturn(HttpResponse.builder().statusCode(200).body(mockResponse).build());
 
-        // 创建对 Ollama 服务器 /api/tags 端点的 GET 请求
+        // Create GET request to Ollama server /api/tags endpoint
         HttpRequest request =
                 HttpRequest.builder()
                         .url("http://192.168.2.2:11434/api/tags")
                         .method("GET")
                         .build();
 
-        // 执行请求并获取响应
+        // Execute request and get response
         HttpResponse response = httpTransport.execute(request);
 
-        // 输出获取到的模型列表
+        // Output the list of models obtained
         System.out.println("Response status: " + response.getStatusCode());
         System.out.println("Models list: " + response.getBody());
 
-        // 验证响应
+        // Verify response
         assertEquals(200, response.getStatusCode());
         assertNotNull(response.getBody());
         assertTrue(response.getBody().contains("models"));
@@ -923,11 +920,12 @@ class OllamaChatModelTest {
             // Configure options with Thinking Disabled
             OllamaOptions options =
                     OllamaOptions.builder()
-                            .thinkOption(ThinkOption.ThinkBoolean.DISABLED) // 明确设置为禁用
+                            .thinkOption(
+                                    ThinkOption.ThinkBoolean.DISABLED) // Explicitly set to disabled
                             .temperature(0.7)
                             .build();
 
-            // 输出配置信息用于调试
+            // Output configuration information for debugging
             System.out.println("Think option: " + options.getThinkOption());
             System.out.println(
                     "Think option value: "
@@ -954,7 +952,7 @@ class OllamaChatModelTest {
                                                             + " reasoning.")
                                             .build()),
                             null,
-                            options.toGenerateOptions()) // 确保转换为 GenerateOptions
+                            options.toGenerateOptions()) // Ensure conversion to GenerateOptions
                     .doOnNext(
                             response -> {
                                 if (response.getContent() != null

@@ -55,9 +55,30 @@ public class OllamaMessageConverter {
             // Handle Tool Result
             ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
             if (toolResult != null) {
-                // Extract text content from output blocks
-                String contentStr = extractTextContentFromBlocks(toolResult.getOutput());
-                ollamaMsg.setContent(contentStr);
+                // Extract text content and image paths from output blocks
+                StringBuilder contentBuilder = new StringBuilder();
+
+                // Add text content
+                String textContent = extractTextContentFromBlocks(toolResult.getOutput());
+                if (textContent != null && !textContent.isEmpty()) {
+                    contentBuilder.append(textContent);
+                }
+
+                // Add image information in the format expected by the promotion logic
+                List<String> imagePaths = extractImagePathsFromBlocks(toolResult.getOutput());
+                if (!imagePaths.isEmpty()) {
+                    if (contentBuilder.length() > 0) {
+                        contentBuilder.append("\n");
+                    }
+                    for (String imagePath : imagePaths) {
+                        contentBuilder
+                                .append("- The returned image can be found at: ")
+                                .append(imagePath)
+                                .append("\n");
+                    }
+                }
+
+                ollamaMsg.setContent(contentBuilder.toString().trim());
 
                 // Set tool_call_id and name if available
                 if (toolResult.getId() != null) {
@@ -133,5 +154,27 @@ public class OllamaMessageConverter {
                 .filter(block -> block instanceof TextBlock)
                 .map(block -> ((TextBlock) block).getText())
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+    }
+
+    private List<String> extractImagePathsFromBlocks(List<ContentBlock> blocks) {
+        List<String> imagePaths = new ArrayList<>();
+
+        for (ContentBlock block : blocks) {
+            if (block instanceof ImageBlock) {
+                ImageBlock imageBlock = (ImageBlock) block;
+                if (imageBlock.getSource() != null) {
+                    // Extract the URL path from the source
+                    String imagePath = imageBlock.getSource().toString();
+                    if (imageBlock.getSource() instanceof io.agentscope.core.message.URLSource) {
+                        imagePath =
+                                ((io.agentscope.core.message.URLSource) imageBlock.getSource())
+                                        .getUrl();
+                    }
+                    imagePaths.add(imagePath);
+                }
+            }
+        }
+
+        return imagePaths;
     }
 }
