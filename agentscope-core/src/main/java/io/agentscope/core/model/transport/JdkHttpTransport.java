@@ -23,13 +23,24 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
+import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -60,7 +71,7 @@ public class JdkHttpTransport implements HttpTransport {
     /**
      * Create a new JdkHttpTransport with default configuration.
      */
-    public JdkHttpTransport() {
+    JdkHttpTransport() {
         this(HttpTransportConfig.defaults());
     }
 
@@ -70,7 +81,7 @@ public class JdkHttpTransport implements HttpTransport {
      * @param config the transport configuration
      * @throws NullPointerException if config is null
      */
-    public JdkHttpTransport(HttpTransportConfig config) {
+    JdkHttpTransport(HttpTransportConfig config) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.client = buildClient(config);
     }
@@ -90,12 +101,28 @@ public class JdkHttpTransport implements HttpTransport {
         this.config = Objects.requireNonNull(config, "config must not be null");
     }
 
-    private HttpClient buildClient(HttpTransportConfig config) {
-        return HttpClient.newBuilder()
-                .version(Version.HTTP_2)
-                .followRedirects(Redirect.NORMAL)
-                .connectTimeout(config.getConnectTimeout())
-                .build();
+    private static HttpClient buildClient(HttpTransportConfig config) {
+        HttpClient.Builder builder =
+                HttpClient.newBuilder()
+                        .version(Version.HTTP_2)
+                        .followRedirects(Redirect.NORMAL)
+                        .connectTimeout(config.getConnectTimeout());
+
+        if (config.isIgnoreSsl()) {
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(
+                        null, new TrustManager[] {new TrustAllManager()}, new SecureRandom());
+                builder.sslContext(sslContext);
+                log.warn(
+                        "SSL certificate verification is disabled. "
+                                + "This should only be used for testing.");
+            } catch (NoSuchAlgorithmException | KeyManagementException e) {
+                throw new HttpTransportException("Failed to create insecure SSL context", e);
+            }
+        }
+
+        return builder.build();
     }
 
     @Override
@@ -104,11 +131,10 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Transport has been closed");
         }
 
-        java.net.http.HttpRequest jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request);
 
         try {
-            java.net.http.HttpResponse<String> response =
-                    client.send(jdkRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+            var response = client.send(jdkRequest, BodyHandlers.ofString());
             return buildHttpResponse(response);
         } catch (IOException e) {
             throw new HttpTransportException("HTTP request failed: " + e.getMessage(), e);
@@ -124,88 +150,73 @@ public class JdkHttpTransport implements HttpTransport {
             return Flux.error(new HttpTransportException("Transport has been closed"));
         }
 
-        java.net.http.HttpRequest jdkRequest = buildJdkRequest(request);
+        var jdkRequest = buildJdkRequest(request);
 
-        return Flux.<String>create(
-                        sink -> {
-                            InputStream inputStream = null;
-                            BufferedReader reader = null;
-                            try {
-                                java.net.http.HttpResponse<InputStream> response =
-                                        client.send(
-                                                jdkRequest,
-                                                java.net.http.HttpResponse.BodyHandlers
-                                                        .ofInputStream());
-
-                                int statusCode = response.statusCode();
-                                if (statusCode < 200 || statusCode >= 300) {
-                                    String errorBody = readInputStream(response.body());
-                                    sink.error(
-                                            new HttpTransportException(
-                                                    "HTTP request failed with status " + statusCode,
-                                                    statusCode,
-                                                    errorBody));
-                                    return;
-                                }
-
-                                inputStream = response.body();
-                                if (inputStream == null) {
-                                    sink.complete();
-                                    return;
-                                }
-
-                                reader =
-                                        new BufferedReader(
-                                                new InputStreamReader(
-                                                        inputStream, StandardCharsets.UTF_8));
-
-                                String line;
-                                while ((line = reader.readLine()) != null) {
-                                    if (sink.isCancelled()) {
-                                        break;
+        // Check status code and read error body immediately when CompletableFuture completes
+        // to avoid stream being closed before we can read it
+        CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
+                client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
+                        .thenApply(
+                                response -> {
+                                    int statusCode = response.statusCode();
+                                    if (statusCode < 200 || statusCode >= 300) {
+                                        // Read error body immediately while stream is still open
+                                        String errorBody = readInputStream(response.body());
+                                        log.warn(
+                                                "HTTP request failed. URL: {} | Status: {} | Error:"
+                                                        + " {}",
+                                                request.getUrl(),
+                                                statusCode,
+                                                errorBody);
+                                        throw new CompletionException(
+                                                new HttpTransportException(
+                                                        "HTTP request failed with status "
+                                                                + statusCode
+                                                                + " | "
+                                                                + errorBody,
+                                                        statusCode,
+                                                        errorBody));
                                     }
+                                    return response;
+                                });
 
-                                    if (line.isEmpty()) {
-                                        continue;
-                                    }
-
-                                    if (line.startsWith(SSE_DATA_PREFIX)) {
-                                        String data =
-                                                line.substring(SSE_DATA_PREFIX.length()).trim();
-
-                                        if (SSE_DONE_MARKER.equals(data)) {
-                                            log.debug("Received SSE [DONE] marker");
-                                            break;
-                                        }
-
-                                        if (!data.isEmpty()) {
-                                            sink.next(data);
-                                        }
-                                    }
-                                }
-
-                                sink.complete();
-                            } catch (IOException e) {
-                                if (!sink.isCancelled()) {
-                                    sink.error(
-                                            new HttpTransportException(
-                                                    "SSE stream read failed: " + e.getMessage(),
-                                                    e));
-                                }
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                if (!sink.isCancelled()) {
-                                    sink.error(
-                                            new HttpTransportException(
-                                                    "SSE stream interrupted", e));
-                                }
-                            } finally {
-                                // Close both resources to handle case where reader creation fails
-                                closeQuietly(reader);
-                                closeQuietly(inputStream);
+        return Mono.fromCompletionStage(future)
+                .flatMapMany(this::processStreamResponse)
+                .onErrorMap(
+                        e -> !(e instanceof HttpTransportException),
+                        e -> {
+                            Throwable cause = e instanceof CompletionException ? e.getCause() : e;
+                            if (cause instanceof HttpTransportException) {
+                                return (HttpTransportException) cause;
                             }
+                            return new HttpTransportException(
+                                    "SSE stream failed: " + e.getMessage(), e);
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Flux<String> processStreamResponse(java.net.http.HttpResponse<InputStream> response) {
+        InputStream inputStream = response.body();
+        if (inputStream == null) {
+            return Flux.empty();
+        }
+
+        // Use Flux.using to manage resource lifecycle
+        return Flux.using(
+                () ->
+                        new BufferedReader(
+                                new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
+                this::readSseLines,
+                this::closeQuietly);
+    }
+
+    private Flux<String> readSseLines(BufferedReader reader) {
+        return Flux.fromStream(reader.lines())
+                .filter(line -> line.startsWith(SSE_DATA_PREFIX))
+                .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
+                .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
+                .doOnNext(data -> log.debug("Received SSE data chunk"))
+                .filter(data -> !data.isEmpty());
     }
 
     @Override
@@ -221,7 +232,7 @@ public class JdkHttpTransport implements HttpTransport {
      *
      * @return the HttpClient
      */
-    public HttpClient getClient() {
+    HttpClient getClient() {
         return client;
     }
 
@@ -230,7 +241,7 @@ public class JdkHttpTransport implements HttpTransport {
      *
      * @return the configuration
      */
-    public HttpTransportConfig getConfig() {
+    HttpTransportConfig getConfig() {
         return config;
     }
 
@@ -251,7 +262,7 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
         }
 
-        java.net.http.HttpRequest.Builder builder =
+        var builder =
                 java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
@@ -376,6 +387,29 @@ public class JdkHttpTransport implements HttpTransport {
                 return new JdkHttpTransport(existingClient, config);
             }
             return new JdkHttpTransport(config);
+        }
+    }
+
+    /**
+     * A TrustManager that trusts all certificates.
+     *
+     * <p><b>Warning:</b> This disables SSL certificate verification and should only be used for
+     * testing or with trusted self-signed certificates.
+     */
+    private static class TrustAllManager implements X509TrustManager {
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+            // Trust all client certificates
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+            // Trust all server certificates
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return new X509Certificate[0];
         }
     }
 }
