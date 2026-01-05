@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-29T09:53:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Coding with AI" href="ai-coding.html"><link rel="prev" title="AG-UI Protocol Integration" href="agui.html">
+    <meta property="article:modified_time" content="2026-01-05T08:52:50+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Coding with AI" href="ai-coding.html"><link rel="prev" title="AG-UI Protocol Integration" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/a2a.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -616,33 +616,46 @@
 <section id="auto-register-to-registry">
 <h3>Auto Register to Registry<a class="headerlink" href="#auto-register-to-registry" title="Link to this heading">¶</a></h3>
 <p>Using Nacos as an A2A registry allows AgentScope’s A2A services to be automatically registered to Nacos.</p>
+<ul class="simple">
+<li><p>For <code class="docutils literal notranslate"><span class="pre">Spring</span> <span class="pre">Boot</span> <span class="pre">approach</span></code> (Recommended)</p></li>
+</ul>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-nacos-a2a<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-a2a-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+
+<span class="cm">&lt;!-- Additional dependency for Nacos Spring Boot starter --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-nacos-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<ul class="simple">
-<li><p>For <code class="docutils literal notranslate"><span class="pre">Spring</span> <span class="pre">Boot</span> <span class="pre">approach</span></code></p></li>
-</ul>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.PropertyKeyConst</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiFactory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiService</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry</span><span class="p">;</span>
-
-<span class="nd">@Configuration</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">NacosAgentRegistryConfiguration</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Bean</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">AgentRegistry</span><span class="w"> </span><span class="nf">nacosAgentRegistry</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Set Nacos address</span>
-<span class="w">        </span><span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
-<span class="w">        </span><span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
-<span class="w">        </span><span class="c1">// Create Nacos Client</span>
-<span class="w">        </span><span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
-<span class="w">        </span><span class="c1">// Create Nacos AgentRegistry</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">NacosAgentRegistry</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">aiService</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># application.yml</span>
+<span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">dashscope</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">api-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-api-key</span>
+<span class="w">  </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-assistant</span>
+<span class="w">  </span><span class="nt">a2a</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">server</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">card</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">My Assistant</span>
+<span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">An intelligent assistant based on AgentScope</span>
+<span class="w">    </span><span class="c1"># Adding Nacos properties under `agentscope.a2a`</span>
+<span class="w">    </span><span class="nt">nacos</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">server-addr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${NACOS_SERVER_ADDRESS:127.0.0.1:8848}</span>
+<span class="w">      </span><span class="nt">username</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${NACOS_USERNAME:nacos}</span>
+<span class="w">      </span><span class="nt">password</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${NACOS_PASSWORD:nacos}</span>
+</pre></div>
+</div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@SpringBootApplication</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">A2aServerApplication</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">SpringApplication</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">A2aServerApplication</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -650,6 +663,13 @@
 <ul class="simple">
 <li><p>For <code class="docutils literal notranslate"><span class="pre">manual</span> <span class="pre">creation</span> <span class="pre">approach</span></code></p></li>
 </ul>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-nacos-a2a<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.PropertyKeyConst</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiFactory</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiService</span><span class="p">;</span>
@@ -796,7 +816,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-29</div>
+              Last updated on 2026-01-05</div>
           </div>
           <div class="right-details">
             <div class="icons">
