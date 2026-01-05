@@ -364,13 +364,6 @@ public class DashScopeHttpClient {
     }
 
     /**
-     * Close the client and release resources.
-     */
-    public void close() {
-        transport.close();
-    }
-
-    /**
      * Get the base URL.
      *
      * @return the base URL
