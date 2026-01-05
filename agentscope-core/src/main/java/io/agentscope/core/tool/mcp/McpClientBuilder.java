@@ -433,44 +433,62 @@ public class McpClientBuilder {
     }
 
     private static class SseTransportConfig extends HttpTransportConfig {
+        private HttpClientSseClientTransport.Builder clientTransportBuilder = null;
+
         public SseTransportConfig(String url) {
             super(url);
         }
 
+        public void clientTransportBuilder(
+                HttpClientSseClientTransport.Builder clientTransportBuilder) {
+            this.clientTransportBuilder = clientTransportBuilder;
+        }
+
         @Override
         public McpClientTransport createTransport() {
-            HttpClientSseClientTransport.Builder builder =
-                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint());
+            if (clientTransportBuilder == null) {
+                clientTransportBuilder = HttpClientSseClientTransport.builder(url);
+            }
+            clientTransportBuilder.sseEndpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
-                builder.customizeRequest(
+                clientTransportBuilder.customizeRequest(
                         requestBuilder -> {
                             headers.forEach(requestBuilder::header);
                         });
             }
 
-            return builder.build();
+            return clientTransportBuilder.build();
         }
     }
 
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
+        private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
+
         public StreamableHttpTransportConfig(String url) {
             super(url);
         }
 
+        public void clientTransportBuilder(
+                HttpClientStreamableHttpTransport.Builder clientTransportBuilder) {
+            this.clientTransportBuilder = clientTransportBuilder;
+        }
+
         @Override
         public McpClientTransport createTransport() {
-            HttpClientStreamableHttpTransport.Builder builder =
-                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint());
+            if (clientTransportBuilder == null) {
+                clientTransportBuilder = HttpClientStreamableHttpTransport.builder(url);
+            }
+            clientTransportBuilder.endpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
-                builder.customizeRequest(
+                clientTransportBuilder.customizeRequest(
                         requestBuilder -> {
                             headers.forEach(requestBuilder::header);
                         });
             }
 
-            return builder.build();
+            return clientTransportBuilder.build();
         }
     }
 }
