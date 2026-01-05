@@ -85,4 +85,39 @@ public @interface Tool {
      * @return The tool description, or empty string to auto-generate
      */
     String description() default "";
+
+    /**
+     * Custom result converter for this tool.
+     *
+     * <p>Converters transform tool method return values into {@link io.agentscope.core.message.ToolResultBlock}
+     * instances suitable for LLM consumption. Use custom converters to:
+     * <ul>
+     *   <li>Filter sensitive data from results</li>
+     *   <li>Format output in specific ways</li>
+     *   <li>Add metadata to results</li>
+     *   <li>Compress or summarize large outputs</li>
+     * </ul>
+     *
+     * <p><b>Usage Example:</b>
+     * <pre>{@code
+     * @Tool(
+     *     name = "get_data",
+     *     converter = CustomJsonConverter.class
+     * )
+     * public MyData getData(String id) {
+     *     return dataService.findById(id);
+     * }
+     * }</pre>
+     *
+     * <p>If not specified, the default converter ({@link DefaultToolResultConverter}) is used,
+     * which provides JSON serialization with schema information.
+     *
+     * <p><b>Note:</b> If you need complex processing with multiple steps, implement your own
+     * converter that combines the necessary logic.
+     *
+     * @return Converter class
+     * @see ToolResultConverter
+     * @see DefaultToolResultConverter
+     */
+    Class<? extends ToolResultConverter> converter() default DefaultToolResultConverter.class;
 }

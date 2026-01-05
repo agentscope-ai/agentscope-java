@@ -236,12 +236,18 @@ public class DashScopeToolsHelper {
                 continue;
             }
 
+            // Prioritize using content field (raw arguments string), fallback to input map
+            // serialization
             String argsJson;
-            try {
-                argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-            } catch (Exception e) {
-                log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
-                argsJson = "{}";
+            if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
+                argsJson = toolUse.getContent();
+            } else {
+                try {
+                    argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
+                } catch (Exception e) {
+                    log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
+                    argsJson = "{}";
+                }
             }
 
             DashScopeFunction function = DashScopeFunction.of(toolUse.getName(), argsJson);

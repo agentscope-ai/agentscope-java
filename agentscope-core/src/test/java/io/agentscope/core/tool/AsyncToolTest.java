@@ -24,6 +24,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -52,11 +53,13 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should execute CompletableFuture async tool")
     void shouldExecuteCompletableFutureAsyncTool() {
+        Map<String, Object> input = Map.of("a", 10, "b", 20);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-async-add")
                         .name("async_add")
-                        .input(Map.of("a", 10, "b", 20))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock response =
@@ -70,11 +73,13 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should execute Mono async tool")
     void shouldExecuteMonoAsyncTool() {
+        Map<String, Object> input = Map.of("str1", "Hello", "str2", "World");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-async-concat")
                         .name("async_concat")
-                        .input(Map.of("str1", "Hello", "str2", "World"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock response =
@@ -88,11 +93,13 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should execute async tool with delay")
     void shouldExecuteAsyncToolWithDelay() {
+        Map<String, Object> input = Map.of("delayMs", 100);
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-async-delayed")
                         .name("async_delayed")
-                        .input(Map.of("delayMs", 100))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock response =
@@ -107,11 +114,13 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should handle async tool error")
     void shouldHandleAsyncToolError() {
+        Map<String, Object> input = Map.of("message", "test failure");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
                         .id("call-async-error")
                         .name("async_error")
-                        .input(Map.of("message", "test failure"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock response =
@@ -127,18 +136,22 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should execute multiple async tools in parallel")
     void shouldExecuteMultipleAsyncToolsInParallel() {
+        Map<String, Object> addInput = Map.of("a", 5, "b", 10);
         ToolUseBlock addCall =
                 ToolUseBlock.builder()
                         .id("call-1")
                         .name("async_add")
-                        .input(Map.of("a", 5, "b", 10))
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
                         .build();
 
+        Map<String, Object> concatInput = Map.of("str1", "Test", "str2", "Async");
         ToolUseBlock concatCall =
                 ToolUseBlock.builder()
                         .id("call-2")
                         .name("async_concat")
-                        .input(Map.of("str1", "Test", "str2", "Async"))
+                        .input(concatInput)
+                        .content(JsonUtils.getJsonCodec().toJson(concatInput))
                         .build();
 
         List<ToolResultBlock> responses =
@@ -163,18 +176,22 @@ class AsyncToolTest {
     @Test
     @DisplayName("Should mix sync and async tools")
     void shouldMixSyncAndAsyncTools() {
+        Map<String, Object> syncInput = Map.of("a", 1, "b", 2);
         ToolUseBlock syncCall =
                 ToolUseBlock.builder()
                         .id("call-sync")
                         .name("add")
-                        .input(Map.of("a", 1, "b", 2))
+                        .input(syncInput)
+                        .content(JsonUtils.getJsonCodec().toJson(syncInput))
                         .build();
 
+        Map<String, Object> asyncInput = Map.of("a", 3, "b", 4);
         ToolUseBlock asyncCall =
                 ToolUseBlock.builder()
                         .id("call-async")
                         .name("async_add")
-                        .input(Map.of("a", 3, "b", 4))
+                        .input(asyncInput)
+                        .content(JsonUtils.getJsonCodec().toJson(asyncInput))
                         .build();
 
         List<ToolResultBlock> responses =

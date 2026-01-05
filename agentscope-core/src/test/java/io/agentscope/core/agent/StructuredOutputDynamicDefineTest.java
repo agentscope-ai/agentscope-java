@@ -79,6 +79,11 @@ public class StructuredOutputDynamicDefineTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());

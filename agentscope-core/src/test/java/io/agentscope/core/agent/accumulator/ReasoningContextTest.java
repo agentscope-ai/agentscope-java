@@ -18,9 +18,11 @@ package io.agentscope.core.agent.accumulator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.util.List;
@@ -169,5 +171,129 @@ class ReasoningContextTest {
         assertEquals(100, resultUsage.getInputTokens());
         assertEquals(50, resultUsage.getOutputTokens());
         assertEquals(1.0, resultUsage.getTime(), 0.001);
+    }
+
+    @Test
+    @DisplayName("Should emit ToolUseBlock chunk immediately")
+    void testToolUseBlockChunkEmittedImmediately() {
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .content("{\"city\":\"Beijing\"}")
+                        .build();
+
+        ChatResponse chunk =
+                ChatResponse.builder().id("msg-1").content(List.of(toolUseBlock)).build();
+
+        List<Msg> streamingMsgs = context.processChunk(chunk);
+
+        // ToolUseBlock should be emitted immediately
+        assertEquals(1, streamingMsgs.size());
+        Msg msg = streamingMsgs.get(0);
+        assertTrue(msg.hasContentBlocks(ToolUseBlock.class));
+        ToolUseBlock emittedBlock = msg.getFirstContentBlock(ToolUseBlock.class);
+        assertEquals("call_1", emittedBlock.getId());
+        assertEquals("weather", emittedBlock.getName());
+    }
+
+    @Test
+    @DisplayName("Should handle multiple parallel tool calls")
+    void testMultipleParallelToolCalls() {
+        // First tool call chunk
+        ToolUseBlock toolUse1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .content("{\"city\":\"Beijing\"}")
+                        .build();
+
+        // Second tool call chunk
+        ToolUseBlock toolUse2 =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("calculator")
+                        .content("{\"expr\":\"1+1\"}")
+                        .build();
+
+        ChatResponse chunk1 = ChatResponse.builder().id("msg-1").content(List.of(toolUse1)).build();
+
+        ChatResponse chunk2 = ChatResponse.builder().id("msg-1").content(List.of(toolUse2)).build();
+
+        List<Msg> msgs1 = context.processChunk(chunk1);
+        List<Msg> msgs2 = context.processChunk(chunk2);
+
+        // Both chunks should be emitted immediately
+        assertEquals(1, msgs1.size());
+        assertEquals(1, msgs2.size());
+
+        // Verify accumulated tool calls
+        List<ToolUseBlock> allToolCalls = context.getAllAccumulatedToolCalls();
+        assertEquals(2, allToolCalls.size());
+    }
+
+    @Test
+    @DisplayName("Should get accumulated tool call by ID")
+    void testGetAccumulatedToolCallById() {
+        ToolUseBlock toolUse1 =
+                ToolUseBlock.builder().id("call_1").name("weather").content("{\"city\":").build();
+
+        ToolUseBlock toolUse1Fragment =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .build();
+
+        ChatResponse chunk1 = ChatResponse.builder().id("msg-1").content(List.of(toolUse1)).build();
+
+        ChatResponse chunk2 =
+                ChatResponse.builder().id("msg-1").content(List.of(toolUse1Fragment)).build();
+
+        context.processChunk(chunk1);
+        context.processChunk(chunk2);
+
+        // Get accumulated tool call by ID
+        ToolUseBlock accumulated = context.getAccumulatedToolCall("call_1");
+        assertNotNull(accumulated);
+        assertEquals("call_1", accumulated.getId());
+        assertEquals("weather", accumulated.getName());
+        assertEquals("{\"city\":\"Beijing\"}", accumulated.getContent());
+    }
+
+    @Test
+    @DisplayName("Should not block text emission while streaming tool calls")
+    void testToolCallsDoNotBlockTextEmission() {
+        // Text chunk
+        TextBlock textBlock = TextBlock.builder().text("Let me check the weather").build();
+        ChatResponse textChunk =
+                ChatResponse.builder().id("msg-1").content(List.of(textBlock)).build();
+
+        // Tool call chunk
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .content("{\"city\":\"Beijing\"}")
+                        .build();
+        ChatResponse toolChunk =
+                ChatResponse.builder().id("msg-1").content(List.of(toolUseBlock)).build();
+
+        // More text chunk
+        TextBlock textBlock2 = TextBlock.builder().text(" for you.").build();
+        ChatResponse textChunk2 =
+                ChatResponse.builder().id("msg-1").content(List.of(textBlock2)).build();
+
+        List<Msg> msgs1 = context.processChunk(textChunk);
+        List<Msg> msgs2 = context.processChunk(toolChunk);
+        List<Msg> msgs3 = context.processChunk(textChunk2);
+
+        // All chunks should be emitted immediately
+        assertEquals(1, msgs1.size());
+        assertEquals(1, msgs2.size());
+        assertEquals(1, msgs3.size());
+
+        // Verify text is accumulated correctly
+        assertEquals("Let me check the weather for you.", context.getAccumulatedText());
     }
 }

@@ -22,6 +22,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -73,11 +74,13 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Create a ToolUseBlock
+        Map<String, Object> input = Map.of("input", "test-data");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-1")
                         .name("stream_task")
-                        .input(Map.of("input", "test-data"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         // Call the tool
@@ -126,11 +129,13 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Call the tool
+        Map<String, Object> input = Map.of("input", "hello");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-2")
                         .name("simple_task")
-                        .input(Map.of("input", "hello"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock finalResponse =
@@ -178,20 +183,24 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Call task_a
+        Map<String, Object> inputA = Map.of("data", "x");
         ToolUseBlock toolA =
                 ToolUseBlock.builder()
                         .id("call-a")
                         .name("task_a")
-                        .input(Map.of("data", "x"))
+                        .input(inputA)
+                        .content(JsonUtils.getJsonCodec().toJson(inputA))
                         .build();
         toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
 
         // Call task_b
+        Map<String, Object> inputB = Map.of("data", "y");
         ToolUseBlock toolB =
                 ToolUseBlock.builder()
                         .id("call-b")
                         .name("task_b")
-                        .input(Map.of("data", "y"))
+                        .input(inputB)
+                        .content(JsonUtils.getJsonCodec().toJson(inputB))
                         .build();
         toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolB).build()).block();
 
