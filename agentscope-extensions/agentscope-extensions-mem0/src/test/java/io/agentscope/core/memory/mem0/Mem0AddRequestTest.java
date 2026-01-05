@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +29,6 @@ import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0AddRequest}. */
 class Mem0AddRequestTest {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testDefaultConstructor() {
@@ -197,7 +195,7 @@ class Mem0AddRequestTest {
                         .infer(true)
                         .build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
         assertNotNull(json);
 
         // Verify key fields are present
@@ -220,7 +218,7 @@ class Mem0AddRequestTest {
                         + "\"async_mode\":true"
                         + "}";
 
-        Mem0AddRequest request = objectMapper.readValue(json, Mem0AddRequest.class);
+        Mem0AddRequest request = JsonUtils.getJsonCodec().fromJson(json, Mem0AddRequest.class);
 
         assertNotNull(request);
         assertNotNull(request.getMessages());
@@ -250,8 +248,8 @@ class Mem0AddRequestTest {
                         .asyncMode(true)
                         .build();
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0AddRequest deserialized = objectMapper.readValue(json, Mem0AddRequest.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0AddRequest deserialized = JsonUtils.getJsonCodec().fromJson(json, Mem0AddRequest.class);
 
         assertEquals(original.getMessages().size(), deserialized.getMessages().size());
         assertEquals(original.getUserId(), deserialized.getUserId());
@@ -267,7 +265,7 @@ class Mem0AddRequestTest {
     void testJsonExcludesNullFields() throws Exception {
         Mem0AddRequest request = Mem0AddRequest.builder().userId("user123").build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
 
         // Null fields should be excluded due to @JsonInclude(NON_NULL)
         assertFalse(json.contains("\"agent_id\""));
@@ -281,7 +279,7 @@ class Mem0AddRequestTest {
         Mem0AddRequest request =
                 Mem0AddRequest.builder().userId("user123").agentId("agent456").infer(true).build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
 
         // Non-null fields should be included
         assertTrue(json.contains("\"user_id\":\"user123\""));
@@ -327,7 +325,7 @@ class Mem0AddRequestTest {
                         .expirationDate("2025-12-31")
                         .build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
 
         // Verify snake_case field names in JSON
         assertTrue(json.contains("\"user_id\""));

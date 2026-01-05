@@ -282,4 +282,30 @@ class ToolGroupManager {
     public ToolGroup getToolGroup(String groupName) {
         return toolGroups.get(groupName);
     }
+
+    /**
+     * Copy all tool groups from this manager to another manager.
+     *
+     * @param target The target manager to copy tool groups to
+     */
+    void copyTo(ToolGroupManager target) {
+        for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
+            String groupName = entry.getKey();
+            ToolGroup sourceGroup = entry.getValue();
+
+            // Create a copy of the tool group
+            ToolGroup copiedGroup =
+                    ToolGroup.builder()
+                            .name(groupName)
+                            .description(sourceGroup.getDescription())
+                            .active(sourceGroup.isActive())
+                            .tools(sourceGroup.getTools())
+                            .build();
+
+            target.toolGroups.put(groupName, copiedGroup);
+        }
+
+        // Copy activeGroups list
+        target.activeGroups = new ArrayList<>(this.activeGroups);
+    }
 }

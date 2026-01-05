@@ -15,8 +15,7 @@
  */
 package io.agentscope.core.state;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 
 /**
  * Marker interface for session identifiers.
@@ -46,9 +45,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public interface SessionKey {
 
-    /** Shared ObjectMapper instance for JSON serialization. */
-    ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     /**
      * Returns a string identifier for this session key.
      *
@@ -61,10 +57,6 @@ public interface SessionKey {
      * @return a string identifier for this session key
      */
     default String toIdentifier() {
-        try {
-            return OBJECT_MAPPER.writeValueAsString(this);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize SessionKey to JSON", e);
-        }
+        return JsonUtils.getJsonCodec().toJson(this);
     }
 }

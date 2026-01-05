@@ -15,10 +15,6 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
@@ -28,6 +24,8 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -75,9 +73,6 @@ public class OpenAIClient {
     /** Chat completions API endpoint. */
     public static final String CHAT_COMPLETIONS_ENDPOINT = "/v1/chat/completions";
 
-    /** Shared ObjectMapper instance (thread-safe). */
-    private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
-
     private final HttpTransport transport;
 
     /**
@@ -97,13 +92,6 @@ public class OpenAIClient {
      */
     public OpenAIClient() {
         this(io.agentscope.core.model.transport.HttpTransportFactory.getDefault());
-    }
-
-    private static ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
@@ -284,7 +272,7 @@ public class OpenAIClient {
             // Ensure stream is false for non-streaming call
             request.setStream(false);
 
-            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
+            String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("OpenAI request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -319,8 +307,8 @@ public class OpenAIClient {
 
             OpenAIResponse response;
             try {
-                response = OBJECT_MAPPER.readValue(responseBody, OpenAIResponse.class);
-            } catch (JsonProcessingException e) {
+                response = JsonUtils.getJsonCodec().fromJson(responseBody, OpenAIResponse.class);
+            } catch (JsonException e) {
                 throw new OpenAIException(
                         "Failed to parse OpenAI response: "
                                 + e.getMessage()
@@ -357,7 +345,7 @@ public class OpenAIClient {
             }
 
             return response;
-        } catch (JsonProcessingException | HttpTransportException e) {
+        } catch (JsonException | HttpTransportException e) {
             throw new OpenAIException("Failed to execute request: " + e.getMessage(), e);
         }
     }
@@ -395,7 +383,7 @@ public class OpenAIClient {
             // Enable streaming
             request.setStream(true);
 
-            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
+            String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -448,7 +436,7 @@ public class OpenAIClient {
                                 }
                                 return ex;
                             });
-        } catch (JsonProcessingException | HttpTransportException e) {
+        } catch (JsonException | HttpTransportException e) {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
@@ -469,7 +457,7 @@ public class OpenAIClient {
                 log.debug("Ignoring empty SSE data");
                 return null;
             }
-            OpenAIResponse response = OBJECT_MAPPER.readValue(data, OpenAIResponse.class);
+            OpenAIResponse response = JsonUtils.getJsonCodec().fromJson(data, OpenAIResponse.class);
 
             // Defensive null check after deserialization
             if (response == null) {
@@ -479,7 +467,7 @@ public class OpenAIClient {
                 return null;
             }
             return response;
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             log.error(
                     "Failed to parse SSE data - JSON error: {}. Content: {}.",
                     e.getMessage(),
@@ -622,7 +610,7 @@ public class OpenAIClient {
             String requestBodyJson =
                     requestBody instanceof String
                             ? (String) requestBody
-                            : OBJECT_MAPPER.writeValueAsString(requestBody);
+                            : JsonUtils.getJsonCodec().toJson(requestBody);
             log.debug("OpenAI API request to {}: {}", url, requestBodyJson);
 
             HttpRequest httpRequest =
@@ -651,7 +639,7 @@ public class OpenAIClient {
             }
             log.debug("OpenAI API response: {}", responseBody);
             return responseBody;
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             throw new OpenAIException("Failed to serialize request", e);
         } catch (HttpTransportException e) {
             throw new OpenAIException("HTTP transport error: " + e.getMessage(), e);

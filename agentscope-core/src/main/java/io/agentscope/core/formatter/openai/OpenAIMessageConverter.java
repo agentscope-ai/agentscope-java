@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -34,6 +33,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -50,7 +50,6 @@ public class OpenAIMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMessageConverter.class);
 
-    private final ObjectMapper objectMapper;
     private final Function<Msg, String> textExtractor;
     private final Function<List<ContentBlock>, String> toolResultConverter;
 
@@ -63,7 +62,6 @@ public class OpenAIMessageConverter {
     public OpenAIMessageConverter(
             Function<Msg, String> textExtractor,
             Function<List<ContentBlock>, String> toolResultConverter) {
-        this.objectMapper = new ObjectMapper();
         this.textExtractor = textExtractor;
         this.toolResultConverter = toolResultConverter;
     }
@@ -311,7 +309,7 @@ public class OpenAIMessageConverter {
 
                 String argsJson;
                 try {
-                    argsJson = objectMapper.writeValueAsString(toolUse.getInput());
+                    argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
                 } catch (Exception e) {
                     String errorMsg =
                             e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

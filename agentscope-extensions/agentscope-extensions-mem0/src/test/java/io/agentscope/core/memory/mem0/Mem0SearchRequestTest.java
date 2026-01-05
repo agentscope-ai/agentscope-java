@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +28,6 @@ import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0SearchRequest}. */
 class Mem0SearchRequestTest {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testDefaultConstructor() {
@@ -206,7 +204,7 @@ class Mem0SearchRequestTest {
                         .threshold(0.8)
                         .build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
         assertNotNull(json);
 
         assertTrue(json.contains("\"query\""));
@@ -227,7 +225,8 @@ class Mem0SearchRequestTest {
                         + "\"threshold\":0.5"
                         + "}";
 
-        Mem0SearchRequest request = objectMapper.readValue(json, Mem0SearchRequest.class);
+        Mem0SearchRequest request =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0SearchRequest.class);
 
         assertNotNull(request);
         assertEquals("test", request.getQuery());
@@ -248,8 +247,9 @@ class Mem0SearchRequestTest {
                         .threshold(0.9)
                         .build();
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0SearchRequest deserialized = objectMapper.readValue(json, Mem0SearchRequest.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0SearchRequest deserialized =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0SearchRequest.class);
 
         assertEquals(original.getQuery(), deserialized.getQuery());
         assertEquals(original.getVersion(), deserialized.getVersion());
@@ -264,7 +264,7 @@ class Mem0SearchRequestTest {
         // Filters should always be included in JSON, even if empty
         Mem0SearchRequest request = Mem0SearchRequest.builder().query("test").build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
 
         assertTrue(json.contains("\"filters\""));
     }
@@ -273,7 +273,7 @@ class Mem0SearchRequestTest {
     void testJsonExcludesNullFields() throws Exception {
         Mem0SearchRequest request = Mem0SearchRequest.builder().query("test").topK(10).build();
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = JsonUtils.getJsonCodec().toJson(request);
 
         // Null optional fields should be excluded
         assertFalse(json.contains("\"fields\""));

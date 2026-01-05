@@ -109,7 +109,7 @@ class AutoContextHookTest {
 
         // Verify ContextOffloadTool was registered
         assertTrue(
-                toolkit.getToolNames().contains("context_reload"),
+                agentWithPlan.getToolkit().getToolNames().contains("context_reload"),
                 "ContextOffloadTool should be registered");
 
         // Verify PlanNotebook was attached (we can't directly verify, but we can check
@@ -135,13 +135,13 @@ class AutoContextHookTest {
         PreCallEvent event3 = new PreCallEvent(agentWithPlan, new ArrayList<>());
 
         hook.onEvent(event1).block();
-        int toolCountAfterFirst = toolkit.getToolNames().size();
+        int toolCountAfterFirst = agentWithPlan.getToolkit().getToolNames().size();
 
         hook.onEvent(event2).block();
         hook.onEvent(event3).block();
 
         // Tool count should not increase after first call
-        assertEquals(toolCountAfterFirst, toolkit.getToolNames().size());
+        assertEquals(toolCountAfterFirst, agentWithPlan.getToolkit().getToolNames().size());
     }
 
     @Test
@@ -174,7 +174,7 @@ class AutoContextHookTest {
 
         // Verify no ContextOffloadTool was registered
         assertFalse(
-                toolkit.getToolNames().contains("context_reload"),
+                agentWithOtherMemory.getToolkit().getToolNames().contains("context_reload"),
                 "ContextOffloadTool should not be registered for non-AutoContextMemory");
     }
 
@@ -198,7 +198,7 @@ class AutoContextHookTest {
         assertNotNull(event);
         // ContextOffloadTool should still be registered
         assertTrue(
-                toolkit.getToolNames().contains("context_reload"),
+                agentWithoutPlan.getToolkit().getToolNames().contains("context_reload"),
                 "ContextOffloadTool should be registered even without PlanNotebook");
     }
 
@@ -223,7 +223,7 @@ class AutoContextHookTest {
         assertNotNull(event);
         // ContextOffloadTool should be registered
         assertTrue(
-                emptyToolkit.getToolNames().contains("context_reload"),
+                agentWithEmptyToolkit.getToolkit().getToolNames().contains("context_reload"),
                 "ContextOffloadTool should be registered");
     }
 

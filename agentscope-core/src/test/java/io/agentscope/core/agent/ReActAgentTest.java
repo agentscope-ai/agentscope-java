@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -35,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -621,7 +623,8 @@ class ReActAgentTest {
         assertEquals(mockModel, agent.getModel());
 
         assertNotNull(agent.getToolkit(), "Toolkit should not be null");
-        assertEquals(mockToolkit, agent.getToolkit());
+        // Agent uses a copy of toolkit for state isolation, so we verify it's a Toolkit instance
+        assertInstanceOf(Toolkit.class, agent.getToolkit());
 
         assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
     }

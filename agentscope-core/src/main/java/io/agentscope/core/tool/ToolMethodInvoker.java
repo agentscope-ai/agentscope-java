@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -37,12 +37,10 @@ import reactor.core.publisher.Mono;
  */
 class ToolMethodInvoker {
 
-    private final ObjectMapper objectMapper;
     private final ToolResultConverter resultConverter;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
-    ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter resultConverter) {
-        this.objectMapper = objectMapper;
+    ToolMethodInvoker(ToolResultConverter resultConverter) {
         this.resultConverter = resultConverter;
     }
 
@@ -313,9 +311,9 @@ class ToolMethodInvoker {
             return value;
         }
 
-        // Try ObjectMapper conversion first
+        // Try JsonCodec conversion first
         try {
-            return objectMapper.convertValue(value, paramType);
+            return JsonUtils.getJsonCodec().convertValue(value, paramType);
         } catch (Exception e) {
             // Fallback to string-based conversion for primitives
             return convertFromString(value.toString(), paramType);

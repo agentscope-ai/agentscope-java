@@ -29,6 +29,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,14 +46,10 @@ public class GeminiResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiResponseParser.class);
 
-    private final ObjectMapper objectMapper;
-
     /**
-     * Creates a new GeminiResponseParser with default ObjectMapper.
+     * Creates a new GeminiResponseParser.
      */
-    public GeminiResponseParser() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public GeminiResponseParser() {}
 
     /**
      * Parse Gemini GenerateContentResponse to AgentScope ChatResponse.
@@ -275,7 +272,7 @@ public class GeminiResponseParser {
                 argsMap.putAll(functionCall.getArgs());
                 // Convert to JSON string for raw content
                 try {
-                    rawContent = objectMapper.writeValueAsString(functionCall.getArgs());
+                    rawContent = JsonUtils.getJsonCodec().toJson(functionCall.getArgs());
                 } catch (Exception e) {
                     log.warn("Failed to serialize function call arguments: {}", e.getMessage());
                 }
