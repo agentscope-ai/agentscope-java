@@ -209,8 +209,7 @@ public class OllamaChatModel extends ChatModelBase {
                                 mergedOptions.toGenerateOptions(),
                                 defaultOptions.toGenerateOptions(),
                                 modelName,
-                                "ollama",
-                                log));
+                                "ollama"));
     }
 
     public static class Builder {
