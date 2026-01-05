@@ -24,33 +24,37 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * <p>After starting this app, you can call:
  *
+ * <p>Non-streaming request (stream=false or omitted):
+ *
  * <pre>
  * curl -X POST http://localhost:8080/v1/chat/completions \\
  *   -H 'Content-Type: application/json' \\
  *   -d '{
  *     "model": "qwen3-max",
- *     "sessionId": "demo-user",
+ *     "stream": false,
  *     "messages": [
  *       { "role": "user", "content": "Hello, can you briefly introduce AgentScope Java?" }
  *     ]
  *   }'
  * </pre>
  *
- * Or streaming (SSE):
+ * <p>Streaming request (stream=true, Accept header is optional):
  *
  * <pre>
- * curl -N http://localhost:8080/v1/chat/completions \\
+ * curl -N -X POST http://localhost:8080/v1/chat/completions \\
  *   -H 'Content-Type: application/json' \\
- *   -H 'Accept: text/event-stream' \\
  *   -d '{
  *     "model": "qwen3-max",
  *     "stream": true,
- *     "sessionId": "demo-user",
  *     "messages": [
  *       { "role": "user", "content": "Please provide a streamed answer: Describe AgentScope Java in three sentences." }
  *     ]
  *   }'
  * </pre>
+ *
+ * <p><b>Important:</b> If stream=false but Accept: text/event-stream is set, the request will be
+ * rejected with an error for consistency. Use stream=true for streaming, or omit the Accept header
+ * for non-streaming.
  */
 @SpringBootApplication
 public class ChatCompletionsWebApplication {
@@ -63,33 +67,37 @@ public class ChatCompletionsWebApplication {
     private static void printStartupInfo() {
         System.out.println("\n=== chat completions API spring web Example Application Started ===");
         System.out.println("\nExample curl command:");
-        System.out.println("\nNon-streaming chat completion.\n");
+        System.out.println("\nNon-streaming chat completion (stream=false or omitted).\n");
         System.out.println(
                 """
                 curl -X POST http://localhost:8080/v1/chat/completions \\
                   -H 'Content-Type: application/json' \\
                   -d '{
                     "model": "qwen3-max",
-                    "sessionId": "demo-user",
+                    "stream": false,
                     "messages": [
                       { "role": "user", "content": "Please provide a Non streamed answer: Describe AgentScope Java in three sentences." }
                     ]
                   }'
                 """);
+        System.out.println("\nNote: stream parameter can be omitted (defaults to false)");
         System.out.println("===================================================");
-        System.out.println("\nStreaming chat completion.\n");
+        System.out.println("\nStreaming chat completion (stream=true).\n");
         System.out.println(
                 """
-                curl -N http://localhost:8080/v1/chat/completions \\
+                curl -N -X POST http://localhost:8080/v1/chat/completions \\
                   -H 'Content-Type: application/json' \\
-                  -H 'Accept: text/event-stream' \\
                   -d '{
                     "model": "qwen3-max",
-                    "sessionId": "demo-user",
+                    "stream": true,
                     "messages": [
                       { "role": "user", "content": "Please provide a streamed answer: Describe AgentScope Java in three sentences." }
                     ]
                   }'
                 """);
+        System.out.println("\nNote: Accept: text/event-stream header is optional when stream=true");
+        System.out.println("===================================================");
+        System.out.println("\n⚠️  Important: stream=false with Accept: text/event-stream will return error");
+        System.out.println("   Use stream=true for streaming, or omit Accept header for non-streaming");
     }
 }

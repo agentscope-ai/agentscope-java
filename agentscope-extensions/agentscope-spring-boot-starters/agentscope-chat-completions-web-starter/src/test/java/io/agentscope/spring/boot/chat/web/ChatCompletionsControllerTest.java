@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +40,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -104,9 +107,13 @@ class ChatCompletionsControllerTest {
             when(responseBuilder.buildResponse(any(), any(), anyString()))
                     .thenReturn(expectedResponse);
 
-            Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
+            Object result = controller.createCompletion(request);
 
-            StepVerifier.create(result).expectNext(expectedResponse).verifyComplete();
+            // Result should be Mono<ChatCompletionsResponse> for non-streaming requests
+            assert result instanceof Mono;
+            @SuppressWarnings("unchecked")
+            Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+            StepVerifier.create(responseMono).expectNext(expectedResponse).verifyComplete();
 
             verify(agentProvider).getObject();
             verify(messageConverter).convertMessages(eq(request.getMessages()));
@@ -115,21 +122,41 @@ class ChatCompletionsControllerTest {
         }
 
         @Test
-        @DisplayName("Should reject streaming request on non-streaming endpoint")
-        void shouldRejectStreamingRequestOnNonStreamingEndpoint() {
+        @DisplayName("Should auto-switch to streaming mode when stream=true")
+        void shouldAutoSwitchToStreamingModeWhenStreamTrue() {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
             request.setStream(true);
             request.setMessages(List.of(new ChatMessage("user", "Hello")));
 
-            Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
+            List<Msg> convertedMessages = List.of(mock(Msg.class));
+            ServerSentEvent<String> sseEvent =
+                    ServerSentEvent.<String>builder().data("test").build();
 
-            StepVerifier.create(result)
-                    .expectErrorMatches(
-                            error ->
-                                    error instanceof IllegalArgumentException
-                                            && error.getMessage()
-                                                    .contains("Streaming requests should use"))
-                    .verify();
+            when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
+            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+                    .thenReturn(Flux.just(sseEvent));
+
+            Object result = controller.createCompletion(request);
+
+            // Result should be ResponseEntity with Flux body for streaming requests
+            assert result instanceof ResponseEntity;
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Flux<ServerSentEvent<String>>> responseEntity =
+                    (ResponseEntity<Flux<ServerSentEvent<String>>>) result;
+
+            // Verify response headers
+            HttpHeaders headers = responseEntity.getHeaders();
+            assert headers.getFirst("Content-Type").equals("text/event-stream");
+
+            // Verify the stream content
+            StepVerifier.create(responseEntity.getBody()).expectNext(sseEvent).verifyComplete();
+
+            verify(agentProvider).getObject();
+            verify(messageConverter).convertMessages(eq(request.getMessages()));
+            verify(streamingService)
+                    .streamAsSse(
+                            eq(mockAgent), eq(convertedMessages), anyString(), eq("test-model"));
         }
 
         @Test
@@ -137,12 +164,17 @@ class ChatCompletionsControllerTest {
         void shouldReturnErrorForEmptyMessages() {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of());
+            request.setStream(false);
 
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
 
-            Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
+            Object result = controller.createCompletion(request);
 
-            StepVerifier.create(result)
+            // Result should be Mono<ChatCompletionsResponse> with error
+            assert result instanceof Mono;
+            @SuppressWarnings("unchecked")
+            Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+            StepVerifier.create(responseMono)
                     .expectErrorMatches(
                             error ->
                                     error instanceof IllegalArgumentException
@@ -155,18 +187,97 @@ class ChatCompletionsControllerTest {
         void shouldHandleAgentReturningNullGracefully() {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(false);
 
             when(agentProvider.getObject()).thenReturn(null);
 
-            Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
+            Object result = controller.createCompletion(request);
 
-            StepVerifier.create(result)
+            // Result should be Mono<ChatCompletionsResponse> with error
+            assert result instanceof Mono;
+            @SuppressWarnings("unchecked")
+            Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+            StepVerifier.create(responseMono)
                     .expectErrorMatches(
                             error ->
                                     error instanceof IllegalStateException
                                             && error.getMessage()
                                                     .contains("agentProvider returned null"))
                     .verify();
+        }
+
+        @Test
+        @DisplayName("Should process request with stream=null as non-streaming")
+        void shouldProcessRequestWithStreamNullAsNonStreaming() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(null); // Explicitly set to null
+
+            Msg replyMsg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Hi!").build())
+                            .build();
+
+            List<Msg> convertedMessages = List.of(replyMsg);
+            ChatCompletionsResponse expectedResponse = new ChatCompletionsResponse();
+            expectedResponse.setId("response-id");
+
+            when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
+            when(mockAgent.call(anyList())).thenReturn(Mono.just(replyMsg));
+            when(responseBuilder.buildResponse(any(), any(), anyString()))
+                    .thenReturn(expectedResponse);
+
+            Object result = controller.createCompletion(request);
+
+            // Result should be Mono<ChatCompletionsResponse> for non-streaming requests
+            assert result instanceof Mono;
+            @SuppressWarnings("unchecked")
+            Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+            StepVerifier.create(responseMono).expectNext(expectedResponse).verifyComplete();
+
+            verify(agentProvider).getObject();
+            verify(messageConverter).convertMessages(eq(request.getMessages()));
+            verify(mockAgent).call(eq(convertedMessages));
+            verify(responseBuilder).buildResponse(eq(request), eq(replyMsg), anyString());
+            // Should NOT call streaming service
+            verify(streamingService, never()).streamAsSse(any(), any(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Should handle errors in non-streaming request gracefully")
+        void shouldHandleErrorsInNonStreamingRequestGracefully() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(false);
+
+            Msg replyMsg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Hi!").build())
+                            .build();
+
+            List<Msg> convertedMessages = List.of(replyMsg);
+            RuntimeException agentError = new RuntimeException("Agent error");
+            ChatCompletionsResponse errorResponse = new ChatCompletionsResponse();
+            errorResponse.setId("error-id");
+
+            when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
+            when(mockAgent.call(anyList())).thenReturn(Mono.error(agentError));
+            when(responseBuilder.buildErrorResponse(any(), eq(agentError), anyString()))
+                    .thenReturn(errorResponse);
+
+            Object result = controller.createCompletion(request);
+
+            // Result should be Mono<ChatCompletionsResponse> with error response
+            assert result instanceof Mono;
+            @SuppressWarnings("unchecked")
+            Mono<ChatCompletionsResponse> responseMono = (Mono<ChatCompletionsResponse>) result;
+            StepVerifier.create(responseMono).expectNext(errorResponse).verifyComplete();
+
+            verify(responseBuilder).buildErrorResponse(eq(request), eq(agentError), anyString());
         }
     }
 
@@ -180,6 +291,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setModel("test-model");
             request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            // stream can be null or true for streaming endpoint
 
             Msg replyMsg =
                     Msg.builder()
@@ -204,6 +316,28 @@ class ChatCompletionsControllerTest {
             verify(streamingService)
                     .streamAsSse(
                             eq(mockAgent), eq(convertedMessages), anyString(), eq("test-model"));
+        }
+
+        @Test
+        @DisplayName("Should reject non-streaming request on streaming endpoint")
+        void shouldRejectNonStreamingRequestOnStreamingEndpoint() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(false); // Explicitly set to false
+
+            Flux<ServerSentEvent<String>> result = controller.createCompletionStream(request);
+
+            StepVerifier.create(result)
+                    .expectErrorMatches(
+                            error ->
+                                    error instanceof IllegalArgumentException
+                                            && error.getMessage()
+                                                    .contains("Non-streaming requests"))
+                    .verify();
+
+            // Should NOT call streaming service
+            verify(streamingService, never()).streamAsSse(any(), any(), anyString(), anyString());
         }
 
         @Test
@@ -246,6 +380,73 @@ class ChatCompletionsControllerTest {
             StepVerifier.create(result).expectNext(errorEvent).verifyComplete();
 
             verify(streamingService).createErrorSseEvent(eq(error), anyString(), eq("test-model"));
+        }
+
+        @Test
+        @DisplayName("Should handle auto-switch streaming error gracefully")
+        void shouldHandleAutoSwitchStreamingErrorGracefully() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setStream(true);
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+
+            RuntimeException error = new RuntimeException("Streaming error");
+            ServerSentEvent<String> errorEvent =
+                    ServerSentEvent.<String>builder().data("Error").build();
+
+            when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
+            when(streamingService.streamAsSse(any(), anyList(), anyString(), anyString()))
+                    .thenReturn(Flux.error(error));
+            when(streamingService.createErrorSseEvent(any(), anyString(), anyString()))
+                    .thenReturn(errorEvent);
+
+            Object result = controller.createCompletion(request);
+
+            // Result should be ResponseEntity with Flux body containing error
+            assert result instanceof ResponseEntity;
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Flux<ServerSentEvent<String>>> responseEntity =
+                    (ResponseEntity<Flux<ServerSentEvent<String>>>) result;
+
+            // Verify response headers
+            HttpHeaders headers = responseEntity.getHeaders();
+            assert headers.getFirst("Content-Type").equals("text/event-stream");
+
+            // Verify the error event is returned
+            StepVerifier.create(responseEntity.getBody()).expectNext(errorEvent).verifyComplete();
+
+            verify(streamingService).createErrorSseEvent(eq(error), anyString(), eq("test-model"));
+        }
+
+        @Test
+        @DisplayName("Should handle empty messages in auto-switch streaming mode")
+        void shouldHandleEmptyMessagesInAutoSwitchStreamingMode() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("test-model");
+            request.setStream(true);
+            request.setMessages(List.of());
+
+            when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
+
+            Object result = controller.createCompletion(request);
+
+            // Result should be ResponseEntity with Flux body containing error
+            assert result instanceof ResponseEntity;
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Flux<ServerSentEvent<String>>> responseEntity =
+                    (ResponseEntity<Flux<ServerSentEvent<String>>>) result;
+
+            // Verify response headers
+            HttpHeaders headers = responseEntity.getHeaders();
+            assert headers.getFirst("Content-Type").equals("text/event-stream");
+
+            // Verify error is returned
+            StepVerifier.create(responseEntity.getBody())
+                    .expectErrorMatches(
+                            error ->
+                                    error instanceof IllegalArgumentException
+                                            && error.getMessage().contains("At least one message"))
+                    .verify();
         }
     }
 }

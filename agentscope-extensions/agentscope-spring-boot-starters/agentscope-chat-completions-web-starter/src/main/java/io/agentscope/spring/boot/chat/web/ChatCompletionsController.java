@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -107,15 +108,17 @@ public class ChatCompletionsController {
      *
      * <p>Processes the complete message history and returns an assistant response.
      *
+     * <p>If the request has {@code stream=true}, automatically switches to streaming mode even
+     * without {@code Accept: text/event-stream} header for better client compatibility.
+     *
      * @param request The chat completion request containing the full message history
-     * @return A {@link Mono} containing the {@link ChatCompletionsResponse} with the agent's reply
+     * @return A {@link Mono} containing the {@link ChatCompletionsResponse} with the agent's reply,
+     *     or a {@link Flux} of {@link ServerSentEvent} if streaming is requested
      */
     @PostMapping(
             value = "${agentscope.chat-completions.base-path:/v1/chat/completions}",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ChatCompletionsResponse> createCompletion(
-            @Valid @RequestBody ChatCompletionsRequest request) {
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Object createCompletion(@Valid @RequestBody ChatCompletionsRequest request) {
         String requestId = UUID.randomUUID().toString();
 
         log.debug(
@@ -124,15 +127,15 @@ public class ChatCompletionsController {
                 request.getMessages() != null ? request.getMessages().size() : 0,
                 request.getStream());
 
-        // Reject streaming requests on non-streaming endpoint
+        // If stream=true, automatically switch to streaming mode for client compatibility
+        // This handles clients that set stream=true but don't set Accept: text/event-stream
         if (Boolean.TRUE.equals(request.getStream())) {
-            log.warn(
-                    "Streaming request received on non-streaming endpoint: requestId={}",
-                    requestId);
-            return Mono.error(
-                    new IllegalArgumentException(
-                            "Streaming requests should use the streaming endpoint with Accept:"
-                                    + " text/event-stream"));
+            log.debug("Auto-switching to streaming mode: requestId={}", requestId);
+            // Return Flux with explicit content type - Spring MVC needs this to handle SSE
+            Flux<ServerSentEvent<String>> stream = createCompletionStream(request);
+            return ResponseEntity.ok()
+                    .header("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE)
+                    .body(stream);
         }
 
         try {
@@ -199,9 +202,22 @@ public class ChatCompletionsController {
         String requestId = UUID.randomUUID().toString();
 
         log.debug(
-                "Processing streaming chat completion request: requestId={}, messageCount={}",
+                "Processing streaming chat completion request: requestId={}, messageCount={}, stream={}",
                 requestId,
-                request.getMessages() != null ? request.getMessages().size() : 0);
+                request.getMessages() != null ? request.getMessages().size() : 0,
+                request.getStream());
+
+        // Reject non-streaming requests on streaming endpoint
+        // If stream is explicitly false, return error for consistency
+        if (Boolean.FALSE.equals(request.getStream())) {
+            log.warn(
+                    "Non-streaming request received on streaming endpoint: requestId={}, stream=false",
+                    requestId);
+            return Flux.error(
+                    new IllegalArgumentException(
+                            "Non-streaming requests (stream=false) should use the non-streaming"
+                                    + " endpoint without Accept: text/event-stream header"));
+        }
 
         try {
             // Create a fresh agent instance for this request (stateless)
