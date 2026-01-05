@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -91,12 +92,31 @@ public class GeminiMessageConverter {
                     parts.add(Part.builder().text(tb.getText()).build());
 
                 } else if (block instanceof ToolUseBlock tub) {
+                    // Prioritize using content field (raw arguments string), fallback to input map
+                    Map<String, Object> args;
+                    if (tub.getContent() != null && !tub.getContent().isEmpty()) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> parsed =
+                                    JsonUtils.getJsonCodec().fromJson(tub.getContent(), Map.class);
+                            args = parsed != null ? parsed : tub.getInput();
+                        } catch (Exception e) {
+                            log.warn(
+                                    "Failed to parse content as JSON, falling back to input map:"
+                                            + " {}",
+                                    e.getMessage());
+                            args = tub.getInput();
+                        }
+                    } else {
+                        args = tub.getInput();
+                    }
+
                     // Create FunctionCall
                     FunctionCall functionCall =
                             FunctionCall.builder()
                                     .id(tub.getId())
                                     .name(tub.getName())
-                                    .args(tub.getInput())
+                                    .args(args)
                                     .build();
 
                     // Build Part with FunctionCall and optional thought signature

@@ -68,7 +68,7 @@ public class ReasoningContext {
      *
      * <ul>
      *   <li>TextBlock/ThinkingBlock: Emit immediately for real-time display
-     *   <li>ToolUseBlock: Accumulate first, emit after complete
+     *   <li>ToolUseBlock: Accumulate and emit immediately for real-time streaming
      * </ul>
      *
      * @hidden
@@ -106,8 +106,18 @@ public class ReasoningContext {
                 allStreamedChunks.add(msg);
 
             } else if (block instanceof ToolUseBlock tub) {
-                // Accumulate tool calls, don't emit immediately
+                // Accumulate tool calls and emit immediately for real-time streaming
                 toolCallsAcc.add(tub);
+
+                // Emit ToolUseBlock chunk immediately for real-time display
+                // Each tool call chunk is emitted separately, supporting multiple parallel tool
+                // calls
+                // For fragments (placeholder names like "__fragment__"), we need to include
+                // the correct tool call ID so users can properly concatenate the chunks
+                ToolUseBlock outputBlock = enrichToolUseBlockWithId(tub);
+                Msg msg = buildChunkMsg(outputBlock);
+                streamingMsgs.add(msg);
+                allStreamedChunks.add(msg);
             }
         }
 
@@ -189,6 +199,38 @@ public class ReasoningContext {
     }
 
     /**
+     * Enrich a ToolUseBlock with the correct tool call ID.
+     *
+     * <p>For fragments (placeholder names like "__fragment__"), the original block may not have
+     * the correct ID. This method retrieves the ID from the accumulator and creates a new block
+     * with the correct ID, allowing users to properly concatenate chunks.
+     *
+     * @param block The original ToolUseBlock
+     * @return A ToolUseBlock with the correct ID
+     */
+    private ToolUseBlock enrichToolUseBlockWithId(ToolUseBlock block) {
+        // If the block already has an ID, return it as-is
+        if (block.getId() != null && !block.getId().isEmpty()) {
+            return block;
+        }
+
+        // Get the current tool call ID from the accumulator
+        String currentId = toolCallsAcc.getCurrentToolCallId();
+        if (currentId == null || currentId.isEmpty()) {
+            return block;
+        }
+
+        // Create a new block with the correct ID
+        return ToolUseBlock.builder()
+                .id(currentId)
+                .name(block.getName())
+                .input(block.getInput())
+                .content(block.getContent())
+                .metadata(block.getMetadata())
+                .build();
+    }
+
+    /**
      * Get the accumulated text content.
      *
      * @hidden
@@ -206,5 +248,27 @@ public class ReasoningContext {
      */
     public String getAccumulatedThinking() {
         return thinkingAcc.getAccumulated();
+    }
+
+    /**
+     * Get accumulated tool call by ID.
+     *
+     * <p>If the ID is null or empty, or if no builder is found for the given ID,
+     * this method falls back to using the last tool call.
+     *
+     * @param id The tool call ID to look up
+     * @return The accumulated ToolUseBlock, or null if not found
+     */
+    public ToolUseBlock getAccumulatedToolCall(String id) {
+        return toolCallsAcc.getAccumulatedToolCall(id);
+    }
+
+    /**
+     * Get all accumulated tool calls.
+     *
+     * @return List of all accumulated ToolUseBlocks
+     */
+    public List<ToolUseBlock> getAllAccumulatedToolCalls() {
+        return toolCallsAcc.getAllAccumulatedToolCalls();
     }
 }

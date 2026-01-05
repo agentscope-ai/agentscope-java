@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +87,11 @@ class ReActAgentStructuredOutputTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
@@ -175,6 +181,11 @@ class ReActAgentStructuredOutputTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
@@ -273,6 +284,11 @@ class ReActAgentStructuredOutputTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());

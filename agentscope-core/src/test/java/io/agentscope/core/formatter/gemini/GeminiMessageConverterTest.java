@@ -875,4 +875,146 @@ class GeminiMessageConverterTest {
         assertTrue(part.thoughtSignature().isPresent());
         assertArrayEquals(signature, part.thoughtSignature().get());
     }
+
+    @Test
+    @DisplayName("Should use content field when present for tool call arguments")
+    void testToolCallUsesContentFieldWhenPresent() {
+        // Create a ToolUseBlock with both content (raw string) and input map
+        // The content field should be used preferentially
+        String rawContent = "{\"city\":\"Beijing\",\"unit\":\"celsius\"}";
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Shanghai");
+        inputMap.put("unit", "fahrenheit");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_content_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content(rawContent)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the content field (parsed from raw string) instead of input map
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Beijing", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is null")
+    void testToolCallFallbackToInputMapWhenContentNull() {
+        // Create a ToolUseBlock with only input map (content is null)
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Beijing");
+        inputMap.put("unit", "celsius");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_fallback_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content(null)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the input map since content is null
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Beijing", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is empty")
+    void testToolCallFallbackToInputMapWhenContentEmpty() {
+        // Create a ToolUseBlock with empty content string
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Shanghai");
+        inputMap.put("unit", "fahrenheit");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_empty_content_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content("")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the input map since content is empty
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Shanghai", args.get("city"));
+        assertEquals("fahrenheit", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is invalid JSON")
+    void testToolCallFallbackToInputMapWhenContentInvalidJson() {
+        // Create a ToolUseBlock with invalid JSON content
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Tokyo");
+        inputMap.put("unit", "celsius");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_invalid_json_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content("{invalid json}")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should fallback to input map since content is invalid JSON
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Tokyo", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
+    }
 }

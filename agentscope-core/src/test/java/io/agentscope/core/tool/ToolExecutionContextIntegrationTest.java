@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -180,7 +181,12 @@ class ToolExecutionContextIntegrationTest {
         input.put("resource", "db:read");
 
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call1").name("check_permission").input(input).build();
+                ToolUseBlock.builder()
+                        .id("call1")
+                        .name("check_permission")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
 
         // Execute tool with context
         ToolResultBlock result =
@@ -223,11 +229,13 @@ class ToolExecutionContextIntegrationTest {
         ToolExecutionContext callContext =
                 ToolExecutionContext.builder().register(callUser).build();
 
+        Map<String, Object> emptyInput = new HashMap<>();
         ToolUseBlock toolUse =
                 ToolUseBlock.builder()
                         .id("call2")
                         .name("get_environment")
-                        .input(new HashMap<>())
+                        .input(emptyInput)
+                        .content(JsonUtils.getJsonCodec().toJson(emptyInput))
                         .build();
 
         ToolResultBlock result =
@@ -264,7 +272,12 @@ class ToolExecutionContextIntegrationTest {
         input.put("resource", "db:read");
 
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call3").name("check_permission").input(input).build();
+                ToolUseBlock.builder()
+                        .id("call3")
+                        .name("check_permission")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
 
         ToolResultBlock result =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();
@@ -301,7 +314,12 @@ class ToolExecutionContextIntegrationTest {
         input.put("value", "test123");
 
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call4").name("async_check").input(input).build();
+                ToolUseBlock.builder()
+                        .id("call4")
+                        .name("async_check")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
 
         ToolResultBlock result =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();
@@ -347,7 +365,12 @@ class ToolExecutionContextIntegrationTest {
         input.put("action", "deploy");
 
         ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call5").name("complex_operation").input(input).build();
+                ToolUseBlock.builder()
+                        .id("call5")
+                        .name("complex_operation")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
 
         ToolResultBlock result =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();

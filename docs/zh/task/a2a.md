@@ -181,6 +181,54 @@ AgentScopeA2aServer.builder(agentBuilder)
 
 使用 Nacos 作为 A2A 注册中心，将 AgentScope 所提供的 A2A 服务自动注册到 Nacos 中
 
+- 为`Spring Boot 方式`添加（推荐）
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+
+<!-- 额外添加 Nacos Spring Boot starter 的依赖 -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-nacos-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```yaml
+# application.yml
+agentscope:
+  dashscope:
+    api-key: your-api-key
+  agent:
+    name: my-assistant
+  a2a:
+    server:
+      enabled: true
+      card:
+        name: My Assistant
+        description: An intelligent assistant based on AgentScope
+    # 在 `agentscope.a2a` 下添加Nacos相关配置
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDRESS:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+```
+
+```java
+@SpringBootApplication
+public class A2aServerApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(A2aServerApplication.class, args);
+    }
+}
+```
+
+- 为`手动创建方式`添加
+
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
@@ -188,32 +236,6 @@ AgentScopeA2aServer.builder(agentBuilder)
     <version>${agentscope.version}</version>
 </dependency>
 ```
-
-- 为`Spring Boot 方式`添加
-
-```java
-import com.alibaba.nacos.api.PropertyKeyConst;
-import com.alibaba.nacos.api.ai.AiFactory;
-import com.alibaba.nacos.api.ai.AiService;
-import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
-
-@Configuration
-public class NacosAgentRegistryConfiguration {
-
-    @Bean
-    public AgentRegistry nacosAgentRegistry() {
-        // 设置 Nacos 地址
-        Properties properties = new Properties();
-        properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");
-        // 创建 Nacos Client
-        AiService aiService = AiFactory.createAiService(properties);
-        // 创建 Nacos 的 AgentRegistry
-        return NacosAgentRegistry.builder(aiService).build();
-    }
-}
-```
-
-- 为`手动创建方式`添加
 
 ```java
 import com.alibaba.nacos.api.PropertyKeyConst;

@@ -68,7 +68,7 @@ public final class ToolValidator {
      * @param schema The JSON Schema to validate against (from tool.getParameters())
      * @return null if validation passes, or an error message describing the validation failures
      */
-    public static String validateInput(Map<String, Object> input, Map<String, Object> schema) {
+    public static String validateInput(String input, Map<String, Object> schema) {
         if (schema == null || schema.isEmpty()) {
             return null; // No schema, validation passes
         }
@@ -80,21 +80,15 @@ public final class ToolValidator {
             // Create Schema from the schema string
             Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
-            // Convert input to JSON string (handle null input as empty object)
-            String inputJson = input == null ? "{}" : JsonUtils.getJsonCodec().toJson(input);
-
             // Validate
-            List<Error> errors = jsonSchema.validate(inputJson, InputFormat.JSON);
+            List<Error> errors = jsonSchema.validate(input, InputFormat.JSON);
 
             if (errors.isEmpty()) {
                 return null; // Validation passed
             }
 
             // Format error messages
-            String errorMessage =
-                    errors.stream().map(Error::getMessage).collect(Collectors.joining("; "));
-
-            return errorMessage;
+            return errors.stream().map(Error::getMessage).collect(Collectors.joining("; "));
 
         } catch (Exception e) {
             return "Schema validation error: " + e.getMessage();
