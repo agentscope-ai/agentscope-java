@@ -54,18 +54,6 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
-     *
-     * @param toolObject the object containing the method
-     * @param method the method to invoke
-     * @param param the tool call parameters containing input, toolUseBlock, agent, and context
-     * @return Mono containing ToolResultBlock
-     */
-    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
-        return invokeAsync(toolObject, method, param, null);
-    }
-
-    /**
      * Invoke tool method asynchronously with custom converter support.
      *
      * @param toolObject the object containing the method
