@@ -18,7 +18,7 @@ package io.agentscope.examples.bobatea.supervisor.config;
 
 import com.alibaba.nacos.api.ai.AiService;
 import io.agentscope.core.a2a.agent.A2aAgent;
-import io.agentscope.extensions.nacos.a2a.discovery.NacosAgentCardResolver;
+import io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
