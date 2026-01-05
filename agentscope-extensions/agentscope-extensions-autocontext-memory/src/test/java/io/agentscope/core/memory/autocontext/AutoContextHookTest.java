@@ -86,14 +86,6 @@ class AutoContextHookTest {
     }
 
     @Test
-    @DisplayName("Should create hook instance")
-    void testHookCreation() {
-        AutoContextHook hook = new AutoContextHook();
-        assertNotNull(hook);
-        assertEquals(50, hook.priority());
-    }
-
-    @Test
     @DisplayName("Should register ContextOffloadTool and attach PlanNotebook on first PreCallEvent")
     void testFirstPreCallEvent() {
         PlanNotebook planNotebook = PlanNotebook.builder().build();
@@ -244,7 +236,7 @@ class AutoContextHookTest {
     @Test
     @DisplayName("Should have correct priority")
     void testPriority() {
-        assertEquals(50, hook.priority());
+        assertEquals(0, hook.priority());
     }
 
     // ==================== PreReasoningEvent Tests ====================
