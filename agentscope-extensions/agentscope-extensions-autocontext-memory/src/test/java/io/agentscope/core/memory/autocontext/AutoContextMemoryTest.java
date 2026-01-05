@@ -16,7 +16,9 @@
 package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -113,10 +115,12 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Assistant response " + i, MsgRole.ASSISTANT));
         }
 
+        // Trigger compression explicitly
+        boolean compressed = memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
         // After compression, message count should be reduced or model should be called
         assertTrue(
-                messages.size() < 24 || testModel.getCallCount() > 0,
+                compressed || messages.size() < 24 || testModel.getCallCount() > 0,
                 "Messages should be compressed or model should be called");
     }
 
@@ -155,11 +159,12 @@ class AutoContextMemoryTest {
         // Add one more user message (no assistant yet) to ensure latest assistant is found
         summaryMemory.addMessage(createTextMessage("Final user query", MsgRole.USER));
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         summaryTestModel.reset();
 
-        // Call getMessages - this should trigger summaryPreviousRoundMessages
+        // Trigger compression explicitly - this should trigger summaryPreviousRoundMessages
         // which will call summaryPreviousRoundConversation for each round
+        summaryMemory.compressIfNeeded();
         List<Msg> messages = summaryMemory.getMessages();
 
         // Verify that summaryPreviousRoundConversation was called
@@ -317,6 +322,8 @@ class AutoContextMemoryTest {
             customMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly to test lastKeep protection
+        customMemory.compressIfNeeded();
         List<Msg> messages = customMemory.getMessages();
         // Last 3 messages should be preserved
         assertTrue(messages.size() >= 3, "Should preserve at least lastKeep messages");
@@ -353,10 +360,11 @@ class AutoContextMemoryTest {
             toolMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly - tool messages should be compressed (strategy 1)
+        boolean compressed = toolMemory.compressIfNeeded();
         List<Msg> messages = toolMemory.getMessages();
-        // Tool messages should be compressed (strategy 1)
         assertTrue(
-                toolTestModel.getCallCount() > 0 || messages.size() < 22,
+                compressed || toolTestModel.getCallCount() > 0 || messages.size() < 22,
                 "Should compress tool messages or reduce message count");
 
         // Verify original storage contains all messages
@@ -405,8 +413,9 @@ class AutoContextMemoryTest {
             largePayloadMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly - large payload should be offloaded (strategy 2 or 3)
+        largePayloadMemory.compressIfNeeded();
         List<Msg> messages = largePayloadMemory.getMessages();
-        // Large payload should be offloaded (strategy 2 or 3)
         // Check if any message contains offload hint (UUID pattern) or if compression occurred
         boolean hasOffloadHint =
                 messages.stream()
@@ -472,10 +481,12 @@ class AutoContextMemoryTest {
         String largeText = "x".repeat(200); // Exceeds largePayloadThreshold (100)
         currentRoundLargeMemory.addMessage(createTextMessage(largeText, MsgRole.ASSISTANT));
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         currentRoundLargeTestModel.reset();
 
-        // Call getMessages - this should trigger strategy 5 (summaryCurrentRoundLargeMessages)
+        // Trigger compression explicitly - this should trigger strategy 5
+        // (summaryCurrentRoundLargeMessages)
+        currentRoundLargeMemory.compressIfNeeded();
         List<Msg> messages = currentRoundLargeMemory.getMessages();
 
         // Verify that generateLargeMessageSummary was called (via summaryCurrentRoundLargeMessages)
@@ -619,11 +630,12 @@ class AutoContextMemoryTest {
                     createToolResultMessage("test_tool", "call_" + i, "Result " + i));
         }
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         currentRoundTestModel.reset();
 
-        // Call getMessages - this should trigger strategy 6 (current round summary)
+        // Trigger compression explicitly - this should trigger strategy 6 (current round summary)
         // which calls mergeAndCompressCurrentRoundMessages
+        currentRoundMemory.compressIfNeeded();
         List<Msg> messages = currentRoundMemory.getMessages();
 
         // Verify that generateCurrentRoundSummaryFromMessages was called (via
@@ -815,8 +827,8 @@ class AutoContextMemoryTest {
             planAwareMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
-        planAwareMemory.getMessages();
+        // Trigger compression explicitly
+        planAwareMemory.compressIfNeeded();
 
         // Verify that plan context was included in the compression
         // The capturing model should have received messages with plan_aware_hint
@@ -856,7 +868,8 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
 
         // Should complete without errors
@@ -878,7 +891,8 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
 
         // Should complete without errors (no plan context added)
@@ -945,8 +959,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression by getting messages
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify that default prompt was used (check captured messages)
         // Note: Compression may not always trigger depending on token count
@@ -1007,8 +1021,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression by getting messages
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify that custom prompt was used
         if (!capturingModel.getCapturedMessages().isEmpty()) {
@@ -1111,8 +1125,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify custom prompt is used for tool compression
         if (!capturingModel.getCapturedMessages().isEmpty()) {
@@ -1153,5 +1167,266 @@ class AutoContextMemoryTest {
         // Should complete without errors, using default prompts
         List<Msg> messages = memory.getMessages();
         assertNotNull(messages);
+    }
+
+    // ==================== getPlanStateContext Tests ====================
+
+    @Test
+    @DisplayName("Should return null when planNotebook is null")
+    void testGetPlanStateContextWithNullPlanNotebook() throws Exception {
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNull(result, "Should return null when planNotebook is null");
+    }
+
+    @Test
+    @DisplayName("Should return null when currentPlan is null")
+    void testGetPlanStateContextWithNullCurrentPlan() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNull(result, "Should return null when currentPlan is null");
+    }
+
+    @Test
+    @DisplayName("Should return plan context when plan exists without subtasks")
+    void testGetPlanStateContextWithoutSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when plan exists");
+        assertTrue(
+                result.contains("=== Current Plan Context ==="),
+                "Should contain plan context header");
+        assertTrue(result.contains("Plan Name: Test Plan"), "Should contain plan name");
+        assertTrue(result.contains("Plan State: in_progress"), "Should contain plan state");
+        assertTrue(
+                result.contains("Description: Test Description"),
+                "Should contain plan description");
+        assertTrue(
+                result.contains("Expected Outcome: Test Outcome"),
+                "Should contain expected outcome");
+        assertTrue(
+                result.contains("=== Compression Guidelines ==="),
+                "Should contain compression guidelines");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with subtasks in different states")
+    void testGetPlanStateContextWithSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        SubTask task1 = new SubTask("Task 1", "Description 1", null);
+        task1.setState(SubTaskState.IN_PROGRESS);
+
+        SubTask task2 = new SubTask("Task 2", "Description 2", "Expected Outcome 2");
+        task2.setState(SubTaskState.DONE);
+        task2.setOutcome("Outcome 2");
+
+        SubTask task3 = new SubTask("Task 3", "Description 3", null);
+        task3.setState(SubTaskState.TODO);
+
+        Plan plan =
+                new Plan(
+                        "Test Plan",
+                        "Test Description",
+                        "Test Outcome",
+                        List.of(task1, task2, task3));
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when plan exists with subtasks");
+
+        // Verify subtasks are included
+        assertTrue(result.contains("Subtasks:"), "Should contain subtasks section");
+        assertTrue(result.contains("[1] Task 1"), "Should contain first subtask");
+        assertTrue(result.contains("[2] Task 2"), "Should contain second subtask");
+        assertTrue(result.contains("[3] Task 3"), "Should contain third subtask");
+
+        // Verify IN_PROGRESS subtask has warning
+        assertTrue(
+                result.contains("⚠️ Currently in progress - preserve related information"),
+                "Should contain warning for IN_PROGRESS subtask");
+
+        // Verify DONE subtask with outcome
+        assertTrue(
+                result.contains("✅ Outcome: Outcome 2"), "Should contain outcome for DONE subtask");
+
+        // Verify task counts
+        assertTrue(
+                result.contains("Currently 1 subtask(s) in progress"),
+                "Should contain count of in-progress subtasks");
+        assertTrue(
+                result.contains("1 subtask(s) completed"),
+                "Should contain count of completed subtasks");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with null subtasks list")
+    void testGetPlanStateContextWithNullSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", null);
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when subtasks is null");
+        assertFalse(
+                result.contains("Subtasks:"),
+                "Should not contain subtasks section when subtasks is null");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with empty subtasks list")
+    void testGetPlanStateContextWithEmptySubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when subtasks is empty");
+        assertFalse(
+                result.contains("Subtasks:"),
+                "Should not contain subtasks section when subtasks is empty");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with DONE subtask without outcome")
+    void testGetPlanStateContextWithDoneSubtaskWithoutOutcome() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        SubTask task = new SubTask("Task 1", "Description 1", null);
+        task.setState(SubTaskState.DONE);
+
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", List.of(task));
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context");
+        assertTrue(result.contains("[1] Task 1"), "Should contain subtask");
+        assertTrue(result.contains("State: done"), "Should contain DONE state");
+        assertFalse(
+                result.contains("✅ Outcome:"),
+                "Should not contain outcome when subtask outcome is null");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with different plan states")
+    void testGetPlanStateContextWithDifferentPlanStates() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        // Test with IN_PROGRESS state
+        plan.setState(PlanState.IN_PROGRESS);
+        String resultInProgress = (String) method.invoke(testMemory);
+        assertNotNull(resultInProgress, "Should return plan context for IN_PROGRESS state");
+        assertTrue(
+                resultInProgress.contains("Plan State: in_progress"),
+                "Should contain IN_PROGRESS state");
+        assertTrue(
+                resultInProgress.contains("- Preserve all information related to active subtasks"),
+                "Should contain specific guidance for IN_PROGRESS state");
+
+        // Test with TODO state
+        plan.setState(PlanState.TODO);
+        String resultTodo = (String) method.invoke(testMemory);
+        assertNotNull(resultTodo, "Should return plan context for TODO state");
+        assertTrue(resultTodo.contains("Plan State: todo"), "Should contain TODO state");
+
+        // Test with DONE state
+        plan.setState(PlanState.DONE);
+        String resultDone = (String) method.invoke(testMemory);
+        assertNotNull(resultDone, "Should return plan context for DONE state");
+        assertTrue(resultDone.contains("Plan State: done"), "Should contain DONE state");
     }
 }
