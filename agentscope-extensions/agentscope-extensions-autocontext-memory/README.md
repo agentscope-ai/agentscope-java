@@ -169,6 +169,7 @@ ReActAgent agent = ReActAgent.builder()
 The `AutoContextHook` automatically:
 - Registers `ContextOffloadTool` to the agent's toolkit (enables context reload functionality)
 - Attaches the agent's `PlanNotebook` to `AutoContextMemory` for plan-aware compression (if PlanNotebook is enabled)
+- Triggers memory compression before each LLM reasoning call via `PreReasoningEvent` (ensures compression happens at a deterministic point)
 - Ensures proper integration between `AutoContextMemory` and `ReActAgent`
 
 ### Custom Context Compression Prompts
@@ -274,7 +275,8 @@ AutoContextConfig config = AutoContextConfig.builder()
 #### Main Methods
 
 - `void addMessage(Msg message)`: Add message to working storage and original storage
-- `List<Msg> getMessages()`: Get message list (may trigger compression)
+- `List<Msg> getMessages()`: Get message list from working memory
+- `boolean compressIfNeeded()`: Compress working memory if thresholds are reached (returns true if compression was performed)
 - `void deleteMessage(int index)`: Delete message at specified index from working storage
 - `void clear()`: Clear all storages
 - `List<Msg> getOriginalMemoryMsgs()`: Get complete message history from original memory storage
@@ -300,12 +302,18 @@ public List<Msg> reload(@ToolParam(name = "working_context_offload_uuid") String
 
 ### AutoContextHook
 
-A `PreCallHook` that **must** be used to set up `AutoContextMemory` integration with `ReActAgent`:
+A `Hook` that handles both `PreCallEvent` and `PreReasoningEvent` to set up and manage `AutoContextMemory` integration with `ReActAgent`:
 
+**PreCallEvent handling (executes once per agent, thread-safe):**
 - Automatically registers `ContextOffloadTool` to the agent's toolkit
 - Automatically attaches the agent's `PlanNotebook` to `AutoContextMemory` for plan-aware compression (if PlanNotebook is enabled)
-- Executes only once per agent (thread-safe)
-- **Required**: Must be used when using `AutoContextMemory` with `ReActAgent`
+
+**PreReasoningEvent handling (executes before each LLM reasoning call):**
+- Triggers memory compression via `compressIfNeeded()` if thresholds are reached
+- Updates input messages in the event to reflect compressed working memory
+- Ensures compression happens at a deterministic point (before reasoning) and LLM receives compressed context
+
+**Required**: Must be used when using `AutoContextMemory` with `ReActAgent` to ensure proper integration and automatic compression triggering.
 
 Usage:
 
@@ -324,19 +332,21 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Compression Trigger Conditions
 
-Compression is triggered under the following conditions:
+Compression is triggered automatically by `AutoContextHook` via `PreReasoningEvent` (before each LLM reasoning call) when the following conditions are met:
 
 1. **Message Count Threshold**: `currentMessages.size() >= msgThreshold`
 2. **Token Count Threshold**: `calculateToken(currentMessages) >= maxToken * tokenRatio`
 
-Compression triggers when either condition is met.
+Compression triggers when either condition is met. The trigger point is deterministic: always before LLM reasoning, ensuring compressed context is used for reasoning.
 
 ### Compression Flow
 
-1. Check if compression threshold is reached
-2. Try 6 compression strategies in order
-3. Return compressed message list immediately after each strategy succeeds
-4. If all strategies fail to meet requirements, log warning and return current working storage
+1. `AutoContextHook` intercepts `PreReasoningEvent` before LLM reasoning
+2. Calls `compressIfNeeded()` to check if compression threshold is reached
+3. If threshold is reached, tries 6 compression strategies in order
+4. Updates `PreReasoningEvent` input messages to reflect compressed working memory
+5. LLM reasoning proceeds with compressed context
+6. If all strategies fail to meet requirements, log warning and continue with current working storage
 
 ### Message Protection Mechanism
 

@@ -24,6 +24,7 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -211,6 +212,7 @@ public class MockModel implements Model {
 
     private static ChatResponse createToolCallResponse(
             String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
+        java.util.Map<String, Object> args = arguments != null ? arguments : new HashMap<>();
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
                 .content(
@@ -221,7 +223,8 @@ public class MockModel implements Model {
                                                 toolCallId != null
                                                         ? toolCallId
                                                         : UUID.randomUUID().toString())
-                                        .input(arguments != null ? arguments : new HashMap<>())
+                                        .input(args)
+                                        .content(JsonUtils.getJsonCodec().toJson(args))
                                         .build()))
                 .usage(new ChatUsage(8, 15, 23))
                 .build();

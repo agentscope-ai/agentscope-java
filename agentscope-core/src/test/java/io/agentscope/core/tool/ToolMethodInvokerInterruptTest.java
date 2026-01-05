@@ -48,7 +48,7 @@ class ToolMethodInvokerInterruptTest {
 
     @BeforeEach
     void setUp() {
-        resultConverter = new ToolResultConverter();
+        resultConverter = new DefaultToolResultConverter();
         invoker = new ToolMethodInvoker(resultConverter);
     }
 
@@ -57,7 +57,7 @@ class ToolMethodInvokerInterruptTest {
         ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", method.getName(), input);
         ToolCallParam param =
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
-        return invoker.invokeAsync(tools, method, param).block();
+        return invoker.invokeAsync(tools, method, param, null).block();
     }
 
     // Test tools with various error scenarios

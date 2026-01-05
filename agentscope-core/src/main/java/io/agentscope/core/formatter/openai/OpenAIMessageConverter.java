@@ -307,14 +307,22 @@ public class OpenAIMessageConverter {
                     continue;
                 }
 
+                // Prioritize using content field (raw arguments string), fallback to input map
+                // serialization
                 String argsJson;
-                try {
-                    argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                } catch (Exception e) {
-                    String errorMsg =
-                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    log.warn("Failed to serialize tool call arguments: {}", errorMsg);
-                    argsJson = "{}";
+                if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
+                    argsJson = toolUse.getContent();
+                } else {
+                    try {
+                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
+                    } catch (Exception e) {
+                        String errorMsg =
+                                e.getMessage() != null
+                                        ? e.getMessage()
+                                        : e.getClass().getSimpleName();
+                        log.warn("Failed to serialize tool call arguments: {}", errorMsg);
+                        argsJson = "{}";
+                    }
                 }
 
                 // Add thought signature if present in metadata (required for Gemini)

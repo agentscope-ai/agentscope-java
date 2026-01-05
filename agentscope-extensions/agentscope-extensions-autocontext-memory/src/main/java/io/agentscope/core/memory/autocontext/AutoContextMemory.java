@@ -154,6 +154,33 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
     @Override
     public List<Msg> getMessages() {
+        // Read-only: return a copy of working memory messages without triggering compression
+        return new ArrayList<>(workingMemoryStorage);
+    }
+
+    /**
+     * Compresses the working memory if thresholds are reached.
+     *
+     * <p>This method checks if compression is needed based on message count and token count
+     * thresholds, and applies compression strategies if necessary. The compression modifies
+     * the working memory storage in place.
+     *
+     * <p>This method should be called at a deterministic point in the execution flow,
+     * typically via a PreReasoningHook, to ensure compression happens before LLM reasoning.
+     *
+     * <p>Compression strategies are applied in order until one succeeds:
+     * <ol>
+     *   <li>Compress previous round tool invocations</li>
+     *   <li>Offload previous round large messages (with lastKeep protection)</li>
+     *   <li>Offload previous round large messages (without lastKeep protection)</li>
+     *   <li>Summarize previous round conversations</li>
+     *   <li>Summarize and offload current round large messages</li>
+     *   <li>Summarize current round messages</li>
+     * </ol>
+     *
+     * @return true if compression was performed, false if no compression was needed
+     */
+    public boolean compressIfNeeded() {
         List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
         // Check if compression is needed
@@ -163,7 +190,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         boolean tokenCounterReached = calculateToken >= thresholdToken;
 
         if (!msgCountReached && !tokenCounterReached) {
-            return new ArrayList<>(workingMemoryStorage);
+            return false;
         }
 
         // Compression triggered - log threshold information
@@ -196,7 +223,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         if (toolCompressed) {
             log.info(
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
-            return new ArrayList<>(workingMemoryStorage);
+            return true;
         } else {
             log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
         }
@@ -210,7 +237,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             log.info(
                     "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
                             + " protection)");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
         }
@@ -222,7 +250,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
         if (hasOffloaded) {
             log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 3: SKIPPED - No large messages found");
         }
@@ -232,7 +261,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
         if (hasSummarized) {
             log.info("Strategy 4: APPLIED - Summarized previous round conversations");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
         }
@@ -243,7 +273,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 summaryCurrentRoundLargeMessages(currentContextMessages);
         if (currentRoundLargeSummarized) {
             log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 5: SKIPPED - No current round large messages found");
         }
@@ -253,13 +284,14 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
         if (currentRoundSummarized) {
             log.info("Strategy 6: APPLIED - Summarized current round messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 6: SKIPPED - No current round messages to summarize");
         }
 
         log.warn("All compression strategies exhausted but context still exceeds threshold");
-        return new ArrayList<>(workingMemoryStorage);
+        return false;
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
@@ -1745,6 +1777,13 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     "autoContextMemory_offloadContext",
                     new OffloadContextState(new HashMap<>(offloadContext)));
         }
+
+        if (!compressionEvents.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_compressionEvents",
+                    new ArrayList<>(compressionEvents));
+        }
     }
 
     /**
@@ -1774,5 +1813,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             offloadContext.clear();
                             offloadContext.putAll(state.offloadContext());
                         });
+
+        // Load compression context events
+        List<CompressionEvent> compressEvents =
+                session.getList(
+                        sessionKey, "autoContextMemory_compressionEvents", CompressionEvent.class);
+        compressionEvents.clear();
+        compressionEvents.addAll(compressEvents);
     }
 }

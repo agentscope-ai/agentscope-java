@@ -181,6 +181,54 @@ AgentScopeA2aServer.builder(agentBuilder)
 
 Using Nacos as an A2A registry allows AgentScope's A2A services to be automatically registered to Nacos.
 
+- For `Spring Boot approach` (Recommended)
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+
+<!-- Additional dependency for Nacos Spring Boot starter -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-nacos-spring-boot-starter</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+```yaml
+# application.yml
+agentscope:
+  dashscope:
+    api-key: your-api-key
+  agent:
+    name: my-assistant
+  a2a:
+    server:
+      enabled: true
+      card:
+        name: My Assistant
+        description: An intelligent assistant based on AgentScope
+    # Adding Nacos properties under `agentscope.a2a`
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDRESS:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+```
+
+```java
+@SpringBootApplication
+public class A2aServerApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(A2aServerApplication.class, args);
+    }
+}
+```
+
+- For `manual creation approach`
+
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
@@ -188,32 +236,6 @@ Using Nacos as an A2A registry allows AgentScope's A2A services to be automatica
     <version>${agentscope.version}</version>
 </dependency>
 ```
-
-- For `Spring Boot approach`
-
-```java
-import com.alibaba.nacos.api.PropertyKeyConst;
-import com.alibaba.nacos.api.ai.AiFactory;
-import com.alibaba.nacos.api.ai.AiService;
-import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
-
-@Configuration
-public class NacosAgentRegistryConfiguration {
-
-    @Bean
-    public AgentRegistry nacosAgentRegistry() {
-        // Set Nacos address
-        Properties properties = new Properties();
-        properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");
-        // Create Nacos Client
-        AiService aiService = AiFactory.createAiService(properties);
-        // Create Nacos AgentRegistry
-        return NacosAgentRegistry.builder(aiService).build();
-    }
-}
-```
-
-- For `manual creation approach`
 
 ```java
 import com.alibaba.nacos.api.PropertyKeyConst;
