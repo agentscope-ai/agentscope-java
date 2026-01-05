@@ -17,7 +17,6 @@ package io.agentscope.core.formatter.gemini;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
-import io.agentscope.core.formatter.gemini.dto.GeminiPart;
 import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
@@ -65,6 +64,7 @@ public class GeminiMultiAgentFormatter
     private final GeminiToolsHelper toolsHelper;
     private final GeminiConversationMerger conversationMerger;
     private final GeminiChatFormatter chatFormatter;
+    private GeminiContent systemInstruction;
 
     /**
      * Create a GeminiMultiAgentFormatter with default conversation history prompt.
@@ -92,19 +92,26 @@ public class GeminiMultiAgentFormatter
         List<GeminiContent> result = new ArrayList<>();
         int startIndex = 0;
 
-        // Process system message first (if any) - convert to user role
+        // Extract and store SYSTEM message separately for systemInstruction field
+        systemInstruction = null;
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
             Msg systemMsg = msgs.get(0);
-            // Gemini doesn't support system role in contents, convert to user
-            GeminiContent systemContent = new GeminiContent();
-            systemContent.setRole("user");
-
-            GeminiPart part = new GeminiPart();
-            part.setText(extractTextContent(systemMsg));
-            systemContent.setParts(List.of(part));
-
-            result.add(systemContent);
+            // Convert SYSTEM message to GeminiContent for systemInstruction field
+            systemInstruction = messageConverter.convertMessages(List.of(systemMsg)).get(0);
             startIndex = 1;
+        }
+
+        // Gemini API requires contents to start with "user" role
+        // If first remaining message is ASSISTANT (from another agent), convert it to USER
+        if (startIndex < msgs.size() && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT) {
+            Msg firstMsg = msgs.get(startIndex);
+            // Convert ASSISTANT message to USER role for multi-agent compatibility
+            GeminiContent userContent = new GeminiContent();
+            userContent.setRole("user");
+            userContent.setParts(
+                    messageConverter.convertMessages(List.of(firstMsg)).get(0).getParts());
+            result.add(userContent);
+            startIndex++;
         }
 
         // Optimization: If only one message remains and it's not a tool result/use,
@@ -171,6 +178,17 @@ public class GeminiMultiAgentFormatter
     @Override
     public void applyToolChoice(GeminiRequest request, ToolChoice toolChoice) {
         chatFormatter.applyToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Apply system instruction to the request if present.
+     *
+     * @param request The Gemini request to configure
+     */
+    public void applySystemInstruction(GeminiRequest request) {
+        if (systemInstruction != null) {
+            request.setSystemInstruction(systemInstruction);
+        }
     }
 
     // ========== Private Helper Methods ==========

@@ -76,40 +76,25 @@ import reactor.core.publisher.Mono;
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
  *
- * <p>
- * ReAct is an agent design pattern that combines reasoning (thinking and
- * planning) with acting
- * (tool execution) in an iterative loop. The agent alternates between these two
- * phases until it
+ * <p>ReAct is an agent design pattern that combines reasoning (thinking and planning) with acting
+ * (tool execution) in an iterative loop. The agent alternates between these two phases until it
  * either completes the task or reaches the maximum iteration limit.
  *
  * <p><b>Key Features:</b>
- * <p>
- * <b>Architecture:</b> The agent is organized into specialized components for
- * maintainability:
  * <ul>
  *   <li><b>Reactive Streaming:</b> Uses Project Reactor for non-blocking execution
  *   <li><b>Hook System:</b> Extensible hooks for monitoring and intercepting agent execution
  *   <li><b>HITL Support:</b> Human-in-the-loop via stopAgent() in PostReasoningEvent/PostActingEvent
  *   <li><b>Structured Output:</b> StructuredOutputCapableAgent provides type-safe output generation
- * <li><b>Core Loop:</b> Manages iteration flow and phase transitions
- * <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline,
- * SummarizingPipeline handle each phase
- * <li><b>Internal Helpers:</b> HookNotifier for hooks, MessagePreparer for
- * message formatting
- * <li><b>Structured Output:</b> StructuredOutputHandler provides type-safe
- * output generation
  * </ul>
  *
- * <p>
- * <b>Usage Example:</b>
- *
+ * <p><b>Usage Example:</b>
  * <pre>{@code
  * // Create a model
  * DashScopeChatModel model = DashScopeChatModel.builder()
- *         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
- *         .modelName("qwen-plus")
- *         .build();
+ *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+ *     .modelName("qwen-plus")
+ *     .build();
  *
  * // Create a toolkit with tools
  * Toolkit toolkit = new Toolkit();
@@ -117,20 +102,20 @@ import reactor.core.publisher.Mono;
  *
  * // Build the agent
  * ReActAgent agent = ReActAgent.builder()
- *         .name("Assistant")
- *         .sysPrompt("You are a helpful assistant.")
- *         .model(model)
- *         .toolkit(toolkit)
- *         .memory(new InMemoryMemory())
- *         .maxIters(10)
- *         .build();
+ *     .name("Assistant")
+ *     .sysPrompt("You are a helpful assistant.")
+ *     .model(model)
+ *     .toolkit(toolkit)
+ *     .memory(new InMemoryMemory())
+ *     .maxIters(10)
+ *     .build();
  *
  * // Use the agent
  * Msg response = agent.call(Msg.builder()
- *         .name("user")
- *         .role(MsgRole.USER)
- *         .content(TextBlock.builder().text("What's the weather?").build())
- *         .build()).block();
+ *     .name("user")
+ *     .role(MsgRole.USER)
+ *     .content(TextBlock.builder().text("What's the weather?").build())
+ *     .build()).block();
  * }</pre>
  *
  * @see StructuredOutputCapableAgent
@@ -383,34 +368,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             if (isFinished(msg)) {
                                 return Mono.just(msg);
                             }
-    // ==================== Helper Methods ====================
-
-    /**
-     * Extract tool calls from the most recent assistant message.
-     *
-     * <p>
-     * Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for
-     * the actual
-     * extraction logic.
-     *
-     * @return List of tool use blocks from the last assistant message, or empty
-     *         list if none found
-     */
-    private List<ToolUseBlock> extractRecentToolCalls() {
-        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
-    }
-
-    /**
-     * Check if the ReAct loop should terminate based on tool calls.
-     *
-     * @return true if no more tools to execute, false if more tools should be
-     *         called
-     */
-    private boolean isFinished() {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-        // If there are tool calls, we are not finished (we need to execute them)
-        return recentToolCalls.isEmpty();
-    }
 
                             // Continue to acting
                             return checkInterruptedAsync().then(acting(iter));
@@ -531,100 +488,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                 IntStream.range(0, toolCalls.size())
                                         .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
                                         .toList());
-    private class ReasoningPipeline {
-
-        private final StructuredOutputHandler handler;
-        private final ReasoningContext context;
-
-        ReasoningPipeline(StructuredOutputHandler handler) {
-            this.handler = handler;
-            this.context = new ReasoningContext(getName());
-        }
-
-        Mono<Void> execute() {
-            return prepareAndStream()
-                    .onErrorResume(this::handleError)
-                    .then(Mono.defer(this::finalizeReasoningStep));
-        }
-
-        private Mono<Void> prepareAndStream() {
-            List<Msg> messageList = messagePreparer.prepareMessageList(handler);
-
-            // Apply forced tool choice when in structured output mode
-            GenerateOptions options =
-                    handler != null
-                            ? handler.createOptionsWithForcedTool(buildGenerateOptions())
-                            : buildGenerateOptions();
-
-            List<ToolSchema> toolSchemas = toolkit.getToolSchemas();
-
-            return hookNotifier
-                    .notifyPreReasoning(ReActAgent.this, messageList)
-                    .flatMapMany(modifiedMsgs -> model.stream(modifiedMsgs, toolSchemas, options))
-                    .concatMap(this::processChunkWithInterruptCheck)
-                    .then();
-        }
-
-        private Flux<Void> processChunkWithInterruptCheck(ChatResponse chunk) {
-            return checkInterruptedAsync()
-                    .thenReturn(chunk)
-                    .flatMapMany(this::processAndNotifyChunk);
-        }
-
-        private Flux<Void> processAndNotifyChunk(ChatResponse chunk) {
-            List<Msg> msgs = context.processChunk(chunk);
-            return Flux.fromIterable(msgs)
-                    .concatMap(msg -> hookNotifier.notifyStreamingMsg(msg, context));
-        }
-
-        private Mono<Void> handleError(Throwable error) {
-            if (error instanceof InterruptedException) {
-                return finalizeWithInterrupt().then(Mono.error(error));
-            }
-            return Mono.error(error);
-        }
-
-        private Mono<Void> finalizeReasoningStep() {
-            return finalizeReasoning(false);
-        }
-
-        private Mono<Void> finalizeWithInterrupt() {
-            return finalizeReasoning(true);
-        }
-
-        private Mono<Void> finalizeReasoning(boolean wasInterrupted) {
-            return Mono.fromCallable(context::buildFinalMessage)
-                    .flatMap(reasoningMsg -> processFinalMessage(reasoningMsg, wasInterrupted));
-        }
-
-        private Mono<Void> processFinalMessage(Msg reasoningMsg, boolean wasInterrupted) {
-            if (reasoningMsg == null) {
-                return Mono.empty();
-            }
-
-            List<ToolUseBlock> toolBlocks = reasoningMsg.getContentBlocks(ToolUseBlock.class);
-
-            // Log tool block detection
-            if (log.isDebugEnabled()) {
-                log.debug(
-                        "=== ReActAgent detected {} tool blocks in reasoning message. Total content"
-                                + " blocks: {}",
-                        toolBlocks.size(),
-                        reasoningMsg.getContent() != null ? reasoningMsg.getContent().size() : 0);
-            }
-
-            return hookNotifier
-                    .notifyPostReasoning(reasoningMsg)
-                    .flatMap(
-                            modifiedMsg -> {
-                                memory.addMessage(modifiedMsg);
-                                return notifyPreActingHooks(toolBlocks);
-                            });
-        }
-
-        private Mono<Void> notifyPreActingHooks(List<ToolUseBlock> toolBlocks) {
-            return Flux.fromIterable(toolBlocks).concatMap(hookNotifier::notifyPreActing).then();
-        }
     }
 
     /**
@@ -772,14 +635,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Injects reminder messages for structured output generation in PROMPT mode.
-     *
-     * <p>
-     * This hook automatically adds reminder messages to the model context when the
-     * agent
-     * needs prompting to call the structured output tool. It ensures reliable
-     * structured output
-     * generation without relying on model tool choice enforcement.
      * Extract tool calls from the most recent assistant message.
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
@@ -1001,8 +856,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the memory for storing conversation history.
          *
-         * @param memory The memory implementation, can be null (defaults to
-         *               InMemoryMemory)
+         * @param memory The memory implementation, can be null (defaults to InMemoryMemory)
          * @return This builder instance for method chaining
          */
         public Builder memory(Memory memory) {
@@ -1024,11 +878,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Adds a hook for monitoring and intercepting agent execution events.
          *
-         * <p>
-         * Hooks can observe or modify events during reasoning, acting, and other
-         * phases.
-         * Multiple hooks can be added and will be executed in priority order (lower
-         * priority
+         * <p>Hooks can observe or modify events during reasoning, acting, and other phases.
+         * Multiple hooks can be added and will be executed in priority order (lower priority
          * values execute first).
          *
          * @param hook The hook to add, must not be null
@@ -1043,11 +894,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Adds multiple hooks for monitoring and intercepting agent execution events.
          *
-         * <p>
-         * Hooks can observe or modify events during reasoning, acting, and other
-         * phases.
-         * All hooks will be executed in priority order (lower priority values execute
-         * first).
+         * <p>Hooks can observe or modify events during reasoning, acting, and other phases.
+         * All hooks will be executed in priority order (lower priority values execute first).
          *
          * @param hooks The list of hooks to add, must not be null
          * @return This builder instance for method chaining
@@ -1061,11 +909,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Enables or disables the meta-tool functionality.
          *
-         * <p>
-         * When enabled, the toolkit will automatically register a meta-tool that
-         * provides
-         * information about available tools to the agent. This can help the agent
-         * understand
+         * <p>When enabled, the toolkit will automatically register a meta-tool that provides
+         * information about available tools to the agent. This can help the agent understand
          * what tools are available without relying solely on the system prompt.
          *
          * @param enableMetaTool true to enable meta-tool, false to disable
@@ -1079,13 +924,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the execution configuration for model API calls.
          *
-         * <p>
-         * This configuration controls timeout, retry behavior, and backoff strategy for
+         * <p>This configuration controls timeout, retry behavior, and backoff strategy for
          * model requests during the reasoning phase. If not set, the agent will use the
          * model's default execution configuration.
          *
-         * @param modelExecutionConfig The execution configuration for model calls, can
-         *                             be null
+         * @param modelExecutionConfig The execution configuration for model calls, can be null
          * @return This builder instance for method chaining
          * @see ExecutionConfig
          */
@@ -1097,14 +940,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the execution configuration for tool executions.
          *
-         * <p>
-         * This configuration controls timeout, retry behavior, and backoff strategy for
-         * tool calls during the acting phase. If not set, the toolkit will use its
-         * default
+         * <p>This configuration controls timeout, retry behavior, and backoff strategy for
+         * tool calls during the acting phase. If not set, the toolkit will use its default
          * execution configuration.
          *
-         * @param toolExecutionConfig The execution configuration for tool calls, can be
-         *                            null
+         * @param toolExecutionConfig The execution configuration for tool calls, can be null
          * @return This builder instance for method chaining
          * @see ExecutionConfig
          */
@@ -1127,11 +967,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the PlanNotebook for plan-based task execution.
          *
-         * <p>
-         * When provided, the PlanNotebook will be integrated into the agent:
+         * <p>When provided, the PlanNotebook will be integrated into the agent:
          * <ul>
-         * <li>Plan management tools will be automatically registered to the toolkit
-         * <li>A hook will be added to inject plan hints before each reasoning step
+         *   <li>Plan management tools will be automatically registered to the toolkit
+         *   <li>A hook will be added to inject plan hints before each reasoning step
          * </ul>
          *
          * @param planNotebook The configured PlanNotebook instance, can be null
@@ -1161,10 +1000,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the long-term memory for this agent.
          *
-         * <p>
-         * Long-term memory enables the agent to remember information across sessions.
-         * It can be used in combination with
-         * {@link #longTermMemoryMode(LongTermMemoryMode)}
+         * <p>Long-term memory enables the agent to remember information across sessions.
+         * It can be used in combination with {@link #longTermMemoryMode(LongTermMemoryMode)}
          * to control whether memory management is automatic, agent-controlled, or both.
          *
          * @param longTermMemory The long-term memory implementation
@@ -1179,13 +1016,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the long-term memory mode.
          *
-         * <p>
-         * This determines how long-term memory is integrated with the agent:
+         * <p>This determines how long-term memory is integrated with the agent:
          * <ul>
-         * <li><b>AGENT_CONTROL:</b> Memory tools are registered for agent to call</li>
-         * <li><b>STATIC_CONTROL:</b> Framework automatically retrieves/records
-         * memory</li>
-         * <li><b>BOTH:</b> Combines both approaches (default)</li>
+         *   <li><b>AGENT_CONTROL:</b> Memory tools are registered for agent to call</li>
+         *   <li><b>STATIC_CONTROL:</b> Framework automatically retrieves/records memory</li>
+         *   <li><b>BOTH:</b> Combines both approaches (default)</li>
          * </ul>
          *
          * @param mode The long-term memory mode
@@ -1227,9 +1062,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Enables plan functionality with default configuration.
          *
-         * <p>
-         * This is a convenience method equivalent to:
-         *
+         * <p>This is a convenience method equivalent to:
          * <pre>{@code
          * planNotebook(PlanNotebook.builder().build())
          * }</pre>
@@ -1296,8 +1129,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets whether to enable RAG only for user queries.
          *
-         * @param enableOnlyForUserQueries If true, RAG is only triggered for user
-         *                                 messages
+         * @param enableOnlyForUserQueries If true, RAG is only triggered for user messages
          * @return This builder instance for method chaining
          */
         public Builder enableOnlyForUserQueries(boolean enableOnlyForUserQueries) {
@@ -1308,13 +1140,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Sets the tool execution context for this agent.
          *
-         * <p>
-         * This context will be passed to all tools invoked by this agent and can
-         * include
-         * user identity, session information, permissions, and other metadata. The
-         * context
-         * from this agent level will override toolkit-level context but can be
-         * overridden by
+         * <p>This context will be passed to all tools invoked by this agent and can include
+         * user identity, session information, permissions, and other metadata. The context
+         * from this agent level will override toolkit-level context but can be overridden by
          * call-level context.
          *
          * @param toolExecutionContext The tool execution context
@@ -1329,8 +1157,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * Builds and returns a new ReActAgent instance with the configured settings.
          *
          * @return A new ReActAgent instance
-         * @throws IllegalArgumentException if required parameters are missing or
-         *                                  invalid
+         * @throws IllegalArgumentException if required parameters are missing or invalid
          */
         public ReActAgent build() {
             if (enableMetaTool) {
@@ -1363,13 +1190,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Configures long-term memory based on the selected mode.
          *
-         * <p>
-         * This method sets up long-term memory integration:
+         * <p>This method sets up long-term memory integration:
          * <ul>
-         * <li>AGENT_CONTROL: Registers memory tools for agent to call</li>
-         * <li>STATIC_CONTROL: Registers StaticLongTermMemoryHook for automatic
-         * retrieval/recording</li>
-         * <li>BOTH: Combines both approaches (registers tools + hook)</li>
+         *   <li>AGENT_CONTROL: Registers memory tools for agent to call</li>
+         *   <li>STATIC_CONTROL: Registers StaticLongTermMemoryHook for automatic retrieval/recording</li>
+         *   <li>BOTH: Combines both approaches (registers tools + hook)</li>
          * </ul>
          */
         private void configureLongTermMemory() {
@@ -1379,8 +1204,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 toolkit.registerTool(new LongTermMemoryTools(longTermMemory));
             }
 
-            // If static control is enabled, register the hook for automatic memory
-            // management
+            // If static control is enabled, register the hook for automatic memory management
             if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
                 StaticLongTermMemoryHook hook =
@@ -1392,14 +1216,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
          *
-         * <p>
-         * This method automatically sets up the appropriate hooks or tools based on the
-         * RAG mode:
+         * <p>This method automatically sets up the appropriate hooks or tools based on the RAG mode:
          * <ul>
-         * <li>GENERIC: Adds a GenericRAGHook to automatically inject knowledge</li>
-         * <li>AGENTIC: Registers KnowledgeRetrievalTools for agent-controlled
-         * retrieval</li>
-         * <li>NONE: Does nothing</li>
+         *   <li>GENERIC: Adds a GenericRAGHook to automatically inject knowledge</li>
+         *   <li>AGENTIC: Registers KnowledgeRetrievalTools for agent-controlled retrieval</li>
+         *   <li>NONE: Does nothing</li>
          * </ul>
          */
         private void configureRAG() {
@@ -1478,11 +1299,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Configures PlanNotebook integration.
          *
-         * <p>
-         * This method automatically:
+         * <p>This method automatically:
          * <ul>
-         * <li>Registers plan management tools to the toolkit
-         * <li>Adds a hook to inject plan hints before each reasoning step
+         *   <li>Registers plan management tools to the toolkit
+         *   <li>Adds a hook to inject plan hints before each reasoning step
          * </ul>
          */
         private void configurePlan() {

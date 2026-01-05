@@ -29,6 +29,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -50,6 +51,7 @@ public class GeminiChatFormatter
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
     private final GeminiToolsHelper toolsHelper;
+    private GeminiContent systemInstruction;
 
     /**
      * Creates a new GeminiChatFormatter with default converters and parsers.
@@ -62,7 +64,60 @@ public class GeminiChatFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        return messageConverter.convertMessages(msgs);
+        // Extract and store SYSTEM message separately
+        systemInstruction = null;
+        int startIndex = 0;
+
+        if (!msgs.isEmpty() && msgs.get(0).getRole() == io.agentscope.core.message.MsgRole.SYSTEM) {
+            systemInstruction = messageConverter.convertMessages(List.of(msgs.get(0))).get(0);
+            startIndex = 1;
+        }
+
+        // Gemini API requires contents to start with "user" role
+        // If first remaining message is ASSISTANT (from another agent), convert it to USER
+        if (startIndex < msgs.size()
+                && msgs.get(startIndex).getRole() == io.agentscope.core.message.MsgRole.ASSISTANT) {
+            List<GeminiContent> result = new ArrayList<>();
+
+            // Convert first ASSISTANT message to USER role for multi-agent compatibility
+            GeminiContent userContent = new GeminiContent();
+            userContent.setRole("user");
+            userContent.setParts(
+                    messageConverter
+                            .convertMessages(List.of(msgs.get(startIndex)))
+                            .get(0)
+                            .getParts());
+            result.add(userContent);
+
+            // Add remaining messages
+            if (startIndex + 1 < msgs.size()) {
+                result.addAll(
+                        messageConverter.convertMessages(
+                                msgs.subList(startIndex + 1, msgs.size())));
+            }
+
+            return result;
+        }
+
+        // Return remaining messages (excluding SYSTEM)
+        if (startIndex > 0 && startIndex < msgs.size()) {
+            return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
+        } else if (startIndex == 0) {
+            return messageConverter.convertMessages(msgs);
+        }
+
+        return new ArrayList<>();
+    }
+
+    /**
+     * Apply system instruction to the request if present.
+     *
+     * @param request The Gemini request to configure
+     */
+    public void applySystemInstruction(GeminiRequest request) {
+        if (systemInstruction != null) {
+            request.setSystemInstruction(systemInstruction);
+        }
     }
 
     @Override

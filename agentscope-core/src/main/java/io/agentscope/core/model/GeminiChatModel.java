@@ -29,6 +29,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -45,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 /**
  * Gemini Chat Model implementation using OkHttp for direct API calls.
@@ -160,6 +162,19 @@ public class GeminiChatModel extends ChatModelBase {
                                 List<GeminiContent> contents = formatter.format(messages);
                                 requestDto.setContents(contents);
 
+                                // Apply system instruction if formatter supports it
+                                if (formatter instanceof GeminiChatFormatter) {
+                                    ((GeminiChatFormatter) formatter)
+                                            .applySystemInstruction(requestDto);
+                                } else if (formatter
+                                        instanceof
+                                        io.agentscope.core.formatter.gemini
+                                                .GeminiMultiAgentFormatter) {
+                                    ((io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter)
+                                                    formatter)
+                                            .applySystemInstruction(requestDto);
+                                }
+
                                 // Apply options, tools, tool choice
                                 formatter.applyOptions(requestDto, options, defaultOptions);
 
@@ -193,6 +208,13 @@ public class GeminiChatModel extends ChatModelBase {
                                 // 2. Serialize Request
                                 String requestJson = objectMapper.writeValueAsString(requestDto);
                                 log.trace("Gemini Request JSON: {}", requestJson);
+                                log.debug(
+                                        "Gemini request: model={}, system_instruction={}, contents_count={}",
+                                        modelName,
+                                        requestDto.getSystemInstruction() != null,
+                                        requestDto.getContents() != null
+                                                ? requestDto.getContents().size()
+                                                : 0);
 
                                 // Debug: Log when tools are present
                                 if (tools != null && !tools.isEmpty()) {
@@ -251,7 +273,29 @@ public class GeminiChatModel extends ChatModelBase {
                                                 e));
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                .retryWhen(
+                        Retry.backoff(3, Duration.ofSeconds(1))
+                                .filter(
+                                        throwable -> {
+                                            if (throwable instanceof GeminiApiException) {
+                                                int code =
+                                                        ((GeminiApiException) throwable)
+                                                                .getStatusCode();
+                                                // Retry on 429 (Too Many Requests) and 5xx (Server
+                                                // Errors)
+                                                return code == 429 || (code >= 500 && code < 600);
+                                            }
+                                            return false;
+                                        })
+                                .onRetryExhaustedThrow(
+                                        (retryBackoffSpec, retrySignal) ->
+                                                new ModelException(
+                                                        "Gemini request failed after retries: "
+                                                                + retrySignal
+                                                                        .failure()
+                                                                        .getMessage(),
+                                                        retrySignal.failure())));
     }
 
     private Flux<ChatResponse> handleUnaryResponse(Request request, Instant startTime) {
@@ -261,36 +305,9 @@ public class GeminiChatModel extends ChatModelBase {
                 String bodyString = responseBody != null ? responseBody.string() : null;
                 if (!response.isSuccessful() || bodyString == null) {
                     String errorBody = bodyString != null ? bodyString : "null";
-                    throw new IOException(
-                            "Gemini API Error: " + response.code() + " - " + errorBody);
+                    throw new GeminiApiException(response.code(), errorBody);
                 }
 
-                                    // Convert ResponseStream to Flux
-                                    return Flux.fromIterable(responseStream)
-                                            .subscribeOn(Schedulers.boundedElastic())
-                                            .map(
-                                                    response ->
-                                                            formatter.parseResponse(
-                                                                    response, startTime))
-                                            .doFinally(
-                                                    signalType -> {
-                                                        // Close the stream
-                                                        // when done
-                                                        try {
-                                                            responseStream.close();
-                                                        } catch (Exception e) {
-                                                            log.warn(
-                                                                    "Error closing"
-                                                                            + " response"
-                                                                            + " stream: {}",
-                                                                    e.getMessage());
-                                                        }
-                                                    });
-                                } else {
-                                    // Use non-streaming API
-                                    GenerateContentResponse response =
-                                            client.models.generateContent(
-                                                    modelName, formattedMessages, config);
                 GeminiResponse geminiResponse =
                         objectMapper.readValue(bodyString, GeminiResponse.class);
                 ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
@@ -309,12 +326,7 @@ public class GeminiChatModel extends ChatModelBase {
                         if (!response.isSuccessful()) {
                             try (ResponseBody body = response.body()) {
                                 String error = body != null ? body.string() : "Unknown error";
-                                sink.error(
-                                        new IOException(
-                                                "Gemini API Error: "
-                                                        + response.code()
-                                                        + " - "
-                                                        + error));
+                                sink.error(new GeminiApiException(response.code(), error));
                             }
                             return;
                         }
@@ -519,6 +531,26 @@ public class GeminiChatModel extends ChatModelBase {
                     formatter,
                     timeout,
                     client);
+        }
+    }
+
+    /** Exception for Gemini API specific errors. */
+    public static class GeminiApiException extends RuntimeException {
+        private final int statusCode;
+        private final String body;
+
+        public GeminiApiException(int statusCode, String body) {
+            super("Gemini API Error: " + statusCode + " - " + body);
+            this.statusCode = statusCode;
+            this.body = body;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
+        }
+
+        public String getBody() {
+            return body;
         }
     }
 }

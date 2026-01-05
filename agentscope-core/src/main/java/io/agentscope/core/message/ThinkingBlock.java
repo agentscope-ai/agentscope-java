@@ -19,7 +19,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map;
 
 /**
  * Represents reasoning or thinking content in a message.
@@ -37,11 +36,11 @@ import java.util.Map;
  * where understanding the agent's thought process is valuable for debugging and
  * analysis.
  *
- * <p>Thinking blocks are particularly useful in ReAct agents and other reasoning-intensive systems
- * where understanding the agent's thought process is valuable for debugging and analysis.
- *
- * <p>The optional metadata field can store additional reasoning information such as OpenRouter's
- * reasoning_details (reasoning.text, reasoning.encrypted, reasoning.summary) that need to be
+ * <p>
+ * The optional metadata field can store additional reasoning information such
+ * as OpenRouter's
+ * reasoning_details (reasoning.text, reasoning.encrypted, reasoning.summary)
+ * that need to be
  * preserved and restored when formatting messages back to the API.
  * <p>
  * <b>Model-Specific Metadata:</b> Different models may attach additional
@@ -83,10 +82,9 @@ public final class ThinkingBlock extends ContentBlock {
     /**
      * Creates a new thinking block for JSON deserialization.
      *
-     * @param text The thinking content (null will be converted to empty string)
-     * @param metadata Optional metadata for storing additional reasoning information
      * @param text     The thinking content (null will be converted to empty string)
-     * @param metadata Optional metadata map for model-specific data
+     * @param metadata Optional metadata for storing additional reasoning
+     *                 information
      */
     @JsonCreator
     private ThinkingBlock(
@@ -94,7 +92,6 @@ public final class ThinkingBlock extends ContentBlock {
             @JsonProperty("metadata") Map<String, Object> metadata) {
         this.thinking = text != null ? text : "";
         this.metadata = metadata != null ? new HashMap<>(metadata) : null;
-        this.metadata = metadata;
     }
 
     /**
@@ -109,26 +106,18 @@ public final class ThinkingBlock extends ContentBlock {
     /**
      * Gets the metadata associated with this thinking block.
      *
-     * <p>Metadata can contain additional reasoning information such as:
+     * <p>
+     * Metadata can contain additional reasoning information such as:
      *
      * <ul>
-     *   <li>{@link #METADATA_REASONING_DETAILS} - List of OpenAIReasoningDetail objects from
-     *       OpenRouter/Gemini
+     * <li>{@link #METADATA_REASONING_DETAILS} - List of OpenAIReasoningDetail
+     * objects from
+     * OpenRouter/Gemini
+     * <li>{@link #METADATA_THOUGHT_SIGNATURE} - Gemini thought signature for
+     * context preservation
      * </ul>
      *
      * @return The metadata map, or null if no metadata is set
-     */
-    public Map<String, Object> getMetadata() {
-        return metadata;
-    }
-
-    /**
-     * Gets the metadata map containing model-specific data.
-     *
-     * <p>
-     * For Gemini models, this may contain {@link #METADATA_THOUGHT_SIGNATURE}.
-     *
-     * @return The metadata map, or null if no metadata is present
      */
     public Map<String, Object> getMetadata() {
         return metadata;
@@ -176,6 +165,11 @@ public final class ThinkingBlock extends ContentBlock {
         /**
          * Sets the metadata map for model-specific data.
          *
+         * <p>
+         * Metadata can store additional reasoning information that needs to be
+         * preserved, such
+         * as OpenRouter's reasoning_details.
+         *
          * @param metadata The metadata map
          * @return This builder for chaining
          */
@@ -204,23 +198,8 @@ public final class ThinkingBlock extends ContentBlock {
         }
 
         /**
-         * Sets the metadata for the block.
-         *
-         * <p>Metadata can store additional reasoning information that needs to be preserved, such
-         * as OpenRouter's reasoning_details.
-         *
-         * @param metadata The metadata map
-         * @return This builder for chaining
-         */
-        public Builder metadata(Map<String, Object> metadata) {
-            this.metadata = metadata;
-            return this;
-        }
-
-        /**
          * Builds a new ThinkingBlock with the configured thinking content and metadata.
          *
-         * @return A new ThinkingBlock instance (null thinking will be converted to empty string)
          * @return A new ThinkingBlock instance (null thinking will be converted to
          *         empty string)
          */

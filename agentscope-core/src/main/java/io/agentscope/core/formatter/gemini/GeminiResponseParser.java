@@ -87,6 +87,32 @@ public class GeminiResponseParser {
                     }
                 }
                 finishReason = candidate.getFinishReason();
+
+                // Log warning if content is empty
+                if (blocks.isEmpty()) {
+                    log.warn(
+                            "Gemini returned empty content. finishReason={}, "
+                                    + "candidateContent={}, promptFeedback={}",
+                            finishReason,
+                            candidate.getContent(),
+                            response.getPromptFeedback());
+
+                    // Add a text block explaining the empty response
+                    String emptyReason = "Gemini returned empty content";
+                    if (finishReason != null && !finishReason.isEmpty()) {
+                        emptyReason += " (finishReason: " + finishReason + ")";
+                    }
+                    blocks.add(TextBlock.builder().text(emptyReason).build());
+                }
+            } else {
+                // No candidates at all
+                log.warn(
+                        "Gemini returned no candidates. promptFeedback={}",
+                        response.getPromptFeedback());
+                blocks.add(
+                        TextBlock.builder()
+                                .text("Gemini returned no candidates in response")
+                                .build());
             }
 
             // Parse usage metadata

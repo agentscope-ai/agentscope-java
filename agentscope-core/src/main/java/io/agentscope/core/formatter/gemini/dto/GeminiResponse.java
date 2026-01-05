@@ -64,6 +64,14 @@ public class GeminiResponse {
         this.usageMetadata = usageMetadata;
     }
 
+    public Object getPromptFeedback() {
+        return promptFeedback;
+    }
+
+    public void setPromptFeedback(Object promptFeedback) {
+        this.promptFeedback = promptFeedback;
+    }
+
     // Inner classes
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
