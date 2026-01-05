@@ -37,6 +37,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -936,6 +937,7 @@ class ReActAgentTest {
                                         .name(toolName)
                                         .id(toolCallId)
                                         .input(arguments)
+                                        .content(JsonUtils.getJsonCodec().toJson(arguments))
                                         .build()))
                 .usage(new ChatUsage(8, 15, 23))
                 .build();

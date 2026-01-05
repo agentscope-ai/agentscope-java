@@ -65,7 +65,7 @@ class ToolValidatorTest {
         }
 
         @Test
-        @DisplayName("Should pass when input is null with no required fields")
+        @DisplayName("Should fail when input is null")
         void testNullInputNoRequired() {
             Map<String, Object> schema =
                     Map.of(
@@ -74,7 +74,8 @@ class ToolValidatorTest {
                             "properties",
                             Map.of("name", Map.of("type", "string")));
             String result = ToolValidator.validateInput(null, schema);
-            assertNull(result);
+            // Null input should return validation error (content is null)
+            assertNotNull(result);
         }
     }
 
@@ -129,8 +130,8 @@ class ToolValidatorTest {
 
             String result = ToolValidator.validateInput(null, schema);
 
+            // Null input should return validation error (content is null)
             assertNotNull(result);
-            assertTrue(result.contains("name"));
         }
     }
 
