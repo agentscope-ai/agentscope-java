@@ -202,7 +202,8 @@ public class ChatCompletionsController {
         String requestId = UUID.randomUUID().toString();
 
         log.debug(
-                "Processing streaming chat completion request: requestId={}, messageCount={}, stream={}",
+                "Processing streaming chat completion request: requestId={}, messageCount={},"
+                        + " stream={}",
                 requestId,
                 request.getMessages() != null ? request.getMessages().size() : 0,
                 request.getStream());
@@ -211,7 +212,8 @@ public class ChatCompletionsController {
         // If stream is explicitly false, return error for consistency
         if (Boolean.FALSE.equals(request.getStream())) {
             log.warn(
-                    "Non-streaming request received on streaming endpoint: requestId={}, stream=false",
+                    "Non-streaming request received on streaming endpoint: requestId={},"
+                            + " stream=false",
                     requestId);
             return Flux.error(
                     new IllegalArgumentException(

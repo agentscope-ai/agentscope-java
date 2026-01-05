@@ -97,7 +97,9 @@ public class ChatCompletionsWebApplication {
                 """);
         System.out.println("\nNote: Accept: text/event-stream header is optional when stream=true");
         System.out.println("===================================================");
-        System.out.println("\n⚠️  Important: stream=false with Accept: text/event-stream will return error");
-        System.out.println("   Use stream=true for streaming, or omit Accept header for non-streaming");
+        System.out.println(
+                "\n⚠️  Important: stream=false with Accept: text/event-stream will return error");
+        System.out.println(
+                "   Use stream=true for streaming, or omit Accept header for non-streaming");
     }
 }
