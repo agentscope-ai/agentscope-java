@@ -736,4 +736,196 @@ class ToolkitTest {
                     ToolResultBlock.of(TextBlock.builder().text("Result: " + input).build()));
         }
     }
+
+    // ==================== Converter Tests ====================
+
+    /**
+     * Custom converter with no-arg constructor for testing.
+     */
+    public static class CustomNoArgConverter implements ToolResultConverter {
+        @Override
+        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+            return ToolResultBlock.text("[CustomNoArg] " + result);
+        }
+    }
+
+    /**
+     * Invalid converter without no-arg constructor for testing.
+     */
+    public static class InvalidConverterNoConstructor implements ToolResultConverter {
+        private final String config;
+
+        public InvalidConverterNoConstructor(String config) {
+            this.config = config;
+        }
+
+        @Override
+        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+            return ToolResultBlock.text(result + " with config: " + config);
+        }
+    }
+
+    /**
+     * Test tool class with custom converter.
+     */
+    private static class ToolWithCustomConverter {
+        @Tool(
+                name = "tool_with_custom_converter",
+                description = "Tool with custom converter",
+                converter = CustomNoArgConverter.class)
+        public String execute(@ToolParam(name = "input") String input) {
+            return "Processed: " + input;
+        }
+    }
+
+    /**
+     * Test tool class with invalid converter (no no-arg constructor).
+     */
+    private static class ToolWithInvalidConverter {
+        @Tool(
+                name = "tool_with_invalid_converter",
+                description = "Tool with invalid converter",
+                converter = InvalidConverterNoConstructor.class)
+        public String execute(@ToolParam(name = "input") String input) {
+            return "Should not reach here";
+        }
+    }
+
+    /**
+     * Test tool class with default converter.
+     */
+    private static class ToolWithDefaultConverter {
+        @Tool(name = "tool_with_default_converter", description = "Tool with default converter")
+        public String execute(@ToolParam(name = "input") String input) {
+            return "Default: " + input;
+        }
+    }
+
+    @Test
+    @DisplayName("Should use custom converter when specified in @Tool annotation")
+    void testParseConverterFromAnnotation_CustomConverter() {
+        // Register tool with custom converter
+        ToolWithCustomConverter toolObj = new ToolWithCustomConverter();
+        toolkit.registerTool(toolObj);
+
+        // Execute the tool
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name("tool_with_custom_converter")
+                        .input(Map.of("input", "test"))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        // Verify the custom converter was used
+        assertNotNull(result, "Result should not be null");
+        String resultText = getResultText(result);
+        assertTrue(
+                resultText.contains("[CustomNoArg]"),
+                "Result should contain custom converter prefix. Got: " + resultText);
+        assertTrue(
+                resultText.contains("Processed: test"),
+                "Result should contain processed input. Got: " + resultText);
+    }
+
+    @Test
+    @DisplayName("Should use default converter when no converter specified")
+    void testParseConverterFromAnnotation_DefaultConverter() {
+        // Register tool without custom converter
+        ToolWithDefaultConverter toolObj = new ToolWithDefaultConverter();
+        toolkit.registerTool(toolObj);
+
+        // Execute the tool
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name("tool_with_default_converter")
+                        .input(Map.of("input", "test"))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+
+        // Verify the default converter was used (no custom prefix)
+        assertNotNull(result, "Result should not be null");
+        String resultText = getResultText(result);
+        assertFalse(
+                resultText.contains("[CustomNoArg]"),
+                "Result should NOT contain custom converter prefix");
+        assertTrue(resultText.contains("Default: test"), "Result should contain default output");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when converter has no no-arg constructor")
+    void testInstantiateConverter_NoNoArgConstructor() {
+        // Try to register tool with invalid converter
+        ToolWithInvalidConverter toolObj = new ToolWithInvalidConverter();
+
+        // Should throw IllegalStateException when trying to register
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> toolkit.registerTool(toolObj),
+                        "Should throw exception for converter without no-arg constructor");
+
+        // Verify the exception message
+        assertTrue(
+                exception.getMessage().contains("Failed to create converter from @Tool annotation"),
+                "Exception should indicate converter creation failure. Got: "
+                        + exception.getMessage());
+
+        Throwable cause = exception.getCause();
+        assertNotNull(cause, "Exception should have a cause");
+        assertTrue(
+                cause instanceof IllegalStateException,
+                "Cause should be IllegalStateException. Got: " + cause.getClass().getName());
+        assertTrue(
+                cause.getMessage().contains("must have either a no-arg constructor"),
+                "Cause message should mention no-arg constructor requirement. Got: "
+                        + cause.getMessage());
+    }
+
+    @Test
+    @DisplayName("Should successfully instantiate converter with no-arg constructor")
+    void testInstantiateConverter_WithNoArgConstructor() {
+        // Register tool with valid custom converter
+        ToolWithCustomConverter toolObj = new ToolWithCustomConverter();
+
+        // Should not throw any exception
+        assertDoesNotThrow(
+                () -> toolkit.registerTool(toolObj),
+                "Should successfully register tool with valid converter");
+
+        // Verify the tool is registered
+        AgentTool tool = toolkit.getTool("tool_with_custom_converter");
+        assertNotNull(tool, "Tool should be registered successfully");
+
+        // Verify the tool can be executed
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name("tool_with_custom_converter")
+                        .input(Map.of("input", "validation"))
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+        assertNotNull(result, "Tool should execute successfully");
+        assertFalse(isErrorResult(result), "Tool execution should not have errors");
+    }
+
+    @Test
+    @DisplayName("Should handle null annotation in parseConverterFromAnnotation")
+    void testParseConverterFromAnnotation_NullAnnotation() {
+        // This is tested indirectly by using default converter
+        // When no custom converter is specified, the annotation's converter() returns
+        // DefaultToolResultConverter.class which should work fine
+
+        ToolWithDefaultConverter toolObj = new ToolWithDefaultConverter();
+        assertDoesNotThrow(
+                () -> toolkit.registerTool(toolObj),
+                "Should handle tools without custom converter");
+
+        AgentTool tool = toolkit.getTool("tool_with_default_converter");
+        assertNotNull(tool, "Tool should be registered");
+    }
 }

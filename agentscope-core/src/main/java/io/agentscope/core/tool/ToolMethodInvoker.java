@@ -37,11 +37,11 @@ import reactor.core.publisher.Mono;
  */
 class ToolMethodInvoker {
 
-    private final ToolResultConverter resultConverter;
+    private final ToolResultConverter defaultConverter;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     ToolMethodInvoker(ToolResultConverter resultConverter) {
-        this.resultConverter = resultConverter;
+        this.defaultConverter = resultConverter;
     }
 
     /**
@@ -54,14 +54,23 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
+     * Invoke tool method asynchronously with custom converter support.
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param param the tool call parameters containing input, toolUseBlock, agent, and context
+     * @param customConverter custom converter for this invocation (null to use default)
      * @return Mono containing ToolResultBlock
      */
-    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
+    Mono<ToolResultBlock> invokeAsync(
+            Object toolObject,
+            Method method,
+            ToolCallParam param,
+            ToolResultConverter customConverter) {
+        // Use custom converter if provided, otherwise use default
+        final ToolResultConverter converter =
+                customConverter != null ? customConverter : defaultConverter;
+
         Map<String, Object> input = param.getInput();
         ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
@@ -87,7 +96,7 @@ class ToolMethodInvoker {
                                     Mono.fromFuture(future)
                                             .map(
                                                     r ->
-                                                            resultConverter.convert(
+                                                            converter.convert(
                                                                     r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
@@ -112,10 +121,7 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(
-                                                    r ->
-                                                            resultConverter.convert(
-                                                                    r, extractGenericType(method)))
+                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -134,7 +140,7 @@ class ToolMethodInvoker {
                                         convertParameters(
                                                 method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
-                                return resultConverter.convert(result, method.getReturnType());
+                                return converter.convert(result, method.getGenericReturnType());
                             })
                     .onErrorResume(
                             e ->
