@@ -404,6 +404,10 @@ public class Toolkit {
 
         try {
             Class<? extends ToolResultConverter> converterClass = toolAnnotation.converter();
+            // If explicitly set to DefaultToolResultConverter, return null to use the default
+            if (converterClass == DefaultToolResultConverter.class) {
+                return null;
+            }
             return instantiateConverter(converterClass);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create converter from @Tool annotation", e);
