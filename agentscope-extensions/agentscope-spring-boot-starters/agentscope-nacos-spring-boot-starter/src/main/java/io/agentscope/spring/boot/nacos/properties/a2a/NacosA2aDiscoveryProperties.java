@@ -38,9 +38,8 @@ public class NacosA2aDiscoveryProperties {
     /**
      * Whether to enable Nacos A2A Discovery.
      *
-     * <p>Default is {@code true}, which means the program will read the all information about this agent such as
-     * AgentCard and A2A Transport information from {@link io.agentscope.core.a2a.server.AgentScopeA2aServer} and
-     * register this agent to Nacos.
+     * <p>Default is {@code true}, which means the program will query Nacos for agent discovery metadata, such as
+     * AgentCard and A2A transport information, in order to discover other agents for agent-to-agent communication.
      */
     private boolean enabled = true;
 

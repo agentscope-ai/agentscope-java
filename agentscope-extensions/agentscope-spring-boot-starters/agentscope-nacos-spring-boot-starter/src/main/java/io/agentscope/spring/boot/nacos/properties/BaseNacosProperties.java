@@ -166,38 +166,33 @@ public class BaseNacosProperties {
     }
 
     /**
-     * Builds and returns a Properties object containing all Nacos configuration properties.
+     * Build a {@link Properties} instance for configuring the Nacos client.
      *
-     * <p>This method combines the custom properties with the standard Nacos connection properties
-     * such as server address, namespace, authentication credentials, etc. It ensures that default
-     * values are applied when required properties are not set. And this result Properties can directly
-     * build Nacos Client with {@link com.alibaba.nacos.api.ai.AiFactory#createAiService(Properties)}.
+     * <p>This method merges the advanced {@link #properties} with the basic fields such as
+     * {@link #serverAddr}, {@link #namespace}, {@link #username}, {@link #password},
+     * {@link #accessKey}, and {@link #secretKey}. If both the corresponding field and any
+     * pre-configured property are {@code null}, the default values
+     * {@link #DEFAULT_ADDRESS} and {@link #DEFAULT_NAMESPACE} are applied to the returned
+     * {@link Properties} instance without modifying this object's state.
      *
-     * @return a Properties object containing all Nacos configuration properties
+     * @return a {@link Properties} instance containing all resolved Nacos configuration
      */
     public Properties getNacosProperties() {
         Properties result = new Properties();
         if (null != properties && !properties.isEmpty()) {
             result.putAll(properties);
         }
-        // Set default value if both serverAddr and properties.get(PropertyKeyConst.SERVER_ADDR) are
-        // null
-        if (null == serverAddr && null == result.get(PropertyKeyConst.SERVER_ADDR)) {
-            serverAddr = DEFAULT_ADDRESS;
-        }
-        // If serverAddr is not null, set it to overwrite
-        // properties.get(PropertyKeyConst.SERVER_ADDR)
+        // Resolve server address: prefer explicit field, otherwise use default if none present
         if (null != serverAddr) {
             result.put(PropertyKeyConst.SERVER_ADDR, serverAddr);
+        } else {
+            result.putIfAbsent(PropertyKeyConst.SERVER_ADDR, DEFAULT_ADDRESS);
         }
-        // Set default value if both namespace and properties.get(PropertyKeyConst.NAMESPACE) are
-        // null
-        if (null == namespace && null == result.get(PropertyKeyConst.NAMESPACE)) {
-            namespace = DEFAULT_NAMESPACE;
-        }
-        // If namespace is not null, set it to overwrite properties.get(PropertyKeyConst.NAMESPACE)
+        // Resolve namespace: prefer explicit field, otherwise use default if none present
         if (null != namespace) {
             result.put(PropertyKeyConst.NAMESPACE, namespace);
+        } else {
+            result.putIfAbsent(PropertyKeyConst.NAMESPACE, DEFAULT_NAMESPACE);
         }
         if (null != username) {
             result.put(PropertyKeyConst.USERNAME, username);
