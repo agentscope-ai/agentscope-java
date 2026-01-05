@@ -240,6 +240,20 @@
                 <artifactId>agentscope-quarkus-extension-deployment</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            
+            <!-- AgentScope Nacos Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-nacos-a2a</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            
+            <!-- AgentScope Nacos Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-nacos-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- AgentScope A2A Spring Boot Starter -->
             <dependency>
