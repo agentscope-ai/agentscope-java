@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart;

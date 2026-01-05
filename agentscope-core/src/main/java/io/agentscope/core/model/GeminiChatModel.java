@@ -209,7 +209,8 @@ public class GeminiChatModel extends ChatModelBase {
                                 String requestJson = objectMapper.writeValueAsString(requestDto);
                                 log.trace("Gemini Request JSON: {}", requestJson);
                                 log.debug(
-                                        "Gemini request: model={}, system_instruction={}, contents_count={}",
+                                        "Gemini request: model={}, system_instruction={},"
+                                                + " contents_count={}",
                                         modelName,
                                         requestDto.getSystemInstruction() != null,
                                         requestDto.getContents() != null
