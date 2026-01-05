@@ -25,7 +25,6 @@ import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.tracing.TracerRegistry;
-import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
@@ -94,8 +93,7 @@ public class Toolkit {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        this.methodInvoker =
-                new ToolMethodInvoker(new DefaultToolResultConverter());
+        this.methodInvoker = new ToolMethodInvoker(new DefaultToolResultConverter());
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =

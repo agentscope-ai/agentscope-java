@@ -15,10 +15,12 @@
  */
 package io.agentscope.examples.quickstart;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -30,7 +32,9 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Type;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -188,14 +192,14 @@ public class ToolCallingWithConverterExample {
         protected ToolResultBlock serialize(Object result, Type returnType) {
             try {
                 ObjectMapper mapper = new ObjectMapper();
+                mapper.registerModule(new JavaTimeModule());
                 JsonNode node = mapper.valueToTree(result);
                 JsonNode masked = maskSensitiveData(node);
-                String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(masked);
+                String json = JsonUtils.getJsonCodec().toJson(masked);
 
                 // Generate Schema
                 Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(returnType);
-                String schemaJson =
-                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
+                String schemaJson = JsonUtils.getJsonCodec().toJson(schema);
 
                 return ToolResultBlock.of(
                         List.of(
@@ -261,13 +265,11 @@ public class ToolCallingWithConverterExample {
         @Override
         protected ToolResultBlock serialize(Object result, Type returnType) {
             try {
-                ObjectMapper mapper = new ObjectMapper();
-                String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result);
+                String json = JsonUtils.getJsonCodec().toJson(result);
 
                 // Generate Schema
                 Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(returnType);
-                String schemaJson =
-                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
+                String schemaJson = JsonUtils.getJsonCodec().toJson(schema);
 
                 return ToolResultBlock.of(
                         List.of(
@@ -304,6 +306,10 @@ public class ToolCallingWithConverterExample {
 
         @JsonPropertyDescription("Credit card number (sensitive information)")
         private String creditCard;
+
+        @JsonPropertyDescription("User register time, format: yyyy-MM-dd HH:mm:ss")
+        @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+        private LocalDateTime createTime = LocalDateTime.now();
 
         public UserInfo() {}
 
@@ -369,6 +375,14 @@ public class ToolCallingWithConverterExample {
 
         public void setCreditCard(String creditCard) {
             this.creditCard = creditCard;
+        }
+
+        public LocalDateTime getCreateTime() {
+            return createTime;
+        }
+
+        public void setCreateTime(LocalDateTime createTime) {
+            this.createTime = createTime;
         }
     }
 

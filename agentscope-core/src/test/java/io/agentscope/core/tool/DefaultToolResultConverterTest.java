@@ -20,11 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
-import io.agentscope.core.util.JsonSchemaUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -44,14 +42,12 @@ class DefaultToolResultConverterTest {
 
     private DefaultToolResultConverter converter;
     private DefaultToolResultConverter converterWithCustomMapper;
-    private ObjectMapper customMapper;
 
     @BeforeEach
     void setUp() {
         // Test both constructors
         converter = new DefaultToolResultConverter();
-        customMapper = new ObjectMapper();
-        converterWithCustomMapper = new DefaultToolResultConverter(customMapper);
+        converterWithCustomMapper = new DefaultToolResultConverter();
     }
 
     @Test
@@ -267,8 +263,7 @@ class DefaultToolResultConverterTest {
 
     @Test
     void testParameterizedConstructor_AcceptsCustomMapper() {
-        ObjectMapper customMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
-        DefaultToolResultConverter customConverter = new DefaultToolResultConverter(customMapper);
+        DefaultToolResultConverter customConverter = new DefaultToolResultConverter();
 
         LocalDate testDate = LocalDate.of(2025, 3, 20);
         ToolResultBlock result = customConverter.convert(testDate, LocalDate.class);

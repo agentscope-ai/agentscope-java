@@ -15,10 +15,9 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.util.JsonSchemaUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Type;
 import java.util.List;
 import org.slf4j.Logger;
@@ -40,16 +39,6 @@ import org.slf4j.LoggerFactory;
 public class DefaultToolResultConverter implements ToolResultConverter {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultToolResultConverter.class);
-
-    private ObjectMapper objectMapper;
-
-    public DefaultToolResultConverter() {
-        this.objectMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
-    }
-
-    public DefaultToolResultConverter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     public ToolResultBlock convert(Object result, Type returnType) {
@@ -96,7 +85,7 @@ public class DefaultToolResultConverter implements ToolResultConverter {
      */
     protected ToolResultBlock serialize(Object result, Type returnType) {
         try {
-            String json = objectMapper.writeValueAsString(result);
+            String json = JsonUtils.getJsonCodec().toJson(result);
             return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build()));
         } catch (Exception e) {
             // Fallback to string representation
