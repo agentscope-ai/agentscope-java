@@ -1814,7 +1814,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             offloadContext.putAll(state.offloadContext());
                         });
 
-        // Load offload context
+        // Load compression context events
         List<CompressionEvent> compressEvents =
                 session.getList(
                         sessionKey, "autoContextMemory_compressionEvents", CompressionEvent.class);
