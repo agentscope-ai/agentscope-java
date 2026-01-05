@@ -169,6 +169,7 @@ ReActAgent agent = ReActAgent.builder()
 `AutoContextHook` 会自动完成以下操作：
 - 将 `ContextOffloadTool` 注册到 agent 的 toolkit（启用上下文重载功能）
 - 将 agent 的 `PlanNotebook` 附加到 `AutoContextMemory`，实现计划感知压缩（如果启用了 PlanNotebook）
+- 在每次 LLM 推理调用前通过 `PreReasoningEvent` 触发内存压缩（确保压缩在确定的时间点执行）
 - 确保 `AutoContextMemory` 与 `ReActAgent` 之间的正确集成
 
 ### 定制上下文压缩Prompt
@@ -274,7 +275,8 @@ AutoContextConfig config = AutoContextConfig.builder()
 #### 主要方法
 
 - `void addMessage(Msg message)`: 添加消息到工作存储和原始存储
-- `List<Msg> getMessages()`: 获取消息列表（可能触发压缩）
+- `List<Msg> getMessages()`: 获取工作内存中的消息列表
+- `boolean compressIfNeeded()`: 如果达到阈值则压缩工作内存（如果执行了压缩则返回 true）
 - `void deleteMessage(int index)`: 从工作存储中删除指定索引的消息
 - `void clear()`: 清空所有存储
 - `List<Msg> getOriginalMemoryMsgs()`: 获取原始内存存储中的完整消息历史
@@ -300,13 +302,18 @@ public List<Msg> reload(@ToolParam(name = "working_context_offload_uuid") String
 
 ### AutoContextHook
 
-一个 `PreCallHook`，用于自动设置 `AutoContextMemory` 与 `ReActAgent` 的集成：
+一个 `Hook`，同时处理 `PreCallEvent` 和 `PreReasoningEvent`，用于设置和管理 `AutoContextMemory` 与 `ReActAgent` 的集成：
 
+**PreCallEvent 处理（每个 agent 只执行一次，线程安全）：**
 - 自动将 `ContextOffloadTool` 注册到 agent 的 toolkit
 - 自动将 agent 的 `PlanNotebook` 附加到 `AutoContextMemory`，实现计划感知压缩（如果启用了 PlanNotebook）
-- 每个 agent 只执行一次（线程安全）
 
-建议在 `ReActAgent` 中使用 `AutoContextMemory` 时使用此 Hook，以确保正确的集成和自动配置。
+**PreReasoningEvent 处理（在每次 LLM 推理调用前执行）：**
+- 如果达到阈值，通过 `compressIfNeeded()` 触发内存压缩
+- 更新事件中的输入消息，以反映压缩后的工作内存
+- 确保压缩在确定的时间点（推理前）执行，LLM 接收到压缩后的上下文
+
+**必须使用**：在 `ReActAgent` 中使用 `AutoContextMemory` 时必须使用此 Hook，以确保正确的集成和自动压缩触发。
 
 使用方法：
 
@@ -325,19 +332,21 @@ ReActAgent agent = ReActAgent.builder()
 
 ### 压缩触发条件
 
-压缩在以下情况下触发：
+压缩由 `AutoContextHook` 通过 `PreReasoningEvent`（在每次 LLM 推理调用前）自动触发，当满足以下条件时：
 
 1. **消息数量阈值**: `currentMessages.size() >= msgThreshold`
 2. **Token 数量阈值**: `calculateToken(currentMessages) >= maxToken * tokenRatio`
 
-两个条件满足任一即触发压缩。
+两个条件满足任一即触发压缩。触发时间点是确定的：总是在 LLM 推理之前，确保推理使用压缩后的上下文。
 
 ### 压缩流程
 
-1. 检查是否达到压缩阈值
-2. 按顺序尝试 6 种压缩策略
-3. 每种策略成功后立即返回压缩后的消息列表
-4. 如果所有策略都无法满足要求，记录警告并返回当前工作存储
+1. `AutoContextHook` 在 LLM 推理前拦截 `PreReasoningEvent`
+2. 调用 `compressIfNeeded()` 检查是否达到压缩阈值
+3. 如果达到阈值，按顺序尝试 6 种压缩策略
+4. 更新 `PreReasoningEvent` 中的输入消息，以反映压缩后的工作内存
+5. LLM 推理使用压缩后的上下文进行
+6. 如果所有策略都无法满足要求，记录警告并继续使用当前工作存储
 
 ### 消息保护机制
 

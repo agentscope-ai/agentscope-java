@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.autocontext;
 
+import io.agentscope.core.state.State;
 import java.util.Map;
 
 /**
@@ -23,7 +24,7 @@ import java.util.Map;
  * <p>This class records information about context compression operations, including the type of
  * compression, timing, token reduction, and message positioning information.
  */
-public class CompressionEvent {
+public class CompressionEvent implements State {
 
     /** Event type: Compress historical tool invocations (Strategy 1). */
     public static final String TOOL_INVOCATION_COMPRESS = "TOOL_INVOCATION_COMPRESS";
