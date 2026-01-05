@@ -61,7 +61,7 @@ public class GeminiResponseParser {
         try {
             // Log raw response for debugging
             try {
-                String responseJson = objectMapper.writeValueAsString(response);
+                String responseJson = JsonUtils.getJsonCodec().toJson(response);
                 System.out.println("=== Raw Gemini response: " + responseJson);
             } catch (Exception e) {
                 System.out.println("Failed to serialize response for logging: " + e.getMessage());
