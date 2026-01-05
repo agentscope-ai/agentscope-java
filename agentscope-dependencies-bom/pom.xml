@@ -101,7 +101,7 @@
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
-        <snakeyaml.version>2.4</snakeyaml.version>
+        <snakeyaml.version>2.5</snakeyaml.version>
 
 
         <spotless.version>3.1.0</spotless.version>
