@@ -73,7 +73,7 @@ public final class HttpTransportFactory {
     /**
      * Get the default HttpTransport instance.
      *
-     * <p>If no default has been set, a new OkHttpTransport with default configuration
+     * <p>If no default has been set, a new JdkHttpTransport with default configuration
      * will be created lazily. The default transport is automatically registered for
      * cleanup on JVM shutdown.
      *
@@ -83,7 +83,7 @@ public final class HttpTransportFactory {
         if (defaultTransport == null) {
             synchronized (lock) {
                 if (defaultTransport == null) {
-                    defaultTransport = new OkHttpTransport();
+                    defaultTransport = new JdkHttpTransport();
                     managedTransports.add(defaultTransport);
                     registerShutdownHookIfNeeded();
                     log.debug("Created default HttpTransport: {}", defaultTransport);

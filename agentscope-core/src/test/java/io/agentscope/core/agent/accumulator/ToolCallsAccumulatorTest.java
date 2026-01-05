@@ -18,6 +18,7 @@ package io.agentscope.core.agent.accumulator;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolUseBlock;
@@ -144,5 +145,182 @@ class ToolCallsAccumulatorTest {
                 result.stream().filter(t -> "call_b".equals(t.getId())).findFirst().orElse(null);
         assertNotNull(resultB);
         assertTrue(resultB.getMetadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should save raw content to content field in build()")
+    void testBuildSavesRawContentToContentField() {
+        // Simulate streaming chunks with raw content
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("get_weather")
+                        .content("{\"city\":")
+                        .build();
+
+        ToolUseBlock chunk2 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .build();
+
+        accumulator.add(chunk1);
+        accumulator.add(chunk2);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        // Verify content field contains accumulated raw content
+        assertEquals("{\"city\":\"Beijing\"}", toolCall.getContent());
+        // Verify input was parsed from raw content
+        assertEquals("Beijing", toolCall.getInput().get("city"));
+    }
+
+    @Test
+    @DisplayName("Should get accumulated tool call by ID")
+    void testGetAccumulatedToolCallById() {
+        ToolUseBlock call1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .input(Map.of("city", "Tokyo"))
+                        .build();
+
+        ToolUseBlock call2 =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("calculator")
+                        .input(Map.of("expr", "1+1"))
+                        .build();
+
+        accumulator.add(call1);
+        accumulator.add(call2);
+
+        // Get by specific ID
+        ToolUseBlock result1 = accumulator.getAccumulatedToolCall("call_1");
+        assertNotNull(result1);
+        assertEquals("call_1", result1.getId());
+        assertEquals("weather", result1.getName());
+        assertEquals("Tokyo", result1.getInput().get("city"));
+
+        ToolUseBlock result2 = accumulator.getAccumulatedToolCall("call_2");
+        assertNotNull(result2);
+        assertEquals("call_2", result2.getId());
+        assertEquals("calculator", result2.getName());
+    }
+
+    @Test
+    @DisplayName("Should fallback to lastToolCallKey when ID is null or empty")
+    void testGetAccumulatedToolCallFallbackToLastKey() {
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .input(Map.of("city", "Tokyo"))
+                        .build();
+
+        accumulator.add(call);
+
+        // Get with null ID should fallback to last key
+        ToolUseBlock resultNull = accumulator.getAccumulatedToolCall(null);
+        assertNotNull(resultNull);
+        assertEquals("call_1", resultNull.getId());
+
+        // Get with empty ID should fallback to last key
+        ToolUseBlock resultEmpty = accumulator.getAccumulatedToolCall("");
+        assertNotNull(resultEmpty);
+        assertEquals("call_1", resultEmpty.getId());
+    }
+
+    @Test
+    @DisplayName("Should return null when no tool calls accumulated")
+    void testGetAccumulatedToolCallReturnsNullWhenEmpty() {
+        ToolUseBlock result = accumulator.getAccumulatedToolCall("nonexistent");
+        assertNull(result);
+
+        ToolUseBlock resultNull = accumulator.getAccumulatedToolCall(null);
+        assertNull(resultNull);
+    }
+
+    @Test
+    @DisplayName("Should get all accumulated tool calls")
+    void testGetAllAccumulatedToolCalls() {
+        ToolUseBlock call1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .input(Map.of("city", "Tokyo"))
+                        .build();
+
+        ToolUseBlock call2 =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("calculator")
+                        .input(Map.of("expr", "1+1"))
+                        .build();
+
+        accumulator.add(call1);
+        accumulator.add(call2);
+
+        List<ToolUseBlock> result = accumulator.getAllAccumulatedToolCalls();
+
+        assertEquals(2, result.size());
+        assertTrue(result.stream().anyMatch(t -> "call_1".equals(t.getId())));
+        assertTrue(result.stream().anyMatch(t -> "call_2".equals(t.getId())));
+    }
+
+    @Test
+    @DisplayName("Should accumulate multiple parallel tool calls with streaming chunks")
+    void testMultipleParallelToolCallsWithStreamingChunks() {
+        // Simulate interleaved streaming chunks for two parallel tool calls
+        ToolUseBlock chunk1a =
+                ToolUseBlock.builder().id("call_1").name("weather").content("{\"city\":").build();
+
+        ToolUseBlock chunk2a =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("calculator")
+                        .content("{\"expr\":")
+                        .build();
+
+        ToolUseBlock chunk1b =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .build();
+
+        ToolUseBlock chunk2b =
+                ToolUseBlock.builder()
+                        .id("call_2")
+                        .name("__fragment__")
+                        .content("\"1+1\"}")
+                        .build();
+
+        // Add chunks in interleaved order
+        accumulator.add(chunk1a);
+        accumulator.add(chunk2a);
+        accumulator.add(chunk1b);
+        accumulator.add(chunk2b);
+
+        // Verify both tool calls are accumulated correctly
+        ToolUseBlock result1 = accumulator.getAccumulatedToolCall("call_1");
+        assertNotNull(result1);
+        assertEquals("weather", result1.getName());
+        assertEquals("{\"city\":\"Beijing\"}", result1.getContent());
+        assertEquals("Beijing", result1.getInput().get("city"));
+
+        ToolUseBlock result2 = accumulator.getAccumulatedToolCall("call_2");
+        assertNotNull(result2);
+        assertEquals("calculator", result2.getName());
+        assertEquals("{\"expr\":\"1+1\"}", result2.getContent());
+        assertEquals("1+1", result2.getInput().get("expr"));
+
+        // Verify getAllAccumulatedToolCalls returns both
+        List<ToolUseBlock> allCalls = accumulator.getAllAccumulatedToolCalls();
+        assertEquals(2, allCalls.size());
     }
 }

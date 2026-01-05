@@ -38,6 +38,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -612,12 +613,24 @@ class HookStopAgentTest {
         return Msg.builder()
                 .name("assistant")
                 .role(MsgRole.ASSISTANT)
-                .content(ToolUseBlock.builder().id(toolId).name(toolName).input(input).build())
+                .content(
+                        ToolUseBlock.builder()
+                                .id(toolId)
+                                .name(toolName)
+                                .input(input)
+                                .content(JsonUtils.getJsonCodec().toJson(input))
+                                .build())
                 .build();
     }
 
     private ToolUseBlock createToolUseBlock(String id, String name) {
-        return ToolUseBlock.builder().id(id).name(name).input(Map.of()).build();
+        Map<String, Object> emptyInput = Map.of();
+        return ToolUseBlock.builder()
+                .id(id)
+                .name(name)
+                .input(emptyInput)
+                .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                .build();
     }
 
     private void setupModelToReturnToolUse(Msg toolUseMsg) {

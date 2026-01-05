@@ -21,10 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowApiException;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowAuthException;
 import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -41,13 +41,11 @@ import org.junit.jupiter.api.Test;
 class RAGFlowClientTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -183,7 +181,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals("test query", parsed.get("question"));
 
@@ -221,7 +220,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals(50, parsed.get("top_k"));
         assertEquals(0.5, parsed.get("similarity_threshold"));
@@ -258,7 +258,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         // Method parameters should override config
         assertEquals(100, parsed.get("top_k"));
@@ -289,7 +290,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> condition = (Map<String, Object>) parsed.get("metadata_condition");
@@ -464,7 +466,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         List<String> languages = (List<String>) parsed.get("cross_languages");
@@ -494,8 +497,7 @@ class RAGFlowClientTest {
     void testConstructorWithCustomObjectMapper() throws Exception {
         mockWebServer.enqueue(createSuccessResponse());
 
-        ObjectMapper customMapper = new ObjectMapper();
-        RAGFlowClient client = new RAGFlowClient(createConfig(), customMapper);
+        RAGFlowClient client = new RAGFlowClient(createConfig());
         RAGFlowResponse response = client.retrieve("test query", null, null, null).block();
 
         assertNotNull(response);
@@ -522,7 +524,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals(true, parsed.get("toc_enhance"));
     }
@@ -546,7 +549,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals(42, parsed.get("rerank_id"));
     }
@@ -585,7 +589,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> condition = (Map<String, Object>) parsed.get("metadata_condition");
@@ -629,7 +634,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         @SuppressWarnings("unchecked")
         Map<String, Object> condition = (Map<String, Object>) parsed.get("metadata_condition");
@@ -656,7 +662,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals(25, parsed.get("top_k"));
     }
@@ -680,7 +687,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         assertEquals(0.75, parsed.get("similarity_threshold"));
     }
@@ -814,7 +822,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         // document_ids should not be in request body when empty
         assertTrue(!parsed.containsKey("document_ids") || parsed.get("document_ids") == null);
@@ -860,7 +869,8 @@ class RAGFlowClientTest {
         RecordedRequest request = mockWebServer.takeRequest();
         String body = request.getBody().readUtf8();
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
 
         // Verify all parameters are present
         assertEquals("comprehensive test", parsed.get("question"));

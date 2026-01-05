@@ -20,9 +20,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
@@ -57,8 +57,6 @@ public class Msg implements State {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String id;
 
@@ -281,7 +279,7 @@ public class Msg implements State {
                             + "' not found.");
         }
         try {
-            return OBJECT_MAPPER.convertValue(structuredOutput, targetClass);
+            return JsonUtils.getJsonCodec().convertValue(structuredOutput, targetClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
@@ -364,7 +362,8 @@ public class Msg implements State {
             return result;
         }
         try {
-            return OBJECT_MAPPER.convertValue(result, new TypeReference<>() {});
+            return JsonUtils.getJsonCodec()
+                    .convertValue(result, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to convert structured output to Map.", e);
         }

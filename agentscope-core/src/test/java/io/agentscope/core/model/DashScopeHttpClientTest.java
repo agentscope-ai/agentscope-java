@@ -62,7 +62,7 @@ class DashScopeHttpClientTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        client.close();
+
         mockServer.shutdown();
     }
 
@@ -311,7 +311,6 @@ class DashScopeHttpClientTest {
                 DashScopeHttpClient.builder().apiKey("test-key").build();
 
         assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, defaultClient.getBaseUrl());
-        defaultClient.close();
     }
 
     @Test
@@ -544,17 +543,14 @@ class DashScopeHttpClientTest {
         // Test constructor with just apiKey
         DashScopeHttpClient client1 = new DashScopeHttpClient("test-key");
         assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client1.getBaseUrl());
-        client1.close();
 
         // Test constructor with apiKey and baseUrl
         DashScopeHttpClient client2 = new DashScopeHttpClient("test-key", "https://custom.url.com");
         assertEquals("https://custom.url.com", client2.getBaseUrl());
-        client2.close();
 
         // Test constructor with null baseUrl (should use default)
         DashScopeHttpClient client3 = new DashScopeHttpClient("test-key", null);
         assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client3.getBaseUrl());
-        client3.close();
     }
 
     private DashScopeRequest createTestRequest(String model, String content) {

@@ -19,8 +19,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -32,6 +31,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,7 +48,7 @@ public class StructuredOutputDynamicDefineTest {
     }
 
     @Test
-    void testDynamicComplexNestedStructure() throws JsonProcessingException {
+    void testDynamicComplexNestedStructure() {
         Memory memory = new InMemoryMemory();
         Map<String, Object> toolInput =
                 Map.of(
@@ -79,6 +79,11 @@ public class StructuredOutputDynamicDefineTest {
                                                                         .id("call_123")
                                                                         .name("generate_response")
                                                                         .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
@@ -137,9 +142,10 @@ public class StructuredOutputDynamicDefineTest {
                   "additionalProperties": false
                 }
                 """;
-        ObjectMapper objectMapper = new ObjectMapper();
         // Call agent and extract structured data from response message
-        Msg responseMsg = agent.call(inputMsg, objectMapper.readTree(json)).block();
+        Msg responseMsg =
+                agent.call(inputMsg, JsonUtils.getJsonCodec().fromJson(json, JsonNode.class))
+                        .block();
         assertNotNull(responseMsg);
         assertNotNull(responseMsg.getMetadata());
 

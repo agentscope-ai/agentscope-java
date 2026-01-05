@@ -16,7 +16,6 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -30,6 +29,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -220,8 +220,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                             String contentText = "";
                             if (responseData != null) {
                                 try {
-                                    contentText =
-                                            new ObjectMapper().writeValueAsString(responseData);
+                                    contentText = JsonUtils.getJsonCodec().toJson(responseData);
                                 } catch (Exception e) {
                                     contentText = responseData.toString();
                                 }

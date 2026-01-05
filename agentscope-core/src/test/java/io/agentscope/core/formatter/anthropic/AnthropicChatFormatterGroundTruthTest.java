@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.MessageParam;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -28,6 +27,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +39,7 @@ import org.junit.jupiter.api.Test;
 class AnthropicChatFormatterGroundTruthTest {
 
     private AnthropicChatFormatter formatter;
-    private ObjectMapper objectMapper;
+    private JsonCodec jsonCodec;
     private String imageUrl;
     private List<Msg> msgsSystem;
     private List<Msg> msgsConversation;
@@ -47,7 +48,7 @@ class AnthropicChatFormatterGroundTruthTest {
     @BeforeEach
     void setUp() {
         formatter = new AnthropicChatFormatter();
-        objectMapper = new ObjectMapper();
+        jsonCodec = JsonUtils.getJsonCodec();
         imageUrl = "https://www.example.com/image.png";
 
         // System message
@@ -154,7 +155,7 @@ class AnthropicChatFormatterGroundTruthTest {
 
         // Convert to JSON string for comparison
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         // Ground truth from Python implementation
         String groundTruthJson =
@@ -243,7 +244,7 @@ class AnthropicChatFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
 
         assertEquals(groundTruthNode, resultNode, "Formatted output should match ground truth");
     }
@@ -257,7 +258,7 @@ class AnthropicChatFormatterGroundTruthTest {
 
         List<MessageParam> result = formatter.format(allMsgs);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         // Ground truth should be the same as full history, but without first message
         String groundTruthJson =
@@ -337,7 +338,7 @@ class AnthropicChatFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 
@@ -350,7 +351,7 @@ class AnthropicChatFormatterGroundTruthTest {
 
         List<MessageParam> result = formatter.format(allMsgs);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
                 """
@@ -404,7 +405,7 @@ class AnthropicChatFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 
@@ -417,7 +418,7 @@ class AnthropicChatFormatterGroundTruthTest {
 
         List<MessageParam> result = formatter.format(allMsgs);
         String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
-        JsonNode resultNode = objectMapper.readTree(resultJson);
+        JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
                 """
@@ -468,7 +469,7 @@ class AnthropicChatFormatterGroundTruthTest {
                 ]
                 """;
 
-        JsonNode groundTruthNode = objectMapper.readTree(groundTruthJson);
+        JsonNode groundTruthNode = jsonCodec.fromJson(groundTruthJson, JsonNode.class);
         assertEquals(groundTruthNode, resultNode);
     }
 

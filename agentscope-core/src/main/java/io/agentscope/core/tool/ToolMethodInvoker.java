@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -37,13 +37,11 @@ import reactor.core.publisher.Mono;
  */
 class ToolMethodInvoker {
 
-    private final ObjectMapper objectMapper;
-    private final ToolResultConverter resultConverter;
+    private final ToolResultConverter defaultConverter;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
-    ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter resultConverter) {
-        this.objectMapper = objectMapper;
-        this.resultConverter = resultConverter;
+    ToolMethodInvoker(ToolResultConverter resultConverter) {
+        this.defaultConverter = resultConverter;
     }
 
     /**
@@ -56,14 +54,23 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
+     * Invoke tool method asynchronously with custom converter support.
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param param the tool call parameters containing input, toolUseBlock, agent, and context
+     * @param customConverter custom converter for this invocation (null to use default)
      * @return Mono containing ToolResultBlock
      */
-    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
+    Mono<ToolResultBlock> invokeAsync(
+            Object toolObject,
+            Method method,
+            ToolCallParam param,
+            ToolResultConverter customConverter) {
+        // Use custom converter if provided, otherwise use default
+        final ToolResultConverter converter =
+                customConverter != null ? customConverter : defaultConverter;
+
         Map<String, Object> input = param.getInput();
         ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
@@ -89,7 +96,7 @@ class ToolMethodInvoker {
                                     Mono.fromFuture(future)
                                             .map(
                                                     r ->
-                                                            resultConverter.convert(
+                                                            converter.convert(
                                                                     r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
@@ -114,10 +121,7 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(
-                                                    r ->
-                                                            resultConverter.convert(
-                                                                    r, extractGenericType(method)))
+                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -136,7 +140,7 @@ class ToolMethodInvoker {
                                         convertParameters(
                                                 method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
-                                return resultConverter.convert(result, method.getReturnType());
+                                return converter.convert(result, method.getGenericReturnType());
                             })
                     .onErrorResume(
                             e ->
@@ -313,9 +317,9 @@ class ToolMethodInvoker {
             return value;
         }
 
-        // Try ObjectMapper conversion first
+        // Try JsonCodec conversion first
         try {
-            return objectMapper.convertValue(value, paramType);
+            return JsonUtils.getJsonCodec().convertValue(value, paramType);
         } catch (Exception e) {
             // Fallback to string-based conversion for primitives
             return convertFromString(value.toString(), paramType);

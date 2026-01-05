@@ -50,8 +50,8 @@ class HttpTransportFactoryTest {
 
         assertNotNull(transport);
         assertTrue(
-                transport instanceof OkHttpTransport,
-                "Expected OkHttpTransport but got " + transport.getClass().getName());
+                transport instanceof JdkHttpTransport,
+                "Expected JdkHttpTransport but got " + transport.getClass().getName());
     }
 
     @Test

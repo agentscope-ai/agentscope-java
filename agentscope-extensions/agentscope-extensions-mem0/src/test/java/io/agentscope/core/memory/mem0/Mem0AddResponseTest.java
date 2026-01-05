@@ -20,15 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0AddResponse}. */
 class Mem0AddResponseTest {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testDefaultConstructor() {
@@ -59,7 +57,7 @@ class Mem0AddResponseTest {
                         + "\"message\":\"Successfully added memory\""
                         + "}";
 
-        Mem0AddResponse response = objectMapper.readValue(json, Mem0AddResponse.class);
+        Mem0AddResponse response = JsonUtils.getJsonCodec().fromJson(json, Mem0AddResponse.class);
 
         assertNotNull(response);
         assertNotNull(response.getResults());
@@ -75,7 +73,7 @@ class Mem0AddResponseTest {
         response.setResults(results);
         response.setMessage("Memory added");
 
-        String json = objectMapper.writeValueAsString(response);
+        String json = JsonUtils.getJsonCodec().toJson(response);
         assertNotNull(json);
         assertTrue(json.contains("\"results\""));
         assertTrue(json.contains("\"message\""));
@@ -89,8 +87,9 @@ class Mem0AddResponseTest {
         original.setResults(results);
         original.setMessage("Test message");
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0AddResponse deserialized = objectMapper.readValue(json, Mem0AddResponse.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0AddResponse deserialized =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0AddResponse.class);
 
         assertEquals(original.getResults().size(), deserialized.getResults().size());
         assertEquals(original.getMessage(), deserialized.getMessage());
@@ -137,7 +136,7 @@ class Mem0AddResponseTest {
         List<Map<String, Object>> results = List.of(Map.of("test", "data"));
         response.setResults(results);
 
-        String json = objectMapper.writeValueAsString(response);
+        String json = JsonUtils.getJsonCodec().toJson(response);
 
         // message field should be excluded when null
         assertTrue(json.contains("\"results\""));

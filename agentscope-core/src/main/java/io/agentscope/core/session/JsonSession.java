@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.session;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -58,7 +58,6 @@ import reactor.core.scheduler.Schedulers;
 public class JsonSession implements Session {
 
     private final Path sessionDirectory;
-    private final ObjectMapper objectMapper;
 
     /**
      * Create a JsonSession with the default session directory.
@@ -77,7 +76,6 @@ public class JsonSession implements Session {
      */
     public JsonSession(Path sessionDirectory) {
         this.sessionDirectory = sessionDirectory;
-        this.objectMapper = new ObjectMapper();
 
         // Create directory if it doesn't exist
         try {
@@ -103,7 +101,7 @@ public class JsonSession implements Session {
         ensureDirectoryExists(file.getParent());
 
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value);
+            String json = JsonUtils.getJsonCodec().toPrettyJson(value);
             Files.writeString(file, json, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
@@ -184,7 +182,7 @@ public class JsonSession implements Session {
                         StandardOpenOption.WRITE)) {
 
             for (State item : values) {
-                String json = objectMapper.writeValueAsString(item);
+                String json = JsonUtils.getJsonCodec().toJson(item);
                 writer.write(json);
                 writer.newLine();
             }
@@ -207,7 +205,7 @@ public class JsonSession implements Session {
                         StandardOpenOption.APPEND)) {
 
             for (State item : items) {
-                String json = objectMapper.writeValueAsString(item);
+                String json = JsonUtils.getJsonCodec().toJson(item);
                 writer.write(json);
                 writer.newLine();
             }
@@ -233,7 +231,7 @@ public class JsonSession implements Session {
 
         try {
             String json = Files.readString(file, StandardCharsets.UTF_8);
-            return Optional.of(objectMapper.readValue(json, type));
+            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
         } catch (IOException e) {
             throw new RuntimeException("Failed to load state: " + key, e);
         }
@@ -264,7 +262,7 @@ public class JsonSession implements Session {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (!line.isBlank()) {
-                        T item = objectMapper.readValue(line, itemType);
+                        T item = JsonUtils.getJsonCodec().fromJson(line, itemType);
                         result.add(item);
                     }
                 }

@@ -454,6 +454,83 @@ class OpenAIMessageConverterTest {
             assertEquals("tool1", result.getToolCalls().get(0).getFunction().getName());
             assertEquals("tool2", result.getToolCalls().get(1).getFunction().getName());
         }
+
+        @Test
+        @DisplayName("Should use content field when present for tool call arguments")
+        void testToolCallUsesContentFieldWhenPresent() {
+            // Create a ToolUseBlock with both content (raw string) and input map
+            // The content field should be used preferentially
+            String rawContent = "{\"city\":\"Beijing\",\"unit\":\"celsius\"}";
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_content_test")
+                            .name("get_weather")
+                            .input(Map.of("city", "Shanghai", "unit", "fahrenheit"))
+                            .content(rawContent)
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            // Should use the content field (raw string) instead of serializing input map
+            assertEquals(rawContent, result.getToolCalls().get(0).getFunction().getArguments());
+        }
+
+        @Test
+        @DisplayName("Should fallback to input map serialization when content is null")
+        void testToolCallFallbackToInputMapWhenContentNull() {
+            // Create a ToolUseBlock with only input map (content is null)
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_fallback_test")
+                            .name("get_weather")
+                            .input(Map.of("city", "Beijing"))
+                            .content(null)
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            // Should serialize the input map since content is null
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            assertNotNull(args);
+            assertTrue(args.contains("city"));
+            assertTrue(args.contains("Beijing"));
+        }
+
+        @Test
+        @DisplayName("Should fallback to input map serialization when content is empty")
+        void testToolCallFallbackToInputMapWhenContentEmpty() {
+            // Create a ToolUseBlock with empty content string
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_empty_content_test")
+                            .name("get_weather")
+                            .input(Map.of("city", "Shanghai"))
+                            .content("")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            // Should serialize the input map since content is empty
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            assertNotNull(args);
+            assertTrue(args.contains("city"));
+            assertTrue(args.contains("Shanghai"));
+        }
     }
 
     @Nested

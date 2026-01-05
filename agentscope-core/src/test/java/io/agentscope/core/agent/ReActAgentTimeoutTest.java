@@ -34,6 +34,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -231,6 +232,7 @@ class ReActAgentTimeoutTest {
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 // Return a response with a tool call to slow_tool
+                Map<String, Object> input = Map.of("input", "test");
                 return Flux.just(
                         new ChatResponse(
                                 "test-id",
@@ -238,7 +240,8 @@ class ReActAgentTimeoutTest {
                                         ToolUseBlock.builder()
                                                 .id("tool-call-1")
                                                 .name("slow_tool")
-                                                .input(Map.of("input", "test"))
+                                                .input(input)
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
                                                 .build()),
                                 null,
                                 null,
@@ -269,6 +272,7 @@ class ReActAgentTimeoutTest {
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 if (firstCall.compareAndSet(true, false)) {
                     // First call: return a tool call
+                    Map<String, Object> input = Map.of("input", "test");
                     return Flux.just(
                             new ChatResponse(
                                     "test-id-1",
@@ -276,7 +280,8 @@ class ReActAgentTimeoutTest {
                                             ToolUseBlock.builder()
                                                     .id("tool-call-1")
                                                     .name("slow_tool")
-                                                    .input(Map.of("input", "test"))
+                                                    .input(input)
+                                                    .content(JsonUtils.getJsonCodec().toJson(input))
                                                     .build()),
                                     null,
                                     null,
