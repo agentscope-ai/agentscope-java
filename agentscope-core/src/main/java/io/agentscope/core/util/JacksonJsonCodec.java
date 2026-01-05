@@ -107,7 +107,6 @@ public class JacksonJsonCodec implements JsonCodec {
         try {
             return objectMapper.readValue(json, type);
         } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize JSON to {}: {}", type.getName(), e.getMessage(), e);
             throw new JsonException("Failed to deserialize JSON to " + type.getName(), e);
         }
     }
@@ -117,7 +116,6 @@ public class JacksonJsonCodec implements JsonCodec {
         try {
             return objectMapper.readValue(json, typeRef);
         } catch (JsonProcessingException e) {
-            log.error("Failed to deserialize JSON: {}", e.getMessage(), e);
             throw new JsonException("Failed to deserialize JSON", e);
         }
     }
@@ -127,7 +125,6 @@ public class JacksonJsonCodec implements JsonCodec {
         try {
             return objectMapper.convertValue(from, toType);
         } catch (IllegalArgumentException e) {
-            log.error("Failed to convert value to {}: {}", toType.getName(), e.getMessage(), e);
             throw new JsonException("Failed to convert value to " + toType.getName(), e);
         }
     }
@@ -137,7 +134,6 @@ public class JacksonJsonCodec implements JsonCodec {
         try {
             return objectMapper.convertValue(from, toTypeRef);
         } catch (IllegalArgumentException e) {
-            log.error("Failed to convert value: {}", e.getMessage(), e);
             throw new JsonException("Failed to convert value", e);
         }
     }
