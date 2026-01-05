@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,5 +109,19 @@ class ToolRegistry {
      */
     void removeTools(Set<String> toolNames) {
         toolNames.forEach(this::removeTool);
+    }
+
+    /**
+     * Copy all tools from this registry to another registry.
+     *
+     * @param target The target registry to copy tools to
+     */
+    void copyTo(ToolRegistry target) {
+        for (Map.Entry<String, AgentTool> entry : tools.entrySet()) {
+            String toolName = entry.getKey();
+            AgentTool tool = entry.getValue();
+            RegisteredToolFunction registered = registeredTools.get(toolName);
+            target.registerTool(toolName, tool, registered);
+        }
     }
 }

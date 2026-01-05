@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -32,12 +31,13 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Tests for dynamic define json schema in StructuredOutputHandler (deferred forcing mode). */
+/** Tests for dynamic define json schema in StructuredOutputCapableAgent (deferred forcing mode). */
 public class StructuredOutputDynamicDefineTest {
 
     private Toolkit toolkit;
@@ -48,7 +48,7 @@ public class StructuredOutputDynamicDefineTest {
     }
 
     @Test
-    void testDynamicComplexNestedStructure() throws JsonProcessingException {
+    void testDynamicComplexNestedStructure() {
         Memory memory = new InMemoryMemory();
         Map<String, Object> toolInput =
                 Map.of(
@@ -137,9 +137,10 @@ public class StructuredOutputDynamicDefineTest {
                   "additionalProperties": false
                 }
                 """;
-        ObjectMapper objectMapper = new ObjectMapper();
         // Call agent and extract structured data from response message
-        Msg responseMsg = agent.call(inputMsg, objectMapper.readTree(json)).block();
+        Msg responseMsg =
+                agent.call(inputMsg, JsonUtils.getJsonCodec().fromJson(json, JsonNode.class))
+                        .block();
         assertNotNull(responseMsg);
         assertNotNull(responseMsg.getMetadata());
 

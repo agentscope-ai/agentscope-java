@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -45,14 +44,12 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvokerInterruptTest {
 
     private ToolMethodInvoker invoker;
-    private ObjectMapper objectMapper;
     private ToolResultConverter resultConverter;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        resultConverter = new ToolResultConverter(objectMapper);
-        invoker = new ToolMethodInvoker(objectMapper, resultConverter);
+        resultConverter = new ToolResultConverter();
+        invoker = new ToolMethodInvoker(resultConverter);
     }
 
     private ToolResultBlock invokeWithParam(

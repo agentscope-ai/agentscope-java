@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -281,5 +281,31 @@ class ToolGroupManager {
      */
     public ToolGroup getToolGroup(String groupName) {
         return toolGroups.get(groupName);
+    }
+
+    /**
+     * Copy all tool groups from this manager to another manager.
+     *
+     * @param target The target manager to copy tool groups to
+     */
+    void copyTo(ToolGroupManager target) {
+        for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
+            String groupName = entry.getKey();
+            ToolGroup sourceGroup = entry.getValue();
+
+            // Create a copy of the tool group
+            ToolGroup copiedGroup =
+                    ToolGroup.builder()
+                            .name(groupName)
+                            .description(sourceGroup.getDescription())
+                            .active(sourceGroup.isActive())
+                            .tools(sourceGroup.getTools())
+                            .build();
+
+            target.toolGroups.put(groupName, copiedGroup);
+        }
+
+        // Copy activeGroups list
+        target.activeGroups = new ArrayList<>(this.activeGroups);
     }
 }

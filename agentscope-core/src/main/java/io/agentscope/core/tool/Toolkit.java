@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
@@ -15,13 +15,11 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
@@ -29,7 +27,6 @@ import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,7 +53,7 @@ import reactor.core.publisher.Mono;
  *   <li>ToolSchemaGenerator: Generates JSON schemas for tool parameters</li>
  *   <li>ToolMethodInvoker: Handles method invocation and parameter conversion</li>
  *   <li>ToolResultConverter: Converts method results to ToolResultBlock</li>
- *   <li>ParallelToolExecutor: Handles parallel/sequential tool execution</li>
+ *   <li>ToolExecutor: Handles parallel/sequential tool execution with validation</li>
  * </ul>
  *
  * <p><b>Features:</b>
@@ -67,7 +64,7 @@ import reactor.core.publisher.Mono;
  *   <li>MCP (Model Context Protocol) client support for external tool providers</li>
  * </ul>
  */
-public class Toolkit extends StateModuleBase {
+public class Toolkit {
 
     private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
 
@@ -76,12 +73,11 @@ public class Toolkit extends StateModuleBase {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolResultConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
-    private final ParallelToolExecutor executor;
+    private final ToolExecutor executor;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     /**
@@ -98,8 +94,8 @@ public class Toolkit extends StateModuleBase {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        this.responseConverter = new ToolResultConverter(objectMapper);
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        this.responseConverter = new ToolResultConverter();
+        this.methodInvoker = new ToolMethodInvoker(responseConverter);
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -112,26 +108,17 @@ public class Toolkit extends StateModuleBase {
 
         // Create executor based on configuration
         if (config.hasCustomExecutor()) {
-            this.executor = new ParallelToolExecutor(this, config.getExecutorService());
+            this.executor =
+                    new ToolExecutor(
+                            toolRegistry,
+                            groupManager,
+                            this.config,
+                            methodInvoker,
+                            config.getExecutorService());
         } else {
-            this.executor = new ParallelToolExecutor(this);
+            this.executor =
+                    new ToolExecutor(toolRegistry, groupManager, this.config, methodInvoker);
         }
-
-        // Register state management for activeGroups with custom serialization
-        // Since we don't have an activeGroups field, we provide functions to get/set from
-        // groupManager
-        registerState(
-                "activeGroups",
-                obj -> groupManager.getActiveGroups(), // toJson: get from groupManager
-                obj -> {
-                    // fromJson: set to groupManager
-                    if (obj instanceof List) {
-                        @SuppressWarnings("unchecked")
-                        List<String> groups = (List<String>) obj;
-                        groupManager.setActiveGroups(groups);
-                    }
-                    return obj;
-                });
     }
 
     /**
@@ -280,6 +267,68 @@ public class Toolkit extends StateModuleBase {
         return toolRegistry.getToolNames();
     }
 
+    // ==================== External Tool Support ====================
+
+    /**
+     * Register an external tool using only its schema definition.
+     *
+     * <p>External tools are tools that will be executed outside the framework. When a model
+     * returns a call to an external tool, the framework will not execute it but instead
+     * return the tool call to the user via a message with
+     * {@link io.agentscope.core.message.GenerateReason#TOOL_SUSPENDED}.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * ToolSchema schema = ToolSchema.builder()
+     *     .name("query_database")
+     *     .description("Query external database")
+     *     .parameters(Map.of(
+     *         "type", "object",
+     *         "properties", Map.of("sql", Map.of("type", "string")),
+     *         "required", List.of("sql")
+     *     ))
+     *     .build();
+     *
+     * toolkit.registerSchema(schema);
+     * }</pre>
+     *
+     * @param schema The tool schema containing name, description, and parameters
+     * @throws NullPointerException if schema is null
+     * @see SchemaOnlyTool
+     * @see #isExternalTool(String)
+     */
+    public void registerSchema(ToolSchema schema) {
+        registerAgentTool(new SchemaOnlyTool(schema));
+    }
+
+    /**
+     * Register multiple external tools using their schema definitions.
+     *
+     * @param schemas List of tool schemas to register
+     * @throws NullPointerException if schemas is null
+     * @see #registerSchema(ToolSchema)
+     */
+    public void registerSchemas(List<ToolSchema> schemas) {
+        if (schemas != null) {
+            schemas.forEach(this::registerSchema);
+        }
+    }
+
+    /**
+     * Check if a tool is an external tool (schema-only, requires user execution).
+     *
+     * <p>External tools are registered using {@link #registerSchema(ToolSchema)} and should
+     * be executed outside the framework. When this method returns true, the framework will
+     * skip execution and return the tool call to the user.
+     *
+     * @param toolName The name of the tool to check
+     * @return true if the tool is an external tool (SchemaOnlyTool), false otherwise
+     */
+    public boolean isExternalTool(String toolName) {
+        AgentTool tool = getTool(toolName);
+        return tool instanceof SchemaOnlyTool;
+    }
+
     /**
      * Get tool schemas as ToolSchema objects.
      * Updated to respect active tool groups.
@@ -353,7 +402,7 @@ public class Toolkit extends StateModuleBase {
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         this.chunkCallback = callback;
-        methodInvoker.setChunkCallback(callback);
+        executor.setChunkCallback(callback);
     }
 
     /**
@@ -381,83 +430,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        // TODO replace with executeToolCore
-        return TracerRegistry.get().callTool(this, param, () -> executeToolCore(param));
-    }
-
-    /**
-     * Core tool execution logic (called by both public API and ParallelToolExecutor).
-     *
-     * <p>This is the single source of truth for tool execution business logic. Package-private for
-     * internal use.
-     *
-     * @param param Tool call parameters containing all execution information
-     * @return Mono containing ToolResultBlock
-     */
-    Mono<ToolResultBlock> executeToolCore(ToolCallParam param) {
-        ToolUseBlock toolCall = param.getToolUseBlock();
-        AgentTool tool = getTool(toolCall.getName());
-        if (tool == null) {
-            return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
-        }
-
-        // Check if tool is in active group
-        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null) {
-            String groupName = registered.getGroupName();
-            if (!groupManager.isInActiveGroup(groupName)) {
-                String errorMsg =
-                        String.format(
-                                "Unauthorized tool call: '%s' is not available (group '%s' is not"
-                                        + " active)",
-                                toolCall.getName(), groupName != null ? groupName : "ungrouped");
-                logger.warn(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
-        }
-
-        // Merge preset parameters with provided input
-        // Preset parameters have lower priority and can be overridden by param.input
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
-        // If param already has merged input, use it; otherwise merge from toolUseBlock
-        if (param.getInput() != null && !param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (toolCall.getInput() != null) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-
-        // Merge context with toolkit's default context
-        // Ensure toolkit default context is always included as the base
-        ToolExecutionContext toolkitContext = config.getDefaultContext();
-        ToolExecutionContext finalContext =
-                ToolExecutionContext.merge(param.getContext(), toolkitContext);
-
-        // Create ToolEmitter for streaming tool output
-        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
-
-        // Build final execution param with merged input, context, and emitter
-        ToolCallParam executionParam =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolCall)
-                        .input(mergedInput)
-                        .agent(param.getAgent())
-                        .context(finalContext)
-                        .emitter(toolEmitter)
-                        .build();
-
-        return tool.callAsync(executionParam)
-                .onErrorResume(
-                        e -> {
-                            String errorMsg =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        });
+        return TracerRegistry.get().callTool(this, param, () -> executor.execute(param));
     }
 
     /**
@@ -489,7 +462,7 @@ public class Toolkit extends StateModuleBase {
                         ExecutionConfig.mergeConfigs(
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
-        return executor.executeTools(
+        return executor.executeAll(
                 toolCalls, config.isParallel(), effectiveConfig, agent, agentContext);
     }
 
@@ -609,6 +582,17 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Set the active tool groups.
+     *
+     * <p>This method is typically called by ReActAgent when restoring state from a session.
+     *
+     * @param groups List of group names to set as active
+     */
+    public void setActiveGroups(List<String> groups) {
+        groupManager.setActiveGroups(groups);
+    }
+
+    /**
      * Get a tool group by name.
      *
      * @param groupName Name of the tool group
@@ -656,14 +640,23 @@ public class Toolkit extends StateModuleBase {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
+    // ==================== Deep Copy ====================
+
     /**
-     * Get the component name for session management.
+     * Create a deep copy of this toolkit.
      *
-     * @return "toolkit" as the standard component name
+     * @return A new Toolkit instance with copied state
      */
-    @Override
-    public String getComponentName() {
-        return "toolkit";
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        return copy;
     }
 
     /**

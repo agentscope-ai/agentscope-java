@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -16,10 +16,9 @@
 
 package io.agentscope.examples.bobatea.supervisor.tools;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.examples.bobatea.supervisor.entity.Feedback;
 import io.agentscope.examples.bobatea.supervisor.entity.Order;
 import io.agentscope.examples.bobatea.supervisor.entity.Product;
@@ -358,12 +357,7 @@ public class ScheduleAgentTools {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         Map<String, Object> requestBody = createRequestBody("Store Business Report", text);
-        String requestBodyJson = null;
-        try {
-            requestBodyJson = new ObjectMapper().writeValueAsString(requestBody);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
+        String requestBodyJson = JsonUtils.getJsonCodec().toJson(requestBody);
         HttpEntity<String> request = new HttpEntity<>(requestBodyJson, headers);
         ResponseEntity<String> response =
                 restTemplate.postForEntity(

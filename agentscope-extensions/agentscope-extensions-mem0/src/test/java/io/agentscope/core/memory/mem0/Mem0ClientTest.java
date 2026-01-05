@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -186,10 +186,7 @@ class Mem0ClientTest {
                         .build();
 
         StepVerifier.create(client.add(request))
-                .expectErrorMatches(
-                        error ->
-                                error.getMessage().contains("Failed to parse response")
-                                        && error.getMessage().contains("add request"))
+                .expectErrorMatches(error -> error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 
@@ -278,8 +275,7 @@ class Mem0ClientTest {
                 Mem0SearchRequest.builder().query("test").userId("user1").build();
 
         StepVerifier.create(client.search(request))
-                .expectErrorMatches(
-                        error -> error.getMessage().contains("Failed to parse search response"))
+                .expectErrorMatches(error -> error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 

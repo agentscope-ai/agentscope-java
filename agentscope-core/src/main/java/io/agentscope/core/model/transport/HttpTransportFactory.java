@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ public final class HttpTransportFactory {
     /**
      * Get the default HttpTransport instance.
      *
-     * <p>If no default has been set, a new OkHttpTransport with default configuration
+     * <p>If no default has been set, a new JdkHttpTransport with default configuration
      * will be created lazily. The default transport is automatically registered for
      * cleanup on JVM shutdown.
      *
@@ -83,7 +83,7 @@ public final class HttpTransportFactory {
         if (defaultTransport == null) {
             synchronized (lock) {
                 if (defaultTransport == null) {
-                    defaultTransport = new OkHttpTransport();
+                    defaultTransport = new JdkHttpTransport();
                     managedTransports.add(defaultTransport);
                     registerShutdownHookIfNeeded();
                     log.debug("Created default HttpTransport: {}", defaultTransport);
@@ -215,7 +215,7 @@ public final class HttpTransportFactory {
      * @param transport the transport to check
      * @return true if the transport is managed
      */
-    static boolean isManaged(HttpTransport transport) {
+    public static boolean isManaged(HttpTransport transport) {
         return managedTransports.contains(transport);
     }
 }

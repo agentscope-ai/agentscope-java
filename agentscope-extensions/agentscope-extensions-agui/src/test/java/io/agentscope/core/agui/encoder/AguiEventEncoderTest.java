@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -20,10 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,13 +34,10 @@ import org.junit.jupiter.api.Test;
 class AguiEventEncoderTest {
 
     private AguiEventEncoder encoder;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         encoder = new AguiEventEncoder();
-        objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     @Test
@@ -235,7 +231,7 @@ class AguiEventEncoderTest {
         assertTrue(json.startsWith(" "));
 
         // Verify it's valid JSON (without the leading space)
-        AguiEvent decoded = objectMapper.readValue(json.trim(), AguiEvent.class);
+        AguiEvent decoded = JsonUtils.getJsonCodec().fromJson(json.trim(), AguiEvent.class);
         assertNotNull(decoded);
         assertEquals(AguiEventType.STATE_SNAPSHOT, decoded.getType());
     }

@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -40,13 +40,13 @@ marked.setOptions({
 
 const processedContent = computed(() => {
   if (!props.content) return ''
-  
+
   // Add streaming indicator
   let content = props.content
   if (props.isStreaming) {
     content += '<span class="streaming-cursor">▋</span>'
   }
-  
+
   return content
 })
 
@@ -55,7 +55,7 @@ const renderMarkdown = async () => {
     htmlContent.value = ''
     return
   }
-  
+
   // If streaming, use debounce mechanism
   if (props.isStreaming) {
     if (renderTimeout) {
@@ -73,7 +73,7 @@ const performRender = async () => {
   try {
     // Always perform content preprocessing to ensure correct markdown format
     let content = processedContent.value
-    
+
     // Perform basic formatting to ensure list items have proper line breaks
     content = content
       // First process Agent State info, ensure it's on its own line
@@ -100,7 +100,7 @@ const performRender = async () => {
       .replace(/^\n+/, '')
       // Remove trailing line breaks
       .replace(/\n+$/, '')
-    
+
     const rawHtml = await marked(content)
     htmlContent.value = DOMPurify.sanitize(rawHtml, {
       ALLOWED_TAGS: [
@@ -157,7 +157,7 @@ watch(() => props.isStreaming, (newVal, oldVal) => {
 </script>
 
 <template>
-  <div 
+  <div
     class="markdown-content"
     v-html="htmlContent"
   />

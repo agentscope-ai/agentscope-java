@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,25 @@ import java.util.Map;
 /**
  * Immutable generation options for LLM models.
  * Use the builder pattern to construct instances.
+ *
+ * <p>This class holds both per-request generation parameters (temperature, maxTokens, etc.)
+ * and connection-level configuration (apiKey, baseUrl, modelName, stream).
  */
 public class GenerateOptions {
+    // Connection-level configuration
+    private final String apiKey;
+    private final String baseUrl;
+    private final String modelName;
+    private final Boolean stream;
+
+    // Generation parameters
     private final Double temperature;
     private final Double topP;
     private final Integer maxTokens;
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
+    private final String reasoningEffort;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
     private final Integer topK;
@@ -45,12 +56,17 @@ public class GenerateOptions {
      * @param builder the builder containing the generation options configuration
      */
     private GenerateOptions(Builder builder) {
+        this.apiKey = builder.apiKey;
+        this.baseUrl = builder.baseUrl;
+        this.modelName = builder.modelName;
+        this.stream = builder.stream;
         this.temperature = builder.temperature;
         this.topP = builder.topP;
         this.maxTokens = builder.maxTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
+        this.reasoningEffort = builder.reasoningEffort;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
@@ -67,6 +83,55 @@ public class GenerateOptions {
                 builder.additionalQueryParams != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalQueryParams))
                         : Collections.emptyMap();
+    }
+
+    /**
+     * Gets the API key for authentication.
+     *
+     * <p>This is the API key used to authenticate with the LLM provider.
+     * When null, the model's default API key will be used (if configured).
+     *
+     * @return the API key, or null if not set
+     */
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    /**
+     * Gets the base URL for the API endpoint.
+     *
+     * <p>This is the base URL of the LLM provider's API.
+     * When null, the model's default base URL will be used (if configured).
+     *
+     * @return the base URL, or null if not set
+     */
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    /**
+     * Gets the model name to use for generation.
+     *
+     * <p>This specifies which model to use (e.g., "gpt-4", "gpt-3.5-turbo").
+     * When null, the model's default model name will be used (if configured).
+     *
+     * @return the model name, or null if not set
+     */
+    public String getModelName() {
+        return modelName;
+    }
+
+    /**
+     * Gets whether streaming mode is enabled.
+     *
+     * <p>When true, responses will be streamed as they are generated.
+     * When false, the full response will be returned when complete.
+     * When null, the model's default streaming mode will be used (if configured).
+     *
+     * @return true for streaming, false for non-streaming, null if not set
+     */
+    public Boolean getStream() {
+        return stream;
     }
 
     /**
@@ -137,6 +202,18 @@ public class GenerateOptions {
      */
     public Integer getThinkingBudget() {
         return thinkingBudget;
+    }
+
+    /**
+     * Gets the reasoning effort level for o1 models.
+     *
+     * <p>This parameter controls how much effort the model spends on reasoning.
+     * Valid values are "low", "medium", and "high".
+     *
+     * @return the reasoning effort level, or null if not set
+     */
+    public String getReasoningEffort() {
+        return reasoningEffort;
     }
 
     /**
@@ -284,6 +361,10 @@ public class GenerateOptions {
         }
 
         Builder builder = builder();
+        builder.apiKey(primary.apiKey != null ? primary.apiKey : fallback.apiKey);
+        builder.baseUrl(primary.baseUrl != null ? primary.baseUrl : fallback.baseUrl);
+        builder.modelName(primary.modelName != null ? primary.modelName : fallback.modelName);
+        builder.stream(primary.stream != null ? primary.stream : fallback.stream);
         builder.temperature(
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
@@ -298,6 +379,10 @@ public class GenerateOptions {
                         : fallback.presencePenalty);
         builder.thinkingBudget(
                 primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
+        builder.reasoningEffort(
+                primary.reasoningEffort != null
+                        ? primary.reasoningEffort
+                        : fallback.reasoningEffort);
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
@@ -335,12 +420,20 @@ public class GenerateOptions {
     }
 
     public static class Builder {
+        // Connection-level configuration
+        private String apiKey;
+        private String baseUrl;
+        private String modelName;
+        private Boolean stream;
+
+        // Generation parameters
         private Double temperature;
         private Double topP;
         private Integer maxTokens;
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
+        private String reasoningEffort;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
         private Integer topK;
@@ -348,6 +441,50 @@ public class GenerateOptions {
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
+
+        /**
+         * Sets the API key for authentication.
+         *
+         * @param apiKey the API key
+         * @return this builder instance
+         */
+        public Builder apiKey(String apiKey) {
+            this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the base URL for the API endpoint.
+         *
+         * @param baseUrl the base URL
+         * @return this builder instance
+         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets the model name to use for generation.
+         *
+         * @param modelName the model name (e.g., "gpt-4", "gpt-3.5-turbo")
+         * @return this builder instance
+         */
+        public Builder modelName(String modelName) {
+            this.modelName = modelName;
+            return this;
+        }
+
+        /**
+         * Sets whether streaming mode is enabled.
+         *
+         * @param stream true for streaming, false for non-streaming
+         * @return this builder instance
+         */
+        public Builder stream(Boolean stream) {
+            this.stream = stream;
+            return this;
+        }
 
         /**
          * Sets the temperature for text generation.
@@ -428,6 +565,20 @@ public class GenerateOptions {
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets the reasoning effort level for o1 models.
+         *
+         * <p>This parameter controls how much effort the model spends on reasoning.
+         * Valid values are "low", "medium", and "high".
+         *
+         * @param reasoningEffort the reasoning effort level
+         * @return this builder
+         */
+        public Builder reasoningEffort(String reasoningEffort) {
+            this.reasoningEffort = reasoningEffort;
             return this;
         }
 

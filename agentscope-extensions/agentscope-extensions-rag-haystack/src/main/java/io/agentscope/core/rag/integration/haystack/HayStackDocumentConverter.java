@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import io.agentscope.core.rag.integration.haystack.model.HayStackDocument;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -150,8 +151,14 @@ public class HayStackDocumentConverter {
 
         chunkId = hayStackDocument.getId() != null ? hayStackDocument.getId() : "0";
 
-        // Build metadata
-        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, chunkId);
+        // Build payload from meta (store all metadata from HayStack)
+        Map<String, Object> payload = new HashMap<>();
+        if (meta != null && !meta.isEmpty()) {
+            payload.putAll(meta);
+        }
+
+        // Build metadata with payload
+        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, chunkId, payload);
 
         // Build document
         return new Document(metadata);

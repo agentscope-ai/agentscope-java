@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -18,8 +18,8 @@ package io.agentscope.extensions.higress;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Collections;
 import java.util.List;
@@ -61,7 +61,6 @@ import org.slf4j.LoggerFactory;
 public class HigressToolSearchResult {
 
     private static final Logger logger = LoggerFactory.getLogger(HigressToolSearchResult.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final List<ToolInfo> tools;
     private final boolean success;
@@ -136,13 +135,13 @@ public class HigressToolSearchResult {
      * Parses from content list (text content).
      */
     private static HigressToolSearchResult parseFromContent(List<McpSchema.Content> contentList)
-            throws JsonProcessingException {
+            throws JsonException {
         for (McpSchema.Content content : contentList) {
             if (content instanceof McpSchema.TextContent textContent) {
                 String text = textContent.text();
                 if (text != null && !text.isEmpty()) {
                     ToolSearchResponse response =
-                            objectMapper.readValue(text, ToolSearchResponse.class);
+                            JsonUtils.getJsonCodec().fromJson(text, ToolSearchResponse.class);
                     if (response.tools != null) {
                         return success(response.tools);
                     }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -380,7 +380,7 @@ class McpClientBuilderTest {
     void testSseTransport_WithCompleteConfiguration() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token");
-        headers.put("X-Client-Version", "1.0.5-SNAPSHOT");
+        headers.put("X-Client-Version", "1.0.6-SNAPSHOT");
 
         McpClientBuilder builder =
                 McpClientBuilder.create("full-sse-client")

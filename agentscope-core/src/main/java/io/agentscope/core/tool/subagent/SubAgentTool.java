@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.tool.subagent;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
@@ -25,11 +23,11 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +56,6 @@ import reactor.core.publisher.Mono;
 public class SubAgentTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(SubAgentTool.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Parameter name for session ID. */
     private static final String PARAM_SESSION_ID = "session_id";
@@ -194,32 +191,27 @@ public class SubAgentTool implements AgentTool {
     /**
      * Loads agent state from the session storage.
      *
-     * <p>If the session exists, the agent's state is restored using {@link SessionManager}. Any
-     * errors during loading are logged but do not interrupt execution.
+     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
+     * but do not interrupt execution.
      *
      * @param sessionId The session ID to load state from
      * @param agent The state module to restore state into
      */
     private void loadAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
-        if (session.sessionExists(sessionId)) {
-            try {
-                SessionManager.forSessionId(sessionId)
-                        .withSession(session)
-                        .addComponent(agent)
-                        .loadIfExists();
-                logger.debug("Loaded state for session: {}", sessionId);
-            } catch (Exception e) {
-                logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
-            }
+        try {
+            agent.loadIfExists(session, sessionId);
+            logger.debug("Loaded state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
         }
     }
 
     /**
      * Saves agent state to the session storage.
      *
-     * <p>Persists the agent's current state using {@link SessionManager}. Any errors during saving
-     * are logged but do not interrupt execution.
+     * <p>Persists the agent's current state. Any errors during saving are logged but do not
+     * interrupt execution.
      *
      * @param sessionId The session ID to save state under
      * @param agent The state module to save state from
@@ -227,10 +219,7 @@ public class SubAgentTool implements AgentTool {
     private void saveAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            SessionManager.forSessionId(sessionId)
-                    .withSession(session)
-                    .addComponent(agent)
-                    .saveSession();
+            agent.saveTo(session, sessionId);
             logger.debug("Saved state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());
@@ -300,7 +289,7 @@ public class SubAgentTool implements AgentTool {
     /**
      * Forwards an event to the emitter as serialized JSON.
      *
-     * <p>Serializes the event using Jackson ObjectMapper and emits it as a text block. Serialization
+     * <p>Serializes the event using JsonCodec and emits it as a text block. Serialization
      * failures are logged but do not interrupt execution.
      *
      * @param event The event to forward
@@ -309,9 +298,9 @@ public class SubAgentTool implements AgentTool {
      */
     private void forwardEvent(Event event, ToolEmitter emitter, StreamOptions streamOptions) {
         try {
-            String json = objectMapper.writeValueAsString(event);
+            String json = JsonUtils.getJsonCodec().toJson(event);
             emitter.emit(ToolResultBlock.text(json));
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
         }
     }

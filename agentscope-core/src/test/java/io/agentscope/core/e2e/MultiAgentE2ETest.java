@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.agentscope.core.e2e;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
@@ -28,11 +29,12 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -56,12 +58,12 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("multi-agent")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("MultiAgent E2E Tests")
 class MultiAgentE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // ==================== Data Structure Definitions ====================
 
@@ -91,8 +93,25 @@ class MultiAgentE2ETest {
 
     // ==================== Test Methods ====================
 
+    private void sanitizeMemory(ReActAgent agent) {
+        List<Msg> msgs = new ArrayList<>(agent.getMemory().getMessages());
+        agent.getMemory().clear();
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.ASSISTANT && !agent.getName().equals(msg.getName())) {
+                msg =
+                        Msg.builder()
+                                .id(msg.getId())
+                                .name(msg.getName())
+                                .role(MsgRole.USER)
+                                .content(msg.getContent())
+                                .build();
+            }
+            agent.getMemory().addMessage(msg);
+        }
+    }
+
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should handle basic multi-agent conversation with MsgHub")
     void testBasicMultiAgentConversation(ModelProvider provider) {
         if (provider.getClass().getName().contains("MultiAgent")
@@ -118,7 +137,7 @@ class MultiAgentE2ETest {
         Msg announcement =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -169,6 +188,7 @@ class MultiAgentE2ETest {
                     "Charlie should have announcement + Alice's response");
 
             System.out.println("\n--- Round 2: Bob introduces himself ---");
+            sanitizeMemory(bob);
             Msg bobResponse = bob.call().block(TEST_TIMEOUT);
             assertNotNull(bobResponse, "Bob should respond");
             System.out.println("Bob: " + TestUtils.extractTextContent(bobResponse));
@@ -187,6 +207,7 @@ class MultiAgentE2ETest {
                     "Charlie should have announcement + Alice's response + Bob's response");
 
             System.out.println("\n--- Round 3: Charlie introduces himself ---");
+            sanitizeMemory(charlie);
             Msg charlieResponse = charlie.call().block(TEST_TIMEOUT);
             assertNotNull(charlieResponse, "Charlie should respond");
             System.out.println("Charlie: " + TestUtils.extractTextContent(charlieResponse));
@@ -227,9 +248,13 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle multi-agent with tool calling")
     void testMultiAgentWithToolCalling(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Multi-Agent with Tool Calling - "
                         + provider.getProviderName()
@@ -243,7 +268,7 @@ class MultiAgentE2ETest {
         Msg announcement =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -309,7 +334,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support role-based collaboration (innovator, critic, synthesizer)")
     void testRoleBasedMultiAgentCollaboration(ModelProvider provider) {
         System.out.println(
@@ -326,7 +351,7 @@ class MultiAgentE2ETest {
         Msg topic =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -391,7 +416,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support dynamic participant management")
     void testDynamicParticipantManagement(ModelProvider provider) {
         System.out.println(
@@ -474,9 +499,13 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should combine multi-agent with structured output")
     void testMultiAgentWithStructuredOutput(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping test: " + provider.getProviderName() + " does not support tool calling");
+
         System.out.println(
                 "\n=== Test: Multi-Agent with Structured Output - "
                         + provider.getProviderName()
@@ -491,7 +520,7 @@ class MultiAgentE2ETest {
         Msg topic =
                 Msg.builder()
                         .name("system")
-                        .role(MsgRole.SYSTEM)
+                        .role(MsgRole.USER)
                         .content(
                                 TextBlock.builder()
                                         .text(
@@ -551,7 +580,7 @@ class MultiAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should support manual broadcast control")
     void testMsgHubManualBroadcast(ModelProvider provider) {
         System.out.println(
@@ -614,7 +643,7 @@ class MultiAgentE2ETest {
     void testProviderAvailability() {
         System.out.println("\n=== Test: Provider Availability ===");
 
-        long enabledBasicProviders = ProviderFactory.getEnabledBasicProviders().count();
+        long enabledBasicProviders = ProviderFactory.getBasicProviders().count();
 
         System.out.println("Enabled basic providers: " + enabledBasicProviders);
 

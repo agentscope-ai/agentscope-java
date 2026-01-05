@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,9 +101,21 @@ public class BailianDocumentConverter {
             // Extract chunk ID - Bailian uses string "_id" field
             String chunkId = extractStringFromMetadata(nodeMetadata, "_id");
 
-            // Build DocumentMetadata
+            // Build payload from node metadata (exclude reserved fields)
+            Map<String, Object> payload = new HashMap<>();
+            if (!nodeMetadata.isEmpty()) {
+                for (Map.Entry<String, Object> entry : nodeMetadata.entrySet()) {
+                    String key = entry.getKey();
+                    // Skip reserved fields that are already used for core metadata
+                    if (!"doc_id".equals(key) && !"_id".equals(key)) {
+                        payload.put(key, entry.getValue());
+                    }
+                }
+            }
+
+            // Build DocumentMetadata with payload
             TextBlock content = TextBlock.builder().text(text).build();
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
+            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId, payload);
 
             // Create Document
             Document document = new Document(metadata);

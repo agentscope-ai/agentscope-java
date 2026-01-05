@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -21,7 +21,6 @@ import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttribute
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_OUTPUT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
 import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.DASHSCOPE;
-import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.MOONSHOT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_AGENT_DESCRIPTION;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_AGENT_ID;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_AGENT_NAME;
@@ -52,14 +51,9 @@ import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.Gen
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.ANTHROPIC;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AWS_BEDROCK;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AZURE_AI_OPENAI;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.DEEPSEEK;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.GCP_GEMINI;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.OPENAI;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
@@ -100,6 +94,8 @@ import io.agentscope.core.tracing.telemetry.model.TextPart;
 import io.agentscope.core.tracing.telemetry.model.ToolCallRequestPart;
 import io.agentscope.core.tracing.telemetry.model.ToolCallResponsePart;
 import io.agentscope.core.tracing.telemetry.model.ToolDefinition;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -115,8 +111,6 @@ import org.slf4j.LoggerFactory;
 final class AttributesExtractors {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AttributesExtractors.class);
-
-    private static final ObjectMapper MARSHALER = new ObjectMapper();
 
     /**
      * Get agent request attributes for OpenTelemetry tracing.
@@ -288,7 +282,7 @@ final class AttributesExtractors {
             internalSet(builder, GEN_AI_TOOL_CALL_RESULT, getToolCallResult(result.getOutput()));
         }
 
-        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(result));
+        internalSet(builder, AGENTSCOPE_FUNCTION_OUTPUT, serializeToStr(result));
         return builder.build();
     }
 
@@ -398,8 +392,8 @@ final class AttributesExtractors {
                         .toList();
 
         try {
-            return MARSHALER.writeValueAsString(inputMessages);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(inputMessages);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize input messages, due to: {}", e.getMessage());
             return null;
         }
@@ -421,8 +415,8 @@ final class AttributesExtractors {
                                                 toolSchema.getParameters()))
                         .toList();
         try {
-            return MARSHALER.writeValueAsString(toolDefinitions);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(toolDefinitions);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize tool definitions, due to: {}", e.getMessage());
             return null;
         }
@@ -463,8 +457,8 @@ final class AttributesExtractors {
                                 Role.ASSISTANT, parts, null, response.getFinishReason()));
 
         try {
-            return MARSHALER.writeValueAsString(outputMessages);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(outputMessages);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize output messages, due to: {}", e.getMessage());
             return null;
         }
@@ -505,8 +499,8 @@ final class AttributesExtractors {
                                 "stop"));
 
         try {
-            return MARSHALER.writeValueAsString(outputMessages);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(outputMessages);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize output messages, due to: {}", e.getMessage());
             return null;
         }
@@ -514,8 +508,8 @@ final class AttributesExtractors {
 
     private static String getToolCallArguments(Map<String, Object> input) {
         try {
-            return MARSHALER.writeValueAsString(input);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(input);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize tool call arguments, due to: {}", e.getMessage());
             return null;
         }
@@ -523,8 +517,8 @@ final class AttributesExtractors {
 
     private static String serializeToStr(Object object) {
         try {
-            return MARSHALER.writeValueAsString(object);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(object);
+        } catch (JsonException e) {
             LOGGER.warn(
                     "Failed to serialize {} instance to json string, due to: {}",
                     object.getClass().getSimpleName(),
@@ -556,8 +550,8 @@ final class AttributesExtractors {
                                 })
                         .toList();
         try {
-            return MARSHALER.writeValueAsString(blocks);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(blocks);
+        } catch (JsonException e) {
             LOGGER.warn("Failed to serialize tool call result, due to: {}", e.getMessage());
             return null;
         }
@@ -595,19 +589,6 @@ final class AttributesExtractors {
 
     private static final class ProviderNameConverter {
 
-        private static final List<BaseUrlMapper> BASE_URL_MAPPERS;
-
-        static {
-            BASE_URL_MAPPERS = new ArrayList<>();
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("api.openai.com", OPENAI));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("dashscope", DASHSCOPE));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("deepseek", DEEPSEEK));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("moonshot", MOONSHOT));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("generativelanguage.googleapis.com", GCP_GEMINI));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("openai.azure.com", AZURE_AI_OPENAI));
-            BASE_URL_MAPPERS.add(BaseUrlMapper.of("amazonaws.com", AWS_BEDROCK));
-        }
-
         static String getProviderName(ChatModelBase instance) {
             if (instance instanceof DashScopeChatModel) {
                 return DASHSCOPE;
@@ -616,31 +597,9 @@ final class AttributesExtractors {
             } else if (instance instanceof AnthropicChatModel) {
                 return ANTHROPIC;
             } else if (instance instanceof OpenAIChatModel) {
-                String baseUrl = ((OpenAIChatModel) instance).getBaseUrl();
-                if (baseUrl == null || baseUrl.isEmpty()) {
-                    return OPENAI;
-                }
-                for (BaseUrlMapper mapper : BASE_URL_MAPPERS) {
-                    if (baseUrl.contains(mapper.baseUrlFragment)) {
-                        return mapper.providerName;
-                    }
-                }
+                return OPENAI;
             }
             return "unknown";
-        }
-
-        private static class BaseUrlMapper {
-            final String baseUrlFragment;
-            final String providerName;
-
-            static BaseUrlMapper of(String baseUrlFragment, String providerName) {
-                return new BaseUrlMapper(baseUrlFragment, providerName);
-            }
-
-            private BaseUrlMapper(String baseUrlFragment, String providerName) {
-                this.baseUrlFragment = baseUrlFragment;
-                this.providerName = providerName;
-            }
         }
     }
 

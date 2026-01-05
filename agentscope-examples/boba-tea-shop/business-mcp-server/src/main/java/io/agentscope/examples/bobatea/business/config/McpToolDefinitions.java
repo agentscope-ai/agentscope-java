@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -16,8 +16,6 @@
 
 package io.agentscope.examples.bobatea.business.config;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,23 +30,10 @@ import java.util.Map;
  */
 public class McpToolDefinitions {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
     /**
      * Tool definition record containing name, description, and schema.
      */
     public record ToolDefinition(String name, String description, Map<String, Object> schema) {
-
-        /**
-         * Get schema as JSON string for MCP SDK.
-         */
-        public String schemaAsString() {
-            try {
-                return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException("Failed to convert schema to JSON string", e);
-            }
-        }
 
         /**
          * Get JsonSchema for MCP SDK 0.17.0+.

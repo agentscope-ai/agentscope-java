@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -84,7 +84,23 @@ const i18n = {
         spectatorMode: '观战模式',
         spectatorModeActive: '🎬 观战模式已启动，全AI对战中...',
         allAIBattle: '全AI对战中',
-        cancel: '取消'
+        cancel: '取消',
+        confirm: '确认',
+        configTitle: '⚙️ 游戏配置',
+        configVillager: '村民数量:',
+        configWerewolf: '狼人数量:',
+        configSeer: '预言家数量:',
+        configWitch: '女巫数量:',
+        configHunter: '猎人数量:',
+        configTotal: '总玩家数:',
+        configErrorNegativeVillager: '村民数量不能为负数',
+        configErrorMinWerewolf: '狼人数量至少需要1个',
+        configErrorNegativeSeer: '预言家数量不能为负数',
+        configErrorNegativeWitch: '女巫数量不能为负数',
+        configErrorNegativeHunter: '猎人数量不能为负数',
+        configErrorMinPlayers: '总玩家数至少需要4人',
+        configErrorMaxPlayers: '总玩家数不能超过30人',
+        configValidationFailed: '配置验证失败，请检查输入'
     },
     'en-US': {
         title: 'Werewolf - Real-time Battle',
@@ -155,7 +171,23 @@ const i18n = {
         spectatorMode: 'Spectator Mode',
         spectatorModeActive: '🎬 Spectator mode activated, all AI battle in progress...',
         allAIBattle: 'All AI Battle',
-        cancel: 'Cancel'
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        configTitle: '⚙️ Game Configuration',
+        configVillager: 'Villager Count:',
+        configWerewolf: 'Werewolf Count:',
+        configSeer: 'Seer Count:',
+        configWitch: 'Witch Count:',
+        configHunter: 'Hunter Count:',
+        configTotal: 'Total Players:',
+        configErrorNegativeVillager: 'Villager count cannot be negative',
+        configErrorMinWerewolf: 'Werewolf count must be at least 1',
+        configErrorNegativeSeer: 'Seer count cannot be negative',
+        configErrorNegativeWitch: 'Witch count cannot be negative',
+        configErrorNegativeHunter: 'Hunter count cannot be negative',
+        configErrorMinPlayers: 'Total players must be at least 4',
+        configErrorMaxPlayers: 'Total players cannot exceed 30',
+        configValidationFailed: 'Configuration validation failed, please check your input'
     }
 };
 

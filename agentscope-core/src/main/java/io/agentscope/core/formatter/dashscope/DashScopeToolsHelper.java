@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
@@ -25,6 +24,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,11 +42,7 @@ public class DashScopeToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeToolsHelper.class);
 
-    private final ObjectMapper objectMapper;
-
-    public DashScopeToolsHelper() {
-        this.objectMapper = new ObjectMapper();
-    }
+    public DashScopeToolsHelper() {}
 
     /**
      * Apply GenerateOptions to DashScopeParameters.
@@ -242,7 +238,7 @@ public class DashScopeToolsHelper {
 
             String argsJson;
             try {
-                argsJson = objectMapper.writeValueAsString(toolUse.getInput());
+                argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
             } catch (Exception e) {
                 log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
                 argsJson = "{}";

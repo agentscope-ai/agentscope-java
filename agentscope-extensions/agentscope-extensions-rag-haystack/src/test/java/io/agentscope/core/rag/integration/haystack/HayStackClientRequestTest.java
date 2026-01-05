@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.haystack.model.HayStackResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
@@ -41,13 +41,11 @@ import org.junit.jupiter.api.Test;
 class HayStackClientRequestTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -83,9 +81,9 @@ class HayStackClientRequestTest {
                 .forEach(name -> System.out.println("  " + name + ": " + request.getHeader(name)));
         System.out.println("-".repeat(70));
 
-        Map<String, Object> parsed = objectMapper.readValue(body, new TypeReference<>() {});
-        String prettyJson =
-                objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(parsed);
+        Map<String, Object> parsed =
+                JsonUtils.getJsonCodec().fromJson(body, new TypeReference<>() {});
+        String prettyJson = JsonUtils.getJsonCodec().toPrettyJson(parsed);
         System.out.println("Request Body:");
         System.out.println(prettyJson);
         System.out.println("=".repeat(70) + "\n");
