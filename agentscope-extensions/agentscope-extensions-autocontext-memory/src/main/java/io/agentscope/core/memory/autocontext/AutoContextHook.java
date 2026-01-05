@@ -23,6 +23,7 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -227,12 +228,15 @@ public class AutoContextHook implements Hook {
         boolean compressed = autoContextMemory.compressIfNeeded();
 
         if (compressed) {
-            // Compression was performed, update input messages to reflect compressed working memory
-            List<Msg> compressedMessages = new ArrayList<>(autoContextMemory.getMessages());
-            event.setInputMessages(compressedMessages);
-            log.debug(
-                    "AutoContextMemory compression applied before reasoning, updated input"
-                            + " messages");
+            // Preserve system prompt and replace memory messages with compressed ones
+            List<Msg> originalInputMessages = event.getInputMessages();
+            List<Msg> newInputMessages = new ArrayList<>();
+            if (!originalInputMessages.isEmpty()
+                    && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
+                newInputMessages.add(originalInputMessages.get(0));
+            }
+            newInputMessages.addAll(autoContextMemory.getMessages());
+            event.setInputMessages(newInputMessages);
         }
 
         return Mono.just(event);
