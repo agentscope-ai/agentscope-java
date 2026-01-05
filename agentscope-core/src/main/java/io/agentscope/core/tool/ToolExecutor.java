@@ -145,19 +145,9 @@ class ToolExecutor {
             }
         }
 
-        // Merge preset parameters with input
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
-        if (param.getInput() != null && !param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (toolCall.getInput() != null) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-
         // Validate input against schema
-        String validationError = ToolValidator.validateInput(mergedInput, tool.getParameters());
+        String validationError =
+                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(
@@ -175,6 +165,17 @@ class ToolExecutor {
 
         // Create emitter for streaming
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
+
+        // Merge preset parameters with input
+        Map<String, Object> mergedInput = new HashMap<>();
+        if (registered != null) {
+            mergedInput.putAll(registered.getPresetParameters());
+        }
+        if (param.getInput() != null && !param.getInput().isEmpty()) {
+            mergedInput.putAll(param.getInput());
+        } else if (toolCall.getInput() != null) {
+            mergedInput.putAll(toolCall.getInput());
+        }
 
         // Build final execution param
         ToolCallParam executionParam =

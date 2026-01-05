@@ -21,25 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.agentscope.core.util.JsonUtils;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link Mem0SearchResult}. */
 class Mem0SearchResultTest {
-
-    private ObjectMapper objectMapper;
-
-    @BeforeEach
-    void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-    }
 
     @Test
     void testDefaultConstructor() {
@@ -128,7 +118,7 @@ class Mem0SearchResultTest {
                         + "\"immutable\":false"
                         + "}";
 
-        Mem0SearchResult result = objectMapper.readValue(json, Mem0SearchResult.class);
+        Mem0SearchResult result = JsonUtils.getJsonCodec().fromJson(json, Mem0SearchResult.class);
 
         assertNotNull(result);
         assertEquals("mem_789", result.getId());
@@ -152,7 +142,7 @@ class Mem0SearchResultTest {
                         + "\"expiration_date\":\"2025-12-31T23:59:59Z\""
                         + "}";
 
-        Mem0SearchResult result = objectMapper.readValue(json, Mem0SearchResult.class);
+        Mem0SearchResult result = JsonUtils.getJsonCodec().fromJson(json, Mem0SearchResult.class);
 
         assertNotNull(result);
         assertNotNull(result.getCreatedAt());
@@ -170,7 +160,7 @@ class Mem0SearchResultTest {
         result.setCategories(List.of("food", "preferences"));
         result.setImmutable(false);
 
-        String json = objectMapper.writeValueAsString(result);
+        String json = JsonUtils.getJsonCodec().toJson(result);
         assertNotNull(json);
 
         assertTrue(json.contains("\"id\""));
@@ -195,8 +185,9 @@ class Mem0SearchResultTest {
         metadata.put("test", "value");
         original.setMetadata(metadata);
 
-        String json = objectMapper.writeValueAsString(original);
-        Mem0SearchResult deserialized = objectMapper.readValue(json, Mem0SearchResult.class);
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        Mem0SearchResult deserialized =
+                JsonUtils.getJsonCodec().fromJson(json, Mem0SearchResult.class);
 
         assertEquals(original.getId(), deserialized.getId());
         assertEquals(original.getMemory(), deserialized.getMemory());
@@ -229,7 +220,7 @@ class Mem0SearchResultTest {
         result.setMemory("Test");
         // Leave other fields null
 
-        String json = objectMapper.writeValueAsString(result);
+        String json = JsonUtils.getJsonCodec().toJson(result);
 
         assertTrue(json.contains("\"id\""));
         assertTrue(json.contains("\"memory\""));
@@ -251,7 +242,7 @@ class Mem0SearchResultTest {
         Map<String, Object> structuredAttrs = Map.of("day", 1);
         result.setStructuredAttributes(structuredAttrs);
 
-        String json = objectMapper.writeValueAsString(result);
+        String json = JsonUtils.getJsonCodec().toJson(result);
 
         assertTrue(json.contains("\"user_id\""));
         assertTrue(json.contains("\"created_at\""));

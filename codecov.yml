@@ -29,3 +29,5 @@ coverage:
       default:
         target: 60%
         threshold: 5%
+ignore:
+  - "agentscope-examples/**/*"

@@ -20,10 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,13 +34,10 @@ import org.junit.jupiter.api.Test;
 class AguiEventEncoderTest {
 
     private AguiEventEncoder encoder;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         encoder = new AguiEventEncoder();
-        objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     @Test
@@ -235,7 +231,7 @@ class AguiEventEncoderTest {
         assertTrue(json.startsWith(" "));
 
         // Verify it's valid JSON (without the leading space)
-        AguiEvent decoded = objectMapper.readValue(json.trim(), AguiEvent.class);
+        AguiEvent decoded = JsonUtils.getJsonCodec().fromJson(json.trim(), AguiEvent.class);
         assertNotNull(decoded);
         assertEquals(AguiEventType.STATE_SNAPSHOT, decoded.getType());
     }

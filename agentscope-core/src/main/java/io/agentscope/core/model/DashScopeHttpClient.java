@@ -15,11 +15,7 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
@@ -28,6 +24,8 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -73,7 +71,6 @@ public class DashScopeHttpClient {
             "/api/v1/services/aigc/multimodal-generation/generation";
 
     private final HttpTransport transport;
-    private final ObjectMapper objectMapper;
     private final String apiKey;
     private final String baseUrl;
 
@@ -88,7 +85,6 @@ public class DashScopeHttpClient {
         this.transport = transport;
         this.apiKey = apiKey;
         this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
-        this.objectMapper = createObjectMapper();
     }
 
     /**
@@ -111,13 +107,6 @@ public class DashScopeHttpClient {
      */
     public DashScopeHttpClient(String apiKey) {
         this(apiKey, null);
-    }
-
-    private ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
     }
 
     /**
@@ -174,7 +163,7 @@ public class DashScopeHttpClient {
             log.debug("DashScope response: {}", responseBody);
 
             DashScopeResponse response =
-                    objectMapper.readValue(responseBody, DashScopeResponse.class);
+                    JsonUtils.getJsonCodec().fromJson(responseBody, DashScopeResponse.class);
 
             if (response.isError()) {
                 throw new DashScopeHttpException(
@@ -184,7 +173,7 @@ public class DashScopeHttpClient {
             }
 
             return response;
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             throw new DashScopeHttpException("Failed to serialize/deserialize request", e);
         } catch (HttpTransportException e) {
             throw new DashScopeHttpException("HTTP transport error: " + e.getMessage(), e);
@@ -239,8 +228,9 @@ public class DashScopeHttpClient {
                     .map(
                             data -> {
                                 try {
-                                    return objectMapper.readValue(data, DashScopeResponse.class);
-                                } catch (JsonProcessingException e) {
+                                    return JsonUtils.getJsonCodec()
+                                            .fromJson(data, DashScopeResponse.class);
+                                } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse SSE data: {}. Error: {}",
                                             data,
@@ -262,7 +252,7 @@ public class DashScopeHttpClient {
                                     sink.next(response);
                                 }
                             });
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             return Flux.error(new DashScopeHttpException("Failed to serialize request", e));
         }
     }
@@ -356,12 +346,10 @@ public class DashScopeHttpClient {
      * @param request the DashScope request
      * @param additionalBodyParams additional parameters to merge (may be null)
      * @return the serialized request body
-     * @throws JsonProcessingException if serialization fails
      */
     private String buildRequestBody(
-            DashScopeRequest request, Map<String, Object> additionalBodyParams)
-            throws JsonProcessingException {
-        String requestBody = objectMapper.writeValueAsString(request);
+            DashScopeRequest request, Map<String, Object> additionalBodyParams) {
+        String requestBody = JsonUtils.getJsonCodec().toJson(request);
 
         if (additionalBodyParams == null || additionalBodyParams.isEmpty()) {
             return requestBody;
@@ -369,16 +357,10 @@ public class DashScopeHttpClient {
 
         // Deserialize to Map, merge additional params, re-serialize
         Map<String, Object> bodyMap =
-                objectMapper.readValue(requestBody, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec()
+                        .fromJson(requestBody, new TypeReference<Map<String, Object>>() {});
         bodyMap.putAll(additionalBodyParams);
-        return objectMapper.writeValueAsString(bodyMap);
-    }
-
-    /**
-     * Close the client and release resources.
-     */
-    public void close() {
-        transport.close();
+        return JsonUtils.getJsonCodec().toJson(bodyMap);
     }
 
     /**

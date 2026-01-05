@@ -15,10 +15,11 @@
  */
 package io.agentscope.core.rag.integration.dify;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.dify.exception.DifyApiException;
 import io.agentscope.core.rag.integration.dify.exception.DifyAuthException;
 import io.agentscope.core.rag.integration.dify.model.DifyResponse;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,7 +61,7 @@ public class DifyRAGClient {
 
     private final OkHttpClient httpClient;
     private final DifyRAGConfig config;
-    private final ObjectMapper objectMapper;
+    private final JsonCodec jsonCodec;
 
     /**
      * Creates a new DifyRAGClient instance.
@@ -73,7 +74,7 @@ public class DifyRAGClient {
         }
 
         this.config = config;
-        this.objectMapper = new ObjectMapper();
+        this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient = createHttpClient(config);
 
         log.info(
@@ -90,9 +91,9 @@ public class DifyRAGClient {
      *
      * @param httpClient the HTTP client
      * @param config the Dify configuration
-     * @param objectMapper the JSON object mapper
+     * @param jsonCodec the JSON codec
      */
-    DifyRAGClient(OkHttpClient httpClient, DifyRAGConfig config, ObjectMapper objectMapper) {
+    DifyRAGClient(OkHttpClient httpClient, DifyRAGConfig config, JsonCodec jsonCodec) {
         if (httpClient == null) {
             throw new IllegalArgumentException("HTTP client cannot be null");
         }
@@ -102,7 +103,7 @@ public class DifyRAGClient {
 
         this.httpClient = httpClient;
         this.config = config;
-        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.jsonCodec = jsonCodec != null ? jsonCodec : JsonUtils.getJsonCodec();
 
         log.info("DifyRAGClient initialized for testing with dataset: {}", config.getDatasetId());
     }
@@ -217,7 +218,7 @@ public class DifyRAGClient {
                                     + "/retrieve";
 
                     // Build request
-                    String jsonBody = objectMapper.writeValueAsString(requestBody);
+                    String jsonBody = jsonCodec.toJson(requestBody);
                     log.debug("Dify API request body: {}", jsonBody);
 
                     Request.Builder requestBuilder =
@@ -251,7 +252,7 @@ public class DifyRAGClient {
 
                         // Parse response
                         DifyResponse difyResponse =
-                                objectMapper.readValue(responseBody, DifyResponse.class);
+                                jsonCodec.fromJson(responseBody, DifyResponse.class);
 
                         if (difyResponse == null) {
                             log.warn("Dify API returned null response");
@@ -288,7 +289,7 @@ public class DifyRAGClient {
 
         try {
             @SuppressWarnings("unchecked")
-            Map<String, Object> errorBody = objectMapper.readValue(responseBody, Map.class);
+            Map<String, Object> errorBody = jsonCodec.fromJson(responseBody, Map.class);
             if (errorBody.containsKey("message")) {
                 errorMessage = errorBody.get("message").toString();
             }

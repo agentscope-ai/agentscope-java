@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -43,13 +43,11 @@ import org.junit.jupiter.api.Test;
 class RAGFlowClientRequestTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -80,9 +78,9 @@ class RAGFlowClientRequestTest {
         System.out.println("-".repeat(70));
 
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
-        String prettyJson =
-                objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(parsed);
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
+        String prettyJson = JsonUtils.getJsonCodec().toPrettyJson(parsed);
         System.out.println("Request Body:");
         System.out.println(prettyJson);
         System.out.println("=".repeat(70) + "\n");

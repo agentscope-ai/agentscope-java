@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.rag.integration.ragflow;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowApiException;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowAuthException;
 import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -55,22 +55,14 @@ public class RAGFlowClient {
 
     private final RAGFlowConfig config;
 
-    private final ObjectMapper objectMapper;
-
     public RAGFlowClient(RAGFlowConfig config) {
-        this(config, new ObjectMapper());
-    }
-
-    public RAGFlowClient(RAGFlowConfig config, ObjectMapper objectMapper) {
         this.config = config;
-        this.objectMapper = objectMapper;
         this.httpClient = createHttpClient();
     }
 
-    RAGFlowClient(OkHttpClient httpClient, RAGFlowConfig config, ObjectMapper objectMapper) {
+    RAGFlowClient(OkHttpClient httpClient, RAGFlowConfig config) {
         this.httpClient = httpClient;
         this.config = config;
-        this.objectMapper = objectMapper;
     }
 
     /**
@@ -200,7 +192,7 @@ public class RAGFlowClient {
                         requestBody.put("metadata_condition", config.getMetadataCondition());
                     }
 
-                    String jsonBody = objectMapper.writeValueAsString(requestBody);
+                    String jsonBody = JsonUtils.getJsonCodec().toJson(requestBody);
 
                     String url = config.getBaseUrl() + "/api/v1/retrieval";
 
@@ -236,7 +228,8 @@ public class RAGFlowClient {
                         }
 
                         RAGFlowResponse ragFlowResponse =
-                                objectMapper.readValue(responseBody, RAGFlowResponse.class);
+                                JsonUtils.getJsonCodec()
+                                        .fromJson(responseBody, RAGFlowResponse.class);
 
                         // Check if response indicates an error
                         if (ragFlowResponse.getCode() != null && ragFlowResponse.getCode() != 0) {

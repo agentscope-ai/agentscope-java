@@ -72,6 +72,7 @@ public class AgentScopeModelConfig {
                     OpenAIChatModel.builder()
                             .apiKey(openaiApiKey)
                             .modelName(openaiModelName)
+                            .stream(true)
                             .formatter(new OpenAIChatFormatter());
             if (openaiBaseUrl != null && !openaiBaseUrl.isEmpty() && !openaiBaseUrl.equals("-")) {
                 builder.baseUrl(openaiBaseUrl);

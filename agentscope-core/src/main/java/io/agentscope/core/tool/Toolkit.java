@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -74,9 +73,7 @@ public class Toolkit {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
-    private final ToolResultConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ToolExecutor executor;
@@ -96,8 +93,7 @@ public class Toolkit {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        this.responseConverter = new ToolResultConverter(objectMapper);
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        this.methodInvoker = new ToolMethodInvoker(new DefaultToolResultConverter());
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -109,7 +105,7 @@ public class Toolkit {
                                         tool, groupName, null, mcpClientName, presetParameters));
 
         // Create executor based on configuration
-        if (config.hasCustomExecutor()) {
+        if (config != null && config.hasCustomExecutor()) {
             this.executor =
                     new ToolExecutor(
                             toolRegistry,
@@ -359,6 +355,9 @@ public class Toolkit {
                         ? toolAnnotation.description()
                         : "Tool: " + toolName;
 
+        // Parse custom converter from annotation
+        ToolResultConverter customConverter = parseConverterFromAnnotation(toolAnnotation);
+
         AgentTool tool =
                 new AgentTool() {
                     @Override
@@ -383,11 +382,54 @@ public class Toolkit {
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        return methodInvoker.invokeAsync(toolObject, method, param);
+                        // Pass custom converter to method invoker
+                        return methodInvoker.invokeAsync(
+                                toolObject, method, param, customConverter);
                     }
                 };
 
         registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
+    }
+
+    /**
+     * Parses and instantiates converter from @Tool annotation.
+     *
+     * @param toolAnnotation The Tool annotation
+     * @return A ToolResultConverter instance, or null to use default
+     */
+    private ToolResultConverter parseConverterFromAnnotation(Tool toolAnnotation) {
+        if (toolAnnotation == null) {
+            return null;
+        }
+
+        try {
+            Class<? extends ToolResultConverter> converterClass = toolAnnotation.converter();
+            // If explicitly set to DefaultToolResultConverter, return null to use the default
+            if (converterClass == DefaultToolResultConverter.class) {
+                return null;
+            }
+            return instantiateConverter(converterClass);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to create converter from @Tool annotation", e);
+        }
+    }
+
+    /**
+     * Instantiates a converter class with proper constructor resolution. Tries: 1) no-arg
+     * constructor, 2) constructor with ObjectMapper
+     *
+     * @param clazz The converter class to instantiate
+     * @return A new converter instance
+     */
+    private ToolResultConverter instantiateConverter(Class<? extends ToolResultConverter> clazz)
+            throws Exception {
+        // Try no-arg constructor first
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(
+                    "Converter " + clazz.getName() + " must have either a no-arg constructor");
+        }
     }
 
     /**
@@ -640,6 +682,25 @@ public class Toolkit {
         }
         registered.updatePresetParameters(newPresetParameters);
         logger.debug("Updated preset parameters for tool '{}'", toolName);
+    }
+
+    // ==================== Deep Copy ====================
+
+    /**
+     * Create a deep copy of this toolkit.
+     *
+     * @return A new Toolkit instance with copied state
+     */
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        return copy;
     }
 
     /**

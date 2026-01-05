@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.agent.accumulator;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,8 +38,6 @@ import java.util.stream.Collectors;
  * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
@@ -87,12 +85,14 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
+            String rawContentStr = this.rawContent.toString();
 
             // If no parsed arguments but has raw JSON content, try to parse
-            if (finalArgs.isEmpty() && rawContent.length() > 0) {
+            if (finalArgs.isEmpty() && rawContentStr.length() > 0) {
                 try {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = MAPPER.readValue(rawContent.toString(), Map.class);
+                    Map<String, Object> parsed =
+                            JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
                     if (parsed != null) {
                         finalArgs.putAll(parsed);
                     }
@@ -105,6 +105,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
+                    .content(rawContentStr.isEmpty() ? null : rawContentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
@@ -217,6 +218,67 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      */
     public List<ToolUseBlock> buildAllToolCalls() {
         return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
+    }
+
+    /**
+     * Get accumulated tool call by ID.
+     *
+     * <p>If the ID is null or empty, or if no builder is found for the given ID,
+     * this method falls back to using the lastToolCallKey.
+     *
+     * @param id The tool call ID to look up
+     * @return The accumulated ToolUseBlock, or null if not found
+     */
+    public ToolUseBlock getAccumulatedToolCall(String id) {
+        if (id != null && !id.isEmpty()) {
+            // First try to find by ID directly
+            ToolCallBuilder builder = builders.get(id);
+            if (builder != null) {
+                return builder.build();
+            }
+        }
+
+        // Fallback to lastToolCallKey if ID is empty or not found
+        if (lastToolCallKey != null) {
+            ToolCallBuilder builder = builders.get(lastToolCallKey);
+            if (builder != null) {
+                return builder.build();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all accumulated tool calls.
+     *
+     * <p>This is an alias for {@link #buildAllToolCalls()} for API consistency.
+     *
+     * @return List of all accumulated ToolUseBlocks
+     */
+    public List<ToolUseBlock> getAllAccumulatedToolCalls() {
+        return buildAllToolCalls();
+    }
+
+    /**
+     * Get the ID of the current (last) tool call being accumulated.
+     *
+     * <p>This is useful for enriching fragment chunks with the correct tool call ID,
+     * allowing users to properly concatenate streaming chunks.
+     *
+     * @return The current tool call ID, or null if no tool call is being accumulated
+     */
+    public String getCurrentToolCallId() {
+        if (lastToolCallKey == null) {
+            return null;
+        }
+
+        ToolCallBuilder builder = builders.get(lastToolCallKey);
+        if (builder == null) {
+            return null;
+        }
+
+        return builder.toolId;
     }
 
     /**

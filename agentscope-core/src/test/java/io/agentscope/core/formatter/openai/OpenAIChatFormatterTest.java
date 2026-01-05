@@ -395,6 +395,46 @@ class OpenAIChatFormatterTest {
         }
 
         @Test
+        @DisplayName("Should apply reasoningEffort from GenerateOptions field")
+        void testApplyReasoningEffortFromField() {
+            OpenAIRequest request = OpenAIRequest.builder().model("o1").messages(List.of()).build();
+
+            GenerateOptions options = GenerateOptions.builder().reasoningEffort("high").build();
+
+            formatter.applyOptions(request, options, null);
+
+            assertEquals("high", request.getReasoningEffort());
+        }
+
+        @Test
+        @DisplayName("Should apply reasoningEffort with default options")
+        void testApplyReasoningEffortWithDefault() {
+            OpenAIRequest request = OpenAIRequest.builder().model("o1").messages(List.of()).build();
+
+            GenerateOptions defaultOptions =
+                    GenerateOptions.builder().reasoningEffort("low").build();
+            GenerateOptions options = GenerateOptions.builder().reasoningEffort("high").build();
+
+            formatter.applyOptions(request, options, defaultOptions);
+
+            // Options should override defaultOptions
+            assertEquals("high", request.getReasoningEffort());
+        }
+
+        @Test
+        @DisplayName("Should apply reasoningEffort from default when options is null")
+        void testApplyReasoningEffortFromDefaultOnly() {
+            OpenAIRequest request = OpenAIRequest.builder().model("o1").messages(List.of()).build();
+
+            GenerateOptions defaultOptions =
+                    GenerateOptions.builder().reasoningEffort("medium").build();
+
+            formatter.applyOptions(request, null, defaultOptions);
+
+            assertEquals("medium", request.getReasoningEffort());
+        }
+
+        @Test
         @DisplayName("Should apply include_reasoning parameter")
         void testApplyIncludeReasoning() {
             OpenAIRequest request =

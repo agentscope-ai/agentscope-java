@@ -159,7 +159,7 @@ class DashScopeResponseParserTest {
         ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(1);
         assertEquals("call_123", toolUse.getId());
         assertEquals("get_weather", toolUse.getName());
-        assertEquals("Beijing", toolUse.getInput().get("location"));
+        assertTrue(toolUse.getInput().isEmpty());
     }
 
     @Test

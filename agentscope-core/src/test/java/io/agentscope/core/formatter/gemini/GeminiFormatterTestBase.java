@@ -17,8 +17,8 @@ package io.agentscope.core.formatter.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,8 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
  */
 public abstract class GeminiFormatterTestBase {
 
-    protected static final ObjectMapper objectMapper =
-            new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    protected static final JsonCodec jsonCodec = JsonUtils.getJsonCodec();
 
     protected Path tempImageFile;
     protected Path tempAudioFile;
@@ -66,7 +65,7 @@ public abstract class GeminiFormatterTestBase {
      */
     protected String toJson(Object obj) {
         try {
-            return objectMapper.writeValueAsString(obj);
+            return jsonCodec.toPrettyJson(obj);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert object to JSON", e);
         }
@@ -82,7 +81,7 @@ public abstract class GeminiFormatterTestBase {
      */
     protected <T> T fromJson(String json, Class<T> clazz) {
         try {
-            return objectMapper.readValue(json, clazz);
+            return jsonCodec.fromJson(json, clazz);
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse JSON", e);
         }
@@ -97,24 +96,20 @@ public abstract class GeminiFormatterTestBase {
      */
     protected void assertJsonEquals(String expectedJson, String actualJson) {
         try {
-            Object expected = objectMapper.readValue(expectedJson, Object.class);
-            Object actual = objectMapper.readValue(actualJson, Object.class);
+            Object expected = jsonCodec.fromJson(expectedJson, Object.class);
+            Object actual = jsonCodec.fromJson(actualJson, Object.class);
 
             // Serialize back to normalized JSON for comparison
-            String normalizedExpected = objectMapper.writeValueAsString(expected);
-            String normalizedActual = objectMapper.writeValueAsString(actual);
+            String normalizedExpected = jsonCodec.toJson(expected);
+            String normalizedActual = jsonCodec.toJson(actual);
 
             assertEquals(
                     normalizedExpected,
                     normalizedActual,
                     "JSON structures do not match.\nExpected:\n"
-                            + objectMapper
-                                    .writerWithDefaultPrettyPrinter()
-                                    .writeValueAsString(expected)
+                            + jsonCodec.toPrettyJson(expected)
                             + "\n\nActual:\n"
-                            + objectMapper
-                                    .writerWithDefaultPrettyPrinter()
-                                    .writeValueAsString(actual));
+                            + jsonCodec.toPrettyJson(actual));
         } catch (Exception e) {
             throw new AssertionError("Failed to compare JSON: " + e.getMessage(), e);
         }

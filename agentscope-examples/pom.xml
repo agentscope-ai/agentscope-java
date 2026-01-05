@@ -42,6 +42,7 @@
         <module>werewolf-hitl</module>
         <module>model-request-compression</module>
         <module>boba-tea-shop</module>
+        <module>hitl-chat</module>
     </modules>
 
     <properties>
