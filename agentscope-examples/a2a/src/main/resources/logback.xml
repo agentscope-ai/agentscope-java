@@ -13,7 +13,7 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
+  -->
 
 <configuration>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -29,4 +29,3 @@
         <appender-ref ref="CONSOLE"/>
     </root>
 </configuration>
-
