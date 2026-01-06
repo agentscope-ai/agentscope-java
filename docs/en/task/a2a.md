@@ -64,15 +64,6 @@ A2aAgent.builder()
 
 Using Nacos as an A2A registry allows AgentScope to automatically discover A2A services from Nacos for invocation.
 
-```xml
-<dependency>
-    <groupId>com.alibaba.nacos</groupId>
-    <artifactId>nacos-client</artifactId>
-    <!-- Nacos client version must be 3.1.0 or higher -->
-    <version>${nacos.version}</version>
-</dependency>
-```
-
 ```java
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver;

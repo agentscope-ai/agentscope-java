@@ -64,15 +64,6 @@ A2aAgent.builder()
 
 使用 Nacos 作为 A2A 注册中心，自动从 Nacos 中发现 A2A 服务进行调用。
 
-```xml
-<dependency>
-    <groupId>com.alibaba.nacos</groupId>
-    <artifactId>nacos-client</artifactId>
-    <!-- Nacos 客户端版本至少3.1.0 -->
-    <version>${nacos.version}</version>
-</dependency>
-```
-
 ```java
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver;
