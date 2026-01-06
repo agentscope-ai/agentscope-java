@@ -26,6 +26,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -119,7 +120,7 @@ class OllamaMessageConverterTest {
                 new ToolResultBlock(
                         "call123",
                         "test_tool",
-                        java.util.List.of(TextBlock.builder().text("Tool result output").build()),
+                        List.of(TextBlock.builder().text("Tool result output").build()),
                         null);
         Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
 
@@ -224,7 +225,7 @@ class OllamaMessageConverterTest {
                 new ToolResultBlock(
                         "call123",
                         "test_tool",
-                        java.util.List.of(TextBlock.builder().text("Tool output").build()),
+                        List.of(TextBlock.builder().text("Tool output").build()),
                         null);
         TextBlock textBlock = TextBlock.builder().text("Additional text").build();
         Msg msg =

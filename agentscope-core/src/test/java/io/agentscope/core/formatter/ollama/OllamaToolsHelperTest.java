@@ -257,7 +257,7 @@ class OllamaToolsHelperTest {
         List<ToolUseBlock> blocks = Arrays.asList(block1);
 
         // Act
-        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls =
+        List<OllamaToolCall> toolCalls =
                 helper.convertToolCalls(blocks);
 
         // Assert
@@ -298,7 +298,7 @@ class OllamaToolsHelperTest {
         List<ToolUseBlock> blocks = Arrays.asList(block1, null, block1); // Contains null element
 
         // Act
-        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls =
+        List<OllamaToolCall> toolCalls =
                 helper.convertToolCalls(blocks);
 
         // Assert

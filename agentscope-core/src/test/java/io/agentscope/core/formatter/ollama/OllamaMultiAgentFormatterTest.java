@@ -22,11 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -218,7 +214,7 @@ class OllamaMultiAgentFormatterTest {
         response.setModel("test-model");
         response.setCreatedAt("2024-01-01T00:00:00.000Z");
         response.setMessage(
-                new io.agentscope.core.formatter.ollama.dto.OllamaMessage("assistant", "Response"));
+                new OllamaMessage("assistant", "Response"));
 
         // Act
         ChatResponse chatResponse = formatter.parseResponse(response, Instant.now());
@@ -310,9 +306,9 @@ class OllamaMultiAgentFormatterTest {
                 new ToolResultBlock(
                         "call123",
                         "calc",
-                        java.util.List.of(TextBlock.builder().text("Result: 42").build()),
+                        List.of(TextBlock.builder().text("Result: 42").build()),
                         null);
-        List<io.agentscope.core.message.ContentBlock> blocks = Arrays.asList(toolResult);
+        List<ContentBlock> blocks = Arrays.asList(toolResult);
 
         // Act
         String result = formatter.convertToolResultToString(blocks);

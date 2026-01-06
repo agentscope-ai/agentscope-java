@@ -24,14 +24,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.ollama.OllamaChatFormatter;
 import io.agentscope.core.formatter.ollama.OllamaMultiAgentFormatter;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import io.agentscope.core.model.ollama.ThinkOption;
 import io.agentscope.core.model.transport.HttpRequest;
@@ -46,6 +44,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import reactor.core.publisher.Flux;
 
@@ -76,7 +75,6 @@ class OllamaChatModelTest {
                         .httpTransport(httpTransport)
                         .build();
 
-        System.out.println(model.getModelName());
     }
 
     @Test
@@ -504,9 +502,9 @@ class OllamaChatModelTest {
     void testImageSerialization() {
         String base64Data =
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-        io.agentscope.core.message.ImageBlock imageBlock =
-                new io.agentscope.core.message.ImageBlock(
-                        new io.agentscope.core.message.Base64Source("image/png", base64Data));
+        ImageBlock imageBlock =
+                new ImageBlock(
+                        new Base64Source("image/png", base64Data));
 
         Msg msg =
                 Msg.builder()
@@ -543,7 +541,7 @@ class OllamaChatModelTest {
         // Use generic GenerateOptions with specific tool choice
         GenerateOptions options =
                 GenerateOptions.builder()
-                        .toolChoice(new io.agentscope.core.model.ToolChoice.Specific("get_weather"))
+                        .toolChoice(new ToolChoice.Specific("get_weather"))
                         .build();
 
         String jsonResponse =
@@ -647,7 +645,7 @@ class OllamaChatModelTest {
         OllamaOptions options =
                 OllamaOptions.builder()
                         .executionConfig(
-                                io.agentscope.core.model.ExecutionConfig.builder()
+                                ExecutionConfig.builder()
                                         .maxAttempts(1)
                                         .build())
                         .build();
@@ -725,12 +723,12 @@ class OllamaChatModelTest {
 
     @Test
     @DisplayName("Should serialize ThinkBoolean option at root level")
-    void testThinkBooleanOption() throws com.fasterxml.jackson.core.JsonProcessingException {
+    void testThinkBooleanOption() throws JsonProcessingException {
         // Test enabling thinking with temperature to ensure separation
         OllamaOptions enableThinkOptions =
                 OllamaOptions.builder()
                         .thinkOption(
-                                io.agentscope.core.model.ollama.ThinkOption.ThinkBoolean.ENABLED)
+                                ThinkOption.ThinkBoolean.ENABLED)
                         .temperature(0.8)
                         .build();
 
@@ -750,8 +748,8 @@ class OllamaChatModelTest {
         String body = captor.getValue().getBody();
 
         // Parse JSON to verify structure
-        ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(body);
 
         // Verify 'think' is at root
         assertTrue(root.has("think"), "JSON root should contain 'think'");
@@ -766,14 +764,14 @@ class OllamaChatModelTest {
         OllamaOptions disableThinkOptions =
                 OllamaOptions.builder()
                         .thinkOption(
-                                io.agentscope.core.model.ollama.ThinkOption.ThinkBoolean.DISABLED)
+                                ThinkOption.ThinkBoolean.DISABLED)
                         .build();
 
         model.chat(
                 List.of(Msg.builder().role(MsgRole.USER).textContent("Don't think!").build()),
                 disableThinkOptions);
 
-        verify(httpTransport, org.mockito.Mockito.times(2)).execute(captor.capture());
+        verify(httpTransport, Mockito.times(2)).execute(captor.capture());
         body = captor.getValue().getBody();
         root = mapper.readTree(body);
 
@@ -853,11 +851,11 @@ class OllamaChatModelTest {
 
     @Test
     @DisplayName("Should serialize ThinkLevel option at root level")
-    void testThinkLevelOption() throws com.fasterxml.jackson.core.JsonProcessingException {
+    void testThinkLevelOption() throws JsonProcessingException {
         // Test high thinking level
         OllamaOptions highThinkOptions =
                 OllamaOptions.builder()
-                        .thinkOption(io.agentscope.core.model.ollama.ThinkOption.ThinkLevel.HIGH)
+                        .thinkOption(ThinkOption.ThinkLevel.HIGH)
                         .build();
 
         String jsonResponse =
@@ -874,9 +872,9 @@ class OllamaChatModelTest {
         verify(httpTransport).execute(captor.capture());
 
         String body = captor.getValue().getBody();
-        com.fasterxml.jackson.databind.ObjectMapper mapper =
-                new com.fasterxml.jackson.databind.ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
+       ObjectMapper mapper =
+                new ObjectMapper();
+        JsonNode root = mapper.readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertEquals("high", root.get("think").asText(), "'think' should be 'high'");
@@ -901,10 +899,10 @@ class OllamaChatModelTest {
         assertNotNull(options.getThinkOption());
         assertTrue(
                 options.getThinkOption()
-                        instanceof io.agentscope.core.model.ollama.ThinkOption.ThinkBoolean);
+                        instanceof ThinkOption.ThinkBoolean);
         assertEquals(
                 true,
-                ((io.agentscope.core.model.ollama.ThinkOption.ThinkBoolean)
+                ((ThinkOption.ThinkBoolean)
                                 options.getThinkOption())
                         .enabled());
     }
