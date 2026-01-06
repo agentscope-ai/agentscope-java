@@ -487,4 +487,80 @@ class DashScopeMessageConverterTest {
         assertEquals("tool_a", dsMsg.getToolCalls().get(0).getFunction().getName());
         assertEquals("tool_b", dsMsg.getToolCalls().get(1).getFunction().getName());
     }
+
+    // ==================== Tool Call Content Priority Tests ====================
+
+    @Test
+    void testToolCallUsesContentFieldWhenPresent() {
+        // Create a ToolUseBlock with both content (raw string) and input map
+        // The content field should be used preferentially
+        String rawContent = "{\"city\":\"Beijing\",\"unit\":\"celsius\"}";
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_content_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Shanghai", "unit", "fahrenheit"))
+                        .content(rawContent)
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should use the content field (raw string) instead of serializing input map
+        assertEquals(rawContent, dsMsg.getToolCalls().get(0).getFunction().getArguments());
+    }
+
+    @Test
+    void testToolCallFallbackToInputMapWhenContentNull() {
+        // Create a ToolUseBlock with only input map (content is null)
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_fallback_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Beijing"))
+                        .content(null)
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should serialize the input map since content is null
+        String args = dsMsg.getToolCalls().get(0).getFunction().getArguments();
+        assertNotNull(args);
+        assertTrue(args.contains("city"));
+        assertTrue(args.contains("Beijing"));
+    }
+
+    @Test
+    void testToolCallFallbackToInputMapWhenContentEmpty() {
+        // Create a ToolUseBlock with empty content string
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_empty_content_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Shanghai"))
+                        .content("")
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should serialize the input map since content is empty
+        String args = dsMsg.getToolCalls().get(0).getFunction().getArguments();
+        assertNotNull(args);
+        assertTrue(args.contains("city"));
+        assertTrue(args.contains("Shanghai"));
+    }
 }

@@ -98,7 +98,7 @@ Through this example, you can learn:
 | Extension | Description |
 |-----------|-------------|
 | `agentscope-core` | Core framework, includes ReActAgent, etc. |
-| `agentscope-extensions-a2a-nacos` | A2A protocol Nacos service discovery |
+| `agentscope-extensions-nacos-a2a` | A2A protocol Nacos service discovery |
 | `agentscope-extensions-mcp-nacos` | MCP protocol Nacos service discovery |
 | `agentscope-extensions-mem0` | Mem0 memory service integration |
 | `agentscope-extensions-session-mysql` | MySQL session persistence |

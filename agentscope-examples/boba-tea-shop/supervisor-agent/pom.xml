@@ -55,7 +55,11 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-a2a-nacos</artifactId>
+            <artifactId>agentscope-extensions-nacos-a2a</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-a2a-client</artifactId>
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>

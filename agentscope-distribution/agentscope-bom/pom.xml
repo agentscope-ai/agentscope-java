@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.6-SNAPSHOT</revision>
+        <revision>1.0.7-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -240,14 +240,14 @@
                 <artifactId>agentscope-quarkus-extension-deployment</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            
+
             <!-- AgentScope Nacos Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-nacos-a2a</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            
+
             <!-- AgentScope Nacos Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
