@@ -96,7 +96,11 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(allMessages);
 
-        assertContentsMatchGroundTruth(groundTruthChat, result);
+        // System message is extracted to systemInstruction, so we skip the first message in ground
+        // truth
+        List<Map<String, Object>> expected = groundTruthChat.subList(1, groundTruthChat.size());
+
+        assertContentsMatchGroundTruth(expected, result);
     }
 
     @Test
@@ -123,12 +127,10 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(messages);
 
-        // Ground truth: first message + last 3 messages (tools)
-        List<Map<String, Object>> expected = new ArrayList<>();
-        expected.add(groundTruthChat.get(0));
-        expected.addAll(
+        // Ground truth: last 3 messages (tools) only, as system message is extracted
+        List<Map<String, Object>> expected =
                 groundTruthChat.subList(
-                        groundTruthChat.size() - msgsTools.size(), groundTruthChat.size()));
+                        groundTruthChat.size() - msgsTools.size(), groundTruthChat.size());
 
         assertContentsMatchGroundTruth(expected, result);
     }
@@ -142,9 +144,10 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(messages);
 
-        // Ground truth without last 3 messages (tools)
+        // Ground truth without last 3 messages (tools) and without first (system)
+        // System message is extracted, so we skip index 0
         List<Map<String, Object>> expected =
-                groundTruthChat.subList(0, groundTruthChat.size() - msgsTools.size());
+                groundTruthChat.subList(1, groundTruthChat.size() - msgsTools.size());
 
         assertContentsMatchGroundTruth(expected, result);
     }

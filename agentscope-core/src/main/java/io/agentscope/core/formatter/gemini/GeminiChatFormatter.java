@@ -24,6 +24,7 @@ import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -75,8 +76,12 @@ public class GeminiChatFormatter
 
         // Gemini API requires contents to start with "user" role
         // If first remaining message is ASSISTANT (from another agent), convert it to USER
+        // Exception: Do not convert if it contains ToolUseBlock, as function calls must be MODEL
+        // role
         if (startIndex < msgs.size()
-                && msgs.get(startIndex).getRole() == io.agentscope.core.message.MsgRole.ASSISTANT) {
+                && msgs.get(startIndex).getRole() == io.agentscope.core.message.MsgRole.ASSISTANT
+                && msgs.get(startIndex).getContent().stream()
+                        .noneMatch(block -> block instanceof ToolUseBlock)) {
             List<GeminiContent> result = new ArrayList<>();
 
             // Convert first ASSISTANT message to USER role for multi-agent compatibility

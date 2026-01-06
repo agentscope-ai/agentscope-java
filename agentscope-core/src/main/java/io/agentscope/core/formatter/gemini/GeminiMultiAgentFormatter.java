@@ -103,15 +103,23 @@ public class GeminiMultiAgentFormatter
 
         // Gemini API requires contents to start with "user" role
         // If first remaining message is ASSISTANT (from another agent), convert it to USER
+        // EXCEPTION: If the message is a tool call (which uses ASSISTANT role), we must preserve it
+        // as is (it will be converted to MODEL role by converter later), because tool calls must
+        // come from MODEL.
         if (startIndex < msgs.size() && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT) {
             Msg firstMsg = msgs.get(startIndex);
-            // Convert ASSISTANT message to USER role for multi-agent compatibility
-            GeminiContent userContent = new GeminiContent();
-            userContent.setRole("user");
-            userContent.setParts(
-                    messageConverter.convertMessages(List.of(firstMsg)).get(0).getParts());
-            result.add(userContent);
-            startIndex++;
+
+            boolean isToolRelated = firstMsg.hasContentBlocks(ToolUseBlock.class);
+
+            if (!isToolRelated) {
+                // Convert ASSISTANT message to USER role for multi-agent compatibility
+                GeminiContent userContent = new GeminiContent();
+                userContent.setRole("user");
+                userContent.setParts(
+                        messageConverter.convertMessages(List.of(firstMsg)).get(0).getParts());
+                result.add(userContent);
+                startIndex++;
+            }
         }
 
         // Optimization: If only one message remains and it's not a tool result/use,

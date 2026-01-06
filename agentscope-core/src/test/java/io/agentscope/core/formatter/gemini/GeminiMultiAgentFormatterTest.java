@@ -44,11 +44,11 @@ class GeminiMultiAgentFormatterTest {
         List<GeminiContent> contents = formatter.format(List.of(systemMsg));
 
         assertNotNull(contents);
-        assertEquals(1, contents.size());
+        // System message is now extracted to systemInstruction field, not included in contents
+        assertEquals(0, contents.size());
 
-        // System message should be converted to user role for Gemini
-        GeminiContent content = contents.get(0);
-        assertEquals("user", content.getRole());
+        // Verify system instruction was captured (need to call applySystemInstruction to use it)
+        // The systemInstruction field is set internally but not exposed directly in format()
     }
 
     @Test

@@ -124,7 +124,12 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(messages);
 
-        assertContentsMatchGroundTruth(groundTruthMultiAgent2, result);
+        // System message is extracted to systemInstruction, so we skip the first message in ground
+        // truth
+        List<Map<String, Object>> expected =
+                groundTruthMultiAgent2.subList(1, groundTruthMultiAgent2.size());
+
+        assertContentsMatchGroundTruth(expected, result);
     }
 
     @Test
@@ -138,10 +143,10 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(messages);
 
-        // Ground truth without last tools2
+        // Ground truth without first message (system) and last tools2
         List<Map<String, Object>> expected =
                 groundTruthMultiAgent2.subList(
-                        0, groundTruthMultiAgent2.size() - msgsTools2.size());
+                        1, groundTruthMultiAgent2.size() - msgsTools2.size());
 
         assertContentsMatchGroundTruth(expected, result);
     }
@@ -156,7 +161,12 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
         List<GeminiContent> result = formatter.format(messages);
 
-        assertContentsMatchGroundTruth(groundTruthMultiAgent, result);
+        // System message is extracted to systemInstruction, so we skip the first message in ground
+        // truth
+        List<Map<String, Object>> expected =
+                groundTruthMultiAgent.subList(1, groundTruthMultiAgent.size());
+
+        assertContentsMatchGroundTruth(expected, result);
     }
 
     @Test
@@ -191,10 +201,9 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     void testMultiAgentFormatter_OnlySystemMessage() {
         List<GeminiContent> result = formatter.format(msgsSystem);
 
-        // Ground truth: only first message
-        List<Map<String, Object>> expected = groundTruthMultiAgent.subList(0, 1);
-
-        assertContentsMatchGroundTruth(expected, result);
+        // System message is now extracted to systemInstruction, not returned in contents
+        // So we expect an empty list
+        assertContentsMatchGroundTruth(List.of(), result);
     }
 
     @Test
@@ -212,11 +221,9 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     void testMultiAgentFormatter_OnlyTools() {
         List<GeminiContent> result = formatter.format(msgsTools);
 
-        // Ground truth: last 3 messages (tools)
-        // This corresponds to ground_truth_multiagent_without_first_conversation[1:]
-        List<Map<String, Object>> expected =
-                groundTruthMultiAgentWithoutFirstConversation.subList(
-                        1, groundTruthMultiAgentWithoutFirstConversation.size());
+        // Ground truth: all messages in groundTruthMultiAgentWithoutFirstConversation
+        // This corresponds to tool call + tool response + assistant response (wrapped in history)
+        List<Map<String, Object>> expected = groundTruthMultiAgentWithoutFirstConversation;
 
         assertContentsMatchGroundTruth(expected, result);
     }
@@ -237,17 +244,11 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
      */
     private static List<Map<String, Object>> buildWithoutFirstConversationGroundTruth() {
         // Parse the base ground truth
+        // NOTE: System message is now extracted to systemInstruction field,
+        // so it's not included in the contents array anymore
         String groundTruthJson =
                 """
                 [
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "text": "You're a helpful assistant."
-                            }
-                        ]
-                    },
                     {
                         "role": "model",
                         "parts": [

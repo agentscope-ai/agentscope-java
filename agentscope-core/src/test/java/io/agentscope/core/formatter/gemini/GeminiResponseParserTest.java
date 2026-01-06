@@ -291,9 +291,14 @@ class GeminiResponseParserTest {
         // Parse
         ChatResponse chatResponse = parser.parseResponse(response, startTime);
 
-        // Verify
+        // Verify - should now include an explanatory TextBlock instead of being empty
         assertNotNull(chatResponse);
-        assertEquals(0, chatResponse.getContent().size());
+        assertEquals(1, chatResponse.getContent().size());
+        assertTrue(chatResponse.getContent().get(0) instanceof TextBlock);
+        String text = ((TextBlock) chatResponse.getContent().get(0)).getText();
+        assertTrue(
+                text.contains("Gemini returned no candidates"),
+                "Error message should explain no candidates were returned");
     }
 
     @Test
