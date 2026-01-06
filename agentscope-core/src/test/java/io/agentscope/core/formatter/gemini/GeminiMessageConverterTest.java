@@ -836,14 +836,14 @@ class GeminiMessageConverterTest {
                         .role(MsgRole.ASSISTANT)
                         .build();
 
-        List<Content> result = converter.convertMessages(List.of(msg));
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
         assertEquals(1, result.size());
-        Part part = result.get(0).parts().get().get(0);
-        assertNotNull(part.functionCall().get());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
 
         // Should use the content field (parsed from raw string) instead of input map
-        Map<String, Object> args = part.functionCall().get().args().get();
+        Map<String, Object> args = part.getFunctionCall().getArgs();
         assertEquals("Beijing", args.get("city"));
         assertEquals("celsius", args.get("unit"));
     }
@@ -871,14 +871,14 @@ class GeminiMessageConverterTest {
                         .role(MsgRole.ASSISTANT)
                         .build();
 
-        List<Content> result = converter.convertMessages(List.of(msg));
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
         assertEquals(1, result.size());
-        Part part = result.get(0).parts().get().get(0);
-        assertNotNull(part.functionCall().get());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
 
         // Should use the input map since content is null
-        Map<String, Object> args = part.functionCall().get().args().get();
+        Map<String, Object> args = part.getFunctionCall().getArgs();
         assertEquals("Beijing", args.get("city"));
         assertEquals("celsius", args.get("unit"));
     }
@@ -906,14 +906,14 @@ class GeminiMessageConverterTest {
                         .role(MsgRole.ASSISTANT)
                         .build();
 
-        List<Content> result = converter.convertMessages(List.of(msg));
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
         assertEquals(1, result.size());
-        Part part = result.get(0).parts().get().get(0);
-        assertNotNull(part.functionCall().get());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
 
         // Should use the input map since content is empty
-        Map<String, Object> args = part.functionCall().get().args().get();
+        Map<String, Object> args = part.getFunctionCall().getArgs();
         assertEquals("Shanghai", args.get("city"));
         assertEquals("fahrenheit", args.get("unit"));
     }
@@ -941,14 +941,14 @@ class GeminiMessageConverterTest {
                         .role(MsgRole.ASSISTANT)
                         .build();
 
-        List<Content> result = converter.convertMessages(List.of(msg));
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
         assertEquals(1, result.size());
-        Part part = result.get(0).parts().get().get(0);
-        assertNotNull(part.functionCall().get());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
 
         // Should fallback to input map since content is invalid JSON
-        Map<String, Object> args = part.functionCall().get().args().get();
+        Map<String, Object> args = part.getFunctionCall().getArgs();
         assertEquals("Tokyo", args.get("city"));
         assertEquals("celsius", args.get("unit"));
     }

@@ -100,12 +100,8 @@ public class GeminiMessageConverter {
                     }
 
                     // Create FunctionCall
-                    FunctionCall functionCall =
-                            FunctionCall.builder()
-                                    .id(tub.getId())
-                                    .name(tub.getName())
-                                    .args(args)
-                                    .build();
+                    GeminiFunctionCall functionCall =
+                            new GeminiFunctionCall(tub.getId(), tub.getName(), args);
 
                     // Build Part
                     GeminiPart part = new GeminiPart();
