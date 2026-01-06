@@ -23,7 +23,6 @@ import com.alibaba.nacos.api.exception.NacosException;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver;
-
 import java.util.Properties;
 
 /**
@@ -37,7 +36,7 @@ import java.util.Properties;
  * <p>If your Nacos Server has authentication enabled, you should set environment variable NACOS_USERNAME and NACOS_PASSWORD.
  */
 public class NacosA2aAgentExample {
-    
+
     public static void main(String[] args) throws NacosException {
         // Create agent card resolver by Nacos.
         AgentCardResolver agentCardResolver = new NacosAgentCardResolver(buildNacosClient());
@@ -50,7 +49,7 @@ public class NacosA2aAgentExample {
         A2aAgentExampleRunner exampleRunner = new A2aAgentExampleRunner(agent);
         exampleRunner.startExample();
     }
-    
+
     private static AiService buildNacosClient() throws NacosException {
         String nacosServerAddr = System.getenv("NACOS_SERVER_ADDR");
         if (nacosServerAddr == null) {

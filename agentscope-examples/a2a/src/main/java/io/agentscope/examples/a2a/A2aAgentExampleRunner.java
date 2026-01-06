@@ -20,11 +20,10 @@ import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import reactor.core.publisher.Flux;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import reactor.core.publisher.Flux;
 
 /**
  * Example runner for A2aAgent usage.
@@ -33,17 +32,17 @@ import java.io.InputStreamReader;
  * using AgentScope A2aAgent.
  */
 public class A2aAgentExampleRunner {
-    
+
     private static final String USER_INPUT_PREFIX = "\u001B[34mYou>\u001B[0m ";
-    
+
     private static final String AGENT_RESPONSE_PREFIX = "\u001B[32mAgent>\u001B[0m ";
-    
+
     private final A2aAgent agent;
-    
+
     public A2aAgentExampleRunner(A2aAgent agent) {
         this.agent = agent;
     }
-    
+
     /**
      * Start to run the example for A2aAgent.
      */
@@ -53,7 +52,7 @@ public class A2aAgentExampleRunner {
                 // User Input Hint.
                 System.out.print(USER_INPUT_PREFIX);
                 String input = reader.readLine();
-                
+
                 // Exit example.
                 if (input == null
                         || input.trim().equalsIgnoreCase("exit")
@@ -61,21 +60,21 @@ public class A2aAgentExampleRunner {
                     System.out.println(AGENT_RESPONSE_PREFIX + "Bye!");
                     break;
                 }
-                
+
                 System.out.println(
                         AGENT_RESPONSE_PREFIX + "I have received your question: " + input);
                 System.out.print(AGENT_RESPONSE_PREFIX);
-                
+
                 // Handle user input and get response.
                 processInput(agent, input).doOnNext(System.out::print).then().block();
-                
+
                 System.out.println();
             }
         } catch (IOException e) {
             System.err.println("input error: " + e.getMessage());
         }
     }
-    
+
     private Flux<String> processInput(A2aAgent agent, String input) {
         Msg msg =
                 Msg.builder()

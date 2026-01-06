@@ -27,7 +27,7 @@ import io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver;
  * using AgentScope A2aAgent which discovers AgentCard by well-known URI.
  */
 public class SimpleA2aAgentExample {
-    
+
     public static void main(String[] args) {
         // Create agent card resolver by well-known uri.
         AgentCardResolver agentCardResolver =
