@@ -16,8 +16,10 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.tool.ToolSuspendException;
+import java.beans.Transient;
 import java.util.List;
 import java.util.Map;
 
@@ -118,6 +120,8 @@ public final class ToolResultBlock extends ContentBlock {
      *
      * @return true if this result is suspended, false otherwise
      */
+    @Transient
+    @JsonInclude
     public boolean isSuspended() {
         return Boolean.TRUE.equals(metadata.get(METADATA_SUSPENDED));
     }

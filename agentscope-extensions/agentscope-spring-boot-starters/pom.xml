@@ -40,6 +40,7 @@
         <module>agentscope-spring-boot-starter</module>
         <module>agentscope-a2a-spring-boot-starter</module>
         <module>agentscope-agui-spring-boot-starter</module>
+        <module>agentscope-chat-completions-web-starter</module>
         <module>agentscope-nacos-spring-boot-starter</module>
     </modules>
 

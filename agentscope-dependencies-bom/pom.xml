@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.6-SNAPSHOT</revision>
+        <revision>1.0.7-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -95,7 +95,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
-        <quartz.version>2.3.2</quartz.version>
+        <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
