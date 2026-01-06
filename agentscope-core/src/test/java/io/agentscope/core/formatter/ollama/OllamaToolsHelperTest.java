@@ -257,8 +257,7 @@ class OllamaToolsHelperTest {
         List<ToolUseBlock> blocks = Arrays.asList(block1);
 
         // Act
-        List<OllamaToolCall> toolCalls =
-                helper.convertToolCalls(blocks);
+        List<OllamaToolCall> toolCalls = helper.convertToolCalls(blocks);
 
         // Assert
         assertNotNull(toolCalls);
@@ -298,8 +297,7 @@ class OllamaToolsHelperTest {
         List<ToolUseBlock> blocks = Arrays.asList(block1, null, block1); // Contains null element
 
         // Act
-        List<OllamaToolCall> toolCalls =
-                helper.convertToolCalls(blocks);
+        List<OllamaToolCall> toolCalls = helper.convertToolCalls(blocks);
 
         // Assert
         assertNotNull(toolCalls);

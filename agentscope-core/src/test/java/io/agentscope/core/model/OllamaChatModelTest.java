@@ -29,7 +29,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.ollama.OllamaChatFormatter;
 import io.agentscope.core.formatter.ollama.OllamaMultiAgentFormatter;
-import io.agentscope.core.message.*;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import io.agentscope.core.model.ollama.ThinkOption;
 import io.agentscope.core.model.transport.HttpRequest;
@@ -74,7 +80,6 @@ class OllamaChatModelTest {
                         .baseUrl("http://192.168.2.2:11434")
                         .httpTransport(httpTransport)
                         .build();
-
     }
 
     @Test
@@ -502,9 +507,7 @@ class OllamaChatModelTest {
     void testImageSerialization() {
         String base64Data =
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-        ImageBlock imageBlock =
-                new ImageBlock(
-                        new Base64Source("image/png", base64Data));
+        ImageBlock imageBlock = new ImageBlock(new Base64Source("image/png", base64Data));
 
         Msg msg =
                 Msg.builder()
@@ -644,10 +647,7 @@ class OllamaChatModelTest {
         // Disable retries for this test
         OllamaOptions options =
                 OllamaOptions.builder()
-                        .executionConfig(
-                                ExecutionConfig.builder()
-                                        .maxAttempts(1)
-                                        .build())
+                        .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
                         .build();
 
         Flux<ChatResponse> flux =
@@ -727,8 +727,7 @@ class OllamaChatModelTest {
         // Test enabling thinking with temperature to ensure separation
         OllamaOptions enableThinkOptions =
                 OllamaOptions.builder()
-                        .thinkOption(
-                                ThinkOption.ThinkBoolean.ENABLED)
+                        .thinkOption(ThinkOption.ThinkBoolean.ENABLED)
                         .temperature(0.8)
                         .build();
 
@@ -762,10 +761,7 @@ class OllamaChatModelTest {
 
         // Test disabling thinking
         OllamaOptions disableThinkOptions =
-                OllamaOptions.builder()
-                        .thinkOption(
-                                ThinkOption.ThinkBoolean.DISABLED)
-                        .build();
+                OllamaOptions.builder().thinkOption(ThinkOption.ThinkBoolean.DISABLED).build();
 
         model.chat(
                 List.of(Msg.builder().role(MsgRole.USER).textContent("Don't think!").build()),
@@ -854,9 +850,7 @@ class OllamaChatModelTest {
     void testThinkLevelOption() throws JsonProcessingException {
         // Test high thinking level
         OllamaOptions highThinkOptions =
-                OllamaOptions.builder()
-                        .thinkOption(ThinkOption.ThinkLevel.HIGH)
-                        .build();
+                OllamaOptions.builder().thinkOption(ThinkOption.ThinkLevel.HIGH).build();
 
         String jsonResponse =
                 "{\"model\":\"qwen3:32b-q4_K_M"
@@ -872,8 +866,7 @@ class OllamaChatModelTest {
         verify(httpTransport).execute(captor.capture());
 
         String body = captor.getValue().getBody();
-       ObjectMapper mapper =
-                new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
@@ -897,14 +890,8 @@ class OllamaChatModelTest {
         // Let's verify this behavior by serialization or inspecting the object if getters available
         // Since thinkOption is private/protected access via getter:
         assertNotNull(options.getThinkOption());
-        assertTrue(
-                options.getThinkOption()
-                        instanceof ThinkOption.ThinkBoolean);
-        assertEquals(
-                true,
-                ((ThinkOption.ThinkBoolean)
-                                options.getThinkOption())
-                        .enabled());
+        assertTrue(options.getThinkOption() instanceof ThinkOption.ThinkBoolean);
+        assertEquals(true, ((ThinkOption.ThinkBoolean) options.getThinkOption()).enabled());
     }
 
     @Test

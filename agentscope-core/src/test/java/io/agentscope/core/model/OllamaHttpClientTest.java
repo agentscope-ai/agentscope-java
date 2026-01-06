@@ -55,7 +55,7 @@ class OllamaHttpClientTest {
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this); // 添加这行来初始化 @Mock 字段
+        MockitoAnnotations.openMocks(this);
         httpClient = new OllamaHttpClient(mockTransport, TEST_BASE_URL);
     }
 
@@ -159,9 +159,6 @@ class OllamaHttpClientTest {
         request.setModel("test-model");
         request.setMessages(Collections.emptyList());
 
-        // 模拟 JSON 序列化失败的情况
-        // 通过 mock transport.execute 方法来模拟序列化失败
-        // 实际上是在请求构建阶段可能发生的 JSON 序列化错误
         doThrow(new RuntimeException("JSON serialization error"))
                 .when(mockTransport)
                 .execute(any(HttpRequest.class));

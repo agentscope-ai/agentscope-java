@@ -19,7 +19,10 @@ import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -27,7 +30,11 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for Ollama Chat API.
@@ -86,17 +93,15 @@ public class OllamaChatFormatter
         String content = convertedMsg.getContent();
 
         // Find image paths in the content
-        java.util.regex.Pattern pattern =
-                java.util.regex.Pattern.compile("can be found at: ([^\s\n]+)");
-        java.util.regex.Matcher matcher = pattern.matcher(content);
+        Pattern pattern = Pattern.compile("can be found at: ([^\s\n]+)");
+        Matcher matcher = pattern.matcher(content);
 
         if (matcher.find()) {
             String imagePath = matcher.group(1);
 
             // Try to convert the image to base64
             try {
-                io.agentscope.core.message.ImageBlock imageBlock =
-                        extractImageBlockFromMsg(originalMsg);
+                ImageBlock imageBlock = extractImageBlockFromMsg(originalMsg);
                 if (imageBlock != null) {
                     String base64Image =
                             new OllamaMediaConverter().convertImageBlockToBase64(imageBlock);
@@ -112,12 +117,12 @@ public class OllamaChatFormatter
                                     + "- The image from '"
                                     + imagePath
                                     + "': \n</system-info>");
-                    imageMsg.setImages(java.util.Collections.singletonList(base64Image));
+                    imageMsg.setImages(Collections.singletonList(base64Image));
                     return imageMsg;
                 }
             } catch (Exception e) {
                 // Log error but don't fail the whole request
-                org.slf4j.LoggerFactory.getLogger(OllamaChatFormatter.class)
+                LoggerFactory.getLogger(OllamaChatFormatter.class)
                         .warn("Failed to promote image from tool result", e);
             }
         }
@@ -125,16 +130,15 @@ public class OllamaChatFormatter
         return null;
     }
 
-    private io.agentscope.core.message.ImageBlock extractImageBlockFromMsg(Msg msg) {
-        for (io.agentscope.core.message.ContentBlock block : msg.getContent()) {
-            if (block instanceof io.agentscope.core.message.ImageBlock) {
-                return (io.agentscope.core.message.ImageBlock) block;
-            } else if (block instanceof io.agentscope.core.message.ToolResultBlock) {
-                io.agentscope.core.message.ToolResultBlock toolResult =
-                        (io.agentscope.core.message.ToolResultBlock) block;
-                for (io.agentscope.core.message.ContentBlock outputBlock : toolResult.getOutput()) {
-                    if (outputBlock instanceof io.agentscope.core.message.ImageBlock) {
-                        return (io.agentscope.core.message.ImageBlock) outputBlock;
+    private ImageBlock extractImageBlockFromMsg(Msg msg) {
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ImageBlock) {
+                return (ImageBlock) block;
+            } else if (block instanceof ToolResultBlock) {
+                ToolResultBlock toolResult = (ToolResultBlock) block;
+                for (ContentBlock outputBlock : toolResult.getOutput()) {
+                    if (outputBlock instanceof ImageBlock) {
+                        return (ImageBlock) outputBlock;
                     }
                 }
             }

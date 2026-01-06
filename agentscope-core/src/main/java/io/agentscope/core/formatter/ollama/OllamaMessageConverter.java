@@ -25,6 +25,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -165,10 +166,8 @@ public class OllamaMessageConverter {
                 if (imageBlock.getSource() != null) {
                     // Extract the URL path from the source
                     String imagePath = imageBlock.getSource().toString();
-                    if (imageBlock.getSource() instanceof io.agentscope.core.message.URLSource) {
-                        imagePath =
-                                ((io.agentscope.core.message.URLSource) imageBlock.getSource())
-                                        .getUrl();
+                    if (imageBlock.getSource() instanceof URLSource) {
+                        imagePath = ((URLSource) imageBlock.getSource()).getUrl();
                     }
                     imagePaths.add(imagePath);
                 }

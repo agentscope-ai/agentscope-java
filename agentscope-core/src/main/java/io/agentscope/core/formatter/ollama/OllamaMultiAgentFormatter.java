@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -33,6 +34,8 @@ import io.agentscope.core.model.ollama.OllamaOptions;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
+import org.slf4j.LoggerFactory;
 
 /**
  * Ollama formatter for multi-agent conversations.
@@ -162,8 +165,7 @@ public class OllamaMultiAgentFormatter
         String content = convertedMsg.getContent();
 
         // Find image paths in the format "image can be found at: ./path"
-        java.util.regex.Pattern pattern =
-                java.util.regex.Pattern.compile("can be found at: ([^\s\n]+)");
+        Pattern pattern = Pattern.compile("can be found at: ([^\s\n]+)");
         java.util.regex.Matcher matcher = pattern.matcher(content);
 
         if (matcher.find()) {
@@ -171,8 +173,7 @@ public class OllamaMultiAgentFormatter
 
             // Try to convert the image to base64
             try {
-                io.agentscope.core.message.ImageBlock imageBlock =
-                        extractImageBlockFromMsg(originalMsg);
+                ImageBlock imageBlock = extractImageBlockFromMsg(originalMsg);
                 if (imageBlock != null) {
                     String base64Image =
                             new OllamaMediaConverter().convertImageBlockToBase64(imageBlock);
@@ -193,7 +194,7 @@ public class OllamaMultiAgentFormatter
                 }
             } catch (Exception e) {
                 // Log error but don't fail the whole request
-                org.slf4j.LoggerFactory.getLogger(OllamaMultiAgentFormatter.class)
+                LoggerFactory.getLogger(OllamaMultiAgentFormatter.class)
                         .warn("Failed to promote image from tool result", e);
             }
         }
@@ -201,16 +202,15 @@ public class OllamaMultiAgentFormatter
         return null;
     }
 
-    private io.agentscope.core.message.ImageBlock extractImageBlockFromMsg(Msg msg) {
-        for (io.agentscope.core.message.ContentBlock block : msg.getContent()) {
-            if (block instanceof io.agentscope.core.message.ImageBlock) {
-                return (io.agentscope.core.message.ImageBlock) block;
-            } else if (block instanceof io.agentscope.core.message.ToolResultBlock) {
-                io.agentscope.core.message.ToolResultBlock toolResult =
-                        (io.agentscope.core.message.ToolResultBlock) block;
-                for (io.agentscope.core.message.ContentBlock outputBlock : toolResult.getOutput()) {
-                    if (outputBlock instanceof io.agentscope.core.message.ImageBlock) {
-                        return (io.agentscope.core.message.ImageBlock) outputBlock;
+    private ImageBlock extractImageBlockFromMsg(Msg msg) {
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof ImageBlock) {
+                return (ImageBlock) block;
+            } else if (block instanceof ToolResultBlock) {
+                ToolResultBlock toolResult = (ToolResultBlock) block;
+                for (ContentBlock outputBlock : toolResult.getOutput()) {
+                    if (outputBlock instanceof ImageBlock) {
+                        return (ImageBlock) outputBlock;
                     }
                 }
             }

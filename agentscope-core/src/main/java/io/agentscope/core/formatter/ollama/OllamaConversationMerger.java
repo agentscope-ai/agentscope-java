@@ -82,28 +82,6 @@ public class OllamaConversationMerger {
                 } else if (block instanceof ToolResultBlock) {
                     // Tool results in history are usually just appended as text
                     ToolResultBlock toolResult = (ToolResultBlock) block;
-                    // We can use the provided converter to get string representation of output
-                    // content blocks if needed
-                    // But toolResult.getOutput() returns Object.
-                    // Let's mimic DashScope logic: use toolResultConverter to convert output
-                    // However, toolResultConverter expects List<ContentBlock>.
-                    // ToolResultBlock.getOutput() returns Object (which could be String or List or
-                    // anything).
-                    // DashScope implementation uses
-                    // toolResultConverter.apply(toolResult.getOutput())
-                    // Wait, DashScope impl line 129:
-                    // toolResultConverter.apply(toolResult.getOutput())
-                    // But in signature line 76: Function<List<ContentBlock>, String>
-                    // toolResultConverter
-                    // This implies toolResult.getOutput() IS List<ContentBlock> or castable?
-                    // Actually ToolResultBlock.getOutput() returns Object.
-                    // Let's look at DashScope code again. It seems there might be a mismatch in my
-                    // understanding or the snippet.
-                    // Ah, in DashScope line 129, it calls apply(toolResult.getOutput()).
-                    // If toolResultConverter is Function<Object, String>, then it's fine.
-                    // But signature says Function<List<ContentBlock>, String>.
-                    // Let's assume toolResultConverter handles List<ContentBlock> and we might need
-                    // to wrap or just use toString.
 
                     // Simplify: Just append tool result string.
                     Object output = toolResult.getOutput();

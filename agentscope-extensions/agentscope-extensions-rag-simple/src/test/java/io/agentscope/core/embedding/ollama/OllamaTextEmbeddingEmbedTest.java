@@ -90,7 +90,6 @@ class OllamaTextEmbeddingEmbedTest {
                     .assertNext(
                             embedding -> {
                                 assertNotNull(embedding);
-                                // 返回的向量长度等于返回数据长度（3），覆盖维度不匹配分支
                                 assertEquals(3, embedding.length);
                                 assertEquals(0.1, embedding[0], 0.001);
                                 assertEquals(0.2, embedding[1], 0.001);
