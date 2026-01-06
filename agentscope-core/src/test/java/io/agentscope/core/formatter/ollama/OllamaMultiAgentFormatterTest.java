@@ -18,16 +18,19 @@ package io.agentscope.core.formatter.ollama;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -35,6 +38,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,10 +52,12 @@ import org.junit.jupiter.api.Test;
 class OllamaMultiAgentFormatterTest {
 
     private OllamaMultiAgentFormatter formatter;
+    private String imagePath;
 
     @BeforeEach
     void setUp() {
         formatter = new OllamaMultiAgentFormatter();
+        imagePath = "src/test/resources/dog.png";
     }
 
     @Test
@@ -67,6 +73,444 @@ class OllamaMultiAgentFormatterTest {
         OllamaMultiAgentFormatter customFormatter = new OllamaMultiAgentFormatter(customPrompt);
 
         assertNotNull(customFormatter);
+    }
+
+    @Test
+    @DisplayName(
+            "Should format multi-agent conversation - aligned with Python"
+                    + " test_multi_agent_formatter")
+    void testFormatMultiAgentConversation() {
+        // Arrange: System messages
+        List<Msg> msgsSystem =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .name("system")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("You're a helpful assistant.")
+                                                .build())
+                                .build());
+
+        // Arrange: Conversation messages
+        List<Msg> msgsConversation =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        Arrays.asList(
+                                                TextBlock.builder()
+                                                        .text("What is the capital of France?")
+                                                        .build(),
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                URLSource.builder()
+                                                                        .url(imagePath)
+                                                                        .build())
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of France is Paris.")
+                                                .build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("What is the capital of Japan?")
+                                                .build())
+                                .build());
+
+        // Arrange: Tool messages
+        List<Msg> msgsTools =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        Arrays.asList(
+                                                ToolUseBlock.builder()
+                                                        .id("1")
+                                                        .name("get_capital")
+                                                        .input(
+                                                                Collections.singletonMap(
+                                                                        "country", "Japan"))
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .name("system")
+                                .content(
+                                        Arrays.asList(
+                                                ToolResultBlock.of(
+                                                        "1",
+                                                        "get_capital",
+                                                        Arrays.asList(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "The capital of"
+                                                                                    + " Japan is"
+                                                                                    + " Tokyo.")
+                                                                        .build(),
+                                                                ImageBlock.builder()
+                                                                        .source(
+                                                                                URLSource.builder()
+                                                                                        .url(
+                                                                                                imagePath)
+                                                                                        .build())
+                                                                        .build()))))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build())
+                                .build());
+
+        // Arrange: Second conversation
+        List<Msg> msgsConversation2 =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("What is the capital of South Korea?")
+                                                .build())
+                                .build());
+
+        // Arrange: Second tool messages
+        List<Msg> msgsTools2 =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        Arrays.asList(
+                                                ToolUseBlock.builder()
+                                                        .id("2")
+                                                        .name("get_capital")
+                                                        .input(
+                                                                Collections.singletonMap(
+                                                                        "country", "South Korea"))
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .name("system")
+                                .content(
+                                        Arrays.asList(
+                                                ToolResultBlock.of(
+                                                        "2",
+                                                        "get_capital",
+                                                        Arrays.asList(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "The capital of"
+                                                                                    + " South Korea"
+                                                                                    + " is Seoul.")
+                                                                        .build(),
+                                                                ImageBlock.builder()
+                                                                        .source(
+                                                                                URLSource.builder()
+                                                                                        .url(
+                                                                                                imagePath)
+                                                                                        .build())
+                                                                        .build()))))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of South Korea is Seoul.")
+                                                .build())
+                                .build());
+
+        // Act: system + conversation + tools + conversation + tools
+        List<OllamaMessage> formatted =
+                formatter.format(
+                        concatLists(
+                                msgsSystem,
+                                msgsConversation,
+                                msgsTools,
+                                msgsConversation2,
+                                msgsTools2));
+
+        // Assert: Should match ground_truth_multiagent_2
+        assertEquals(8, formatted.size());
+        assertEquals("system", formatted.get(0).getRole());
+        assertEquals("user", formatted.get(1).getRole());
+        assertEquals("assistant", formatted.get(2).getRole());
+        assertEquals("tool", formatted.get(3).getRole());
+        assertEquals("user", formatted.get(4).getRole());
+        assertEquals("assistant", formatted.get(5).getRole());
+        assertEquals("tool", formatted.get(6).getRole());
+        assertEquals("user", formatted.get(7).getRole());
+    }
+
+    @Test
+    @DisplayName(
+            "Should format multi-agent conversation without second tools - aligned with Python"
+                    + " test_multi_agent_formatter")
+    void testFormatMultiAgentWithoutSecondTools() {
+        // Arrange: System messages
+        List<Msg> msgsSystem =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .name("system")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("You're a helpful assistant.")
+                                                .build())
+                                .build());
+
+        // Arrange: Conversation messages
+        List<Msg> msgsConversation =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        Arrays.asList(
+                                                TextBlock.builder()
+                                                        .text("What is the capital of France?")
+                                                        .build(),
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                URLSource.builder()
+                                                                        .url(imagePath)
+                                                                        .build())
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of France is Paris.")
+                                                .build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("What is the capital of Japan?")
+                                                .build())
+                                .build());
+
+        // Arrange: Tool messages
+        List<Msg> msgsTools =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        Arrays.asList(
+                                                ToolUseBlock.builder()
+                                                        .id("1")
+                                                        .name("get_capital")
+                                                        .input(
+                                                                Collections.singletonMap(
+                                                                        "country", "Japan"))
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .name("system")
+                                .content(
+                                        Arrays.asList(
+                                                ToolResultBlock.of(
+                                                        "1",
+                                                        "get_capital",
+                                                        Arrays.asList(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "The capital of"
+                                                                                    + " Japan is"
+                                                                                    + " Tokyo.")
+                                                                        .build(),
+                                                                ImageBlock.builder()
+                                                                        .source(
+                                                                                URLSource.builder()
+                                                                                        .url(
+                                                                                                imagePath)
+                                                                                        .build())
+                                                                        .build()))))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build())
+                                .build());
+
+        // Arrange: Second conversation
+        List<Msg> msgsConversation2 =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("What is the capital of South Korea?")
+                                                .build())
+                                .build());
+
+        // Act: system + conversation + tools + conversation
+        List<OllamaMessage> formatted =
+                formatter.format(
+                        concatLists(msgsSystem, msgsConversation, msgsTools, msgsConversation2));
+
+        // Assert: Should match ground_truth_multiagent_2 without the last 3 messages
+        assertTrue(formatted.size() >= 5); // At least 5 messages
+        assertEquals("system", formatted.get(0).getRole());
+        assertEquals("user", formatted.get(1).getRole());
+        assertEquals("assistant", formatted.get(2).getRole());
+        assertEquals("tool", formatted.get(3).getRole());
+        assertEquals("user", formatted.get(4).getRole());
+    }
+
+    @Test
+    @DisplayName(
+            "Should format multi-agent conversation with promote tool result images - aligned with"
+                    + " Python test_multi_agent_formatter_with_promote_tool_result_images")
+    void testFormatMultiAgentWithPromoteToolResultImages() {
+        // Arrange: Create a formatter with promoteToolResultImages = true
+        OllamaMultiAgentFormatter formatterWithPromote = new OllamaMultiAgentFormatter(true);
+
+        // Arrange: System messages
+        List<Msg> msgsSystem =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .name("system")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("You're a helpful assistant.")
+                                                .build())
+                                .build());
+
+        // Arrange: Conversation messages
+        List<Msg> msgsConversation =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        Arrays.asList(
+                                                TextBlock.builder()
+                                                        .text("What is the capital of France?")
+                                                        .build(),
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                URLSource.builder()
+                                                                        .url(imagePath)
+                                                                        .build())
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of France is Paris.")
+                                                .build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("user")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("What is the capital of Japan?")
+                                                .build())
+                                .build());
+
+        // Arrange: Tool messages
+        List<Msg> msgsTools =
+                Arrays.asList(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        Arrays.asList(
+                                                ToolUseBlock.builder()
+                                                        .id("1")
+                                                        .name("get_capital")
+                                                        .input(
+                                                                Collections.singletonMap(
+                                                                        "country", "Japan"))
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .name("system")
+                                .content(
+                                        Arrays.asList(
+                                                ToolResultBlock.of(
+                                                        "1",
+                                                        "get_capital",
+                                                        Arrays.asList(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "The capital of"
+                                                                                    + " Japan is"
+                                                                                    + " Tokyo.")
+                                                                        .build(),
+                                                                ImageBlock.builder()
+                                                                        .source(
+                                                                                URLSource.builder()
+                                                                                        .url(
+                                                                                                imagePath)
+                                                                                        .build())
+                                                                        .build()))))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .name("assistant")
+                                .content(
+                                        TextBlock.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build())
+                                .build());
+
+        // Act
+        List<OllamaMessage> formatted =
+                formatterWithPromote.format(concatLists(msgsSystem, msgsConversation, msgsTools));
+
+        // Assert: Should have the promoted image message
+        assertTrue(formatted.size() >= 6); // At least 6 messages including the promoted one
+        assertEquals("system", formatted.get(0).getRole());
+        assertEquals("user", formatted.get(1).getRole());
+        assertEquals("assistant", formatted.get(2).getRole());
+        assertEquals("tool", formatted.get(3).getRole());
+
+        // Check if there's a promoted image message (this would be at index 4 if present)
+        boolean hasPromotedImageMessage = false;
+        for (int i = 4; i < formatted.size(); i++) {
+            if (formatted.get(i).getRole().equals("user")
+                    && formatted.get(i).getContent() != null
+                    && formatted
+                            .get(i)
+                            .getContent()
+                            .contains("image contents from the tool result")) {
+                hasPromotedImageMessage = true;
+                break;
+            }
+        }
+        assertTrue(hasPromotedImageMessage, "Should contain a promoted image message");
     }
 
     @Test
@@ -319,5 +763,10 @@ class OllamaMultiAgentFormatterTest {
 
         // Assert
         assertEquals("Result: 42", result);
+    }
+
+    // Helper method to concatenate lists
+    private <T> List<T> concatLists(List<T>... lists) {
+        return Arrays.stream(lists).flatMap(List::stream).toList();
     }
 }

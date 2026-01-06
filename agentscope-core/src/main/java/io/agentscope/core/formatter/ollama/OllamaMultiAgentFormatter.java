@@ -26,6 +26,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -126,7 +127,7 @@ public class OllamaMultiAgentFormatter
                                 historyPrompt));
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
-                // Format tool sequence directly
+                // Format tool sequence directly using the same approach as OllamaChatFormatter
                 List<OllamaMessage> toolMessages = formatToolSeq(group.messages);
 
                 // If promoteToolResultImages is enabled, check for images in tool results
@@ -153,6 +154,12 @@ public class OllamaMultiAgentFormatter
         return result;
     }
 
+    /**
+     * Checks if the given OllamaMessage contains images in its content.
+     *
+     * @param msg The OllamaMessage to check
+     * @return true if the message contains images and the required text patterns, false otherwise
+     */
     private boolean isToolResultWithImages(OllamaMessage msg) {
         return "tool".equals(msg.getRole())
                 && msg.getContent() != null
@@ -160,6 +167,13 @@ public class OllamaMultiAgentFormatter
                 && msg.getContent().contains("can be found at:");
     }
 
+    /**
+     * Creates an image promotion message when images are found in tool results.
+     *
+     * @param originalMsg The original message containing the image
+     * @param convertedMsg The converted OllamaMessage
+     * @return The OllamaMessage with image promotion information, or null if creation fails
+     */
     private OllamaMessage createImagePromotionMessage(Msg originalMsg, OllamaMessage convertedMsg) {
         // Extract image paths from the tool result content
         String content = convertedMsg.getContent();
@@ -202,6 +216,12 @@ public class OllamaMultiAgentFormatter
         return null;
     }
 
+    /**
+     * Extracts an ImageBlock from the given message's content.
+     *
+     * @param msg The message to extract the image block from
+     * @return The ImageBlock if found, null otherwise
+     */
     private ImageBlock extractImageBlockFromMsg(Msg msg) {
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ImageBlock) {
@@ -353,18 +373,86 @@ public class OllamaMultiAgentFormatter
     }
 
     /**
-     * Format tool sequence messages to OllamaMessage format.
+     * Format tool sequence messages to OllamaMessage format using the same logic as OllamaChatFormatter
+     *
+     * @param msgs The list of messages to format
+     * @return List of formatted OllamaMessage objects
      */
     private List<OllamaMessage> formatToolSeq(List<Msg> msgs) {
         List<OllamaMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
-            result.add(messageConverter.convertMessage(msg));
+            // Convert the message based on its role and content
+            OllamaMessage ollamaMsg = messageConverter.convertMessage(msg);
+
+            // Set the role based on the message role
+            if (msg.getRole() == MsgRole.TOOL) {
+                ollamaMsg.setRole("tool");
+            } else {
+                ollamaMsg.setRole(msg.getRole().name().toLowerCase());
+            }
+
+            // For tool messages, we need to extract the content properly
+            if (msg.getRole() == MsgRole.TOOL) {
+                // Handle tool result messages specially
+                for (ContentBlock block : msg.getContent()) {
+                    if (block instanceof ToolResultBlock) {
+                        ToolResultBlock toolResultBlock = (ToolResultBlock) block;
+                        ollamaMsg.setToolCallId(toolResultBlock.getId());
+                        ollamaMsg.setName(toolResultBlock.getName());
+
+                        // Extract textual output from tool result
+                        StringBuilder textualOutput = new StringBuilder();
+                        List<ContentBlock> multimodalOutputs = new ArrayList<>();
+
+                        for (ContentBlock outputBlock : toolResultBlock.getOutput()) {
+                            if (outputBlock instanceof TextBlock) {
+                                if (textualOutput.length() > 0) {
+                                    textualOutput.append("\n");
+                                }
+                                textualOutput.append(((TextBlock) outputBlock).getText());
+                            } else if (outputBlock instanceof ImageBlock) {
+                                multimodalOutputs.add(outputBlock);
+                            }
+                        }
+
+                        // If there are multimodal outputs (like images), we might need to handle
+                        // them specially
+                        // For now, just include the text content
+                        ollamaMsg.setContent(textualOutput.toString());
+
+                        // Check if there are images that need to be promoted
+                        if (!multimodalOutputs.isEmpty() && promoteToolResultImages) {
+                            // Add special text to content that can be detected by
+                            // isToolResultWithImages
+                            for (ContentBlock multimodalBlock : multimodalOutputs) {
+                                if (multimodalBlock instanceof ImageBlock) {
+                                    ImageBlock imageBlock = (ImageBlock) multimodalBlock;
+                                    String imageUrl = imageBlock.getSource().toString();
+                                    if (imageBlock.getSource() instanceof URLSource) {
+                                        imageUrl = ((URLSource) imageBlock.getSource()).getUrl();
+                                    }
+                                    ollamaMsg.setContent(
+                                            ollamaMsg.getContent()
+                                                    + "\nimage can be found at: "
+                                                    + imageUrl);
+                                }
+                            }
+                        }
+                        break; // Process first tool result block
+                    }
+                }
+            }
+
+            result.add(ollamaMsg);
         }
         return result;
     }
 
     /**
      * Convert list of content blocks (usually from tool result) to string.
+     *
+     * @param blocks The list of content blocks to convert
+     * @return The string representation of the content blocks
      */
     public String convertToolResultToString(List<ContentBlock> blocks) {
         StringBuilder sb = new StringBuilder();
@@ -403,5 +491,15 @@ public class OllamaMultiAgentFormatter
             this.type = type;
             this.messages = messages;
         }
+    }
+
+    /**
+     * Helper class to hold separated content blocks.
+     */
+    private static class MessageContent {
+        List<ContentBlock> textBlocks = new ArrayList<>();
+        List<ContentBlock> toolUseBlocks = new ArrayList<>();
+        List<ContentBlock> toolResultBlocks = new ArrayList<>();
+        List<String> images = new ArrayList<>();
     }
 }

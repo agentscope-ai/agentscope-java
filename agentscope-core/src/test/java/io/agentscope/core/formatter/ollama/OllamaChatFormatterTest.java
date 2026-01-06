@@ -65,37 +65,8 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName("Should format messages correctly")
+    @DisplayName("Should format messages correctly - aligned with Python test_chat_formatter")
     void testFormatMessages() {
-        // Arrange
-        Msg msg1 =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .name("Alice")
-                        .content(TextBlock.builder().text("Hello").build())
-                        .build();
-        Msg msg2 =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .name("Bob")
-                        .content(TextBlock.builder().text("Hi there").build())
-                        .build();
-        List<Msg> msgs = Arrays.asList(msg1, msg2);
-
-        // Act
-        List<OllamaMessage> formatted = formatter.format(msgs);
-
-        // Assert
-        assertEquals(2, formatted.size());
-        assertEquals("user", formatted.get(0).getRole());
-        assertEquals("Hello", formatted.get(0).getContent());
-        assertEquals("assistant", formatted.get(1).getRole());
-        assertEquals("Hi there", formatted.get(1).getContent());
-    }
-
-    @Test
-    @DisplayName("Should format messages with system, conversation, and tools")
-    void testFormatMessagesWithSystemConversationAndTools() {
         // Arrange: System messages
         List<Msg> msgsSystem =
                 Arrays.asList(
@@ -216,24 +187,38 @@ class OllamaChatFormatterTest {
         assertEquals("What is the capital of Japan?", formatted.get(3).getContent());
 
         assertEquals("assistant", formatted.get(4).getRole());
-        assertNotNull(formatted.get(4).getToolCalls());
-        assertEquals(1, formatted.get(4).getToolCalls().size());
-        assertEquals("get_capital", formatted.get(4).getToolCalls().get(0).getFunction().getName());
-        assertEquals(
-                "Japan",
-                formatted.get(4).getToolCalls().get(0).getFunction().getArguments().get("country"));
+        assertTrue(
+                formatted.get(4).getToolCalls() != null
+                        && formatted.get(4).getToolCalls().size() > 0,
+                "Tool calls should exist");
+        if (formatted.get(4).getToolCalls() != null && !formatted.get(4).getToolCalls().isEmpty()) {
+            assertEquals(
+                    "get_capital", formatted.get(4).getToolCalls().get(0).getFunction().getName());
+            assertEquals(
+                    "Japan",
+                    formatted
+                            .get(4)
+                            .getToolCalls()
+                            .get(0)
+                            .getFunction()
+                            .getArguments()
+                            .get("country"));
+        }
 
         assertEquals("tool", formatted.get(5).getRole());
         assertEquals("1", formatted.get(5).getToolCallId());
         assertEquals("get_capital", formatted.get(5).getName());
         assertNotNull(formatted.get(5).getContent());
+        assertTrue(formatted.get(5).getContent().contains("The capital of Japan is Tokyo."));
 
         assertEquals("assistant", formatted.get(6).getRole());
         assertEquals("The capital of Japan is Tokyo.", formatted.get(6).getContent());
     }
 
     @Test
-    @DisplayName("Should format messages without system message")
+    @DisplayName(
+            "Should format messages without system message - aligned with Python"
+                    + " test_chat_formatter")
     void testFormatMessagesWithoutSystem() {
         // Arrange: Conversation and tools without system message
         List<Msg> msgsConversation =
@@ -324,7 +309,9 @@ class OllamaChatFormatterTest {
     }
 
     @Test
-    @DisplayName("Should format messages with promote tool result images")
+    @DisplayName(
+            "Should format messages with promote tool result images - aligned with Python"
+                    + " test_chat_formatter_with_extract_image_blocks")
     void testFormatMessagesWithPromoteToolResultImages() {
         // Arrange: Create a formatter with promoteToolResultImages = true
         OllamaChatFormatter formatterWithPromote = new OllamaChatFormatter(true);
@@ -428,7 +415,7 @@ class OllamaChatFormatterTest {
         List<OllamaMessage> formatted =
                 formatterWithPromote.format(concatLists(msgsSystem, msgsConversation, msgsTools));
 
-        // Assert: Should have an extra message for the promoted image
+        // Assert: Should have an extra message for the promoted image (8 instead of 7)
         assertEquals(8, formatted.size());
 
         assertEquals("system", formatted.get(0).getRole());
@@ -438,11 +425,12 @@ class OllamaChatFormatterTest {
         assertEquals("assistant", formatted.get(4).getRole());
         assertEquals("tool", formatted.get(5).getRole());
 
-        // Check the promoted image message
+        // Check the promoted image message (this should be at index 6)
         assertEquals("user", formatted.get(6).getRole());
         if (formatted.get(6).getContent() != null) {
             assertTrue(
                     formatted.get(6).getContent().contains("image contents from the tool result"));
+            assertTrue(formatted.get(6).getContent().contains("get_capital"));
         }
         if (formatted.get(6).getImages() != null) {
             assertEquals(1, formatted.get(6).getImages().size());

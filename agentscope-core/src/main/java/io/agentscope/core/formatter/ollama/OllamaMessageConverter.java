@@ -29,6 +29,8 @@ import io.agentscope.core.message.URLSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -124,6 +126,12 @@ public class OllamaMessageConverter {
 
                 OllamaFunction function = new OllamaFunction(toolUse.getName(), args);
                 OllamaToolCall toolCall = new OllamaToolCall(function);
+                // Set ID if available
+                if (toolUse.getId() != null) {
+                    // Note: OllamaToolCall may not have direct ID field, this depends on the DTO
+                    // structure
+                    // We might need to handle this differently based on Ollama API requirements
+                }
                 toolCalls.add(toolCall);
             }
         }
@@ -143,20 +151,58 @@ public class OllamaMessageConverter {
         return ollamaMsg;
     }
 
+    /**
+     * Extracts text content from a message by combining all text blocks and tool result outputs.
+     *
+     * @param msg The message to extract text content from
+     * @return The combined text content as a string
+     */
     private String extractTextContent(Msg msg) {
         return msg.getContent().stream()
-                .filter(block -> block instanceof TextBlock)
-                .map(block -> ((TextBlock) block).getText())
-                .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+                .flatMap(
+                        block -> {
+                            if (block instanceof TextBlock tb) {
+                                return Stream.of(tb.getText());
+                            } else if (block instanceof ToolResultBlock toolResult) {
+                                // Extract text from tool result output
+                                return toolResult.getOutput().stream()
+                                        .filter(output -> output instanceof TextBlock)
+                                        .map(output -> ((TextBlock) output).getText());
+                            }
+                            return Stream.empty();
+                        })
+                .collect(Collectors.joining("\n"));
     }
 
+    /**
+     * Extracts text content from a list of content blocks, including text from tool result outputs.
+     *
+     * @param blocks The list of content blocks to extract text from
+     * @return The combined text content as a string
+     */
     private String extractTextContentFromBlocks(List<ContentBlock> blocks) {
         return blocks.stream()
-                .filter(block -> block instanceof TextBlock)
-                .map(block -> ((TextBlock) block).getText())
-                .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+                .flatMap(
+                        block -> {
+                            if (block instanceof TextBlock tb) {
+                                return Stream.of(tb.getText());
+                            } else if (block instanceof ToolResultBlock toolResult) {
+                                // Extract text from tool result output
+                                return toolResult.getOutput().stream()
+                                        .filter(output -> output instanceof TextBlock)
+                                        .map(output -> ((TextBlock) output).getText());
+                            }
+                            return Stream.empty();
+                        })
+                .collect(Collectors.joining("\n"));
     }
 
+    /**
+     * Extracts image paths from a list of content blocks.
+     *
+     * @param blocks The list of content blocks to extract image paths from
+     * @return A list of image paths as strings
+     */
     private List<String> extractImagePathsFromBlocks(List<ContentBlock> blocks) {
         List<String> imagePaths = new ArrayList<>();
 

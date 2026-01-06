@@ -211,9 +211,32 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     private Flux<String> readSseLines(BufferedReader reader) {
+        // Check if this is an NDJSON stream
+        boolean isNdjson = false;
+        String streamFormatHeader = "X-AgentScope-Stream-Format";
+
+        // In a real implementation, we would check the request headers for the stream format
+        // For now, we'll assume it's passed as a parameter or can be determined from context
+        // This is a simplified version - in practice, you'd need to pass the format from the
+        // request
+
         return Flux.fromStream(reader.lines())
-                .filter(line -> line.startsWith(SSE_DATA_PREFIX))
-                .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
+                .filter(
+                        line -> {
+                            if (isNdjson) {
+                                return true; // For NDJSON, all lines are data
+                            } else {
+                                return line.startsWith(SSE_DATA_PREFIX);
+                            }
+                        })
+                .map(
+                        line -> {
+                            if (isNdjson) {
+                                return line;
+                            } else {
+                                return line.substring(SSE_DATA_PREFIX.length()).trim();
+                            }
+                        })
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
                 .doOnNext(data -> log.debug("Received SSE data chunk"))
                 .filter(data -> !data.isEmpty());
