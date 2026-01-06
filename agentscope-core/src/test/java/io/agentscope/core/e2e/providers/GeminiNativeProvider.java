@@ -102,7 +102,8 @@ public class GeminiNativeProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+                .memory(new InMemoryMemory())
+                .maxIters(3); // Prevent infinite loops in multi-agent scenarios
     }
 
     @Override
