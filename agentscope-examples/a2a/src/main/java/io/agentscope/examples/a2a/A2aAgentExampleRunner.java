@@ -86,7 +86,7 @@ public class A2aAgentExampleRunner {
                         event -> {
                             if (event.isLast()) {
                                 // The last message is whole artifact message result, which has been
-                                // solved and print in before event handle.
+                                // processed and printed in the previous event handling.
                                 return "";
                             }
                             Msg message = event.getMessage();
