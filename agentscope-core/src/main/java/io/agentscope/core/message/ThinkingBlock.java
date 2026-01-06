@@ -23,24 +23,15 @@ import java.util.Map;
 /**
  * Represents reasoning or thinking content in a message.
  *
- * <p>
- * This content block is used to capture the internal reasoning process of an
- * agent before
- * taking action. It provides transparency into how the agent arrived at its
- * decisions or tool
+ * <p>This content block is used to capture the internal reasoning process of an agent before
+ * taking action. It provides transparency into how the agent arrived at its decisions or tool
  * choices.
  *
- * <p>
- * Thinking blocks are particularly useful in ReAct agents and other
- * reasoning-intensive systems
- * where understanding the agent's thought process is valuable for debugging and
- * analysis.
+ * <p>Thinking blocks are particularly useful in ReAct agents and other reasoning-intensive systems
+ * where understanding the agent's thought process is valuable for debugging and analysis.
  *
- * <p>
- * The optional metadata field can store additional reasoning information such
- * as OpenRouter's
- * reasoning_details (reasoning.text, reasoning.encrypted, reasoning.summary)
- * that need to be
+ * <p>The optional metadata field can store additional reasoning information such as OpenRouter's
+ * reasoning_details (reasoning.text, reasoning.encrypted, reasoning.summary) that need to be
  * preserved and restored when formatting messages back to the API.
  * <p>
  * <b>Model-Specific Metadata:</b> Different models may attach additional
@@ -82,9 +73,8 @@ public final class ThinkingBlock extends ContentBlock {
     /**
      * Creates a new thinking block for JSON deserialization.
      *
-     * @param text     The thinking content (null will be converted to empty string)
-     * @param metadata Optional metadata for storing additional reasoning
-     *                 information
+     * @param text The thinking content (null will be converted to empty string)
+     * @param metadata Optional metadata for storing additional reasoning information
      */
     @JsonCreator
     private ThinkingBlock(
@@ -106,15 +96,11 @@ public final class ThinkingBlock extends ContentBlock {
     /**
      * Gets the metadata associated with this thinking block.
      *
-     * <p>
-     * Metadata can contain additional reasoning information such as:
+     * <p>Metadata can contain additional reasoning information such as:
      *
      * <ul>
-     * <li>{@link #METADATA_REASONING_DETAILS} - List of OpenAIReasoningDetail
-     * objects from
-     * OpenRouter/Gemini
-     * <li>{@link #METADATA_THOUGHT_SIGNATURE} - Gemini thought signature for
-     * context preservation
+     *   <li>{@link #METADATA_REASONING_DETAILS} - List of OpenAIReasoningDetail objects from
+     *       OpenRouter/Gemini
      * </ul>
      *
      * @return The metadata map, or null if no metadata is set

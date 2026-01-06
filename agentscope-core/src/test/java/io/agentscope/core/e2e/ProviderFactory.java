@@ -34,23 +34,19 @@ import java.util.stream.Stream;
 /**
  * Factory for creating ModelProvider instances based on available API keys.
  *
- * <p>
- * Dynamically provides enabled providers based on environment variables:
+ * <p>Dynamically provides enabled providers based on environment variables:
  *
  * <ul>
- * <li>OPENAI_API_KEY: Enables OpenAI Native providers
- * <li>DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and
- * Bailian providers
- * <li>DEEPSEEK_API_KEY: Enables DeepSeek Native providers
- * <li>GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
- * <li>GOOGLE_API_KEY: Enables Google Gemini Native providers
- * <li>ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
- * <li>OPENROUTER_API_KEY: Enables OpenRouter providers (access to various
- * models)
+ *   <li>OPENAI_API_KEY: Enables OpenAI Native providers
+ *   <li>DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
+ *   <li>DEEPSEEK_API_KEY: Enables DeepSeek Native providers
+ *   <li>GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
+ *   <li>GOOGLE_API_KEY: Enables Google Gemini Native providers
+ *   <li>ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
+ *   <li>OPENROUTER_API_KEY: Enables OpenRouter providers (access to various models)
  * </ul>
  *
- * <p>
- * Usage:
+ * <p>Usage:
  *
  * <pre>{@code
  * // Get all basic providers
@@ -58,7 +54,7 @@ import java.util.stream.Stream;
  *
  * // Get providers with specific capabilities
  * Stream<ModelProvider> imageProviders = ProviderFactory.getProviders(
- *         ModelCapability.BASIC, ModelCapability.IMAGE);
+ *     ModelCapability.BASIC, ModelCapability.IMAGE);
  *
  * // Check provider status
  * String status = ProviderFactory.getApiKeyStatus();
@@ -159,7 +155,7 @@ public class ProviderFactory {
     // API Key Helpers
     // ==========================================================================
 
-    public static boolean hasApiKey(String keyName) {
+    protected static boolean hasApiKey(String keyName) {
         String key = System.getenv(keyName);
         if (key == null || key.isEmpty()) {
             key = System.getProperty(keyName);
@@ -167,31 +163,31 @@ public class ProviderFactory {
         return key != null && !key.isEmpty();
     }
 
-    public static boolean hasOpenAIKey() {
+    protected static boolean hasOpenAIKey() {
         return hasApiKey(OPENAI_API_KEY);
     }
 
-    public static boolean hasDeepSeekKey() {
+    protected static boolean hasDeepSeekKey() {
         return hasApiKey(DEEPSEEK_API_KEY);
     }
 
-    public static boolean hasGLMKey() {
+    protected static boolean hasGLMKey() {
         return hasApiKey(GLM_API_KEY);
     }
 
-    public static boolean hasDashScopeKey() {
+    protected static boolean hasDashScopeKey() {
         return hasApiKey(DASHSCOPE_API_KEY);
     }
 
-    public static boolean hasGoogleKey() {
+    protected static boolean hasGoogleKey() {
         return hasApiKey(GOOGLE_API_KEY);
     }
 
-    public static boolean hasAnthropicKey() {
+    protected static boolean hasAnthropicKey() {
         return hasApiKey(ANTHROPIC_API_KEY);
     }
 
-    public static boolean hasOpenRouterKey() {
+    protected static boolean hasOpenRouterKey() {
         return hasApiKey(OPENROUTER_API_KEY);
     }
 
@@ -317,8 +313,7 @@ public class ProviderFactory {
     }
 
     /**
-     * Gets all enabled providers that support multi-agent formatter for MsgHub
-     * testing.
+     * Gets all enabled providers that support multi-agent formatter for MsgHub testing.
      *
      * @return Stream of enabled providers with multi-agent formatter capability
      */

@@ -33,6 +33,18 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Merges multi-agent conversation messages for Gemini API.
+ *
+ * <p>This class consolidates multiple agent messages into a single Content with conversation
+ * history wrapped in special tags. It preserves agent names and roles in the merged text.
+ *
+ * <p><b>Format:</b>
+ * <pre>
+ * # Conversation History
+ * &lt;history&gt;
+ * ## AgentName (role)
+ * Agent message content...
+ * &lt;/history&gt;
+ * </pre>
  */
 public class GeminiConversationMerger {
 
@@ -47,8 +59,7 @@ public class GeminiConversationMerger {
     /**
      * Create a GeminiConversationMerger with custom conversation history prompt.
      *
-     * @param conversationHistoryPrompt The prompt to prepend before conversation
-     *                                  history
+     * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public GeminiConversationMerger(String conversationHistoryPrompt) {
         this.mediaConverter = new GeminiMediaConverter();
@@ -58,17 +69,14 @@ public class GeminiConversationMerger {
     /**
      * Merge conversation messages into a single Content (for Gemini API).
      *
-     * <p>
-     * This method combines all agent messages into a single "user" role Content
-     * with
-     * conversation history wrapped in {@code <history>} tags. Agent names and roles
-     * are
+     * <p>This method combines all agent messages into a single "user" role Content with
+     * conversation history wrapped in {@code <history>} tags. Agent names and roles are
      * embedded in the text.
      *
-     * @param msgs                List of conversation messages to merge
-     * @param nameExtractor       Function to extract agent name from message
+     * @param msgs List of conversation messages to merge
+     * @param nameExtractor Function to extract agent name from message
      * @param toolResultConverter Function to convert tool result blocks to strings
-     * @param historyPrompt       The prompt to prepend (empty if not first group)
+     * @param historyPrompt The prompt to prepend (empty if not first group)
      * @return Single merged Content for Gemini API
      */
     public GeminiContent mergeToContent(

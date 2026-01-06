@@ -29,8 +29,7 @@ import io.agentscope.spring.boot.properties.OpenAIProperties;
 import java.util.Locale;
 
 /**
- * Enum-based strategy for creating concrete {@link Model} instances from
- * configuration.
+ * Enum-based strategy for creating concrete {@link Model} instances from configuration.
  */
 public enum ModelProviderType {
     DASHSCOPE("dashscope") {
@@ -148,8 +147,7 @@ public enum ModelProviderType {
     public abstract Model createModel(AgentscopeProperties properties);
 
     /**
-     * Resolve provider from root properties. Defaults to {@link #DASHSCOPE} when
-     * provider is not
+     * Resolve provider from root properties. Defaults to {@link #DASHSCOPE} when provider is not
      * configured.
      *
      * @param properties root configuration properties

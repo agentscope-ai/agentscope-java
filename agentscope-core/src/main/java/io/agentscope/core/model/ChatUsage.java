@@ -18,11 +18,8 @@ package io.agentscope.core.model;
 /**
  * Represents token usage information for chat completion responses.
  *
- * <p>
- * This immutable data class tracks the number of tokens used during a chat
- * completion,
- * including input tokens (prompt), output tokens (generated response), and
- * execution time.
+ * <p>This immutable data class tracks the number of tokens used during a chat completion,
+ * including input tokens (prompt), output tokens (generated response), and execution time.
  */
 public class ChatUsage {
 
@@ -34,10 +31,9 @@ public class ChatUsage {
     /**
      * Creates a new ChatUsage instance.
      *
-     * @param inputTokens  the number of tokens used for the input/prompt
-     * @param outputTokens the number of tokens used for the output/generated
-     *                     response
-     * @param time         the execution time in seconds
+     * @param inputTokens the number of tokens used for the input/prompt
+     * @param outputTokens the number of tokens used for the output/generated response
+     * @param time the execution time in seconds
      */
     public ChatUsage(int inputTokens, int outputTokens, double time) {
         this(inputTokens, outputTokens, 0, time);
@@ -136,8 +132,7 @@ public class ChatUsage {
         /**
          * Sets the number of output tokens.
          *
-         * @param outputTokens the number of tokens used for the output/generated
-         *                     response
+         * @param outputTokens the number of tokens used for the output/generated response
          * @return this builder instance
          */
         public Builder outputTokens(int outputTokens) {

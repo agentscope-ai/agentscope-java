@@ -34,21 +34,14 @@ import java.util.List;
 /**
  * Gemini formatter for multi-agent conversations.
  *
- * <p>
- * Converts AgentScope Msg objects to Gemini Content objects with multi-agent
- * support.
- * Collapses multi-agent conversation into a single user message with history
- * tags.
+ * <p>Converts AgentScope Msg objects to Gemini Content objects with multi-agent support.
+ * Collapses multi-agent conversation into a single user message with history tags.
  *
- * <p>
- * <b>Format Strategy:</b>
+ * <p><b>Format Strategy:</b>
  * <ul>
- * <li>System messages: Converted to user role (Gemini doesn't support system in
- * contents)</li>
- * <li>Agent messages: Merged into single Content with {@code <history>}
- * tags</li>
- * <li>Tool sequences: Converted directly (assistant with tool calls + user with
- * tool results)</li>
+ *   <li>System messages: Converted to user role (Gemini doesn't support system in contents)</li>
+ *   <li>Agent messages: Merged into single Content with {@code <history>} tags</li>
+ *   <li>Tool sequences: Converted directly (assistant with tool calls + user with tool results)</li>
  * </ul>
  */
 public class GeminiMultiAgentFormatter
@@ -76,8 +69,7 @@ public class GeminiMultiAgentFormatter
     /**
      * Create a GeminiMultiAgentFormatter with custom conversation history prompt.
      *
-     * @param conversationHistoryPrompt The prompt to prepend before conversation
-     *                                  history
+     * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public GeminiMultiAgentFormatter(String conversationHistoryPrompt) {
         this.messageConverter = new GeminiMessageConverter();

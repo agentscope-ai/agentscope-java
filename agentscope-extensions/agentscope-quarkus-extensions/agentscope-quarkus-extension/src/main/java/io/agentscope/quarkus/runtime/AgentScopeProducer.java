@@ -31,12 +31,10 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 
 /**
- * CDI Producer for AgentScope components. This class provides
- * auto-configuration
+ * CDI Producer for AgentScope components. This class provides auto-configuration
  * creating beans based on application.properties configuration.
  *
- * <p>
- * Example configuration:
+ * <p>Example configuration:
  *
  * <pre>
  * agentscope.model.provider=dashscope
@@ -54,8 +52,7 @@ public class AgentScopeProducer {
 
     /**
      * Initializes the shared Toolkit instance. Called by CDI container after bean
-     * construction. The @PostConstruct annotation ensures this method is executed
-     * exactly once
+     * construction. The @PostConstruct annotation ensures this method is executed exactly once
      * and thread-safely by the CDI container.
      */
     @PostConstruct
@@ -64,8 +61,7 @@ public class AgentScopeProducer {
     }
 
     /**
-     * Produces a Model bean based on the configured provider. Supports: dashscope,
-     * openai, gemini,
+     * Produces a Model bean based on the configured provider. Supports: dashscope, openai, gemini,
      * anthropic.
      *
      * @return configured Model instance
@@ -94,8 +90,7 @@ public class AgentScopeProducer {
     }
 
     /**
-     * Produces a Memory bean. Uses InMemoryMemory as default implementation. This
-     * is a
+     * Produces a Memory bean. Uses InMemoryMemory as default implementation. This is a
      * dependent-scoped bean, creating a new instance per injection point.
      *
      * @return new InMemoryMemory instance
@@ -108,10 +103,8 @@ public class AgentScopeProducer {
 
     /**
      * Produces a Toolkit bean. Returns the shared toolkit instance initialized by
-     * {@code @PostConstruct}. This is an application-scoped bean, ensuring all
-     * agents use
-     * the same toolkit instance across the application for consistent tool
-     * management.
+     * {@code @PostConstruct}. This is an application-scoped bean, ensuring all agents use
+     * the same toolkit instance across the application for consistent tool management.
      *
      * @return configured Toolkit instance
      */
@@ -122,16 +115,13 @@ public class AgentScopeProducer {
     }
 
     /**
-     * Produces a ReActAgent bean configured with Model, Memory, and Toolkit. This
-     * is a
+     * Produces a ReActAgent bean configured with Model, Memory, and Toolkit. This is a
      * dependent-scoped bean, creating a new agent instance per injection point.
      *
-     * <p>
-     * The Toolkit is obtained from the initialized shared instance rather than
-     * injected to avoid CDI ambiguity between auto-discovered Toolkit and the
-     * producer.
+     * <p>The Toolkit is obtained from the initialized shared instance rather than
+     * injected to avoid CDI ambiguity between auto-discovered Toolkit and the producer.
      *
-     * @param model  the Model to use
+     * @param model the Model to use
      * @param memory the Memory to use
      * @return configured ReActAgent
      */

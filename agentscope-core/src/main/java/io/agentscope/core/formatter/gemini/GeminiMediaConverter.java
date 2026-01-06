@@ -38,8 +38,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Converter for Gemini API multimodal content.
- * Converts ImageBlock, AudioBlock, and VideoBlock to Gemini Part objects with
- * inline data.
+ * Converts ImageBlock, AudioBlock, and VideoBlock to Gemini Part objects with inline data.
  */
 public class GeminiMediaConverter {
 
@@ -47,20 +46,17 @@ public class GeminiMediaConverter {
 
     /**
      * Supported file extensions for each media type.
-     * These extensions are validated when converting media blocks to ensure
-     * compatibility
+     * These extensions are validated when converting media blocks to ensure compatibility
      * with the Gemini API's supported formats.
      */
     private static final Map<String, List<String>> SUPPORTED_EXTENSIONS =
             Map.of(
-                    "image",
-                    List.of("png", "jpeg", "jpg", "webp", "heic", "heif"),
+                    "image", List.of("png", "jpeg", "jpg", "webp", "heic", "heif"),
                     "video",
-                    List.of(
-                            "mp4", "mpeg", "mov", "avi", "x-flv", "flv", "mpg", "webm", "wmv",
-                            "3gpp"),
-                    "audio",
-                    List.of("mp3", "wav", "aiff", "aac", "ogg", "flac"));
+                            List.of(
+                                    "mp4", "mpeg", "mov", "avi", "x-flv", "flv", "mpg", "webm",
+                                    "wmv", "3gpp"),
+                    "audio", List.of("mp3", "wav", "aiff", "aac", "ogg", "flac"));
 
     /**
      * Convert ImageBlock to Gemini Part with inline data.
@@ -142,8 +138,7 @@ public class GeminiMediaConverter {
     /**
      * Read a file from URL/path as byte array.
      *
-     * <p>
-     * Supports both remote URLs (http://, https://) and local file paths.
+     * <p>Supports both remote URLs (http://, https://) and local file paths.
      *
      * @param url File URL or path
      * @return File content as byte array

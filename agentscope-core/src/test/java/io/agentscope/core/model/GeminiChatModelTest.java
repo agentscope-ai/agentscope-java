@@ -31,19 +31,13 @@ import org.junit.jupiter.api.Test;
 /**
  * Unit tests for GeminiChatModel.
  *
- * <p>
- * These tests verify the GeminiChatModel behavior including basic
- * configuration, builder
- * pattern, streaming, tool calls, and various API configurations (Gemini API vs
- * Vertex AI).
+ * <p>These tests verify the GeminiChatModel behavior including basic configuration, builder
+ * pattern, streaming, tool calls, and various API configurations (Gemini API vs Vertex AI).
  *
- * <p>
- * Tests use mock API keys to avoid actual network calls and focus on model
- * construction and
+ * <p>Tests use mock API keys to avoid actual network calls and focus on model construction and
  * configuration validation.
  *
- * <p>
- * Tagged as "unit" - fast running tests without external dependencies.
+ * <p>Tagged as "unit" - fast running tests without external dependencies.
  */
 @Tag("unit")
 @DisplayName("GeminiChatModel Unit Tests")

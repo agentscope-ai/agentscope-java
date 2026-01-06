@@ -43,22 +43,18 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Consolidated E2E tests for multi-agent collaboration functionality.
  *
- * <p>
- * Tests multi-agent scenarios using MsgHub across various scenarios including:
+ * <p>Tests multi-agent scenarios using MsgHub across various scenarios including:
  * <ul>
- * <li>Basic multi-agent conversation with automatic broadcasting</li>
- * <li>Multi-agent collaboration with tool calling</li>
- * <li>Role-based collaboration (innovator, critic, synthesizer)</li>
- * <li>Dynamic participant management (add/remove agents)</li>
- * <li>Multi-agent with structured output generation</li>
- * <li>Manual broadcast control</li>
+ *   <li>Basic multi-agent conversation with automatic broadcasting</li>
+ *   <li>Multi-agent collaboration with tool calling</li>
+ *   <li>Role-based collaboration (innovator, critic, synthesizer)</li>
+ *   <li>Dynamic participant management (add/remove agents)</li>
+ *   <li>Multi-agent with structured output generation</li>
+ *   <li>Manual broadcast control</li>
  * </ul>
  *
- * <p>
- * <b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment
- * variables
- * must be set. Tests use MultiAgent formatters for proper multi-agent message
- * handling.
+ * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
+ * must be set. Tests use MultiAgent formatters for proper multi-agent message handling.
  */
 @Tag("e2e")
 @Tag("multi-agent")

@@ -40,6 +40,18 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Parses Gemini API responses to AgentScope ChatResponse.
+ *
+ * <p>This parser handles the conversion of Gemini's GenerateContentResponse to AgentScope's
+ * ChatResponse format, including:
+ * <ul>
+ *   <li>Text blocks from text parts</li>
+ *   <li>Thinking blocks from parts with thought=true flag</li>
+ *   <li>Tool use blocks from function_call parts</li>
+ *   <li>Usage metadata with token counts</li>
+ * </ul>
+ *
+ * <p><b>Important:</b> In Gemini API, thinking content is indicated by the "thought" flag
+ * on Part objects.
  */
 public class GeminiResponseParser {
 
@@ -53,7 +65,7 @@ public class GeminiResponseParser {
     /**
      * Parse Gemini GenerateContentResponse to AgentScope ChatResponse.
      *
-     * @param response  Gemini generation response
+     * @param response Gemini generation response
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */

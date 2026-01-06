@@ -40,8 +40,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for AgentScopeProducer using mock configuration. Tests all
- * provider types, error
+ * Unit tests for AgentScopeProducer using mock configuration. Tests all provider types, error
  * conditions, and edge cases.
  */
 class AgentScopeProducerUnitTest {

@@ -38,12 +38,18 @@ import java.util.function.Function;
 /**
  * Formatter for Gemini Content Generation API.
  *
- * <p>
- * Converts between AgentScope Msg objects and Gemini API DTOs:
+ * <p>Converts between AgentScope Msg objects and Gemini SDK types:
  * <ul>
- * <li>Msg → GeminiContent (request format)</li>
- * <li>GeminiResponse → ChatResponse (response parsing)</li>
- * <li>ToolSchema → GeminiTool (tool definitions)</li>
+ *   <li>Msg → Content (request format)</li>
+ *   <li>GenerateContentResponse → ChatResponse (response parsing)</li>
+ *   <li>ToolSchema → Tool (tool definitions)</li>
+ * </ul>
+ *
+ * <p><b>Important Gemini API Behaviors:</b>
+ * <ul>
+ *   <li>System messages are converted to "user" role (Gemini doesn't support system role in contents)</li>
+ *   <li>Tool results are independent "user" role Content objects</li>
+ *   <li>Thinking content uses the "thought" flag on Part objects</li>
  * </ul>
  */
 public class GeminiChatFormatter

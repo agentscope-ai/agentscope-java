@@ -45,8 +45,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converter for transforming AgentScope Msg objects to Gemini API Content
- * format.
+ * Converter for transforming AgentScope Msg objects to Gemini API Content format.
+ *
+ * <p>This converter handles the core message transformation logic, including:
+ * <ul>
+ *   <li>Text blocks</li>
+ *   <li>Tool use blocks (function_call)</li>
+ *   <li>Tool result blocks (function_response as independent Content)</li>
+ *   <li>Multimodal content (image, audio, video)</li>
+ * </ul>
+ *
+ * <p><b>Important Conversion Behaviors:</b>
+ * <ul>
+ *   <li>Tool result blocks are converted to independent "user" role Content</li>
+ *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
+ *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
+ * </ul>
  */
 public class GeminiMessageConverter {
 

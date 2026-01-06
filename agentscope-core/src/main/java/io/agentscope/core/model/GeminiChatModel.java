@@ -49,18 +49,21 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 /**
- * Gemini Chat Model implementation using OkHttp for direct API calls.
+ * Gemini Chat Model implementation using the official Google GenAI Java SDK.
  *
  * <p>
- * This implementation replaces the Google GenAI SDK with direct HTTP requests
- * to the Gemini API, providing standard AgentScope integration.
+ * This implementation provides complete integration with Gemini's Content
+ * Generation API,
+ * including tool calling and multi-agent conversation support.
  *
  * <p>
  * <b>Supported Features:</b>
  * <ul>
- * <li>Text generation with streaming (SSE) and non-streaming modes</li>
- * <li>Tool/function calling support through DTOs</li>
- * <li>Multi-agent conversation support</li>
+ * <li>Text generation with streaming and non-streaming modes</li>
+ * <li>Tool/function calling support</li>
+ * <li>Multi-agent conversation with history merging</li>
+ * <li>Vision capabilities (images, audio, video)</li>
+ * <li>Thinking mode (extended reasoning)</li>
  * </ul>
  */
 public class GeminiChatModel extends ChatModelBase {

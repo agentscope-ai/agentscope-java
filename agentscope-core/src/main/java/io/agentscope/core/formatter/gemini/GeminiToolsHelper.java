@@ -29,11 +29,28 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handles tool registration and configuration for Gemini API.
+ *
+ * <p>This helper converts AgentScope tool schemas to Gemini's Tool and ToolConfig format:
+ * <ul>
+ *   <li>Tool: Contains function declarations with JSON Schema parameters</li>
+ *   <li>ToolConfig: Contains function calling mode configuration</li>
+ * </ul>
+ *
+ * <p><b>Tool Choice Mapping:</b>
+ * <ul>
+ *   <li>Auto: mode=AUTO (model decides)</li>
+ *   <li>None: mode=NONE (disable tool calling)</li>
+ *   <li>Required: mode=ANY (force tool call from all provided tools)</li>
+ *   <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
+ * </ul>
  */
 public class GeminiToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiToolsHelper.class);
 
+    /**
+     * Creates a new GeminiToolsHelper.
+     */
     public GeminiToolsHelper() {}
 
     /**
@@ -109,6 +126,14 @@ public class GeminiToolsHelper {
 
     /**
      * Create Gemini ToolConfig from AgentScope ToolChoice.
+     *
+     * <p>Tool choice mapping:
+     * <ul>
+     *   <li>null or Auto: mode=AUTO (model decides)</li>
+     *   <li>None: mode=NONE (disable tool calling)</li>
+     *   <li>Required: mode=ANY (force tool call from all provided tools)</li>
+     *   <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
+     * </ul>
      *
      * @param toolChoice The tool choice configuration (null means auto)
      * @return Gemini ToolConfig object, or null if auto (default behavior)
