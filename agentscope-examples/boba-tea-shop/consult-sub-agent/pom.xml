@@ -59,7 +59,7 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-a2a-nacos-spring-boot-starter</artifactId>
+            <artifactId>agentscope-nacos-spring-boot-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>

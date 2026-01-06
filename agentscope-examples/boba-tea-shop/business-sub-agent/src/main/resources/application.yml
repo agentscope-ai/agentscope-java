@@ -35,6 +35,9 @@ agentscope:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
       namespace: ${NACOS_NAMESPACE:public}
   a2a:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      namespace: ${NACOS_NAMESPACE:public}
     server:
       card:
         name: business_agent
