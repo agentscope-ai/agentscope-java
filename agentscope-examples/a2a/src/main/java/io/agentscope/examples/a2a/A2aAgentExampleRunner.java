@@ -2,7 +2,7 @@
  * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -17,71 +17,66 @@
 package io.agentscope.examples.a2a;
 
 import io.agentscope.core.a2a.agent.A2aAgent;
-import io.agentscope.core.a2a.agent.card.AgentCardResolver;
-import io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Flux;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import reactor.core.publisher.Flux;
 
 /**
- * A2A(Agent2Agent) Protocol Example Application.
+ * Example runner for A2aAgent usage.
  *
  * <p>This example demonstrates how to request remote agent via the A2A protocol
  * using AgentScope A2aAgent.
  */
-public class A2aAgentExample {
-
+public class A2aAgentExampleRunner {
+    
     private static final String USER_INPUT_PREFIX = "\u001B[34mYou>\u001B[0m ";
-
+    
     private static final String AGENT_RESPONSE_PREFIX = "\u001B[32mAgent>\u001B[0m ";
-
-    public static void main(String[] args) {
-        // Create agent card resolver by well-known uri.
-        AgentCardResolver agentCardResolver =
-                WellKnownAgentCardResolver.builder().baseUrl("http://127.0.0.1:8080").build();
-        // Create A2aAgent
-        A2aAgent agent =
-                A2aAgent.builder()
-                        .name("agentscope-a2a-example-agent")
-                        .agentCardResolver(agentCardResolver)
-                        .build();
-        startExample(agent);
+    
+    private final A2aAgent agent;
+    
+    public A2aAgentExampleRunner(A2aAgent agent) {
+        this.agent = agent;
     }
-
-    private static void startExample(A2aAgent agent) {
+    
+    /**
+     * Start to run the example for A2aAgent.
+     */
+    public void startExample() {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
             while (true) {
                 // User Input Hint.
                 System.out.print(USER_INPUT_PREFIX);
                 String input = reader.readLine();
-
+                
                 // Exit example.
                 if (input == null
                         || input.trim().equalsIgnoreCase("exit")
                         || input.trim().equalsIgnoreCase("quit")) {
-                    System.out.println(AGENT_RESPONSE_PREFIX + "Bye！");
+                    System.out.println(AGENT_RESPONSE_PREFIX + "Bye!");
                     break;
                 }
-
+                
                 System.out.println(
                         AGENT_RESPONSE_PREFIX + "I have received your question: " + input);
                 System.out.print(AGENT_RESPONSE_PREFIX);
-
+                
                 // Handle user input and get response.
                 processInput(agent, input).doOnNext(System.out::print).then().block();
-
+                
                 System.out.println();
             }
         } catch (IOException e) {
             System.err.println("input error: " + e.getMessage());
         }
     }
-
-    private static Flux<String> processInput(A2aAgent agent, String input) {
+    
+    private Flux<String> processInput(A2aAgent agent, String input) {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)

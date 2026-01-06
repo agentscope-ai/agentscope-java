@@ -32,8 +32,8 @@ import org.springframework.context.annotation.Bean;
  * <ol>
  *   <li>Set the DASHSCOPE_API_KEY environment variable</li>
  *   <li>Run this application</li>
- *   <li>Use curl: {@code curl -X GET http://localhost:8080/.well-known/agent-card.json} to get AgentCard.</li>
- *   <li>Use curl: {@code curl --location --request POST 'http://localhost:8080' \
+ *   <li>Use curl: {@code curl -X GET http://localhost:8888/.well-known/agent-card.json} to get AgentCard.</li>
+ *   <li>Use curl: {@code curl --location --request POST 'http://localhost:8888' \
  *   --header 'Content-Type: application/json' \
  *   --data-raw '{
  *     "method": "message/stream",
@@ -58,7 +58,19 @@ import org.springframework.context.annotation.Bean;
  *       }
  *     }
  *   }'}</li>
- *   <li>Or run {@link A2aAgentExample#main(String[])} and input question like: {@code Hello, please calculate the 346 * 47}</li>
+ *   <li>Or run {@link SimpleA2aAgentExample#main(String[])} and input question like: {@code Hello, please calculate the 346 * 47}</li>
+ * </ol>
+ *
+ * <p>This example application also demonstrates how to register agents to Nacos A2A registry.
+ *
+ * <p><b>Usage: </b>
+ * <ol>
+ *     <li>Set the DASHSCOPE_API_KEY environment variable.</li>
+ *     <li>Enabled Nacos Registry by set Nacos environment variable: {@code NACOS_ENABLED=true}.</li>
+ *     <li>Start Nacos Server according to <a href="https://nacos.io/en/docs/latest/quickstart/quick-start-docker">documents</a>.</li>
+ *     <li>Set more Nacos environment variables: NACOS_SERVER_ADDR, NACOS_USERNAME and NACOS_PASSWORD if Nacos Server is not in local and enabled authentication.</li>
+ *     <li>Run this application</li>
+ *     <li>Run Example {@link NacosA2aAgentExample#main(String[])} and input question like: {@code Hello, please calculate the 346 * 47}</li>
  * </ol>
  */
 @SpringBootApplication
@@ -69,7 +81,7 @@ public class A2aExampleApplication {
     }
 
     /**
-     * Optional, If wanted to register tools to agent.
+     * Optional, if you want to register tools for the agent.
      */
     @Bean
     public Toolkit toolkit() {

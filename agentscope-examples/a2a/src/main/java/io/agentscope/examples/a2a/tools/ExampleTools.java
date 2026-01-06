@@ -96,6 +96,10 @@ public class ExampleTools {
     /**
      * Simple expression evaluator.
      * Supports basic arithmetic: +, -, *, /
+     *
+     * @param expression The arithmetic expression to evaluate
+     * @return The calculated result
+     * @throws IllegalArgumentException if the expression contains invalid numeric values
      */
     private double evaluateExpression(String expression) {
         // Remove whitespace

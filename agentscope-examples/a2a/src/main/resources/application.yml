@@ -14,7 +14,7 @@
 
 # A2A Protocol Example Application Configuration
 server:
-  port: 8080
+  port: 8888
 
 spring:
   main:
@@ -57,4 +57,9 @@ agentscope:
             tags: [time]
             examples:
               - What's the current time?
-
+    # Nacos Configuration
+    nacos:
+      enabled: ${NACOS_ENABLED:false}
+      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD}
