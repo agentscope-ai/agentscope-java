@@ -66,9 +66,10 @@ Using Nacos as an A2A registry allows AgentScope to automatically discover A2A s
 
 ```xml
 <dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-nacos-a2a</artifactId>
-    <version>${agentscope.version}</version>
+    <groupId>com.alibaba.nacos</groupId>
+    <artifactId>nacos-client</artifactId>
+    <!-- Nacos client version must be higher than 3.1.0 -->
+    <version>${nacos.version}</version>
 </dependency>
 ```
 

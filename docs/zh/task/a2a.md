@@ -66,9 +66,10 @@ A2aAgent.builder()
 
 ```xml
 <dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-nacos-a2a</artifactId>
-    <version>${agentscope.version}</version>
+    <groupId>com.alibaba.nacos</groupId>
+    <artifactId>nacos-client</artifactId>
+    <!-- Nacos 客户端版本至少3.1.0 -->
+    <version>${nacos.version}</version>
 </dependency>
 ```
 
