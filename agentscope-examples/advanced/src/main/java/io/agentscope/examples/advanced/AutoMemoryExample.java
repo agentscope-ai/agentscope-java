@@ -30,6 +30,7 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.studio.StudioManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -45,7 +46,15 @@ public class AutoMemoryExample {
     public static void main(String[] args) {
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
-
+        // Initialize Studio
+        System.out.println("Connecting to Studio at http://localhost:3000...");
+        StudioManager.init()
+                .studioUrl("http://localhost:3000")
+                .project("JavaExamples")
+                .runName("studio_demo_" + System.currentTimeMillis())
+                .initialize()
+                .block();
+        System.out.println("Connected to Studio\n");
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
                                 true)
@@ -62,7 +71,7 @@ public class AutoMemoryExample {
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.1).lastKeep(20).build();
+                AutoContextConfig.builder().tokenRatio(0.3).lastKeep(20).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
@@ -84,14 +93,14 @@ public class AutoMemoryExample {
                         .toolkit(toolkit)
                         .hook(new AutoContextHook()) // Register the hook for automatic setup
                         .build();
-        String sessionId = "123453344";
+        String sessionId = "12345334400000011111111111";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
         Session session = new JsonSession(sessionPath);
 
         // Load existing session if it exists
-        agent.loadIfExists(session, sessionId);
+        // agent.loadIfExists(session, sessionId);
 
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
@@ -107,7 +116,6 @@ public class AutoMemoryExample {
                     System.out.println("👋 Goodbye!");
                     break;
                 }
-
                 // Skip empty input
                 if (query.isEmpty()) {
                     System.out.println("Please enter a valid query.\n");
