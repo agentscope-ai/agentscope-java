@@ -42,9 +42,9 @@ import io.agentscope.core.tool.Toolkit;
     ModelCapability.THINKING
 })
 public class GeminiProvider extends BaseModelProvider {
-    
+
     private static final String API_KEY_ENV = "GOOGLE_API_KEY";
-    
+
     private final boolean supportsThinking;
 
     public GeminiProvider(String modelName, boolean multiAgentFormatter, boolean supportsThinking) {
