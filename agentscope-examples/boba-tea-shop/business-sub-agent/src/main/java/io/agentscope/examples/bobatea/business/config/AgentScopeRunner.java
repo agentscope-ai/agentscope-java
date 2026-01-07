@@ -39,6 +39,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,16 +55,13 @@ public class AgentScopeRunner {
     @Value("${agentscope.dashscope.model-name}")
     String modelName;
 
+    private static final Logger logger = LoggerFactory.getLogger(AgentScopeRunner.class);
+
     @Bean
     public AgentRunner agentRunner(
             AgentPromptConfig promptConfig, AiService aiService, Model model) {
 
         Toolkit toolkit = new NacosToolkit();
-
-        NacosMcpServerManager mcpServerManager = new NacosMcpServerManager(aiService);
-        NacosMcpClientWrapper mcpClientWrapper =
-                NacosMcpClientBuilder.create("business-mcp-server", mcpServerManager).build();
-        toolkit.registerMcpClient(mcpClientWrapper).block();
 
         AutoContextConfig autoContextConfig =
                 AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
@@ -78,7 +77,7 @@ public class AgentScopeRunner {
                         .model(model)
                         .toolkit(toolkit);
 
-        return new CustomAgentRunner(builder);
+        return new CustomAgentRunner(builder, aiService, toolkit);
     }
 
     private static class CustomAgentRunner implements AgentRunner {
@@ -87,10 +86,19 @@ public class AgentScopeRunner {
 
         private final ReActAgent.Builder agentBuilder;
 
+        private final AiService aiService;
+
+        private final Toolkit toolkit;
+
         private final Map<String, ReActAgent> agentCache;
 
-        private CustomAgentRunner(ReActAgent.Builder agentBuilder) {
+        private volatile boolean mcpInitialized = false;
+
+        private CustomAgentRunner(
+                ReActAgent.Builder agentBuilder, AiService aiService, Toolkit toolkit) {
             this.agentBuilder = agentBuilder;
+            this.aiService = aiService;
+            this.toolkit = toolkit;
             this.agentCache = new ConcurrentHashMap<>();
         }
 
@@ -99,6 +107,7 @@ public class AgentScopeRunner {
         }
 
         private ReActAgent buildReActAgent(String userId) {
+            initializeMcpOnce();
             Mem0LongTermMemory longTermMemory =
                     Mem0LongTermMemory.builder()
                             .agentName("BusinessAgent")
@@ -107,6 +116,31 @@ public class AgentScopeRunner {
                             .apiKey(System.getenv("MEM0_API_KEY"))
                             .build();
             return agentBuilder.longTermMemory(longTermMemory).build();
+        }
+
+        private void initializeMcpOnce() {
+            if (!mcpInitialized) {
+                synchronized (this) {
+                    if (!mcpInitialized) {
+                        try {
+                            NacosMcpServerManager mcpServerManager =
+                                    new NacosMcpServerManager(aiService);
+                            NacosMcpClientWrapper mcpClientWrapper =
+                                    NacosMcpClientBuilder.create(
+                                                    "business-mcp-server", mcpServerManager)
+                                            .build();
+                            toolkit.registerMcpClient(mcpClientWrapper).block();
+                            mcpInitialized = true;
+                        } catch (Exception e) {
+                            // Log the error and continue without MCP tools
+                            logger.warn(
+                                    "Failed to initialize MCP client: "
+                                            + e.getMessage()
+                                            + " , will try later.");
+                        }
+                    }
+                }
+            }
         }
 
         @Override

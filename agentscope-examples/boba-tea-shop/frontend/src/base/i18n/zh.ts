@@ -86,7 +86,7 @@ export default {
     },
     examples: {
       title: '常见问题示例',
-      menu: '请为我推荐秋冬新品',
+      menu: '请为我推荐新品奶茶',
       order: '我想查询我的订单',
       price: '老样子，来一杯！',
       feedback: '我要投诉服务或质量问题'
