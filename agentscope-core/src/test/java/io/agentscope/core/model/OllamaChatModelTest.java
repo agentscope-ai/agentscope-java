@@ -26,7 +26,6 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.ollama.OllamaChatFormatter;
 import io.agentscope.core.formatter.ollama.OllamaMultiAgentFormatter;
 import io.agentscope.core.message.Base64Source;
@@ -41,6 +40,8 @@ import io.agentscope.core.model.ollama.ThinkOption;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -418,17 +419,6 @@ class OllamaChatModelTest {
                         + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
         when(httpTransport.stream(any(HttpRequest.class))).thenReturn(Flux.just(jsonResponse));
 
-        // Call chat with tools (using generic GenerateOptions to pass tools if supported,
-        // but OllamaChatModel.chat(..., options) doesn't take tools directly unless via doStream
-        // which is protected.
-        // Wait, ChatModelBase.chat usually handles tools if they are passed?
-        // No, ChatModelBase.chat(List<Msg>) doesn't take tools.
-        // The public API for tools usually involves `stream` or specific overrides if available.
-        // Let's check ChatModelBase or OllamaChatModel public methods.
-        // OllamaChatModel.doStream takes tools.
-        // We can use the generic ChatModelBase.stream(messages, tools, options) which calls
-        // doStream.
-
         GenerateOptions options = GenerateOptions.builder().build();
         model.stream(
                         List.of(
@@ -747,8 +737,8 @@ class OllamaChatModelTest {
         String body = captor.getValue().getBody();
 
         // Parse JSON to verify structure
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(body);
+        JsonNode root =
+                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
 
         // Verify 'think' is at root
         assertTrue(root.has("think"), "JSON root should contain 'think'");
@@ -769,7 +759,7 @@ class OllamaChatModelTest {
 
         verify(httpTransport, Mockito.times(2)).execute(captor.capture());
         body = captor.getValue().getBody();
-        root = mapper.readTree(body);
+        root = ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertFalse(root.get("think").asBoolean(), "'think' should be false");
@@ -866,8 +856,8 @@ class OllamaChatModelTest {
         verify(httpTransport).execute(captor.capture());
 
         String body = captor.getValue().getBody();
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode root = mapper.readTree(body);
+        JsonNode root =
+                ((JacksonJsonCodec) JsonUtils.getJsonCodec()).getObjectMapper().readTree(body);
 
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertEquals("high", root.get("think").asText(), "'think' should be 'high'");

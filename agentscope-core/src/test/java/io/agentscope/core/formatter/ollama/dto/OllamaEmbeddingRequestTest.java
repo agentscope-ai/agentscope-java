@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import io.agentscope.core.util.JacksonJsonCodec;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -40,12 +40,17 @@ class OllamaEmbeddingRequestTest {
     private static final String TEST_MODEL = "nomic-embed-text";
     private static final List<String> TEST_INPUT = Arrays.asList("Hello", "World");
 
-    private ObjectMapper objectMapper;
+    private JacksonJsonCodec jsonCodec;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        // Create a JacksonJsonCodec instance with snake_case naming strategy for testing
+        JacksonJsonCodec defaultCodec = new JacksonJsonCodec();
+        jsonCodec =
+                new JacksonJsonCodec(
+                        defaultCodec
+                                .getObjectMapper()
+                                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
     }
 
     @Test
@@ -108,7 +113,7 @@ class OllamaEmbeddingRequestTest {
         options.put("num_ctx", 2048);
         request.setOptions(options);
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonCodec.toJson(request);
 
         // Verify JSON contains snake_case fields
         assertTrue(json.contains("\"model\""));
@@ -142,7 +147,7 @@ class OllamaEmbeddingRequestTest {
                 }
                 """;
 
-        OllamaEmbeddingRequest request = objectMapper.readValue(json, OllamaEmbeddingRequest.class);
+        OllamaEmbeddingRequest request = jsonCodec.fromJson(json, OllamaEmbeddingRequest.class);
 
         assertEquals("nomic-embed-text", request.getModel());
         assertEquals(Arrays.asList("Hello", "World"), request.getInput());
@@ -159,7 +164,7 @@ class OllamaEmbeddingRequestTest {
         request.setModel(TEST_MODEL);
         // Keep other fields as null
 
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonCodec.toJson(request);
         // With JsonInclude.Include.NON_NULL, null fields should not appear in JSON
         assertTrue(json.contains("\"model\":\"" + TEST_MODEL + "\""));
         assertFalse(json.contains("\"input\"")); // input is null
@@ -168,7 +173,7 @@ class OllamaEmbeddingRequestTest {
         assertFalse(json.contains("\"options\"")); // options is null
 
         OllamaEmbeddingRequest deserialized =
-                objectMapper.readValue(json, OllamaEmbeddingRequest.class);
+                jsonCodec.fromJson(json, OllamaEmbeddingRequest.class);
         assertNull(deserialized.getInput());
         assertNull(deserialized.getKeepAlive());
         assertNull(deserialized.getTruncate());

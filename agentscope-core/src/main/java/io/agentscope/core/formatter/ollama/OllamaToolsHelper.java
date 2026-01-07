@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.formatter.ollama.dto.OllamaFunction;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaTool;
@@ -27,6 +25,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.ollama.OllamaOptions;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,11 +42,8 @@ public class OllamaToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaToolsHelper.class);
 
-    private final ObjectMapper objectMapper;
-
     public OllamaToolsHelper() {
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
+        // Use JsonUtils for JSON operations
     }
 
     /**
@@ -84,7 +80,7 @@ public class OllamaToolsHelper {
 
         // Convert to map
         @SuppressWarnings("unchecked")
-        Map<String, Object> optionsMap = objectMapper.convertValue(merged, Map.class);
+        Map<String, Object> optionsMap = JsonUtils.getJsonCodec().convertValue(merged, Map.class);
 
         // Move top-level options from map to request object and remove from options map
         if (merged.getFormat() != null) {

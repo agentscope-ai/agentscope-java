@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import io.agentscope.core.util.JacksonJsonCodec;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,12 +36,17 @@ import org.junit.jupiter.api.Test;
 @DisplayName("OllamaEmbeddingResponse Unit Tests")
 class OllamaEmbeddingResponseTest {
 
-    private ObjectMapper objectMapper;
+    private JacksonJsonCodec jsonCodec;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        // Create a JacksonJsonCodec instance with snake_case naming strategy for testing
+        JacksonJsonCodec defaultCodec = new JacksonJsonCodec();
+        jsonCodec =
+                new JacksonJsonCodec(
+                        defaultCodec
+                                .getObjectMapper()
+                                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
     }
 
     @Test
@@ -92,7 +97,7 @@ class OllamaEmbeddingResponseTest {
         response.setLoadDuration(500L);
         response.setPromptEvalCount(10);
 
-        String json = objectMapper.writeValueAsString(response);
+        String json = jsonCodec.toJson(response);
 
         // Verify JSON contains snake_case fields
         assertTrue(json.contains("\"model\""));
@@ -123,8 +128,7 @@ class OllamaEmbeddingResponseTest {
                 }
                 """;
 
-        OllamaEmbeddingResponse response =
-                objectMapper.readValue(json, OllamaEmbeddingResponse.class);
+        OllamaEmbeddingResponse response = jsonCodec.fromJson(json, OllamaEmbeddingResponse.class);
 
         assertEquals("nomic-embed-text", response.getModel());
         assertNotNull(response.getEmbeddings());
@@ -143,7 +147,7 @@ class OllamaEmbeddingResponseTest {
         response.setModel("nomic-embed-text");
         // Keep other fields as null
 
-        String json = objectMapper.writeValueAsString(response);
+        String json = jsonCodec.toJson(response);
         // With JsonInclude.Include.NON_NULL, null fields should not appear in JSON
         assertTrue(json.contains("\"model\":\"nomic-embed-text\""));
         assertFalse(json.contains("\"embeddings\"")); // embeddings is null
@@ -152,7 +156,7 @@ class OllamaEmbeddingResponseTest {
         assertFalse(json.contains("\"prompt_eval_count\"")); // promptEvalCount is null
 
         OllamaEmbeddingResponse deserialized =
-                objectMapper.readValue(json, OllamaEmbeddingResponse.class);
+                jsonCodec.fromJson(json, OllamaEmbeddingResponse.class);
         assertNull(deserialized.getEmbeddings());
         assertNull(deserialized.getTotalDuration());
         assertNull(deserialized.getLoadDuration());
@@ -174,7 +178,7 @@ class OllamaEmbeddingResponseTest {
 
         // Should not throw exception for unknown fields due to @JsonIgnoreProperties
         OllamaEmbeddingResponse response =
-                objectMapper.readValue(jsonWithUnknown, OllamaEmbeddingResponse.class);
+                jsonCodec.fromJson(jsonWithUnknown, OllamaEmbeddingResponse.class);
 
         assertEquals("nomic-embed-text", response.getModel());
         assertNotNull(response.getEmbeddings());

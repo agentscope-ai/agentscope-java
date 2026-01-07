@@ -15,10 +15,6 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingResponse;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
@@ -29,6 +25,8 @@ import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.model.transport.TransportConstants;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -68,7 +66,6 @@ public class OllamaHttpClient {
     public static final String EMBED_ENDPOINT = "/api/embed";
 
     private final HttpTransport transport;
-    private final ObjectMapper objectMapper;
     private final String baseUrl;
 
     /**
@@ -80,23 +77,6 @@ public class OllamaHttpClient {
     public OllamaHttpClient(HttpTransport transport, String baseUrl) {
         this.transport = transport;
         this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
-        this.objectMapper = createObjectMapper();
-    }
-
-    /**
-     * Create a new OllamaHttpClient with default transport.
-     *
-     * @param baseUrl the base URL (null for default)
-     */
-    public OllamaHttpClient(String baseUrl) {
-        this(HttpTransportFactory.getDefault(), baseUrl);
-    }
-
-    private ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
     }
 
     /**
@@ -144,9 +124,9 @@ public class OllamaHttpClient {
 
         final String requestBody;
         try {
-            requestBody = objectMapper.writeValueAsString(request);
+            requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("Ollama request to {}: {}", url, requestBody);
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             // Known Jackson checked exception -> wrap into OllamaHttpException
             throw new OllamaHttpException("Failed to serialize/deserialize request", e);
         } catch (RuntimeException e) {
@@ -185,8 +165,8 @@ public class OllamaHttpClient {
         log.debug("Ollama response: {}", responseBody);
 
         try {
-            return objectMapper.readValue(responseBody, responseType);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().fromJson(responseBody, responseType);
+        } catch (JsonException e) {
             throw new OllamaHttpException("Failed to serialize/deserialize response", e);
         } catch (RuntimeException e) {
             // Some deserialization failures may manifest as RuntimeException
@@ -204,7 +184,7 @@ public class OllamaHttpClient {
         String url = baseUrl + CHAT_ENDPOINT;
 
         try {
-            String requestBody = objectMapper.writeValueAsString(request);
+            String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("Ollama streaming request to {}: {}", url, requestBody);
 
             Map<String, String> headers = new HashMap<>();
@@ -227,7 +207,8 @@ public class OllamaHttpClient {
                             data -> {
                                 try {
                                     OllamaResponse response =
-                                            objectMapper.readValue(data, OllamaResponse.class);
+                                            JsonUtils.getJsonCodec()
+                                                    .fromJson(data, OllamaResponse.class);
                                     if (response.getError() != null) {
                                         log.error(
                                                 "Ollama streaming error: {}", response.getError());
@@ -235,7 +216,7 @@ public class OllamaHttpClient {
                                                 "Ollama streaming error: " + response.getError());
                                     }
                                     return response;
-                                } catch (JsonProcessingException e) {
+                                } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse Ollama NDJSON data: {}. Error: {}",
                                             data,
@@ -245,7 +226,7 @@ public class OllamaHttpClient {
                             })
                     .filter(response -> response != null);
 
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             return Flux.error(new OllamaHttpException("Failed to serialize request", e));
         }
     }

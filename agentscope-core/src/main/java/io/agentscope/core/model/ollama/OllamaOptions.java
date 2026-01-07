@@ -19,10 +19,9 @@ package io.agentscope.core.model.ollama;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -586,8 +585,8 @@ public class OllamaOptions {
                     } else if (value instanceof String) {
                         builder.thinkOption(new ThinkOption.ThinkLevel((String) value));
                     } else if (value instanceof Map) {
-                        ObjectMapper mapper = new ObjectMapper();
-                        builder.thinkOption(mapper.convertValue(value, ThinkOption.class));
+                        builder.thinkOption(
+                                JsonUtils.getJsonCodec().convertValue(value, ThinkOption.class));
                     }
                     break;
             }
@@ -903,9 +902,7 @@ public class OllamaOptions {
      * @return A map containing the configured options.
      */
     public Map<String, Object> toMap() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        return mapper.convertValue(this, Map.class);
+        return JsonUtils.getJsonCodec().convertValue(this, Map.class);
     }
 
     public OllamaOptions copy() {
