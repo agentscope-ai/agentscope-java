@@ -57,7 +57,7 @@ public class MessageConvertUtil {
      * Convert a list of {@link Artifact} to {@link Msg}.
      *
      * @param artifacts the list of artifacts to convert
-     * @param agentName the name of the agent that generated the artifact
+     * @param agentName the name of the agent that generated the artifacts
      * @return the converted Msg object
      */
     public static Msg convertFromArtifact(List<Artifact> artifacts, String agentName) {
