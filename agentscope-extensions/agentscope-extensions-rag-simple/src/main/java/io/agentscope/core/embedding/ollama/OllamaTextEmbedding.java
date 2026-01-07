@@ -114,7 +114,9 @@ public class OllamaTextEmbedding implements EmbeddingModel {
                                                 text.length());
 
                                         // Create Ollama HTTP client
-                                        OllamaHttpClient client = new OllamaHttpClient(HttpTransportFactory.getDefault(), baseUrl);
+                                        OllamaHttpClient client =
+                                                new OllamaHttpClient(
+                                                        HttpTransportFactory.getDefault(), baseUrl);
 
                                         // Create embedding request
                                         OllamaEmbeddingRequest request =

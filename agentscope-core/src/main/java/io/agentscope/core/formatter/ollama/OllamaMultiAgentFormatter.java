@@ -36,7 +36,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -211,7 +210,7 @@ public class OllamaMultiAgentFormatter
                 }
             } catch (Exception e) {
                 // Log error but don't fail the whole request
-               log.warn("Failed to promote image from tool result", e);
+                log.warn("Failed to promote image from tool result", e);
             }
         }
 

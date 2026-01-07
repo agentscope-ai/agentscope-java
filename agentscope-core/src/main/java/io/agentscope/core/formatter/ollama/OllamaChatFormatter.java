@@ -39,7 +39,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -137,8 +136,8 @@ public class OllamaChatFormatter
                 processImageBlock((ImageBlock) block, messageContent.images);
             } else {
                 log.warn(
-                                "Unsupported block type {} in the message, skipped.",
-                                block.getClass().getSimpleName());
+                        "Unsupported block type {} in the message, skipped.",
+                        block.getClass().getSimpleName());
             }
         }
 
