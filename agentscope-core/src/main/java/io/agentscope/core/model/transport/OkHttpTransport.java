@@ -111,10 +111,9 @@ public class OkHttpTransport implements HttpTransport {
             log.warn(
                     "SSL certificate verification is disabled. This is not recommended for"
                             + " production.");
-            builder =
-                    builder.sslSocketFactory(
-                                    createTrustAllSslSocketFactory(), createTrustAllTrustManager())
-                            .hostnameVerifier((hostname, session) -> true);
+
+            builder.sslSocketFactory(createTrustAllSslSocketFactory(), createTrustAllTrustManager())
+                    .hostnameVerifier((hostname, session) -> true);
         }
 
         return builder.build();
