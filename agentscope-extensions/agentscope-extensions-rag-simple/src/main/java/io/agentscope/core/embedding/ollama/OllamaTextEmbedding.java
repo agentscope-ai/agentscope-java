@@ -24,6 +24,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.OllamaHttpClient;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,7 +114,7 @@ public class OllamaTextEmbedding implements EmbeddingModel {
                                                 text.length());
 
                                         // Create Ollama HTTP client
-                                        OllamaHttpClient client = new OllamaHttpClient(baseUrl);
+                                        OllamaHttpClient client = new OllamaHttpClient(HttpTransportFactory.getDefault(), baseUrl);
 
                                         // Create embedding request
                                         OllamaEmbeddingRequest request =

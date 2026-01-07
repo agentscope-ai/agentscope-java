@@ -36,6 +36,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -46,6 +48,7 @@ import org.slf4j.LoggerFactory;
  */
 public class OllamaMultiAgentFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {
+    private static final Logger log = LoggerFactory.getLogger(OllamaMultiAgentFormatter.class);
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -208,8 +211,7 @@ public class OllamaMultiAgentFormatter
                 }
             } catch (Exception e) {
                 // Log error but don't fail the whole request
-                LoggerFactory.getLogger(OllamaMultiAgentFormatter.class)
-                        .warn("Failed to promote image from tool result", e);
+               log.warn("Failed to promote image from tool result", e);
             }
         }
 

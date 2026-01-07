@@ -39,6 +39,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -48,6 +50,7 @@ import org.slf4j.LoggerFactory;
  */
 public class OllamaChatFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {
+    private static final Logger log = LoggerFactory.getLogger(OllamaChatFormatter.class);
 
     private final OllamaMessageConverter messageConverter;
     private final OllamaResponseParser responseParser;
@@ -133,8 +136,7 @@ public class OllamaChatFormatter
             } else if (block instanceof ImageBlock) {
                 processImageBlock((ImageBlock) block, messageContent.images);
             } else {
-                LoggerFactory.getLogger(OllamaChatFormatter.class)
-                        .warn(
+                log.warn(
                                 "Unsupported block type {} in the message, skipped.",
                                 block.getClass().getSimpleName());
             }
@@ -263,8 +265,7 @@ public class OllamaChatFormatter
             String base64Image = new OllamaMediaConverter().convertImageBlockToBase64(block);
             images.add(base64Image);
         } catch (Exception e) {
-            LoggerFactory.getLogger(OllamaChatFormatter.class)
-                    .warn("Failed to convert image block to Ollama format", e);
+            log.warn("Failed to convert image block to Ollama format", e);
         }
     }
 
@@ -365,8 +366,7 @@ public class OllamaChatFormatter
                 }
             } catch (Exception e) {
                 // Log error but don't fail the whole request
-                LoggerFactory.getLogger(OllamaChatFormatter.class)
-                        .warn("Failed to promote image from tool result", e);
+                log.warn("Failed to promote image from tool result", e);
             }
         }
 
