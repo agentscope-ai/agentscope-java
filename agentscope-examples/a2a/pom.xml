@@ -21,29 +21,46 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions-nacos</artifactId>
+        <artifactId>agentscope-examples</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
     </parent>
-
-    <artifactId>agentscope-extensions-nacos-a2a</artifactId>
-    <name>AgentScope Java - Nacos A2A Registry</name>
-    <description>AgentScope Java - integration with Nacos as A2A registry</description>
-
+    
+    <groupId>io.agentscope.examples</groupId>
+    <artifactId>a2a</artifactId>
+    <packaging>jar</packaging>
+    
+    <name>AgentScope Examples - A2A</name>
+    <description>A2A(Agent2Agent) Protocol example for AgentScope Java SDK</description>
+    
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    
     <dependencies>
         <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-client</artifactId>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
         </dependency>
-
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-a2a-client</artifactId>
+            <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
         </dependency>
-
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-a2a-server</artifactId>
+            <artifactId>agentscope-nacos-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
     </dependencies>
 
