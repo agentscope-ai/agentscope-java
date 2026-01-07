@@ -46,19 +46,21 @@ public class MessageConvertUtil {
      * Convert a single {@link Artifact} to {@link Msg}.
      *
      * @param artifact the artifact to convert
+     * @param agentName the name of the agent that generated the artifact
      * @return the converted Msg object
      */
-    public static Msg convertFromArtifact(Artifact artifact) {
-        return convertFromArtifact(List.of(artifact));
+    public static Msg convertFromArtifact(Artifact artifact, String agentName) {
+        return convertFromArtifact(List.of(artifact), agentName);
     }
 
     /**
      * Convert a list of {@link Artifact} to {@link Msg}.
      *
      * @param artifacts the list of artifacts to convert
+     * @param agentName the name of the agent that generated the artifacts
      * @return the converted Msg object
      */
-    public static Msg convertFromArtifact(List<Artifact> artifacts) {
+    public static Msg convertFromArtifact(List<Artifact> artifacts, String agentName) {
         Msg.Builder builder = Msg.builder();
         List<ContentBlock> contentBlocks = new LinkedList<>();
         artifacts.stream()
@@ -67,8 +69,7 @@ public class MessageConvertUtil {
                 .forEach(
                         artifact -> {
                             builder.id(artifact.artifactId());
-                            // TODO agentscope msg name might be agent name.
-                            builder.name(artifact.name());
+                            builder.name(null != agentName ? agentName : artifact.name());
                             builder.metadata(artifact.metadata());
                             contentBlocks.addAll(convertFromParts(artifact.parts()));
                         });
@@ -80,12 +81,14 @@ public class MessageConvertUtil {
     /**
      * Convert a single {@link Message} to {@link Msg}.
      *
-     * @param message the message to convert
+     * @param message   the message to convert
+     * @param agentName the name of the agent that generated the message
      * @return the converted Msg object
      */
-    public static Msg convertFromMessage(Message message) {
+    public static Msg convertFromMessage(Message message, String agentName) {
         Msg.Builder builder = Msg.builder();
         builder.id(message.getMessageId());
+        builder.name(agentName);
         builder.metadata(null != message.getMetadata() ? message.getMetadata() : Map.of());
         builder.role(MsgRole.ASSISTANT);
         builder.content(convertFromParts(message.getParts()));
