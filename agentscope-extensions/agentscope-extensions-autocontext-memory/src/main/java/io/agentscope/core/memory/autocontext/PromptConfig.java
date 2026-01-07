@@ -44,10 +44,6 @@ package io.agentscope.core.memory.autocontext;
  *     .build();
  * }</pre>
  *
- * <p><b>Note:</b> Format templates (PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT and
- * PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT) are not configurable and will always use default
- * values from {@link Prompts}.
- *
  * <p><b>Empty String Handling:</b> If a prompt is set to an empty string or contains only
  * whitespace, the system will automatically fall back to the default prompt. This is handled by
  * {@link PromptProvider}.

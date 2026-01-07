@@ -58,6 +58,13 @@ public class AutoContextConfig {
     double currentRoundCompressionRatio = 0.3;
 
     /**
+     * Minimum token count required for compression to proceed.
+     * If the original token count is less than this value, compression will be skipped.
+     * Default is 5000 tokens.
+     */
+    int minCompressionTokenThreshold = 5000;
+
+    /**
      * Optional custom prompt configuration.
      * If null, default prompts from {@link Prompts} will be used.
      */
@@ -93,6 +100,10 @@ public class AutoContextConfig {
 
     public double getCurrentRoundCompressionRatio() {
         return currentRoundCompressionRatio;
+    }
+
+    public int getMinCompressionTokenThreshold() {
+        return minCompressionTokenThreshold;
     }
 
     /**
@@ -137,6 +148,7 @@ public class AutoContextConfig {
         private int lastKeep = 50;
         private int minConsecutiveToolMessages = 6;
         private double currentRoundCompressionRatio = 0.3;
+        private int minCompressionTokenThreshold = 5000;
         private PromptConfig customPrompt;
 
         /**
@@ -230,6 +242,19 @@ public class AutoContextConfig {
         }
 
         /**
+         * Sets the minimum token count required for compression to proceed.
+         * If the original token count is less than this value, compression will be skipped.
+         * Default is 5000 tokens.
+         *
+         * @param minCompressionTokenThreshold the minimum token count threshold
+         * @return this builder instance for method chaining
+         */
+        public Builder minCompressionTokenThreshold(int minCompressionTokenThreshold) {
+            this.minCompressionTokenThreshold = minCompressionTokenThreshold;
+            return this;
+        }
+
+        /**
          * Sets custom prompt configuration.
          *
          * <p>If provided, custom prompts will be used instead of default prompts from {@link Prompts}.
@@ -258,6 +283,7 @@ public class AutoContextConfig {
             config.lastKeep = this.lastKeep;
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
             config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
+            config.minCompressionTokenThreshold = this.minCompressionTokenThreshold;
             config.customPrompt = this.customPrompt;
             return config;
         }

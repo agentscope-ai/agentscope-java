@@ -28,7 +28,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
-import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.session.Session;
@@ -39,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -487,6 +487,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
         for (int i = rawMessages.size() - 1; i > latestUserIndex; i--) {
             Msg msg = rawMessages.get(i);
+
+            // Skip already compressed messages to avoid double compression
+            if (MsgUtils.isCompressedMessage(msg)) {
+                log.debug(
+                        "Skipping already compressed message at index {} to avoid double"
+                                + " compression",
+                        i);
+                continue;
+            }
+
             String textContent = msg.getTextContent();
 
             // Check if message content exceeds threshold
@@ -550,7 +560,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
         String offloadHint =
-                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
+                offloadUuid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                        : "";
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -606,17 +618,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         }
 
         // Create summary message preserving original role and name
+        String summaryContent = block != null ? block.getTextContent() : "";
+        String finalContent = summaryContent;
+        if (!offloadHint.isEmpty()) {
+            finalContent = summaryContent + "\n" + offloadHint;
+        }
+
         return Msg.builder()
                 .role(message.getRole())
                 .name(message.getName())
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                "<compressed_large_message>%s</compressed_large_message>%s",
-                                                block != null ? block.getTextContent() : "",
-                                                offloadHint))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -668,8 +679,18 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("current_round_compress");
 
+        // Filter out plan-related tool calls before compression
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from current round"
+                            + " compression",
+                    messages.size() - filteredMessages.size());
+        }
+
         // Calculate original character count (including TextBlock, ToolUseBlock, ToolResultBlock)
-        int originalCharCount = MsgUtils.calculateMessagesCharCount(messages);
+        // Use filtered messages for character count calculation
+        int originalCharCount = MsgUtils.calculateMessagesCharCount(filteredMessages);
 
         // Get compression ratio and calculate target character count
         double compressionRatio = autoContextConfig.getCurrentRoundCompressionRatio();
@@ -677,7 +698,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int targetCharCount = (int) Math.round(originalCharCount * compressionRatio);
 
         String offloadHint =
-                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
+                offloadUuid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                        : "";
 
         // Build character count requirement message
         String charRequirement =
@@ -701,7 +724,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         customPrompt))
                                         .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
         // Message list end marker
         newMessages.add(
                 Msg.builder()
@@ -797,6 +820,24 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         for (int i = startIndex; i <= endIndex; i++) {
             toolsMsg.add(rawMessages.get(i));
         }
+
+        // Check if original token count is sufficient for compression
+        // Skip compression if tokens are below threshold to avoid compression overhead
+        int originalTokens = TokenCounterUtil.calculateToken(toolsMsg);
+        int threshold = autoContextConfig.getMinCompressionTokenThreshold();
+        if (originalTokens < threshold) {
+            log.info(
+                    "Skipping tool invocation compression: original tokens ({}) is below threshold"
+                            + " ({})",
+                    originalTokens,
+                    threshold);
+            return;
+        }
+
+        log.info(
+                "Proceeding with tool invocation compression: original tokens: {}, threshold: {}",
+                originalTokens,
+                threshold);
 
         // Normal compression flow for non-plan tools
         String uuid = UUID.randomUUID().toString();
@@ -902,10 +943,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             int userIndex = pair.first();
             int assistantIndex = pair.second();
 
-            // Messages to summarize: between user and assistant (inclusive of assistant)
-            // This includes all messages after user (tools, etc.) and the assistant message itself
-            int startIndex = userIndex + 1;
-            int endIndex = assistantIndex; // Include assistant message in summary
+            // Messages to summarize: from user to assistant (inclusive of both)
+            // Include user message for context, but we'll only remove messages after user
+            int startIndex = userIndex + 1; // Messages to remove start after user
+            int endIndex = assistantIndex; // Include assistant message in removal
 
             // If no messages between user and assistant (including assistant), skip
             if (startIndex > endIndex) {
@@ -917,24 +958,50 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 continue;
             }
 
+            // Include user message in messagesToSummarize for context, but keep it in the final
+            // list
             List<Msg> messagesToSummarize = new ArrayList<>();
+            messagesToSummarize.add(rawMessages.get(userIndex)); // Include user message for context
             for (int i = startIndex; i <= endIndex; i++) {
                 messagesToSummarize.add(rawMessages.get(i));
             }
 
             log.info(
-                    "Summarizing round {}: indices [{}, {}], messageCount={}",
+                    "Summarizing round {}: user at index {}, messages [{}, {}], totalCount={}"
+                            + " (includes user message for context)",
                     pairIdx + 1,
+                    userIndex,
                     startIndex,
                     endIndex,
                     messagesToSummarize.size());
 
-            // Step 4: Offload original messages if contextOffLoader is available
+            // Step 4: Check if original token count is sufficient for compression
+            // Skip compression if tokens are below threshold to avoid compression overhead
+            int originalTokens = TokenCounterUtil.calculateToken(messagesToSummarize);
+            int threshold = autoContextConfig.getMinCompressionTokenThreshold();
+            if (originalTokens < threshold) {
+                log.info(
+                        "Skipping conversation summary for round {}: original tokens ({}) is below"
+                                + " threshold ({})",
+                        pairIdx + 1,
+                        originalTokens,
+                        threshold);
+                continue;
+            }
+
+            log.info(
+                    "Proceeding with conversation summary for round {}: original tokens: {},"
+                            + " threshold: {}",
+                    pairIdx + 1,
+                    originalTokens,
+                    threshold);
+
+            // Step 5: Offload original messages if contextOffLoader is available
             String uuid = UUID.randomUUID().toString();
             offload(uuid, messagesToSummarize);
             log.info("Offloaded messages to be summarized: uuid={}", uuid);
 
-            // Step 5: Generate summary
+            // Step 6: Generate summary
             Msg summaryMsg = summaryPreviousRoundConversation(messagesToSummarize, uuid);
 
             // Build metadata for compression event
@@ -954,7 +1021,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     summaryMsg,
                     metadata);
 
-            // Step 6: Remove the messages between user and assistant (including assistant), then
+            // Step 7: Remove the messages between user and assistant (including assistant), then
             // replace with summary
             // Since we're processing from back to front, the indices are still accurate
             // for the current pair (indices of pairs after this one have already been adjusted)
@@ -994,14 +1061,18 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * @return a summary message
      */
     private Msg summaryPreviousRoundConversation(List<Msg> messages, String offloadUuid) {
+        // Filter out plan-related tool calls (user messages are preserved by
+        // filterPlanRelatedToolCalls)
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from previous round"
+                            + " conversation summary",
+                    messages.size() - filteredMessages.size());
+        }
+
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("conversation_summary");
-
-        String summaryContentFormat =
-                Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT
-                        + (offloadUuid != null
-                                ? String.format(Prompts.OFFLOAD_HINT, offloadUuid)
-                                : "");
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -1015,7 +1086,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         customPrompt))
                                         .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -1061,16 +1132,25 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
+        // Build the final message content:
+        // 1. LLM generated summary (contains ASSISTANT summary + tool compression)
+        // 2. Context offload tag with UUID at the end
+        String summaryContent = block != null ? block.getTextContent() : "";
+        String offloadTag =
+                offloadUuid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                        : "";
+
+        // Combine: summary content + newline + UUID tag
+        String finalContent = summaryContent;
+        if (!offloadTag.isEmpty()) {
+            finalContent = finalContent + "\n" + offloadTag;
+        }
+
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : ""))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -1162,7 +1242,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                     + "..."
                             : textContent;
 
-            String offloadHint = preview + "\n" + String.format(Prompts.OFFLOAD_HINT, uuid);
+            String offloadHint =
+                    preview + "\n" + String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, uuid);
 
             // Build metadata with compression information
             // Note: This method only offloads without LLM compression, so tokens are 0
@@ -1388,13 +1469,17 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      */
     private Msg compressToolsInvocation(List<Msg> messages, String offloadUUid) {
 
+        // Filter out plan-related tool calls before compression
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from tool invocation"
+                            + " compression",
+                    messages.size() - filteredMessages.size());
+        }
+
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("tool_compress");
-        String compressContentFormat =
-                Prompts.PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT
-                        + ((offloadUUid != null)
-                                ? String.format(Prompts.OFFLOAD_HINT, offloadUUid)
-                                : "");
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
                 Msg.builder()
@@ -1407,7 +1492,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         customPrompt))
                                         .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -1452,16 +1537,25 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
+        // Build the final message content:
+        // 1. LLM generated compressed tool invocation content
+        // 2. Context offload tag with UUID at the end
+        String compressedContent = block != null ? block.getTextContent() : "";
+        String offloadTag =
+                offloadUUid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUUid)
+                        : "";
+
+        // Combine: compressed content + newline + UUID tag
+        String finalContent = compressedContent;
+        if (!offloadTag.isEmpty()) {
+            finalContent = finalContent + "\n" + offloadTag;
+        }
+
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                compressContentFormat,
-                                                block != null ? block.getTextContent() : ""))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -1516,77 +1610,52 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             return null;
         }
 
-        // Build plan state information (as hint message content)
+        // Build simplified plan state information
         StringBuilder planContext = new StringBuilder();
-        planContext.append("=== Current Plan Context ===\n");
-        planContext.append("Plan Name: ").append(currentPlan.getName()).append("\n");
-        planContext.append("Plan State: ").append(currentPlan.getState().getValue()).append("\n");
-        planContext.append("Description: ").append(currentPlan.getDescription()).append("\n");
-        planContext
-                .append("Expected Outcome: ")
-                .append(currentPlan.getExpectedOutcome())
-                .append("\n");
 
+        // 1. Task overall goal
+        if (currentPlan.getDescription() != null && !currentPlan.getDescription().isEmpty()) {
+            planContext.append("Goal: ").append(currentPlan.getDescription()).append("\n");
+        }
+
+        // 2. Current progress
         List<SubTask> subtasks = currentPlan.getSubtasks();
         if (subtasks != null && !subtasks.isEmpty()) {
-            planContext.append("\nSubtasks:\n");
-            for (int i = 0; i < subtasks.size(); i++) {
-                SubTask subtask = subtasks.get(i);
+            List<SubTask> inProgressTasks =
+                    subtasks.stream()
+                            .filter(st -> st.getState() == SubTaskState.IN_PROGRESS)
+                            .collect(Collectors.toList());
+
+            if (!inProgressTasks.isEmpty()) {
+                planContext.append("Current Progress: ");
+                for (int i = 0; i < inProgressTasks.size(); i++) {
+                    if (i > 0) {
+                        planContext.append(", ");
+                    }
+                    planContext.append(inProgressTasks.get(i).getName());
+                }
+                planContext.append("\n");
+            }
+
+            // Count completed tasks for context
+            long doneCount =
+                    subtasks.stream().filter(st -> st.getState() == SubTaskState.DONE).count();
+            long totalCount = subtasks.size();
+
+            if (totalCount > 0) {
                 planContext.append(
                         String.format(
-                                "  [%d] %s - State: %s\n",
-                                i + 1, subtask.getName(), subtask.getState().getValue()));
-                if (subtask.getState() == SubTaskState.IN_PROGRESS) {
-                    planContext.append(
-                            "    ⚠️ Currently in progress - preserve related information\n");
-                } else if (subtask.getState() == SubTaskState.DONE
-                        && subtask.getOutcome() != null) {
-                    planContext.append("    ✅ Outcome: ").append(subtask.getOutcome()).append("\n");
-                }
+                                "Progress: %d/%d subtasks completed\n", doneCount, totalCount));
             }
         }
 
-        planContext.append("\n=== Compression Guidelines ===\n");
-        planContext.append("When compressing the above messages, prioritize information that:\n");
-        planContext.append("1. Is directly related to the current plan and its subtasks\n");
-        planContext.append("2. Supports the execution of in-progress subtasks\n");
-        planContext.append("3. Contains outcomes or results from completed subtasks\n");
-        planContext.append("4. Provides context for upcoming TODO subtasks\n");
-        planContext.append("5. Includes plan-related tool calls and their results\n");
-
-        // Provide more specific guidance based on plan state
-        if (currentPlan.getState() == PlanState.IN_PROGRESS) {
-            planContext.append("\nSpecifically:\n");
-            planContext.append("- Preserve all information related to active subtasks\n");
-            planContext.append("- Keep detailed results from tools used in plan execution\n");
-            planContext.append("- Maintain context that helps track plan progress\n");
-        }
-
-        // Count tasks by state
-        long inProgressCount =
-                subtasks != null
-                        ? subtasks.stream()
-                                .filter(st -> st.getState() == SubTaskState.IN_PROGRESS)
-                                .count()
-                        : 0;
-        long doneCount =
-                subtasks != null
-                        ? subtasks.stream().filter(st -> st.getState() == SubTaskState.DONE).count()
-                        : 0;
-
-        if (inProgressCount > 0) {
-            planContext.append(
-                    String.format(
-                            "- Currently %d subtask(s) in progress - preserve all related"
-                                    + " context\n",
-                            inProgressCount));
-        }
-
-        if (doneCount > 0) {
-            planContext.append(
-                    String.format(
-                            "- %d subtask(s) completed - preserve their outcomes and results\n",
-                            doneCount));
+        // 3. Appropriate supplement to task plan context
+        if (currentPlan.getExpectedOutcome() != null
+                && !currentPlan.getExpectedOutcome().isEmpty()) {
+            planContext
+                    .append("Expected Outcome: ")
+                    .append(currentPlan.getExpectedOutcome())
+                    .append("\n");
         }
 
         return planContext.toString();
