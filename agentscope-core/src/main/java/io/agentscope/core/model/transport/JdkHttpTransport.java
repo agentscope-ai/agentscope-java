@@ -181,7 +181,7 @@ public class JdkHttpTransport implements HttpTransport {
                                 });
 
         return Mono.fromCompletionStage(future)
-                .flatMapMany(this::processStreamResponse)
+                .flatMapMany(response -> processStreamResponse(response, request))
                 .onErrorMap(
                         e -> !(e instanceof HttpTransportException),
                         e -> {
@@ -190,56 +190,45 @@ public class JdkHttpTransport implements HttpTransport {
                                 return (HttpTransportException) cause;
                             }
                             return new HttpTransportException(
-                                    "SSE stream failed: " + e.getMessage(), e);
+                                    "SSE/NDJSON stream failed: " + e.getMessage(), e);
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private Flux<String> processStreamResponse(java.net.http.HttpResponse<InputStream> response) {
+    private Flux<String> processStreamResponse(
+            java.net.http.HttpResponse<InputStream> response, HttpRequest request) {
         InputStream inputStream = response.body();
         if (inputStream == null) {
             return Flux.empty();
         }
+
+        // Check if the request has the NDJSON format header
+        boolean isNdjson =
+                TransportConstants.STREAM_FORMAT_NDJSON.equals(
+                        request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
 
         // Use Flux.using to manage resource lifecycle
         return Flux.using(
                 () ->
                         new BufferedReader(
                                 new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                this::readSseLines,
+                reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
                 this::closeQuietly);
     }
 
     private Flux<String> readSseLines(BufferedReader reader) {
-        // Check if this is an NDJSON stream
-        boolean isNdjson = false;
-        String streamFormatHeader = "X-AgentScope-Stream-Format";
-
-        // In a real implementation, we would check the request headers for the stream format
-        // For now, we'll assume it's passed as a parameter or can be determined from context
-        // This is a simplified version - in practice, you'd need to pass the format from the
-        // request
-
         return Flux.fromStream(reader.lines())
-                .filter(
-                        line -> {
-                            if (isNdjson) {
-                                return true; // For NDJSON, all lines are data
-                            } else {
-                                return line.startsWith(SSE_DATA_PREFIX);
-                            }
-                        })
-                .map(
-                        line -> {
-                            if (isNdjson) {
-                                return line;
-                            } else {
-                                return line.substring(SSE_DATA_PREFIX.length()).trim();
-                            }
-                        })
+                .filter(line -> line.startsWith(SSE_DATA_PREFIX))
+                .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
                 .doOnNext(data -> log.debug("Received SSE data chunk"))
                 .filter(data -> !data.isEmpty());
+    }
+
+    private Flux<String> readNdJsonLines(BufferedReader reader) {
+        return Flux.fromStream(reader.lines())
+                .doOnNext(line -> log.debug("Received NDJSON line"))
+                .filter(line -> !line.isEmpty());
     }
 
     @Override

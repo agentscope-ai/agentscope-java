@@ -28,7 +28,7 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
-import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.TransportConstants;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -210,7 +210,9 @@ public class OllamaHttpClient {
             Map<String, String> headers = new HashMap<>();
             headers.put("Content-Type", "application/json");
             // Enable NDJSON parsing in OkHttpTransport
-            headers.put(OkHttpTransport.STREAM_FORMAT_HEADER, OkHttpTransport.STREAM_FORMAT_NDJSON);
+            headers.put(
+                    TransportConstants.STREAM_FORMAT_HEADER,
+                    TransportConstants.STREAM_FORMAT_NDJSON);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()

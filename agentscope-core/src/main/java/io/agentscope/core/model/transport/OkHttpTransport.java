@@ -58,8 +58,6 @@ public class OkHttpTransport implements HttpTransport {
             MediaType.parse("application/json; charset=utf-8");
     private static final String SSE_DATA_PREFIX = "data:";
     private static final String SSE_DONE_MARKER = "[DONE]";
-    public static final String STREAM_FORMAT_HEADER = "X-AgentScope-Stream-Format";
-    public static final String STREAM_FORMAT_NDJSON = "ndjson";
 
     private final OkHttpClient client;
     private final HttpTransportConfig config;
@@ -182,7 +180,8 @@ public class OkHttpTransport implements HttpTransport {
                 okHttpRequest.url());
 
         boolean isNdjson =
-                STREAM_FORMAT_NDJSON.equals(request.getHeaders().get(STREAM_FORMAT_HEADER));
+                TransportConstants.STREAM_FORMAT_NDJSON.equals(
+                        request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
         return Flux.<String>create(
                         sink -> {
                             Response response = null;
