@@ -45,7 +45,7 @@ import reactor.test.StepVerifier;
 class OllamaTextEmbeddingEmbedTest {
 
     private static final String TEST_MODEL_NAME = "nomic-embed-text";
-    private static final String TEST_BASE_URL = "http://localhost:11434";
+    private static final String TEST_BASE_URL = "http://192.168.2.2:11434";
     private static final int TEST_DIMENSIONS = 768;
 
     private OllamaTextEmbedding model;
@@ -77,9 +77,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -110,9 +110,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(null);
                             }
                         })) {
@@ -146,9 +146,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -182,9 +182,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -217,9 +217,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -247,9 +247,9 @@ class OllamaTextEmbeddingEmbedTest {
                 Mockito.mockConstruction(
                         OllamaHttpClient.class,
                         (mock, context) -> {
-                            // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1
-                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            // OllamaHttpClient constructor takes transport and baseUrl
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any()))
                                         .thenThrow(
                                                 new OllamaHttpClient.OllamaHttpException(
