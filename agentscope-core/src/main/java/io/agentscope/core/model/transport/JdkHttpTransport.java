@@ -182,6 +182,7 @@ public class JdkHttpTransport implements HttpTransport {
 
         return Mono.fromCompletionStage(future)
                 .flatMapMany(this::processStreamResponse)
+                .publishOn(Schedulers.boundedElastic())
                 .onErrorMap(
                         e -> !(e instanceof HttpTransportException),
                         e -> {
