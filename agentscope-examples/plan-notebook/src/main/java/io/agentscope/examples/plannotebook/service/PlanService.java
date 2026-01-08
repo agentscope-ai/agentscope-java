@@ -19,6 +19,7 @@ import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.examples.plannotebook.dto.PlanResponse;
 import io.agentscope.examples.plannotebook.dto.SubTaskRequest;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -162,6 +163,19 @@ public class PlanService {
     public Mono<String> updatePlanInfo(String name, String description, String expectedOutcome) {
         return planNotebook
                 .updatePlanInfo(name, description, expectedOutcome)
+                .doOnSuccess(result -> broadcastPlanChange());
+    }
+
+    /**
+     * Create a new plan.
+     */
+    public Mono<String> createPlan(
+            String name,
+            String description,
+            String expectedOutcome,
+            List<Map<String, Object>> subtasks) {
+        return planNotebook
+                .createPlan(name, description, expectedOutcome, subtasks)
                 .doOnSuccess(result -> broadcastPlanChange());
     }
 }

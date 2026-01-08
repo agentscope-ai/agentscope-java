@@ -285,9 +285,10 @@ class DefaultPlanToHintTest {
         String hint = hintGenerator.generateHint(plan, true);
 
         assertNotNull(hint);
-        assertTrue(hint.contains("WAIT FOR USER CONFIRMATION"));
-        assertTrue(hint.contains("DO NOT call 'update_subtask_state'"));
-        assertTrue(hint.contains("DO NOT proceed with any task"));
+        assertTrue(hint.contains("The current plan"));
+        assertTrue(hint.contains("Your options include"));
+        assertTrue(hint.contains("Mark the first subtask as 'in_progress'"));
+        assertTrue(hint.contains("Update before processing each subtask"));
     }
 
     @Test
