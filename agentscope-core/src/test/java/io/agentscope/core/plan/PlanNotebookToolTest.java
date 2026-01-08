@@ -354,7 +354,7 @@ class PlanNotebookToolTest {
 
         assertNotNull(hint);
         assertNotNull(hint.getTextContent());
-        assertTrue(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+        assertTrue(hint.getTextContent().contains("Update before processing each subtask"));
     }
 
     @Test
