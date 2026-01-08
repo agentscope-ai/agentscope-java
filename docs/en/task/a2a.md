@@ -291,6 +291,79 @@ agent.interrupt(Msg.builder()
 ```
 
 ---
+## Achieving Highly Reliable Asynchronous Communication with Apache RocketMQ
+Note: Apache RocketMQ must be deployed with either an open-source version or a commercial edition that supports the lightweight consumption model LiteTopic(The open-source version is expected to be released in January — stay tuned!)
+
+### Configure the client to use Apache RocketMQ as the communication channel
+
+```xml
+<!-- Add the dependency in pom.xml -->
+<dependency>
+    <groupId>org.apache.rocketmq</groupId>
+    <artifactId>rocketmq-a2a</artifactId>
+    <version>${RELEASE.VERSION}</version>
+</dependency>
+```
+The client uses Apache RocketMQ to build A2aAgent
+
+```java
+//Construct a RocketMQTransportConfig object to configure RocketMQTransport.
+RocketMQTransportConfig rocketMQTransportConfig = new RocketMQTransportConfig();
+//Configure the Apache RocketMQ account
+rocketMQTransportConfig.setAccessKey(accessKey);
+//Configure the Apache RocketMQ password
+rocketMQTransportConfig.setSecretKey(secretKey);
+//Configure a LiteTopic to receive response messages
+rocketMQTransportConfig.setWorkAgentResponseTopic(workAgentResponseTopic);
+//Configure a consumer that subscribes to the LiteTopic
+rocketMQTransportConfig.setWorkAgentResponseGroupID(workAgentResponseGroupID);
+//Configure the namespace for Apache RocketMQ
+rocketMQTransportConfig.setRocketMQNamespace(rocketMQNamespace);
+rocketMQTransportConfig.setHttpClient(new JdkA2AHttpClient());
+//Build A2aAgentConfig using RocketMQTransport and rocketMQTransportConfig
+A2aAgentConfig a2aAgentConfig = new A2aAgentConfigBuilder().withTransport(RocketMQTransport.class, rocketMQTransportConfig).build();
+//Parse the corresponding Agent service and build an A2aAgent
+A2aAgent agent = A2aAgent.builder().a2aAgentConfig(a2aAgentConfig).name(AGENT_NAME).agentCardResolver(WellKnownAgentCardResolver.builder().baseUrl("http://127.0.0.1:10001").build()).build();
+```
+
+| Parameter | Type | Description | Required |
+|-----------|------|-----------|----|
+| `accessKey` | String | RocketMQ AccessKey | NO |
+| `secretKey` | String | RocketMQ SecretKey | NO |
+| `workAgentResponseTopic` | String | LiteTopic | YES |
+| `workAgentResponseGroupID` | String | The CID of the consumer subscribed to LiteTopic | YES |
+| `rocketMQNamespace` | String | RocketMQ Namespace | NO |
+
+### The server exposes an Agent service externally over the Apache RocketMQ communication protocol.
+
+Construct the URL for the Apache RocketMQ communication protocol.
+
+```java
+private String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
+  if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
+  throw new RuntimeException("buildRocketMQUrl param error, please check rocketmq config");
+}
+return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
+}
+```
+
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----|
+| `rocketmqEndpoint` | String | RocketMQ Endpoint | Yes |
+| `rocketMQNamespace` | String | RocketMQ Namespace | NO |
+| `bizTopic` | String | Normal Topic | Yes |
+
+The server externally exposes the AgentCard service
+
+```java
+//Externally expose the AgentCard service based on RocketMQ communication
+AgentInterface agentInterface = new AgentInterface(RocketMQA2AConstant.ROCKETMQ_PROTOCOL, buildRocketMQUrl());
+ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildRocketMQUrl()).preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL).additionalInterfaces(List.of(agentInterface)).description("An intelligent assistant enabling highly reliable asynchronous communication based on Apache RocketMQ.").build();
+//Configure the DASHSCOPE_API_KEY to invoke the LLM service
+AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
+agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10))).port(10001).build());
+```
+---
 
 ## More Resources
 
@@ -300,3 +373,6 @@ agent.interrupt(Msg.builder()
 - **Nacos Java SDK**: https://nacos.io/docs/latest/manual/user/java-sdk/usage
 - **Nacos Java SDK Additional Configuration Parameters**: https://nacos.io/docs/latest/manual/user/java-sdk/properties
 - **Nacos Community**: https://github.com/alibaba/nacos
+- **A demonstration of an AgentScope intelligent agent application based on Apache RocketMQ**: https://github.com/agentscope-ai/agentscope-runtime-java/tree/main/examples/simple_agent_use_rocketmq_example
+- **Apache RocketMQ Community** : https://github.com/apache/rocketmq
+- **Apache RocketMQ A2A Asynchronous Communication Component** : https://github.com/apache/rocketmq-a2a
