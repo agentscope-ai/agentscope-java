@@ -221,8 +221,23 @@ public class OpenAIMessageConverter {
                 }
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for OpenAI");
-            } else if (block instanceof VideoBlock) {
-                log.warn("VideoBlock is not supported by OpenAI ChatCompletion API");
+            } else if (block instanceof VideoBlock vb) {
+                try {
+                    Source source = vb.getSource();
+                    if (source == null) {
+                        log.warn("VideoBlock has null source, skipping");
+                        continue;
+                    }
+                    String videoUrl = convertVideoSourceToUrl(source);
+                    contentParts.add(OpenAIContentPart.videoUrl(videoUrl));
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process VideoBlock: {}", errorMsg);
+                    contentParts.add(
+                            OpenAIContentPart.text(
+                                    "[Video - processing failed: " + errorMsg + "]"));
+                }
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -431,6 +446,17 @@ public class OpenAIMessageConverter {
      */
     private String convertImageSourceToUrl(Source source) {
         return OpenAIConverterUtils.convertImageSourceToUrl(source);
+    }
+
+    /**
+     * Convert video Source to URL string for OpenAI API.
+     *
+     * @param source The Source to convert
+     * @return URL string (either a URL or base64 data URI)
+     * @throws IllegalArgumentException if source is null or of unknown type
+     */
+    private String convertVideoSourceToUrl(Source source) {
+        return OpenAIConverterUtils.convertVideoSourceToUrl(source);
     }
 
     /**

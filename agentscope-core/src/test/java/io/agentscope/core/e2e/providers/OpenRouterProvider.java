@@ -209,8 +209,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     @ModelCapabilities({
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.VIDEO
+        ModelCapability.IMAGE
     })
     public static class Qwen3VL extends OpenRouterProvider {
         public Qwen3VL() {
@@ -228,7 +227,6 @@ public class OpenRouterProvider extends BaseModelProvider {
         ModelCapability.BASIC,
         ModelCapability.TOOL_CALLING,
         ModelCapability.IMAGE,
-        ModelCapability.VIDEO,
         ModelCapability.MULTI_AGENT_FORMATTER
     })
     public static class Qwen3VLMultiAgent extends OpenRouterProvider {
