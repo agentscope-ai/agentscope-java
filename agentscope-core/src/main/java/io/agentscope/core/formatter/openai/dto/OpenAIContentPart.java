@@ -24,7 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * <p>Each content part has a type and corresponding data:
  * - "text" type with text field
  * - "image_url" type with image_url field
- * - "video_url" type with videoUrl field
+ * - "video_url" type with video_url field
  * - "input_audio" type with input_audio field
  *
  * <p>Example text part:

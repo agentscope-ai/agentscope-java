@@ -206,11 +206,7 @@ public class OpenRouterProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** Qwen3 VL - Alibaba's vision model for multimodal tasks. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE
-    })
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING, ModelCapability.IMAGE})
     public static class Qwen3VL extends OpenRouterProvider {
         public Qwen3VL() {
             super("qwen/qwen3-vl-235b-a22b-instruct", false);
