@@ -473,6 +473,51 @@ class DashScopeChatModelTest {
     }
 
     @Test
+    @DisplayName("DashScope chat model non-stream with additional headers and params")
+    void testDoNonStreamWithAdditionHeadersAndParams() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .enableThinking(true)
+                        .enableSearch(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder()
+                                .additionalHeaders(Map.of("custom", "custom-header"))
+                                .additionalBodyParams(Map.of("custom", "custom-body"))
+                                .additionalQueryParams(Map.of("custom", "custom-query"))
+                                .build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("custom-header", recorded.getHeader("custom"));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT + "?custom=custom-query",
+                recorded.getPath());
+        assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-body\""));
+
+        mockServer.close();
+    }
+
+    @Test
     @DisplayName("DashScope chat model apply thinking mode")
     void testApplyThinkingMode() {
         DashScopeChatModel chatModel =
