@@ -18,6 +18,8 @@ package io.agentscope.examples.plannotebook.controller;
 import io.agentscope.examples.plannotebook.dto.PlanResponse;
 import io.agentscope.examples.plannotebook.dto.SubTaskRequest;
 import io.agentscope.examples.plannotebook.service.PlanService;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -59,6 +61,22 @@ public class PlanController {
     @GetMapping
     public PlanResponse getCurrentPlan() {
         return planService.getCurrentPlan();
+    }
+
+    /**
+     * Create a new plan.
+     * Request body: { "name": "...", "description": "...", "expectedOutcome": "...", "subtasks": [...] }
+     */
+    @PostMapping
+    @SuppressWarnings("unchecked")
+    public Mono<String> createPlan(@RequestBody Map<String, Object> request) {
+        String name = (String) request.get("name");
+        String description = (String) request.get("description");
+        String expectedOutcome = (String) request.get("expectedOutcome");
+        List<Map<String, Object>> subtasks =
+                (List<Map<String, Object>>)
+                        request.getOrDefault("subtasks", new ArrayList<Map<String, Object>>());
+        return planService.createPlan(name, description, expectedOutcome, subtasks);
     }
 
     /**
