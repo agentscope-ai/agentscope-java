@@ -1047,4 +1047,35 @@ class JdkHttpTransportTest {
                         "{\"id\":\"2\",\"text\":\"World\"}") // This is sent before [DONE] marker
                 .verifyComplete();
     }
+
+    @Test
+    void testConnectionPoolSystemProperties() {
+        System.clearProperty("jdk.httpclient.connectionPoolSize");
+        System.clearProperty("jdk.httpclient.keepalive.timeout");
+        JdkHttpTransport.builder()
+                .config(
+                        HttpTransportConfig.builder()
+                                .maxIdleConnections(10)
+                                .keepAliveDuration(Duration.ofMinutes(5))
+                                .build())
+                .build();
+        assertEquals("10", System.getProperty("jdk.httpclient.connectionPoolSize"));
+        assertEquals("300", System.getProperty("jdk.httpclient.keepalive.timeout"));
+    }
+
+    @Test
+    void testConnectionPoolSystemPropertiesAlreadySet() {
+        System.setProperty("jdk.httpclient.connectionPoolSize", "5");
+        System.setProperty("jdk.httpclient.keepalive.timeout", "180");
+
+        JdkHttpTransport.builder()
+                .config(
+                        HttpTransportConfig.builder()
+                                .maxIdleConnections(10)
+                                .keepAliveDuration(Duration.ofMinutes(5))
+                                .build())
+                .build();
+        assertEquals("5", System.getProperty("jdk.httpclient.connectionPoolSize"));
+        assertEquals("180", System.getProperty("jdk.httpclient.keepalive.timeout"));
+    }
 }
