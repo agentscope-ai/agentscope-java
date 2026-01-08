@@ -339,11 +339,13 @@ A2aAgent agent = A2aAgent.builder().a2aAgentConfig(a2aAgentConfig).name(AGENT_NA
 Construct the URL for the Apache RocketMQ communication protocol.
 
 ```java
-private String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
-  if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
-  throw new RuntimeException("buildRocketMQUrl param error, please check rocketmq config");
-}
-return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
+private static String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
+    if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
+        throw new IllegalArgumentException(
+            "Invalid parameters for building RocketMQ URL: 'rocketMQEndpoint' and 'bizTopic' must not be empty. Please check your RocketMQ configuration."
+        );
+    }
+    return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
 }
 ```
 
@@ -365,7 +367,7 @@ agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new 
 ```
 ```java
 //Build a DashScopeChatModel to invoke the LLM service.
-public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
+private static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
     if (StringUtils.isEmpty(dashScopeApiKey)) {
         throw new IllegalStateException(
             "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
@@ -382,13 +384,13 @@ public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
 
 ```java
 //Build ReActAgent.Builder
-public static ReActAgent.Builder agentBuilder(DashScopeChatModel model) {
+private static ReActAgent.Builder agentBuilder(DashScopeChatModel model) {
     return ReActAgent.builder().model(model).name(AGENT_NAME).sysPrompt("You are an example implementation of the A2A (Agent-to-Agent) protocol using RocketMQTransport. You can answer simple questions based on your internal knowledge.");
 }
 ```
 ```java
 //Build AgentScopeAgentHandler
-public static AgentScopeAgentHandler agent(ReActAssistant.Builder builder) {
+private static AgentScopeAgentHandler agent(ReActAssistant.Builder builder) {
     return new AgentScopeAgentHandler() {
         @Override
         public boolean isHealthy() {

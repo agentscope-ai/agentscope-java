@@ -336,11 +336,13 @@ A2aAgent agent = A2aAgent.builder().a2aAgentConfig(a2aAgentConfig).name(AGENT_NA
 构建Apache RocketMQ通信协议的URL
 
 ```java
-private String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
-  if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
-  throw new RuntimeException("buildRocketMQUrl param error, please check rocketmq config");
-}
-return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
+private static String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
+    if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
+        throw new IllegalArgumentException(
+            "Invalid parameters for building RocketMQ URL: 'rocketMQEndpoint' and 'bizTopic' must not be empty. Please check your RocketMQ configuration."
+        );
+    }
+    return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
 }
 ```
 
