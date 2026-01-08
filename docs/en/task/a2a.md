@@ -363,6 +363,67 @@ ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildR
 AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
 agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10))).port(10001).build());
 ```
+```java
+//Build a DashScopeChatModel to invoke the LLM service.
+public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
+    if (StringUtils.isEmpty(dashScopeApiKey)) {
+        throw new IllegalStateException(
+            "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
+        );
+    }
+    return DashScopeChatModel.builder()
+        .apiKey(dashScopeApiKey)
+        .modelName("qwen-max")
+        .stream(true)
+        .enableThinking(true)
+        .build();
+}
+```
+
+```java
+//Build ReActAgent.Builder
+public static ReActAgent.Builder agentBuilder(DashScopeChatModel model) {
+    return ReActAgent.builder().model(model).name(AGENT_NAME).sysPrompt("You are an example implementation of the A2A (Agent-to-Agent) protocol using RocketMQTransport. You can answer simple questions based on your internal knowledge.");
+}
+```
+```java
+//Build AgentScopeAgentHandler
+public static AgentScopeAgentHandler agent(ReActAssistant.Builder builder) {
+    return new AgentScopeAgentHandler() {
+        @Override
+        public boolean isHealthy() {
+            return true;
+        }
+        @Override
+        public Flux<?> streamQuery(AgentRequest request, Object messages) {
+            ReActAgent agent = builder.build();
+            StreamOptions streamOptions = StreamOptions.builder()
+                .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                .incremental(true)
+                .build();
+
+            if (messages instanceof List<?>) {
+                return agent.stream((List<Msg>) messages, streamOptions);
+            } else if (messages instanceof Msg) {
+                return agent.stream((Msg) messages, streamOptions);
+            } else {
+                Msg msg = Msg.builder().role(MsgRole.USER).build();
+                return agent.stream(msg, streamOptions);
+            }
+        }
+
+        @Override
+        public String getName() {
+            return builder.build().getName();
+        }
+
+        @Override
+        public String getDescription() {
+            return builder.build().getDescription();
+        }
+    };
+}
+```
 ---
 
 ## More Resources

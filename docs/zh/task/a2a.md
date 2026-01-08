@@ -360,6 +360,66 @@ ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildR
 AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
 agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10))).port(10001).build());
 ```
+```java
+//构建DashScopeChatModel 用于调用LLM服务
+public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
+    if (StringUtils.isEmpty(dashScopeApiKey)) {
+        throw new IllegalStateException(
+            "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
+        );
+    }
+    return DashScopeChatModel.builder()
+        .apiKey(dashScopeApiKey)
+        .modelName("qwen-max")
+        .stream(true)
+        .enableThinking(true)
+        .build();
+}
+```
+```java
+//构建ReActAgent.Builder
+public static ReActAgent.Builder agentBuilder(DashScopeChatModel model) {
+    return ReActAgent.builder().model(model).name(AGENT_NAME).sysPrompt("你是一个基于 RocketMQTransport 实现的 A2A（Agent-to-Agent，智能体间）协议的示例。你可以根据自身内置知识回答简单问题。");
+}
+```
+```java
+//构建AgentScopeAgentHandler
+public static AgentScopeAgentHandler agent(ReActAssistant.Builder builder) {
+    return new AgentScopeAgentHandler() {
+        @Override
+        public boolean isHealthy() {
+            return true;
+        }
+        @Override
+        public Flux<?> streamQuery(AgentRequest request, Object messages) {
+            ReActAgent agent = builder.build();
+            StreamOptions streamOptions = StreamOptions.builder()
+                .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                .incremental(true)
+                .build();
+
+            if (messages instanceof List<?>) {
+                return agent.stream((List<Msg>) messages, streamOptions);
+            } else if (messages instanceof Msg) {
+                return agent.stream((Msg) messages, streamOptions);
+            } else {
+                Msg msg = Msg.builder().role(MsgRole.USER).build();
+                return agent.stream(msg, streamOptions);
+            }
+        }
+
+        @Override
+        public String getName() {
+            return builder.build().getName();
+        }
+
+        @Override
+        public String getDescription() {
+            return builder.build().getDescription();
+        }
+    };
+}
+```
 ---
 
 ## 更多资源
