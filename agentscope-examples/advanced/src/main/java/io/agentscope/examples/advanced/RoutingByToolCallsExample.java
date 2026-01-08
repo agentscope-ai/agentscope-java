@@ -86,7 +86,8 @@ public class RoutingByToolCallsExample {
         @Tool(
                 name = "generate_Python_code",
                 description = "Generate Python code based on the demand")
-        public Msg generatePython(@ToolParam(name = "demand", description = "The demand for the Python code") String demand) {
+        public Msg generatePython(@ToolParam(name = "demand",
+            description = "The demand for the Python code") String demand) {
             System.out.println("I am PythonAgent,now generating Python code for demand: " + demand);
             String apiKey = ExampleUtils.getDashScopeApiKey();
             ReActAgent agent =
