@@ -21,8 +21,10 @@ import io.agentscope.examples.plannotebook.service.PlanService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -71,6 +73,10 @@ public class PlanController {
     @SuppressWarnings("unchecked")
     public Mono<String> createPlan(@RequestBody Map<String, Object> request) {
         String name = (String) request.get("name");
+        if (name == null || name.trim().isEmpty()) {
+            return Mono.error(
+                    new ResponseStatusException(HttpStatus.BAD_REQUEST, "Plan name is required"));
+        }
         String description = (String) request.get("description");
         String expectedOutcome = (String) request.get("expectedOutcome");
         List<Map<String, Object>> subtasks =
