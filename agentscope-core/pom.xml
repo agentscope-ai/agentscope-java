@@ -109,12 +109,7 @@
             <artifactId>google-genai</artifactId>
         </dependency>
 
-        <!-- Anthropic Java SDK -->
-        <dependency>
-            <groupId>com.anthropic</groupId>
-            <artifactId>anthropic-java</artifactId>
-        </dependency>
-
+        
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>

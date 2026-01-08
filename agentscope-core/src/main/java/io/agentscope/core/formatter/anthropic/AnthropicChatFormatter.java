@@ -15,38 +15,45 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.models.messages.Message;
-import com.anthropic.models.messages.MessageParam;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * Formatter for Anthropic Messages API. Converts between AgentScope Msg objects and Anthropic SDK
+ * Formatter for Anthropic Messages API. Converts between AgentScope Msg objects
+ * and Anthropic DTO
  * types.
  *
- * <p>Important: Anthropic API has special requirements:
+ * <p>
+ * Important: Anthropic API has special requirements:
  *
  * <ul>
- *   <li>Only the first message can be a system message (handled via system parameter)
- *   <li>Tool results must be in separate user messages
- *   <li>Supports thinking blocks natively (extended thinking feature)
+ * <li>Only the first message can be a system message (handled via system
+ * parameter)
+ * <li>Tool results must be in separate user messages
+ * <li>Supports thinking blocks natively (extended thinking feature)
  * </ul>
  */
 public class AnthropicChatFormatter extends AnthropicBaseFormatter {
 
+    public AnthropicChatFormatter() {
+        super();
+    }
+
+    public AnthropicChatFormatter(AnthropicMessageConverter messageConverter) {
+        super(messageConverter);
+    }
+
     @Override
-    public List<MessageParam> doFormat(List<Msg> msgs) {
+    public List<AnthropicMessage> doFormat(List<Msg> msgs) {
         return messageConverter.convert(msgs);
     }
 
     @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
-        if (response instanceof Message message) {
-            return AnthropicResponseParser.parseMessage(message, startTime);
-        } else {
-            throw new IllegalArgumentException("Unsupported response type: " + response.getClass());
-        }
+    public ChatResponse parseResponse(AnthropicResponse response, Instant startTime) {
+        return AnthropicResponseParser.parseMessage(response, startTime);
     }
 }
