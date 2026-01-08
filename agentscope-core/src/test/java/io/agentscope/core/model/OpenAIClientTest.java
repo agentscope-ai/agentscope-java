@@ -741,4 +741,104 @@ class OpenAIClientTest {
         assertNotNull(recordedRequest);
         assertEquals("custom-value", recordedRequest.getHeader("X-Custom-Header"));
     }
+
+    @Test
+    @DisplayName("Should handle custom endpoint path from options")
+    void testCustomEndpointPathFromOptions() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        client.call(TEST_API_KEY, baseUrl, request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().contains("/v4/chat/completions"),
+                "Path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should use default endpoint path when not specified in options")
+    void testDefaultEndpointPathWhenNotSpecified() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // No endpoint path specified - should use default
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        client.call(TEST_API_KEY, baseUrl, request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().endsWith("/chat/completions")
+                        || recordedRequest.getPath().contains("/v1/chat/completions"),
+                "Path should contain default endpoint path: " + recordedRequest.getPath());
+    }
 }

@@ -31,6 +31,7 @@ import io.micronaut.context.annotation.ConfigurationProperties;
  *     api-key: ${OPENAI_API_KEY}
  *     model-name: gpt-4.1-mini
  *     # base-url: https://api.openai.com/v1 # optional, for compatible endpoints
+ *     # endpoint-path: /v1/chat/completions # optional, for custom endpoint paths
  *     stream: true
  * }</pre>
  */
@@ -56,6 +57,13 @@ public class OpenAIProperties {
      * Optional base URL for compatible OpenAI endpoints.
      */
     private String baseUrl;
+
+    /**
+     * Optional endpoint path for compatible OpenAI endpoints.
+     * <p>Allows customization for OpenAI-compatible APIs that use different
+     * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions").
+     */
+    private String endpointPath;
 
     /**
      * Whether streaming responses are enabled.
@@ -92,6 +100,14 @@ public class OpenAIProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getEndpointPath() {
+        return endpointPath;
+    }
+
+    public void setEndpointPath(String endpointPath) {
+        this.endpointPath = endpointPath;
     }
 
     public boolean isStream() {

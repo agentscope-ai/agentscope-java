@@ -199,6 +199,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private Boolean stream;
         private GenerateOptions defaultOptions;
         private String baseUrl;
+        private String endpointPath;
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
 
@@ -258,6 +259,21 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets a custom endpoint path for the API request.
+         *
+         * <p>This allows customization for OpenAI-compatible APIs that use different
+         * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions",
+         * "/api/v1/llm/chat", etc.). When null, the default endpoint path will be used.
+         *
+         * @param endpointPath the endpoint path (e.g., "/v1/chat/completions")
+         * @return this builder instance
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
+            return this;
+        }
+
+        /**
          * Sets the message formatter to use.
          *
          * <p>Use provider-specific formatters for different providers:
@@ -297,13 +313,18 @@ public class OpenAIChatModel extends ChatModelBase {
             Objects.requireNonNull(modelName, "modelName must be set");
 
             // Build options from builder fields (these take precedence)
-            GenerateOptions builderOptions =
+            GenerateOptions.Builder optionsBuilder =
                     GenerateOptions.builder()
                             .apiKey(apiKey)
                             .baseUrl(baseUrl)
                             .modelName(modelName)
-                            .stream(stream)
-                            .build();
+                            .stream(stream);
+
+            if (endpointPath != null) {
+                optionsBuilder.endpointPath(endpointPath);
+            }
+
+            GenerateOptions builderOptions = optionsBuilder.build();
 
             // Merge with defaultOptions (builder fields take precedence)
             GenerateOptions mergedOptions =
