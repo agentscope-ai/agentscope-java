@@ -105,13 +105,13 @@ public class JdkHttpTransport implements HttpTransport {
         // set connection pool for jdk http client
         // refer:
         // https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/module-summary.html
-        if (System.getProperty("jdk.httpclient.connectionPoolSize") != null) {
+        if (System.getProperty("jdk.httpclient.connectionPoolSize") == null) {
             System.setProperty(
                     "jdk.httpclient.connectionPoolSize",
                     String.valueOf(config.getMaxIdleConnections()));
         }
 
-        if (System.getProperty("jdk.httpclient.keepalive.timeout") != null) {
+        if (System.getProperty("jdk.httpclient.keepalive.timeout") == null) {
             System.setProperty(
                     "jdk.httpclient.keepalive.timeout",
                     String.valueOf(config.getKeepAliveDuration().getSeconds()));
