@@ -486,8 +486,7 @@ class DashScopeChatModelTest {
 
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
-                        .enableThinking(true)
-                        .enableSearch(true)
+                        .stream(false)
                         .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
                         .httpTransport(OkHttpTransport.builder().build())
                         .build();
