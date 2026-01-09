@@ -20,14 +20,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.agent.Event;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.RAGMode;
@@ -56,17 +54,13 @@ public class AgentScopeRunner {
 
     @Bean
     public AgentRunner agentRunner(
-            AgentPromptConfig promptConfig, ConsultTools consultTools, Knowledge knowledge) {
+            AgentPromptConfig promptConfig,
+            ConsultTools consultTools,
+            Knowledge knowledge,
+            Model model) {
 
         Toolkit toolkit = new NacosToolkit();
         toolkit.registerTool(consultTools);
-
-        Model model =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
-                                true) // Enable streaming
-                        .enableThinking(true)
-                        .formatter(new DashScopeChatFormatter())
-                        .build();
 
         AutoContextConfig autoContextConfig =
                 AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();

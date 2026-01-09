@@ -52,37 +52,27 @@ public class Prompts {
     public static final String PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT =
             "You are an expert content compression specialist. Your task is to intelligently"
                 + " compress and summarize the following tool invocation history:\n"
-                + "    Summarize the tool responses while preserving key invocation details,"
-                + " including the tool name, its purpose, and its output.\n"
-                + "    For repeated calls to the same tool, consolidate the different parameters"
-                + " and results, highlighting essential variations and outcomes.\n"
-                + "    Special attention for write/change operations: If tool invocations involve"
-                + " write or modification operations (such as file writing, data updates, state"
-                + " changes, etc.), pay extra attention to preserve detailed information about what"
-                + " was written, modified, or changed, including file paths, content summaries, and"
-                + " modification results.\n"
-                + "    Special handling for plan-related tools (create_plan, revise_current_plan,"
-                + " update_subtask_state, finish_subtask, view_subtasks, finish_plan,"
-                + " view_historical_plans, recover_historical_plan): Use minimal compression - only"
-                + " keep a brief description indicating that plan-related tool calls were made,"
-                + " without preserving detailed parameters, results, or intermediate states.";
-
-    /** Format for compressed previous round tool invocation history. */
-    public static final String PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT =
-            "<compressed_history>%s</compressed_history>\n"
-                    + "<hint> You can use this information as historical context for future"
-                    + " reference in carrying out your tasks\n";
+                + "    - Preserve: tool name, exact arguments (with values), and a concise factual"
+                + " summary of the output.\n"
+                + "    - For repeated calls to the same tool:\n"
+                + "        • Consolidate identical calls (same args, same result) into one entry"
+                + " with frequency note.\n"
+                + "        • Only list distinct argument combinations that led to different"
+                + " outcomes.\n"
+                + "        • Omit non-essential varying parameters (e.g., timestamps, request IDs)"
+                + " if behavior is unchanged.\n"
+                + "    - Treat a tool as a write/change operation if its name or output implies"
+                + " side effects (e.g., contains 'write', 'update', 'delete', 'create', or returns"
+                + " confirmation like 'written').\n"
+                + "      For such operations, preserve critical details: file paths, data keys,"
+                + " content snippets, state changes, and success/error indicators.\n"
+                + "    - Output must be plain text—no markdown, JSON, bullets, headers, or"
+                + " meta-comments.\n"
+                + "    - If any tool output appears truncated or corrupted, include '[TRUNCATED]'.";
 
     // ============================================================================
     // Strategy 2-3: Large Message Offloading
     // ============================================================================
-
-    /** Generic offload hint for offloaded content. */
-    public static final String OFFLOAD_HINT =
-            "<hint> The original content is stored with"
-                    + " working_context_offload_uuid: %s. If you need to retrieve"
-                    + " the full content, please use the context_reload tool with"
-                    + " this UUID.</hint>";
 
     // ============================================================================
     // Strategy 4: Previous Round Conversation Summary
@@ -90,29 +80,45 @@ public class Prompts {
 
     /** Prompt for summarizing previous round conversations. */
     public static final String PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT =
-            "You are an expert content compression specialist. Your task is to intelligently"
-                + " summarize the following conversation history from a previous round. The content"
-                + " includes a user question, tool invocations and their results, and the"
-                + " assistant's final response for that round.\n"
+            "You are an expert dialogue compressor for autonomous agents. Your task is to rewrite"
+                + " the assistant's final response from the previous round as a self-contained,"
+                + " concise reply that incorporates all essential facts learned during the"
+                + " round—without referencing tools, functions, or internal execution steps.\n"
                 + "\n"
-                + "Please provide a concise summary that:\n"
-                + "    - Preserves important decisions, conclusions, and key information\n"
-                + "    - Maintains context that would be needed for future interactions\n"
-                + "    - Consolidates repeated or similar information\n"
-                + "    - Highlights any important outcomes or results\n"
-                + "    - Special attention for write/change operations: If tool invocations involve"
-                + " write or modification operations (such as file writing, data updates, state"
-                + " changes, etc.), pay extra attention to preserve detailed information about what"
-                + " was written, modified, or changed, including file paths, content summaries, and"
-                + " modification results\n"
-                + "    - Provide a clear summary of the assistant's final response in that round,"
-                + " highlighting the key points, conclusions, or actions taken";
+                + "Input includes: the user's original question, the assistant's original response,"
+                + " and the results of any tool executions that informed that response.\n"
+                + "\n"
+                + "Your output will REPLACE the original assistant message in the conversation"
+                + " history, forming a clean USER -> ASSISTANT pair for future context.\n"
+                + "\n"
+                + "Guidelines:\n"
+                + "  - NEVER mention tools, functions, API calls, or execution steps (e.g., avoid"
+                + " 'I called...', 'The system returned...', 'After running X...').\n"
+                + "  - INSTEAD, state all findings as direct, factual knowledge the assistant now"
+                + " possesses.\n"
+                + "  - PRESERVE CRITICAL FACTS from tool results, especially:\n"
+                + "      • File paths and their contents, changes, or creation (e.g.,"
+                + " '/etc/app.conf sets port=8080')\n"
+                + "      • Exact error messages when diagnostic (e.g., 'Permission denied (errno"
+                + " 13)', 'timeout after 30s')\n"
+                + "      • IDs, URLs, ports, status codes, configuration values, and data keys\n"
+                + "      • Outcomes of write/change operations (e.g., 'Wrote maintenance flag to"
+                + " /tmp/status', 'Updated user_id=789 email in database')\n"
+                + "      • Service states or process info (e.g., 'auth-service is stopped',"
+                + " 'PID=4567')\n"
+                + "  - If an action was performed (e.g., file written, service restarted), clearly"
+                + " state WHAT changed and WHERE.\n"
+                + "  - If something failed or was incomplete, specify the limitation (e.g., 'Could"
+                + " not restart: permission denied').\n"
+                + "  - Consolidate redundant information; omit generic success messages with no"
+                + " actionable detail.\n"
+                + "  - Use clear, informative language—avoid meta-phrases like 'Based on logs...'"
+                + " or 'As observed...'.\n"
+                + "  - Output must be plain text: no markdown, bullets, JSON, XML, or section"
+                + " headers.";
 
-    /** Format for previous round conversation summary. */
-    public static final String PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT =
-            "<conversation_summary>%s</conversation_summary>\n"
-                    + "<hint> This is a summary of previous conversation rounds. You can use this"
-                    + " information as historical context for future reference.\n";
+    /** Format for context offload tag. */
+    public static final String CONTEXT_OFFLOAD_TAG_FORMAT = "<!-- CONTEXT_OFFLOAD: uuid=%s -->";
 
     // ============================================================================
     // Strategy 5: Current Round Large Message Summary
@@ -143,40 +149,56 @@ public class Prompts {
 
     /** Prompt for compressing current round messages (main instruction, without character count requirement). */
     public static final String CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT =
-            "You are an expert content compression specialist. Your task is to compress and"
-                + " summarize the following current round messages (tool calls and results).\n"
+            "You are an expert context consolidator for autonomous agents. Your task is to"
+                + " integrate new tool execution results into the current conversation context.\n"
                 + "\n"
-                + "IMPORTANT: This is content from the CURRENT ROUND. Please be EXTRA CAREFUL and"
-                + " CONSERVATIVE when compressing. Preserve as much content as possible, as this"
-                + " information is actively being used in the current conversation.\n"
+                + "INPUT STRUCTURE:\n"
+                + "- The input consists of:\n"
+                + "  (a) Optionally, a prior compressed context block ending with <!--"
+                + " CONTEXT_OFFLOAD: uuid=... -->\n"
+                + "  (b) Followed by zero or more alternating tool_use and tool_result messages"
+                + " from the current turn.\n"
+                + "- There is NO user message in the input.\n"
+                + "- Plan-related tools have already been filtered out upstream.\n"
                 + "\n"
-                + "Compression principles:\n"
-                + "    - Preserve all critical information, key details, and important context\n"
-                + "    - Retain tool names, IDs, and important parameters\n"
-                + "    - Keep key results, outcomes, and status information\n"
-                + "    - Maintain logical flow and relationships between tool calls\n"
-                + "    - Only remove redundant or less critical information\n"
+                + "YOUR WORKFLOW:\n"
+                + "1. IF the input contains a line matching <!-- CONTEXT_OFFLOAD: uuid=... -->:\n"
+                + "   - Preserve all text BEFORE this line exactly as the prior context.\n"
+                + "   - Process ONLY the tool_use/tool_result pairs AFTER this line.\n"
+                + "2. ELSE (no offload marker found):\n"
+                + "   - Treat the entire input as new tool interactions from the first compression"
+                + " round.\n"
+                + "   - Generate a summary based solely on these tool calls and their results.\n"
+                + "3. For each tool_use/tool_result pair:\n"
+                + "   - Summarize as a factual, first-person statement:\n"
+                + "     \"I called [tool_name] with [arg1=value1, ...]; it returned: [key"
+                + " details].\"\n"
+                + "   - Preserve all technical specifics: file paths, IDs, error codes, config"
+                + " values, state changes.\n"
+                + "   - If a result is truncated or malformed, include it verbatim prefixed with"
+                + " [UNPARSED OUTPUT].\n"
                 + "\n"
-                + "Special handling for plan-related tools:\n"
-                + "    - Plan-related tools (create_plan, revise_current_plan,"
-                + " update_subtask_state, finish_subtask, view_subtasks, finish_plan,"
-                + " view_historical_plans, recover_historical_plan): Plan-related information is"
-                + " stored in the current PlanNotebook, so these tool calls can be more"
-                + " aggressively compressed with concise task-focused summaries\n"
+                + "OUTPUT REQUIREMENTS:\n"
+                + "- A single plain-text block containing:\n"
+                + "    [prior context (if any)]\\n"
+                + "[new tool summaries]\n"
+                + "- DO NOT include any <!-- CONTEXT_OFFLOAD --> tag in your output.\n"
+                + "- DO NOT mention user requests, intentions, or questions (they are not in the"
+                + " input).\n"
+                + "- DO NOT use markdown, JSON, bullets, or phrases like \"as before\", \"new"
+                + " actions:\".\n"
+                + "- The output will be used as the new compressed context, and a new offload tag"
+                + " will be appended externally.\n"
                 + "\n"
-                + "Compression techniques:\n"
-                + "    1. Count your output characters as you write and adjust detail level to meet"
-                + " the character limit as much as possible\n"
-                + "    2. Consolidate similar or repeated information\n"
-                + "    3. Use concise language while preserving meaning\n"
-                + "    4. Merge related tool calls and results when appropriate\n"
-                + "    5. Remove verbose descriptions but keep essential facts\n"
-                + "    6. Focus on actionable information and outcomes\n"
-                + "    7. Special attention for write/change operations: If tool invocations"
-                + " involve write or modification operations (such as file writing, data updates,"
-                + " state changes, etc.), pay extra attention to preserve detailed information"
-                + " about what was written, modified, or changed, including file paths, content"
-                + " summaries, and modification results";
+                + "SAFE TO REMOVE FROM tool_result:\n"
+                + "- Boilerplate text (licenses, auto-comments)\n"
+                + "- Redundant success messages with no actionable data\n"
+                + "- Repeated log prefixes (if core content is retained)\n"
+                + "\n"
+                + "STRICTLY AVOID:\n"
+                + "- Including raw tool_use/tool_result JSON\n"
+                + "- Re-compressing or altering prior context\n"
+                + "- Adding any offload marker (old or new)";
 
     /**
      * Character count requirement template for current round message compression.

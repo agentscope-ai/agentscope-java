@@ -47,7 +47,7 @@
         <argLine>-Xms512m -Xmx1024m</argLine>
 
         <maven.deploy.skip>false</maven.deploy.skip>
-        <central.publishing.maven.version>0.9.0</central.publishing.maven.version>
+        <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
     </properties>
 
     <modules>

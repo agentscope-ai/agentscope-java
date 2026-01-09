@@ -25,8 +25,10 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -295,6 +297,40 @@ public class MsgUtils {
     }
 
     /**
+     * Check if a message is a compressed message.
+     *
+     * <p>A compressed message is one that has been processed by AutoContextMemory compression
+     * strategies. Compressed messages contain metadata with the {@code _compress_meta} key,
+     * which indicates that the message content has been compressed, summarized, or offloaded.
+     *
+     * <p>Compressed messages may have:
+     * <ul>
+     *   <li>{@code offloaduuid}: UUID of the offloaded original content</li>
+     *   <li>{@code compressed_current_round}: Flag indicating current round compression</li>
+     * </ul>
+     *
+     * <p>This method checks for the presence of {@code _compress_meta} in the message metadata
+     * to determine if a message has been compressed.
+     *
+     * @param msg the message to check
+     * @return true if the message is a compressed message, false otherwise
+     */
+    public static boolean isCompressedMessage(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+
+        // Check if _compress_meta exists in metadata
+        Object compressMeta = metadata.get("_compress_meta");
+        return compressMeta != null && compressMeta instanceof Map;
+    }
+
+    /**
      * Check if an ASSISTANT message is a final response to the user (not a tool call).
      *
      * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
@@ -327,6 +363,147 @@ public class MsgUtils {
         // It may contain TextBlock or other content blocks, but not tool calls
         return !msg.hasContentBlocks(ToolUseBlock.class)
                 && !msg.hasContentBlocks(ToolResultBlock.class);
+    }
+
+    /**
+     * Set of plan-related tool names that should be filtered out during compression.
+     *
+     * <p>This set includes all tools provided by {@link io.agentscope.core.plan.PlanNotebook}:
+     * <ul>
+     *   <li>create_plan - Create a new plan</li>
+     *   <li>update_plan_info - Update current plan's name, description, or expected outcome</li>
+     *   <li>revise_current_plan - Add, revise, or delete subtasks</li>
+     *   <li>update_subtask_state - Update subtask state</li>
+     *   <li>finish_subtask - Mark subtask as done</li>
+     *   <li>view_subtasks - View subtask details</li>
+     *   <li>get_subtask_count - Get the number of subtasks in current plan</li>
+     *   <li>finish_plan - Finish or abandon plan</li>
+     *   <li>view_historical_plans - View historical plans</li>
+     *   <li>recover_historical_plan - Recover a historical plan</li>
+     * </ul>
+     */
+    private static final Set<String> PLAN_RELATED_TOOLS =
+            Set.of(
+                    "create_plan",
+                    "update_plan_info",
+                    "revise_current_plan",
+                    "update_subtask_state",
+                    "finish_subtask",
+                    "view_subtasks",
+                    "get_subtask_count",
+                    "finish_plan",
+                    "view_historical_plans",
+                    "recover_historical_plan");
+
+    /**
+     * Check if a message contains plan-related tool calls.
+     *
+     * @param msg the message to check
+     * @return true if the message contains plan-related tool calls
+     */
+    public static boolean containsPlanRelatedToolCall(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+
+        // Check ToolUseBlock for plan-related tools
+        List<ToolUseBlock> toolUseBlocks = msg.getContentBlocks(ToolUseBlock.class);
+        if (toolUseBlocks != null) {
+            for (ToolUseBlock toolUse : toolUseBlocks) {
+                if (toolUse != null && PLAN_RELATED_TOOLS.contains(toolUse.getName())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a tool name is plan-related.
+     *
+     * @param toolName the tool name to check
+     * @return true if the tool name is plan-related
+     */
+    public static boolean isPlanRelatedTool(String toolName) {
+        return toolName != null && PLAN_RELATED_TOOLS.contains(toolName);
+    }
+
+    /**
+     * Filter out messages containing plan-related tool calls and their corresponding tool results.
+     *
+     * <p>This method removes tool_use messages with plan-related tools and their corresponding
+     * tool_result messages. Tool calls are typically paired: ASSISTANT message with ToolUseBlock
+     * followed by TOOL message with ToolResultBlock.
+     *
+     * @param messages the messages to filter
+     * @return filtered messages without plan-related tool calls
+     */
+    public static List<Msg> filterPlanRelatedToolCalls(List<Msg> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        List<Msg> filtered = new ArrayList<>();
+        Set<String> planRelatedToolCallIds = new HashSet<>();
+
+        // First pass: identify plan-related tool call IDs
+        for (Msg msg : messages) {
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolUseBlocks = msg.getContentBlocks(ToolUseBlock.class);
+                if (toolUseBlocks != null) {
+                    for (ToolUseBlock toolUse : toolUseBlocks) {
+                        if (toolUse != null && PLAN_RELATED_TOOLS.contains(toolUse.getName())) {
+                            planRelatedToolCallIds.add(toolUse.getId());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: filter out messages with plan-related tool calls
+        for (Msg msg : messages) {
+            boolean shouldInclude = true;
+
+            // Check if this is a tool use message with plan-related tools
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolUseBlocks = msg.getContentBlocks(ToolUseBlock.class);
+                if (toolUseBlocks != null && !toolUseBlocks.isEmpty()) {
+                    // If all tool calls in this message are plan-related, exclude it
+                    boolean allPlanRelated = true;
+                    for (ToolUseBlock toolUse : toolUseBlocks) {
+                        if (toolUse != null && !PLAN_RELATED_TOOLS.contains(toolUse.getName())) {
+                            allPlanRelated = false;
+                            break;
+                        }
+                    }
+                    if (allPlanRelated && toolUseBlocks.size() > 0) {
+                        shouldInclude = false;
+                    }
+                }
+            }
+
+            // Check if this is a tool result message for plan-related tool calls
+            if (msg.getRole() == MsgRole.TOOL) {
+                List<ToolResultBlock> toolResultBlocks =
+                        msg.getContentBlocks(ToolResultBlock.class);
+                if (toolResultBlocks != null) {
+                    for (ToolResultBlock toolResult : toolResultBlocks) {
+                        if (toolResult != null
+                                && planRelatedToolCallIds.contains(toolResult.getId())) {
+                            shouldInclude = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (shouldInclude) {
+                filtered.add(msg);
+            }
+        }
+
+        return filtered;
     }
 
     /**

@@ -255,7 +255,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -265,7 +265,13 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {
@@ -366,7 +372,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -376,7 +382,13 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {

@@ -39,7 +39,9 @@ public class MessageEventHandler implements ClientEventHandler<MessageEvent> {
     @Override
     public void handle(MessageEvent event, ClientEventContext context) {
         String currentRequestId = context.getCurrentRequestId();
-        Msg msg = MessageConvertUtil.convertFromMessage(event.getMessage());
+        Msg msg =
+                MessageConvertUtil.convertFromMessage(
+                        event.getMessage(), context.getAgent().getName());
         context.getSink().success(msg);
         LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
         LoggerUtil.debug(log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);

@@ -25,24 +25,29 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
 import io.qdrant.client.grpc.Common.PointId;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
+import io.qdrant.client.grpc.Points;
 import io.qdrant.client.grpc.Points.ScoredPoint;
-import io.qdrant.client.grpc.Points.SearchPoints;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for QdrantStore.
@@ -258,6 +263,87 @@ class QdrantStoreTest {
         assertNotNull(builder);
     }
 
+    @Test
+    @DisplayName("Qdrant store delete vector")
+    void testDelete() throws Exception {
+        MockedConstruction<QdrantGrpcClient> mockGrpc = mockConstruction(QdrantGrpcClient.class);
+        MockedConstruction<QdrantClient> mockClient =
+                mockConstruction(
+                        QdrantClient.class,
+                        (mock, context) -> {
+                            // Mock collection exists check
+                            when(mock.collectionExistsAsync(anyString()))
+                                    .thenReturn(Futures.immediateFuture(true));
+
+                            // Mock delete operation
+                            Points.UpdateResult updateResult =
+                                    Points.UpdateResult.newBuilder()
+                                            .setStatus(Points.UpdateStatus.Completed)
+                                            .build();
+                            ListenableFuture<Points.UpdateResult> future =
+                                    Futures.immediateFuture(updateResult);
+                            when(mock.deleteAsync(anyString(), anyList())).thenReturn(future);
+                        });
+
+        QdrantStore mockStore =
+                QdrantStore.builder()
+                        .location(TEST_LOCATION)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .useTransportLayerSecurity(false)
+                        .build();
+
+        Boolean delete = mockStore.delete(UUID.randomUUID().toString()).block();
+
+        assertEquals(Boolean.TRUE, delete);
+
+        mockStore.close();
+        mockGrpc.close();
+        mockClient.close();
+    }
+
+    @Test
+    @DisplayName("Should throw VectorStoreException when Qdrant store delete vector occur error")
+    void testDeleteError() throws Exception {
+        MockedConstruction<QdrantGrpcClient> mockGrpc = mockConstruction(QdrantGrpcClient.class);
+        MockedConstruction<QdrantClient> mockClient =
+                mockConstruction(
+                        QdrantClient.class,
+                        (mock, context) -> {
+                            // Mock collection exists check
+                            when(mock.collectionExistsAsync(anyString()))
+                                    .thenReturn(Futures.immediateFuture(true));
+
+                            // Mock delete operation
+                            when(mock.deleteAsync(anyString(), anyList()))
+                                    .thenThrow(new RuntimeException("Test Error"));
+                        });
+
+        QdrantStore mockStore =
+                QdrantStore.builder()
+                        .location(TEST_LOCATION)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .useTransportLayerSecurity(false)
+                        .build();
+
+        StepVerifier.create(mockStore.delete(UUID.randomUUID().toString()))
+                .expectErrorMatches(
+                        th ->
+                                (th instanceof VectorStoreException vectorStoreException)
+                                        && vectorStoreException
+                                                .getMessage()
+                                                .equals("Failed to delete document in Qdrant")
+                                        && (th.getCause()
+                                                instanceof RuntimeException runtimeException)
+                                        && runtimeException.getMessage().equals("Test Error"))
+                .verify();
+
+        mockStore.close();
+        mockGrpc.close();
+        mockClient.close();
+    }
+
     /**
      * Note: The following tests would require a running Qdrant instance and should be marked as
      * integration tests:
@@ -345,7 +431,7 @@ class QdrantStoreTest {
 
                                     // Mock search operation with payload
                                     ScoredPoint mockPoint = createMockScoredPoint();
-                                    when(mock.searchAsync(any(SearchPoints.class)))
+                                    when(mock.queryAsync(any(Points.QueryPoints.class)))
                                             .thenReturn(
                                                     Futures.immediateFuture(List.of(mockPoint)));
                                 })) {
@@ -469,7 +555,9 @@ class QdrantStoreTest {
         // Search for the document
         double[] query = new double[TEST_DIMENSIONS];
         query[0] = 1.0;
-        List<Document> results = store.search(query, 10, null).block();
+        List<Document> results =
+                store.search(SearchDocumentDto.builder().queryEmbedding(query).limit(10).build())
+                        .block();
 
         // Verify results
         assertNotNull(results, "Search results should not be null");

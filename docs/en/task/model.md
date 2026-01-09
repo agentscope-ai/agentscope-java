@@ -1,3 +1,4 @@
+model.md
 # Model
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
@@ -10,6 +11,7 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     |           |
 | Anthropic  | `AnthropicChatModel`    | ✅        | ✅    | ✅     | ✅        |
 | Gemini     | `GeminiChatModel`       | ✅        | ✅    | ✅     | ✅        |
+| Ollama     | `OllamaChatModel`       | ✅        | ✅    | ✅     | ✅        |
 
 > **Note**:
 > - `OpenAIChatModel` is compatible with OpenAI API specification, works with vLLM, DeepSeek, etc.
@@ -58,6 +60,18 @@ DashScopeChatModel model = DashScopeChatModel.builder()
                 .thinkingBudget(5000)  // Token budget for thinking
                 .build())
         .build();
+
+
+OllamaChatModel model =
+        OllamaChatModel.builder()
+                .modelName("qwen3-max")
+                .baseUrl("http://localhost:11434")
+                .defaultOptions(OllamaOptions.builder()
+                        .thinkOption(ThinkOption.ThinkBoolean.ENABLED)
+                        .temperature(0.8)
+                        .build())
+                .build();
+
 ```
 
 ## OpenAI
@@ -149,6 +163,107 @@ GeminiChatModel model = GeminiChatModel.builder()
 | `credentials` | GCP credentials (Vertex AI) |
 | `streamEnabled` | Enable streaming, default `true` |
 
+## Ollama
+
+Self-hosted open-source LLM platform supporting various models.
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")  // Default
+        .build();
+```
+
+### Configuration
+
+| Option | Description                                                         |
+|--------|---------------------------------------------------------------------|
+| `modelName` | Model name, e.g., `qwen3-max`,`llama3.2`, `mistral`, `phi3`              |
+| `baseUrl` | Ollama server endpoint (optional, default `http://localhost:11434`) |
+| `defaultOptions` | Default generation options                                          |
+| `formatter` | Message formatter (optional)                                        |
+| `httpTransport` | HTTP transport configuration (optional)                             |
+
+### Advanced Configuration
+
+For advanced model loading and generation parameters:
+
+```java
+OllamaOptions options = OllamaOptions.builder()
+        .numCtx(4096)           // Context window size
+        .temperature(0.7)       // Generation randomness
+        .topK(40)               // Top-K sampling
+        .topP(0.9)              // Nucleus sampling
+        .repeatPenalty(1.1)     // Repetition penalty
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(options)
+        .build();
+```
+
+### GenerateOptions Support
+
+Ollama also supports `GenerateOptions` for standard configuration:
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+        .temperature(0.7)           // Maps to Ollama's temperature
+        .topP(0.9)                  // Maps to Ollama's top_p
+        .topK(40)                   // Maps to Ollama's top_k
+        .maxTokens(2000)            // Maps to Ollama's num_predict
+        .seed(42L)                  // Maps to Ollama's seed
+        .frequencyPenalty(0.5)      // Maps to Ollama's frequency_penalty
+        .presencePenalty(0.5)       // Maps to Ollama's presence_penalty
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_CTX.getKey(), 4096)      // Context window size
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_GPU.getKey(), -1)        // Offload all layers to GPU
+        .additionalBodyParam(OllamaOptions.ParamKey.REPEAT_PENALTY.getKey(), 1.1) // Repetition penalty
+        .additionalBodyParam(OllamaOptions.ParamKey.MAIN_GPU.getKey(), 0)        // Main GPU index
+        .additionalBodyParam(OllamaOptions.ParamKey.LOW_VRAM.getKey(), false)    // Low VRAM mode
+        .additionalBodyParam(OllamaOptions.ParamKey.F16_KV.getKey(), true)       // 16-bit KV cache
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_THREAD.getKey(), 8)      // Number of CPU threads
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))  // Will be converted to OllamaOptions internally
+        .build();
+```
+
+### Available Parameters
+
+Ollama supports over 40 parameters for fine-tuning:
+
+#### Model Loading Parameters
+- `numCtx`: Context window size (default: 2048)
+- `numBatch`: Batch size for prompt processing (default: 512)
+- `numGPU`: Number of layers to offload to GPU (-1 for all)
+- `lowVRAM`: Enable low VRAM mode for limited GPU memory
+- `useMMap`: Use memory mapping for model loading
+- `useMLock`: Lock model in memory to prevent swapping
+
+#### Generation Parameters
+- `temperature`: Generation randomness (0.0-2.0)
+- `topK`: Top-K sampling (standard: 40)
+- `topP`: Nucleus sampling (standard: 0.9)
+- `minP`: Minimum probability threshold (default: 0.0)
+- `numPredict`: Max tokens to generate (-1 for infinite)
+- `repeatPenalty`: Penalty for repetitions (default: 1.1)
+- `presencePenalty`: Penalty based on token presence
+- `frequencyPenalty`: Penalty based on token frequency
+- `seed`: Random seed for reproducible results
+- `stop`: Strings that stop generation immediately
+
+#### Sampling Strategies
+- `mirostat`: Mirostat sampling (0=disabled, 1=Mirostat v1, 2=Mirostat v2)
+- `mirostatTau`: Target entropy for Mirostat (default: 5.0)
+- `mirostatEta`: Learning rate for Mirostat (default: 0.1)
+- `tfsZ`: Tail-free sampling (default: 1.0 disables)
+- `typicalP`: Typical probability sampling (default: 1.0)
+
 ## Generation Options
 
 Configure generation parameters with `GenerateOptions`:
@@ -167,6 +282,12 @@ DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
         .defaultOptions(options)
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))
         .build();
 ```
 
@@ -229,6 +350,7 @@ Formatter converts AgentScope's unified message format to each LLM provider's AP
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
 
 ### Default Behavior
 
@@ -267,6 +389,12 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .formatter(new GeminiMultiAgentFormatter())
+        .build();
+
+// Ollama multi-agent
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .formatter(new OllamaMultiAgentFormatter())
         .build();
 ```
 

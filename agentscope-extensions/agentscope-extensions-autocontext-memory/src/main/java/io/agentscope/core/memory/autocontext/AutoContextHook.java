@@ -24,6 +24,7 @@ import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -225,19 +226,59 @@ public class AutoContextHook implements Hook {
         }
 
         // Trigger compression if needed (this modifies workingMemoryStorage in place)
-        boolean compressed = autoContextMemory.compressIfNeeded();
+        autoContextMemory.compressIfNeeded();
 
-        if (compressed) {
-            // Preserve system prompt and replace memory messages with compressed ones
-            List<Msg> originalInputMessages = event.getInputMessages();
-            List<Msg> newInputMessages = new ArrayList<>();
-            if (!originalInputMessages.isEmpty()
-                    && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
-                newInputMessages.add(originalInputMessages.get(0));
-            }
-            newInputMessages.addAll(autoContextMemory.getMessages());
-            event.setInputMessages(newInputMessages);
+        // Always append system prompt instruction about compressed messages
+        List<Msg> originalInputMessages = event.getInputMessages();
+        List<Msg> newInputMessages = new ArrayList<>();
+
+        if (!originalInputMessages.isEmpty()
+                && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
+            // Append instruction to existing system prompt
+            Msg originalSystemMsg = originalInputMessages.get(0);
+            String originalSystemText = originalSystemMsg.getTextContent();
+            String appendedInstruction =
+                    "\n\n"
+                            + "You may see compressed messages containing <!-- CONTEXT_OFFLOAD"
+                            + " uuid=... -->.\n"
+                            + "- Use the UUID to call context_reload if you need full details.\n"
+                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
+                            + " metadata in your response.";
+
+            String newSystemText =
+                    originalSystemText != null
+                            ? originalSystemText + appendedInstruction
+                            : appendedInstruction.trim();
+
+            Msg updatedSystemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name(originalSystemMsg.getName())
+                            .content(TextBlock.builder().text(newSystemText).build())
+                            .metadata(originalSystemMsg.getMetadata())
+                            .build();
+
+            newInputMessages.add(updatedSystemMsg);
+        } else {
+            // No system message exists, create a new one with the instruction
+            String instruction =
+                    "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
+                            + " -->.\n"
+                            + "- Use the UUID to call context_reload if you need full details.\n"
+                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
+                            + " metadata in your response.";
+
+            newInputMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name("system")
+                            .content(TextBlock.builder().text(instruction).build())
+                            .build());
         }
+
+        // Add memory messages (compressed or not)
+        newInputMessages.addAll(autoContextMemory.getMessages());
+        event.setInputMessages(newInputMessages);
 
         return Mono.just(event);
     }

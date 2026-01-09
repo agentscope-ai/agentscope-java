@@ -26,6 +26,7 @@ agentscope:
   dashscope:
     api-key: ${MODEL_API_KEY:-}
     model-name: ${MODEL_NAME:qwen-max}
+    base-url: ${MODEL_BASE_URL:-}
     # dashscope RAG
     access-key-id: ${DASHSCOPE_ACCESS_KEY_ID:-}
     access-key-secret: ${DASHSCOPE_ACCESS_KEY_SECRET:-}

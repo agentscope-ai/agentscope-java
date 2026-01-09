@@ -26,6 +26,7 @@ agentscope:
   dashscope:
     api-key: ${MODEL_API_KEY:-}
     model-name: ${MODEL_NAME:qwen-max}
+    base-url: ${MODEL_BASE_URL:-}
   openai:
     api-key: ${MODEL_API_KEY:-}
     model-name: ${MODEL_NAME:gpt-5}

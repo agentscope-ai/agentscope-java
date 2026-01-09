@@ -956,4 +956,95 @@ class JdkHttpTransportTest {
                                         && ((HttpTransportException) e).getStatusCode() == 500)
                 .verify();
     }
+
+    @Test
+    void testStreamNdJsonFormat() {
+        // NDJSON response - each line is a separate JSON object
+        String ndJsonResponse =
+                "{\"id\":1,\"text\":\"Hello\"}\n"
+                        + "{\"id\":2,\"text\":\"World\"}\n"
+                        + "{\"id\":3,\"text\":\"NDJSON\"}\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(ndJsonResponse)
+                        .setHeader("Content-Type", "application/x-ndjson"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-ndjson").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .header(
+                                TransportConstants.STREAM_FORMAT_HEADER,
+                                TransportConstants.STREAM_FORMAT_NDJSON)
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":1,\"text\":\"Hello\"}")
+                .expectNext("{\"id\":2,\"text\":\"World\"}")
+                .expectNext("{\"id\":3,\"text\":\"NDJSON\"}")
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamNdJsonWithEmptyLines() {
+        // NDJSON response with empty lines
+        String ndJsonResponse =
+                "{\"id\":1,\"text\":\"Hello\"}\n\n" + "{\"id\":2,\"text\":\"World\"}\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(ndJsonResponse)
+                        .setHeader("Content-Type", "application/x-ndjson"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-ndjson-empty").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .header(
+                                TransportConstants.STREAM_FORMAT_HEADER,
+                                TransportConstants.STREAM_FORMAT_NDJSON)
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":1,\"text\":\"Hello\"}")
+                .expectNext("{\"id\":2,\"text\":\"World\"}")
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamNdJsonFormatWithoutHeaderDefaultsToSse() {
+        // This should be processed as SSE since no NDJSON header is provided
+        String sseResponse =
+                "data: {\"id\":\"1\",\"text\":\"Hello\"}\n\n"
+                        + "data: {\"id\":\"2\",\"text\":\"World\"}\n\n"
+                        + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-sse-default").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        // No STREAM_FORMAT_HEADER - should default to SSE
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":\"1\",\"text\":\"Hello\"}")
+                .expectNext(
+                        "{\"id\":\"2\",\"text\":\"World\"}") // This is sent before [DONE] marker
+                .verifyComplete();
+    }
 }
