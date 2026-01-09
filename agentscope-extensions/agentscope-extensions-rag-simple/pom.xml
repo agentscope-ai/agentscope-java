@@ -66,6 +66,12 @@
             <artifactId>milvus-sdk-java</artifactId>
         </dependency>
 
+        <!-- Elasticsearch Java SDK -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+        </dependency>
+
         <!-- Apache PDFBox for PDF document processing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
