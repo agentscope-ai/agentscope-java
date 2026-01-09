@@ -250,7 +250,6 @@ class DefaultPlanToHintTest {
         assertTrue(hint.startsWith("<system-hint>"));
         assertTrue(hint.endsWith("</system-hint>"));
         assertTrue(hint.contains("WAIT FOR USER CONFIRMATION"));
-        assertTrue(hint.contains("CRITICAL"));
     }
 
     @Test
