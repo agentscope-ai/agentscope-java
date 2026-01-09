@@ -433,15 +433,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                     results.stream()
                                             .filter(e -> e.getValue().isSuspended())
                                             .toList();
-                            // If suspend exists,high priority
+                            // If suspend exists,to the caller for processing
                             if (!pendingPairs.isEmpty()) {
                                 return Mono.just(buildSuspendedMsg(pendingPairs));
                             }
-                            // If no success results to process
-                            if (successPairs.isEmpty()) {
-                                return executeIteration(iter + 1);
-                            }
-
                             // Process success results through hooks and add to memory
                             return Flux.fromIterable(successPairs)
                                     .concatMap(this::notifyPostActingHook)
