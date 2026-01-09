@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: live-demo
+  webflux:
+    static-path-pattern: /**
+
+# Live Demo Configuration (DashScope Only)
+live:
+  model-name: ${LIVE_MODEL_NAME:qwen3-omni-flash-realtime}
+  api-key: ${DASHSCOPE_API_KEY:}
+  agent-name: voice-assistant
+  system-prompt: "You are a friendly voice assistant. Keep responses concise and helpful."
+  voice: Nofish
+
+logging:
+  level:
+    io.agentscope: DEBUG
+    org.springframework.web.reactive.socket: DEBUG

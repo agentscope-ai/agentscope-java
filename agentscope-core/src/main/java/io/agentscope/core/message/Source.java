@@ -27,6 +27,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = URLSource.class, name = "url"),
-    @JsonSubTypes.Type(value = Base64Source.class, name = "base64")
+    @JsonSubTypes.Type(value = Base64Source.class, name = "base64"),
+    @JsonSubTypes.Type(value = RawSource.class, name = "raw")
 })
 public class Source {}
