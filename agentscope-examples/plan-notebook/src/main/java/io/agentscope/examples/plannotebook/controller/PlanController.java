@@ -18,7 +18,10 @@ package io.agentscope.examples.plannotebook.controller;
 import io.agentscope.examples.plannotebook.dto.PlanResponse;
 import io.agentscope.examples.plannotebook.dto.SubTaskRequest;
 import io.agentscope.examples.plannotebook.service.PlanService;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -59,6 +63,26 @@ public class PlanController {
     @GetMapping
     public PlanResponse getCurrentPlan() {
         return planService.getCurrentPlan();
+    }
+
+    /**
+     * Create a new plan.
+     * Request body: { "name": "...", "description": "...", "expectedOutcome": "...", "subtasks": [...] }
+     */
+    @PostMapping
+    @SuppressWarnings("unchecked")
+    public Mono<String> createPlan(@RequestBody Map<String, Object> request) {
+        String name = (String) request.get("name");
+        if (name == null || name.trim().isEmpty()) {
+            return Mono.error(
+                    new ResponseStatusException(HttpStatus.BAD_REQUEST, "Plan name is required"));
+        }
+        String description = (String) request.get("description");
+        String expectedOutcome = (String) request.get("expectedOutcome");
+        List<Map<String, Object>> subtasks =
+                (List<Map<String, Object>>)
+                        request.getOrDefault("subtasks", new ArrayList<Map<String, Object>>());
+        return planService.createPlan(name, description, expectedOutcome, subtasks);
     }
 
     /**

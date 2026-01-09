@@ -121,10 +121,12 @@ public class A2aAgent extends AgentBase {
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
         clientEventContext.setHooks(getSortedHooks());
         return Mono.defer(
-                () -> {
-                    Message message = MessageConvertUtil.convertFromMsg(memory.getMessages());
-                    return checkInterruptedAsync().then(doExecute(message));
-                });
+                        () -> {
+                            Message message =
+                                    MessageConvertUtil.convertFromMsg(memory.getMessages());
+                            return checkInterruptedAsync().then(doExecute(message));
+                        })
+                .doOnNext(this.memory::addMessage);
     }
 
     @Override

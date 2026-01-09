@@ -200,7 +200,6 @@ public class DefaultPlanToHint implements PlanToHint {
                 hint =
                         AT_THE_BEGINNING.replace("{plan}", plan.toMarkdown(false))
                                 + IMPORTANT_RULES_SEPARATOR
-                                + confirmationRule
                                 + RULE_COMMON;
 
             } else if (nInProgress > 0 && inProgressIdx != null) {

@@ -85,6 +85,7 @@ Open your browser and navigate to: **http://localhost:8080**
 |--------|----------|-------------|
 | GET | `/api/plan/stream` | Subscribe to plan state changes (SSE) |
 | GET | `/api/plan` | Get current plan state |
+| POST | `/api/plan` | Create a new plan |
 | PUT | `/api/plan` | Update plan name/description/expectedOutcome |
 | POST | `/api/plan/subtasks` | Add a subtask at specified index |
 | PUT | `/api/plan/subtasks/{idx}` | Revise a subtask |

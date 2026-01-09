@@ -67,7 +67,7 @@ public final class OpenAIConverterUtils {
      */
     public static String detectAudioFormat(String mediaType) {
         if (mediaType == null) {
-            return "mp3"; // default - 与MediaUtils保持一致
+            return "mp3";
         }
         if (mediaType.contains("wav")) {
             return "wav";
@@ -78,7 +78,38 @@ public final class OpenAIConverterUtils {
         } else if (mediaType.contains("flac")) {
             return "flac";
         } else {
-            return "mp3"; // default - 与MediaUtils保持一致
+            return "mp3";
+        }
+    }
+
+    /**
+     * Convert a video source to a URL string.
+     *
+     * @param source The video source (URLSource or Base64Source)
+     * @return The URL string or data URI
+     * @throws IllegalArgumentException if source is null or of unknown type
+     */
+    public static String convertVideoSourceToUrl(Source source) {
+        if (source == null) {
+            throw new IllegalArgumentException("Video source cannot be null");
+        }
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            if (url == null || url.isEmpty()) {
+                throw new IllegalArgumentException("URLSource has null or empty URL");
+            }
+            return url;
+        } else if (source instanceof Base64Source b64Source) {
+            // Convert base64 data to data URI
+            String data = b64Source.getData();
+            if (data == null || data.isEmpty()) {
+                throw new IllegalArgumentException("Base64Source has null or empty data");
+            }
+            String mediaType =
+                    b64Source.getMediaType() != null ? b64Source.getMediaType() : "video/mp4";
+            return "data:" + mediaType + ";base64," + data;
+        } else {
+            throw new IllegalArgumentException("Unknown source type: " + source.getClass());
         }
     }
 }
