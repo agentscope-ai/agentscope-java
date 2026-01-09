@@ -841,4 +841,45 @@ class OpenAIClientTest {
                         || recordedRequest.getPath().contains("/v1/chat/completions"),
                 "Path should contain default endpoint path: " + recordedRequest.getPath());
     }
+
+    @Test
+    @DisplayName("Should handle custom endpoint path in stream call")
+    void testCustomEndpointPathInStreamCall() throws Exception {
+        String sseResponse =
+                "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"
+                    + "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n"
+                    + "data:"
+                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                    + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path for stream call
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block();
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().contains("/v4/chat/completions"),
+                "Stream path should contain custom endpoint path: " + recordedRequest.getPath());
+    }
 }
