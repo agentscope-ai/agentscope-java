@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-01-09T07:51:02+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -465,6 +465,13 @@
 <td><p>✅</p></td>
 <td><p>✅</p></td>
 </tr>
+<tr class="row-even"><td><p>Ollama</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OllamaChatModel</span></code></p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -562,6 +569,16 @@
 <span class="w">                </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// 思考 token 预算</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:11434&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">thinkOption</span><span class="p">(</span><span class="n">ThinkOption</span><span class="p">.</span><span class="na">ThinkBoolean</span><span class="p">.</span><span class="na">ENABLED</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.8</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
@@ -709,8 +726,133 @@
 </div>
 </section>
 </section>
+<section id="ollama">
+<h2>Ollama<a class="headerlink" href="#ollama" title="Link to this heading">¶</a></h2>
+<p>自托管开源 LLM 平台，支持多种模型。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:11434&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认值</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
 <section id="id8">
-<h2>生成选项<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<h3>配置项<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>模型名称，如 <code class="docutils literal notranslate"><span class="pre">qwen3-max</span></code>、<code class="docutils literal notranslate"><span class="pre">llama3.2</span></code>、<code class="docutils literal notranslate"><span class="pre">mistral</span></code>、<code class="docutils literal notranslate"><span class="pre">phi3</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>Ollama 服务器端点（可选，默认 <code class="docutils literal notranslate"><span class="pre">http://localhost:11434</span></code>）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">defaultOptions</span></code></p></td>
+<td><p>默认生成选项</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
+<td><p>消息格式化器（可选）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">httpTransport</span></code></p></td>
+<td><p>HTTP 传输配置（可选）</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id9">
+<h3>高级配置<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<p>高级模型加载和生成参数：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OllamaOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">numCtx</span><span class="p">(</span><span class="mi">4096</span><span class="p">)</span><span class="w">           </span><span class="c1">// 上下文窗口大小</span>
+<span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">       </span><span class="c1">// 生成随机性</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span><span class="w">               </span><span class="c1">// Top-K 采样</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">              </span><span class="c1">// 核采样</span>
+<span class="w">        </span><span class="p">.</span><span class="na">repeatPenalty</span><span class="p">(</span><span class="mf">1.1</span><span class="p">)</span><span class="w">     </span><span class="c1">// 重复惩罚</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:11434&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span><span class="w">  </span><span class="c1">// 内部转换为 OllamaOptions</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="generateoptions">
+<h3>GenerateOptions 支持<a class="headerlink" href="#generateoptions" title="Link to this heading">¶</a></h3>
+<p>Ollama 也支持 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 进行标准配置：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// 映射到 Ollama 的 temperature</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 映射到 Ollama 的 top_p</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 映射到 Ollama 的 top_k</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">            </span><span class="c1">// 映射到 Ollama 的 num_predict</span>
+<span class="w">        </span><span class="p">.</span><span class="na">seed</span><span class="p">(</span><span class="mi">42L</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 映射到 Ollama 的 seed</span>
+<span class="w">        </span><span class="p">.</span><span class="na">frequencyPenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">      </span><span class="c1">// 映射到 Ollama 的 frequency_penalty</span>
+<span class="w">        </span><span class="p">.</span><span class="na">presencePenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">       </span><span class="c1">// 映射到 Ollama 的 presence_penalty</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">NUM_CTX</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="mi">4096</span><span class="p">)</span><span class="w">      </span><span class="c1">// 上下文窗口大小</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">NUM_GPU</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">        </span><span class="c1">// 将所有层卸载到 GPU</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">REPEAT_PENALTY</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="mf">1.1</span><span class="p">)</span><span class="w"> </span><span class="c1">// 重复惩罚</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">MAIN_GPU</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w">        </span><span class="c1">// 主 GPU 索引</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">LOW_VRAM</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="kc">false</span><span class="p">)</span><span class="w">    </span><span class="c1">// 低显存模式</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">F16_KV</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span><span class="w">       </span><span class="c1">// 16位 KV 缓存</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">ParamKey</span><span class="p">.</span><span class="na">NUM_THREAD</span><span class="p">.</span><span class="na">getKey</span><span class="p">(),</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span><span class="w">      </span><span class="c1">// CPU 线程数</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:11434&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">fromGenerateOptions</span><span class="p">(</span><span class="n">options</span><span class="p">))</span><span class="w">  </span><span class="c1">// 内部转换为 OllamaOptions</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id10">
+<h3>可用参数<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<p>Ollama 支持超过 40 个参数进行精细调整：</p>
+<section id="id11">
+<h4>模型加载参数<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">numCtx</span></code>: 上下文窗口大小（默认：2048）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">numBatch</span></code>: 提示处理的批处理大小（默认：512）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">numGPU</span></code>: 卸载到 GPU 的层数（-1 表示全部）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lowVRAM</span></code>: 为有限 GPU 内存启用低显存模式</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">useMMap</span></code>: 使用内存映射加载模型</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">useMLock</span></code>: 锁定模型在内存中以防止交换</p></li>
+</ul>
+</section>
+<section id="id12">
+<h4>生成参数<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: 生成随机性（0.0-2.0）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">topK</span></code>: Top-K 采样（标准：40）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">topP</span></code>: 核采样（标准：0.9）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minP</span></code>: 最小概率阈值（默认：0.0）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">numPredict</span></code>: 生成的最大 token 数（-1 表示无限）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">repeatPenalty</span></code>: 重复惩罚（默认：1.1）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">presencePenalty</span></code>: 基于 token 存在性的惩罚</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">frequencyPenalty</span></code>: 基于 token 频率的惩罚</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seed</span></code>: 可重现结果的随机种子</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stop</span></code>: 立即停止生成的字符串</p></li>
+</ul>
+</section>
+<section id="id13">
+<h4>采样策略<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">mirostat</span></code>: Mirostat 采样（0=禁用，1=Mirostat v1，2=Mirostat v2）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mirostatTau</span></code>: Mirostat 目标熵（默认：5.0）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mirostatEta</span></code>: Mirostat 学习率（默认：0.1）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tfsZ</span></code>: 尾部自由采样（默认：1.0 禁用）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">typicalP</span></code>: 典型概率采样（默认：1.0）</p></li>
+</ul>
+</section>
+</section>
+</section>
+<section id="id14">
+<h2>生成选项<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
 <p>通过 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 配置生成参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// 随机性 (0.0-2.0)</span>
@@ -726,10 +868,16 @@
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:11434&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">OllamaOptions</span><span class="p">.</span><span class="na">fromGenerateOptions</span><span class="p">(</span><span class="n">options</span><span class="p">))</span><span class="c1">// 内部转换为 OllamaOptions</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="id9">
-<h3>参数说明<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<section id="id15">
+<h3>参数说明<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -771,8 +919,8 @@
 </table>
 </div>
 </section>
-<section id="id10">
-<h3>工具选择策略<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<section id="id16">
+<h3>工具选择策略<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// 模型自行决定（默认）</span>
 <span class="n">ToolChoice</span><span class="p">.</span><span class="na">none</span><span class="p">()</span><span class="w">              </span><span class="c1">// 禁止工具调用</span>
 <span class="n">ToolChoice</span><span class="p">.</span><span class="na">required</span><span class="p">()</span><span class="w">          </span><span class="c1">// 强制调用工具</span>
@@ -780,8 +928,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id11">
-<h3>扩展参数<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<section id="id17">
+<h3>扩展参数<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
 <p>支持传递提供商特有的参数：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">additionalHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
@@ -792,8 +940,8 @@
 </div>
 </section>
 </section>
-<section id="id12">
-<h2>超时和重试<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
+<section id="id18">
+<h2>超时和重试<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
@@ -836,15 +984,19 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatFormatter</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">GeminiMultiAgentFormatter</span></code></p></td>
 </tr>
+<tr class="row-even"><td><p>Ollama</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OllamaChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OllamaMultiAgentFormatter</span></code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
-<section id="id13">
-<h3>默认行为<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
+<section id="id19">
+<h3>默认行为<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
 <p>不指定 Formatter 时，模型使用对应的 <code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code>，适用于单智能体场景。</p>
 </section>
-<section id="id14">
-<h3>多智能体场景<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<section id="id20">
+<h3>多智能体场景<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
 <p>在多智能体协作（如 Pipeline、MsgHub）中，需要使用 <code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code>。它会：</p>
 <ul class="simple">
 <li><p>将多个智能体的消息合并为对话历史</p></li>
@@ -876,11 +1028,17 @@
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GeminiMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Ollama 多智能体</span>
+<span class="n">OllamaChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OllamaChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OllamaMultiAgentFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="id15">
-<h3>自定义历史提示<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<section id="id21">
+<h3>自定义历史提示<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
 <p>可以自定义对话历史的提示语：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">customPrompt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;# 对话记录\n以下是之前的对话内容：\n&quot;</span><span class="p">;</span>
 
@@ -974,7 +1132,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-01-09</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1032,17 +1190,29 @@
 <li><a class="reference internal" href="#id7">配置项</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id8">生成选项</a><ul>
-<li><a class="reference internal" href="#id9">参数说明</a></li>
-<li><a class="reference internal" href="#id10">工具选择策略</a></li>
-<li><a class="reference internal" href="#id11">扩展参数</a></li>
+<li><a class="reference internal" href="#ollama">Ollama</a><ul>
+<li><a class="reference internal" href="#id8">配置项</a></li>
+<li><a class="reference internal" href="#id9">高级配置</a></li>
+<li><a class="reference internal" href="#generateoptions">GenerateOptions 支持</a></li>
+<li><a class="reference internal" href="#id10">可用参数</a><ul>
+<li><a class="reference internal" href="#id11">模型加载参数</a></li>
+<li><a class="reference internal" href="#id12">生成参数</a></li>
+<li><a class="reference internal" href="#id13">采样策略</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id12">超时和重试</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id14">生成选项</a><ul>
+<li><a class="reference internal" href="#id15">参数说明</a></li>
+<li><a class="reference internal" href="#id16">工具选择策略</a></li>
+<li><a class="reference internal" href="#id17">扩展参数</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id18">超时和重试</a></li>
 <li><a class="reference internal" href="#formatter">Formatter</a><ul>
-<li><a class="reference internal" href="#id13">默认行为</a></li>
-<li><a class="reference internal" href="#id14">多智能体场景</a></li>
-<li><a class="reference internal" href="#id15">自定义历史提示</a></li>
+<li><a class="reference internal" href="#id19">默认行为</a></li>
+<li><a class="reference internal" href="#id20">多智能体场景</a></li>
+<li><a class="reference internal" href="#id21">自定义历史提示</a></li>
 <li><a class="reference internal" href="#multiagentformatter">何时使用 MultiAgentFormatter</a></li>
 </ul>
 </li>
