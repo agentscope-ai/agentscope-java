@@ -83,6 +83,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
         <milvus.version>2.6.11</milvus.version>
+        <elasticsearch.version>8.12.0</elasticsearch.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
@@ -230,6 +231,13 @@
                 <groupId>io.qdrant</groupId>
                 <artifactId>client</artifactId>
                 <version>${qdrant.version}</version>
+            </dependency>
+
+            <!-- Elasticsearch Java SDK -->
+            <dependency>
+                <groupId>co.elastic.clients</groupId>
+                <artifactId>elasticsearch-java</artifactId>
+                <version>${elasticsearch.version}</version>
             </dependency>
 
             <!-- Milvus Java SDK -->

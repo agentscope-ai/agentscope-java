@@ -36,6 +36,17 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+             Declare the Elasticsearch Java client version explicitly and
+             place it before the Spring Boot BOM so that this version (8.12.0)
+             overrides the one managed by Spring Boot.
+             -->
+            <dependency>
+                <groupId>co.elastic.clients</groupId>
+                <artifactId>elasticsearch-java</artifactId>
+                <version>8.12.0</version>
+            </dependency>
+
             <!-- Spring Boot BOM -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
