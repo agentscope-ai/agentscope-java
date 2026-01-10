@@ -18,14 +18,17 @@ package io.agentscope.core.rag.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Result;
+import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.DeleteResponse;
@@ -33,6 +36,8 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
+import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
+import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
 import co.elastic.clients.elasticsearch.indices.ElasticsearchIndicesClient;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
@@ -41,6 +46,7 @@ import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -52,6 +58,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import reactor.test.StepVerifier;
 
@@ -177,6 +184,112 @@ public class ElasticsearchStoreTest {
         store = createMockStore();
         store.close();
         // ElasticsearchStore doesn't expose isClosed(), but we verify no exception is thrown
+    }
+
+    @Test
+    @DisplayName("Should configure SSL context when URL starts with https")
+    void testBuildWithHttpsUrl() throws VectorStoreException {
+        // Mock the construction process to avoid real network connections
+        try (MockedConstruction<ElasticsearchClient> ignored =
+                mockConstruction(
+                        ElasticsearchClient.class,
+                        (mock, context) -> {
+                            // Mock index check to avoid throwing exceptions in the constructor
+                            ElasticsearchIndicesClient indicesClient =
+                                    mock(ElasticsearchIndicesClient.class);
+                            when(mock.indices()).thenReturn(indicesClient);
+                            BooleanResponse boolResp = mock(BooleanResponse.class);
+                            when(boolResp.value()).thenReturn(true);
+                            when(indicesClient.exists(any(ExistsRequest.class)))
+                                    .thenReturn(boolResp);
+                        })) {
+
+            // 1. Set HTTPS URL and authentication credentials
+            // This will cover the code paths for SSL handling and setDefaultCredentialsProvider in
+            // the ElasticsearchStore constructor
+            ElasticsearchStore httpsStore =
+                    ElasticsearchStore.builder()
+                            .url("https://localhost:9200")
+                            .indexName(TEST_INDEX)
+                            .dimensions(TEST_DIMENSIONS)
+                            .username("admin")
+                            .password("secret")
+                            .build();
+
+            assertNotNull(httpsStore);
+            httpsStore.close();
+        }
+    }
+
+    @Test
+    @DisplayName("Should create index with correct mappings when index does not exist")
+    void testEnsureIndexCreatesIndex() throws VectorStoreException, IOException {
+        // Use MockedConstruction to intercept the creation of ElasticsearchClient
+        try (MockedConstruction<ElasticsearchClient> ignored =
+                mockConstruction(
+                        ElasticsearchClient.class,
+                        (mock, context) -> {
+                            ElasticsearchIndicesClient indicesClient =
+                                    mock(ElasticsearchIndicesClient.class);
+                            when(mock.indices()).thenReturn(indicesClient);
+
+                            // 1. Mock exists() to return false, forcing entry into the index
+                            // creation branch
+                            BooleanResponse existsResp = mock(BooleanResponse.class);
+                            when(existsResp.value()).thenReturn(false);
+                            when(indicesClient.exists(any(ExistsRequest.class)))
+                                    .thenReturn(existsResp);
+
+                            // 2. Mock create() call to prevent NullPointerException
+                            CreateIndexResponse createResp = mock(CreateIndexResponse.class);
+                            when(indicesClient.create(any(CreateIndexRequest.class)))
+                                    .thenReturn(createResp);
+                        })) {
+
+            // Initialize Store, which triggers ensureIndex() in the constructor
+            ElasticsearchStore newStore =
+                    ElasticsearchStore.builder()
+                            .url(TEST_URL)
+                            .indexName(TEST_INDEX)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+
+            // Get the Mock object for verification
+            ElasticsearchClient mockClient = ignored.constructed().get(0);
+            ElasticsearchIndicesClient indicesClient = mockClient.indices();
+
+            // 3. Capture CreateIndexRequest parameters to verify Mapping settings
+            ArgumentCaptor<CreateIndexRequest> captor =
+                    ArgumentCaptor.forClass(CreateIndexRequest.class);
+            verify(indicesClient).create(captor.capture());
+
+            CreateIndexRequest request = captor.getValue();
+
+            // Verify index name
+            assertEquals(TEST_INDEX, request.index());
+
+            // Verify key properties (Coverage for lines 154-160)
+            Map<String, Property> props = request.mappings().properties();
+
+            // Verify Vector field
+            assertTrue(props.containsKey("vector"), "Should contain vector field");
+            Property vectorProp = props.get("vector");
+            assertTrue(vectorProp.isDenseVector());
+            assertEquals(TEST_DIMENSIONS, vectorProp.denseVector().dims());
+            assertEquals("cosine", vectorProp.denseVector().similarity());
+            assertTrue(vectorProp.denseVector().index());
+
+            // Verify Content field
+            assertTrue(props.containsKey("content"), "Should contain content field");
+            assertTrue(props.get("content").isText());
+            assertEquals(Boolean.FALSE, props.get("content").text().index());
+
+            // Verify ID field
+            assertTrue(props.containsKey("id"), "Should contain id field");
+            assertTrue(props.get("id").isKeyword());
+
+            newStore.close();
+        }
     }
 
     // ==================== Add Method Tests ====================
