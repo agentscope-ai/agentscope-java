@@ -15,11 +15,10 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.Part;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -46,8 +45,7 @@ import java.util.List;
  * </ul>
  */
 public class GeminiMultiAgentFormatter
-        extends AbstractBaseFormatter<
-                Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+        extends AbstractBaseFormatter<GeminiContent, GeminiResponse, GeminiRequest> {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -59,6 +57,7 @@ public class GeminiMultiAgentFormatter
     private final GeminiToolsHelper toolsHelper;
     private final GeminiConversationMerger conversationMerger;
     private final GeminiChatFormatter chatFormatter;
+    private GeminiContent systemInstruction;
 
     /**
      * Create a GeminiMultiAgentFormatter with default conversation history prompt.
@@ -81,25 +80,55 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    protected List<Content> doFormat(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
+    protected List<GeminiContent> doFormat(List<Msg> msgs) {
+        List<GeminiContent> result = new ArrayList<>();
         int startIndex = 0;
 
-        // Process system message first (if any) - convert to user role
+        // Extract and store SYSTEM message separately for systemInstruction field
+        systemInstruction = null;
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
             Msg systemMsg = msgs.get(0);
-            // Gemini doesn't support system role in contents, convert to user
-            Content systemContent =
-                    Content.builder()
-                            .role("user")
-                            .parts(
-                                    List.of(
-                                            Part.builder()
-                                                    .text(extractTextContent(systemMsg))
-                                                    .build()))
-                            .build();
-            result.add(systemContent);
+            // Convert SYSTEM message to GeminiContent for systemInstruction field
+            systemInstruction = messageConverter.convertMessages(List.of(systemMsg)).get(0);
             startIndex = 1;
+        }
+
+        // Gemini API requires contents to start with "user" role
+        // If first remaining message is ASSISTANT (from another agent), convert it to USER
+        // EXCEPTION: If the message is a tool call (which uses ASSISTANT role), we must preserve it
+        // as is (it will be converted to MODEL role by converter later), because tool calls must
+        // come from MODEL.
+        if (startIndex < msgs.size() && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT) {
+            Msg firstMsg = msgs.get(startIndex);
+
+            boolean isToolRelated = firstMsg.hasContentBlocks(ToolUseBlock.class);
+
+            if (!isToolRelated) {
+                // Convert ASSISTANT message to USER role for multi-agent compatibility
+                GeminiContent userContent = new GeminiContent();
+                userContent.setRole("user");
+                userContent.setParts(
+                        messageConverter.convertMessages(List.of(firstMsg)).get(0).getParts());
+                result.add(userContent);
+                startIndex++;
+            }
+        }
+
+        // Optimization: If only one message remains and it's not a tool result/use,
+        // format it directly to avoid unnecessary <history> wrapping.
+        // This fixes structured output issues where simple prompts were being wrapped
+        // in history tags.
+        if (msgs.size() - startIndex == 1) {
+            Msg singleMsg = msgs.get(startIndex);
+            boolean isToolRelated =
+                    singleMsg.getRole() == MsgRole.TOOL
+                            || singleMsg.hasContentBlocks(ToolUseBlock.class)
+                            || singleMsg.hasContentBlocks(ToolResultBlock.class);
+
+            if (!isToolRelated) {
+                result.addAll(messageConverter.convertMessages(List.of(singleMsg)));
+                return result;
+            }
         }
 
         // Group remaining messages and process each group
@@ -130,28 +159,36 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+    public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerateContentConfig.Builder configBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            GeminiRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Delegate to chat formatter
-        chatFormatter.applyOptions(configBuilder, options, defaultOptions);
+        chatFormatter.applyOptions(request, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
-        chatFormatter.applyTools(configBuilder, tools);
+    public void applyTools(GeminiRequest request, List<ToolSchema> tools) {
+        chatFormatter.applyTools(request, tools);
     }
 
     @Override
-    public void applyToolChoice(
-            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
-        chatFormatter.applyToolChoice(configBuilder, toolChoice);
+    public void applyToolChoice(GeminiRequest request, ToolChoice toolChoice) {
+        chatFormatter.applyToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Apply system instruction to the request if present.
+     *
+     * @param request The Gemini request to configure
+     */
+    public void applySystemInstruction(GeminiRequest request) {
+        if (systemInstruction != null) {
+            request.setSystemInstruction(systemInstruction);
+        }
     }
 
     // ========== Private Helper Methods ==========

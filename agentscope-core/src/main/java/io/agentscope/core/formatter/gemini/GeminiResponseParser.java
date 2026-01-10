@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Candidate;
-import com.google.genai.types.Content;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.GenerateContentResponseUsageMetadata;
-import com.google.genai.types.Part;
 import io.agentscope.core.formatter.FormatterException;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse.GeminiCandidate;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse.GeminiUsageMetadata;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -69,43 +69,97 @@ public class GeminiResponseParser {
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+    public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         try {
+            // Log raw response for debugging
+            try {
+                String responseJson = JsonUtils.getJsonCodec().toJson(response);
+                System.out.println("=== Raw Gemini response: " + responseJson);
+            } catch (Exception e) {
+                System.out.println("Failed to serialize response for logging: " + e.getMessage());
+            }
+
             List<ContentBlock> blocks = new ArrayList<>();
             String finishReason = null;
 
             // Parse content from first candidate
-            if (response.candidates().isPresent() && !response.candidates().get().isEmpty()) {
-                Candidate candidate = response.candidates().get().get(0);
+            if (response.getCandidates() != null && !response.getCandidates().isEmpty()) {
+                GeminiCandidate candidate = response.getCandidates().get(0);
 
-                if (candidate.content().isPresent()) {
-                    Content content = candidate.content().get();
+                if (candidate.getContent() != null) {
+                    GeminiContent content = candidate.getContent();
 
-                    if (content.parts().isPresent()) {
-                        List<Part> parts = content.parts().get();
+                    if (content.getParts() != null) {
+                        List<GeminiPart> parts = content.getParts();
                         parsePartsToBlocks(parts, blocks);
                     }
                 }
-                finishReason = candidate.finishMessage().orElse(null);
+                finishReason = candidate.getFinishReason();
+
+                // Log warning if content is empty
+                if (blocks.isEmpty()) {
+                    log.warn(
+                            "Gemini returned empty content. finishReason={}, "
+                                    + "candidateContent={}, promptFeedback={}",
+                            finishReason,
+                            candidate.getContent(),
+                            response.getPromptFeedback());
+
+                    // Add a text block explaining the empty response
+                    String emptyReason = "Gemini returned empty content";
+                    if (finishReason != null && !finishReason.isEmpty()) {
+                        emptyReason += " (finishReason: " + finishReason + ")";
+                    }
+                    blocks.add(TextBlock.builder().text(emptyReason).build());
+                }
+            } else {
+                // No candidates at all
+                log.warn(
+                        "Gemini returned no candidates. promptFeedback={}",
+                        response.getPromptFeedback());
+                blocks.add(
+                        TextBlock.builder()
+                                .text("Gemini returned no candidates in response")
+                                .build());
             }
 
             // Parse usage metadata
             ChatUsage usage = null;
-            if (response.usageMetadata().isPresent()) {
-                GenerateContentResponseUsageMetadata metadata = response.usageMetadata().get();
+            if (response.getUsageMetadata() != null) {
+                GeminiUsageMetadata metadata = response.getUsageMetadata();
 
-                int inputTokens = metadata.promptTokenCount().orElse(0);
-                int totalOutputTokens = metadata.candidatesTokenCount().orElse(0);
-                int thinkingTokens = metadata.thoughtsTokenCount().orElse(0);
+                int inputTokens =
+                        metadata.getPromptTokenCount() != null ? metadata.getPromptTokenCount() : 0;
+                int totalOutputTokens =
+                        metadata.getCandidatesTokenCount() != null
+                                ? metadata.getCandidatesTokenCount()
+                                : 0;
 
-                // Output tokens exclude thinking tokens (following DashScope behavior)
-                // In Gemini, candidatesTokenCount includes thinking, so we subtract it
-                int outputTokens = totalOutputTokens - thinkingTokens;
+                int outputTokens = totalOutputTokens;
+                int reasoningTokens = 0;
+
+                // Extract thinking/reasoning tokens if available
+                if (metadata.getCandidatesTokensDetails() != null) {
+                    Map<String, Object> details = metadata.getCandidatesTokensDetails();
+                    if (details.containsKey("modalityTokenCount")
+                            && details.get("modalityTokenCount") instanceof Map) {
+                        Map<?, ?> modalityCount = (Map<?, ?>) details.get("modalityTokenCount");
+                        // Check for common keys for thinking tokens
+                        if (modalityCount.containsKey("thought")
+                                && modalityCount.get("thought") instanceof Number) {
+                            reasoningTokens = ((Number) modalityCount.get("thought")).intValue();
+                        } else if (modalityCount.containsKey("reasoning")
+                                && modalityCount.get("reasoning") instanceof Number) {
+                            reasoningTokens = ((Number) modalityCount.get("reasoning")).intValue();
+                        }
+                    }
+                }
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .reasoningTokens(reasoningTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -113,7 +167,11 @@ public class GeminiResponseParser {
             }
 
             return ChatResponse.builder()
-                    .id(response.responseId().orElse(null))
+                    // Use actual response ID if available, otherwise generate one
+                    .id(
+                            response.getResponseId() != null
+                                    ? response.getResponseId()
+                                    : java.util.UUID.randomUUID().toString())
                     .content(blocks)
                     .usage(usage)
                     .finishReason(finishReason)
@@ -129,33 +187,69 @@ public class GeminiResponseParser {
      * Parse Gemini Part objects to AgentScope ContentBlocks.
      * Order of block types: ThinkingBlock, TextBlock, ToolUseBlock
      *
-     * @param parts List of Gemini Part objects
+     * @param parts  List of Gemini Part objects
      * @param blocks List to add parsed ContentBlocks to
      */
-    protected void parsePartsToBlocks(List<Part> parts, List<ContentBlock> blocks) {
-        for (Part part : parts) {
-            // Check for thinking content first (parts with thought=true flag)
-            if (part.thought().isPresent() && part.thought().get() && part.text().isPresent()) {
-                String thinkingText = part.text().get();
-                if (thinkingText != null && !thinkingText.isEmpty()) {
-                    blocks.add(ThinkingBlock.builder().thinking(thinkingText).build());
+    protected void parsePartsToBlocks(List<GeminiPart> parts, List<ContentBlock> blocks) {
+        // Debug: Log the parts received from Gemini
+        if (org.slf4j.LoggerFactory.getLogger(this.getClass()).isDebugEnabled()) {
+            try {
+                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(this.getClass());
+                log.debug("=== Parsing {} parts from Gemini response", parts.size());
+                for (int i = 0; i < parts.size(); i++) {
+                    GeminiPart part = parts.get(i);
+                    log.debug(
+                            "=== Part {}: text={}, functionCall={}, thought={}",
+                            i,
+                            part.getText() != null ? "present" : "null",
+                            part.getFunctionCall() != null ? "present" : "null",
+                            part.getThought());
                 }
-                continue;
+            } catch (Exception e) {
+                // Ignore logging errors
+            }
+        }
+
+        for (GeminiPart part : parts) {
+            boolean processedAsThought = false;
+
+            // Check for thinking content (parts with thought=true flag)
+            if (Boolean.TRUE.equals(part.getThought()) && part.getText() != null) {
+                String thinkingText = part.getText();
+                if (!thinkingText.isEmpty()) {
+                    // Build metadata if signature is present
+                    Map<String, Object> metadata = null;
+                    if (part.getSignature() != null && !part.getSignature().isEmpty()) {
+                        metadata = new HashMap<>();
+                        metadata.put(ThinkingBlock.METADATA_THOUGHT_SIGNATURE, part.getSignature());
+                    }
+
+                    blocks.add(
+                            ThinkingBlock.builder()
+                                    .thinking(thinkingText)
+                                    .metadata(metadata)
+                                    .build());
+                    processedAsThought = true;
+                }
             }
 
-            // Check for text content
-            if (part.text().isPresent()) {
-                String text = part.text().get();
-                if (text != null && !text.isEmpty()) {
+            // Check for standard text content (only if not processed as thought)
+            if (!processedAsThought && part.getText() != null) {
+                String text = part.getText();
+                if (!text.isEmpty()) {
                     blocks.add(TextBlock.builder().text(text).build());
                 }
             }
 
-            // Check for function call (tool use)
-            if (part.functionCall().isPresent()) {
-                FunctionCall functionCall = part.functionCall().get();
-                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
-                parseToolCall(functionCall, thoughtSignature, blocks);
+            // Check for function call (tool use) - check this INDEPENDENTLY
+            if (part.getFunctionCall() != null) {
+                GeminiFunctionCall functionCall = part.getFunctionCall();
+                // Try thoughtSignature first (Gemini 2.5+), fall back to signature
+                String thoughtSig = part.getThoughtSignature();
+                if (thoughtSig == null || thoughtSig.isEmpty()) {
+                    thoughtSig = part.getSignature();
+                }
+                parseToolCall(functionCall, thoughtSig, blocks);
             }
         }
     }
@@ -163,15 +257,18 @@ public class GeminiResponseParser {
     /**
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
-     * @param functionCall Gemini FunctionCall object
+     * @param functionCall     Gemini FunctionCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
-     * @param blocks List to add parsed ToolUseBlock to
+     * @param blocks           List to add parsed ToolUseBlock to
      */
     protected void parseToolCall(
-            FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+            GeminiFunctionCall functionCall, String thoughtSignature, List<ContentBlock> blocks) {
         try {
-            String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
-            String name = functionCall.name().orElse("");
+            String id = functionCall.getId();
+            if (id == null || id.isEmpty()) {
+                id = "tool_call_" + System.currentTimeMillis(); // Fallback if ID is missing
+            }
+            String name = functionCall.getName() != null ? functionCall.getName() : "";
 
             if (name.isEmpty()) {
                 log.warn("FunctionCall with empty name, skipping");
@@ -182,22 +279,19 @@ public class GeminiResponseParser {
             Map<String, Object> argsMap = new HashMap<>();
             String rawContent = null;
 
-            if (functionCall.args().isPresent()) {
-                Map<String, Object> args = functionCall.args().get();
-                if (args != null && !args.isEmpty()) {
-                    argsMap.putAll(args);
-                    // Convert to JSON string for raw content
-                    try {
-                        rawContent = JsonUtils.getJsonCodec().toJson(args);
-                    } catch (Exception e) {
-                        log.warn("Failed to serialize function call arguments: {}", e.getMessage());
-                    }
+            if (functionCall.getArgs() != null && !functionCall.getArgs().isEmpty()) {
+                argsMap.putAll(functionCall.getArgs());
+                // Convert to JSON string for raw content
+                try {
+                    rawContent = JsonUtils.getJsonCodec().toJson(functionCall.getArgs());
+                } catch (Exception e) {
+                    log.warn("Failed to serialize function call arguments: {}", e.getMessage());
                 }
             }
 
             // Build metadata with thought signature if present
             Map<String, Object> metadata = null;
-            if (thoughtSignature != null) {
+            if (thoughtSignature != null && !thoughtSignature.isEmpty()) {
                 metadata = new HashMap<>();
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
