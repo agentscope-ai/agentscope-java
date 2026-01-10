@@ -70,7 +70,7 @@ class GeminiLiveModelTest {
                         .webSocketClient(mockClient)
                         .build();
 
-        assertEquals("gemini-2.0-flash-exp", model.getModelName());
+        assertEquals("gemini-2.5-flash-native-audio-preview-12-2025", model.getModelName());
     }
 
     @Test

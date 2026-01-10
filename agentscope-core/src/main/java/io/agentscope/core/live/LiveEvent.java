@@ -64,6 +64,11 @@ public record LiveEvent(
         return create(LiveEventType.TEXT_DELTA, message, isLast);
     }
 
+    /** Thinking delta event */
+    public static LiveEvent thinkingDelta(Msg message, boolean isLast) {
+        return create(LiveEventType.THINKING_DELTA, message, isLast);
+    }
+
     /** Input transcription event */
     public static LiveEvent inputTranscription(Msg message, boolean isLast) {
         return create(LiveEventType.INPUT_TRANSCRIPTION, message, isLast);

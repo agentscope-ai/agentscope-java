@@ -59,6 +59,9 @@ public enum LiveEventType {
     /** Text delta chunk */
     TEXT_DELTA,
 
+    /** Thinking delta chunk (model reasoning/thought process) */
+    THINKING_DELTA,
+
     /** Input transcription (user speech to text) */
     INPUT_TRANSCRIPTION,
 

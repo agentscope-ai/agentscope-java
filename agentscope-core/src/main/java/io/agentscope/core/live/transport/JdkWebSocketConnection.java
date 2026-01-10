@@ -99,7 +99,6 @@ public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
                         byte[] bytes = new byte[binaryBuffer.remaining()];
                         binaryBuffer.get(bytes);
                         binaryBuffer = null;
-                        log.debug("Received binary message, size: {} bytes", bytes.length);
                         emitMessage(bytes);
                     }
                     webSocket.request(1);
@@ -192,12 +191,8 @@ public class JdkWebSocketConnection<T> implements WebSocketConnection<T> {
                             try {
                                 CompletableFuture<WebSocket> future;
                                 if (data instanceof String text) {
-                                    log.debug(
-                                            "Sending text message, size: {} chars", text.length());
                                     future = webSocket.sendText(text, true);
                                 } else if (data instanceof byte[] bytes) {
-                                    log.debug(
-                                            "Sending binary message, size: {} bytes", bytes.length);
                                     future = webSocket.sendBinary(ByteBuffer.wrap(bytes), true);
                                 } else {
                                     sink.error(

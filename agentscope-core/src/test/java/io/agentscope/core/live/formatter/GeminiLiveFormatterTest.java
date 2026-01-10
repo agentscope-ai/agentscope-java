@@ -52,10 +52,12 @@ class GeminiLiveFormatterTest {
     void setUp() {
         formatter =
                 GeminiLiveFormatter.builder()
+                        .modelName("gemini-2.0-flash-exp")
                         .proactiveAudio(true)
                         .affectiveDialog(true)
                         .enableThinking(false)
                         .contextWindowCompression(true)
+                        .triggerTokens(16000)
                         .slidingWindowTokens(10000)
                         .sessionResumption(true)
                         .activityHandling("START_OF_ACTIVITY_INTERRUPTS")
@@ -87,7 +89,7 @@ class GeminiLiveFormatterTest {
 
             assertNotNull(result);
             assertTrue(result.contains("realtimeInput"));
-            assertTrue(result.contains("mediaChunks"));
+            assertTrue(result.contains("\"audio\""));
             assertTrue(result.contains("audio/pcm;rate=16000"));
         }
 
@@ -195,8 +197,8 @@ class GeminiLiveFormatterTest {
             String result = formatter.buildSessionConfig(config, null);
 
             assertNotNull(result);
-            assertTrue(result.contains("sessionResumptionConfig"));
-            assertTrue(result.contains("contextWindowCompressionConfig"));
+            assertTrue(result.contains("sessionResumption"));
+            assertTrue(result.contains("contextWindowCompression"));
             assertTrue(result.contains("proactiveAudio"));
             assertTrue(result.contains("affectiveDialog"));
             assertTrue(result.contains("automaticActivityDetection"));
@@ -276,7 +278,7 @@ class GeminiLiveFormatterTest {
             String result = resumptionFormatter.buildSessionConfig(config, null);
 
             assertNotNull(result);
-            assertTrue(result.contains("sessionResumptionConfig"));
+            assertTrue(result.contains("sessionResumption"));
             assertTrue(result.contains("previous-handle-123"));
         }
     }

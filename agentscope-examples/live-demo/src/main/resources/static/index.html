@@ -472,6 +472,54 @@
         .toggle-btn.off {
             background: #dc3545;
         }
+        .message.thinking {
+            background: #f8f9fa;
+            color: #6c757d;
+            border: 1px dashed #dee2e6;
+            font-style: italic;
+            font-size: 13px;
+        }
+        .message.thinking .message-label {
+            color: #adb5bd;
+        }
+        /* Tool Use Message Style */
+        .message.tool-use {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            font-size: 13px;
+        }
+        .message.tool-use .message-label {
+            color: #856404;
+        }
+        /* Tool Result Message Style */
+        .message.tool-result {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            font-size: 13px;
+        }
+        .message.tool-result .message-label {
+            color: #155724;
+        }
+        .message.tool-result.error {
+            background: #f8d7da;
+            border: 1px solid #dc3545;
+        }
+        .message.tool-result.error .message-label {
+            color: #721c24;
+        }
+        /* Tool Content Style */
+        .tool-content {
+            background: rgba(0,0,0,0.05);
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -1153,6 +1201,102 @@
         }
 
         let currentAssistantMessage = null;
+        let currentThinkingMessage = null;
+        let currentUserMessage = null;
+
+        function addToolUseMessage(toolUse) {
+            const transcript = document.getElementById('transcript');
+            const placeholder = transcript.querySelector('.placeholder');
+            if (placeholder) placeholder.remove();
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message tool-use';
+
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = '🔧 Tool Call: ' + toolUse.name;
+            messageEl.appendChild(label);
+
+            if (toolUse.input) {
+                const content = document.createElement('div');
+                content.className = 'tool-content';
+                content.textContent = JSON.stringify(toolUse.input, null, 2);
+                messageEl.appendChild(content);
+            }
+
+            transcript.appendChild(messageEl);
+            transcript.scrollTop = transcript.scrollHeight;
+            return messageEl;
+        }
+
+        function addToolResultMessage(toolResult) {
+            const transcript = document.getElementById('transcript');
+            const placeholder = transcript.querySelector('.placeholder');
+            if (placeholder) placeholder.remove();
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message tool-result' + (toolResult.isError ? ' error' : '');
+
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = (toolResult.isError ? '❌' : '✅') + ' Tool Result: ' + toolResult.name;
+            messageEl.appendChild(label);
+
+            if (toolResult.output) {
+                const content = document.createElement('div');
+                content.className = 'tool-content';
+                content.textContent = toolResult.output;
+                messageEl.appendChild(content);
+            }
+
+            transcript.appendChild(messageEl);
+            transcript.scrollTop = transcript.scrollHeight;
+            return messageEl;
+        }
+
+        function addThinkingMessage(content) {
+            const transcript = document.getElementById('transcript');
+            const placeholder = transcript.querySelector('.placeholder');
+            if (placeholder) placeholder.remove();
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message thinking';
+
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = 'Thinking';
+            messageEl.appendChild(label);
+
+            const textEl = document.createElement('span');
+            textEl.textContent = content;
+            messageEl.appendChild(textEl);
+
+            transcript.appendChild(messageEl);
+            transcript.scrollTop = transcript.scrollHeight;
+            return messageEl;
+        }
+
+        function appendToThinkingMessage(text) {
+            if (currentThinkingMessage) {
+                const textEl = currentThinkingMessage.querySelector('span');
+                if (textEl) {
+                    textEl.textContent += text;
+                    document.getElementById('transcript').scrollTop =
+                        document.getElementById('transcript').scrollHeight;
+                }
+            }
+        }
+
+        function appendToUserMessage(text) {
+            if (currentUserMessage) {
+                const textEl = currentUserMessage.querySelector('span');
+                if (textEl) {
+                    textEl.textContent += text;
+                    document.getElementById('transcript').scrollTop =
+                        document.getElementById('transcript').scrollHeight;
+                }
+            }
+        }
 
         function handleServerMessage(data) {
             const type = data.type;
@@ -1176,6 +1320,16 @@
                     }
                     break;
 
+                case 'THINKING_DELTA':
+                    if (data.message && data.message.text) {
+                        if (!currentThinkingMessage) {
+                            currentThinkingMessage = addThinkingMessage(data.message.text);
+                        } else {
+                            appendToThinkingMessage(data.message.text);
+                        }
+                    }
+                    break;
+
                 case 'AUDIO_DELTA':
                     // Play audio with correct sample rate
                     if (data.message && data.message.audio) {
@@ -1186,7 +1340,11 @@
 
                 case 'INPUT_TRANSCRIPTION':
                     if (data.message && data.message.text) {
-                        addMessage('user', data.message.text);
+                        if (!currentUserMessage) {
+                            currentUserMessage = addMessage('user', data.message.text);
+                        } else {
+                            appendToUserMessage(data.message.text);
+                        }
                     }
                     break;
 
@@ -1208,6 +1366,8 @@
 
                 case 'TURN_COMPLETE':
                     currentAssistantMessage = null;
+                    currentThinkingMessage = null;
+                    currentUserMessage = null;
                     break;
 
                 case 'ERROR':
@@ -1241,6 +1401,17 @@
 
                 case 'SPEECH_STOPPED':
                     addMessage('system', '🔇 Speech ended, processing...');
+                    break;
+
+                case 'TOOL_CALL':
+                    if (data.message) {
+                        if (data.message.toolUse) {
+                            addToolUseMessage(data.message.toolUse);
+                        }
+                        if (data.message.toolResult) {
+                            addToolResultMessage(data.message.toolResult);
+                        }
+                    }
                     break;
 
                 default:

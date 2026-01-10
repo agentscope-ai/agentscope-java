@@ -24,6 +24,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.RawSource;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.TranscriptionBlock;
@@ -32,6 +33,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Gemini Live API Formatter.
@@ -52,17 +55,29 @@ import java.util.Map;
  */
 public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
 
+    private static final Logger log = LoggerFactory.getLogger(GeminiLiveFormatter.class);
+    // Model configuration
+    private final String modelName;
+
     // Gemini-specific configuration
     private final Boolean proactiveAudio;
     private final Boolean affectiveDialog;
     private final Boolean enableThinking;
     private final Integer thinkingBudget;
     private final Boolean contextWindowCompression;
+    private final Integer triggerTokens;
     private final Integer slidingWindowTokens;
     private final Boolean sessionResumption;
     private final String sessionResumptionHandle;
     private final String activityHandling;
     private final String mediaResolution;
+
+    // Response configuration
+    private final List<String> responseModalities;
+
+    // Transcription configuration
+    private final Boolean inputAudioTranscription;
+    private final Boolean outputAudioTranscription;
 
     // VAD configuration (Gemini uses speechSensitivity)
     private final SpeechSensitivity startOfSpeechSensitivity;
@@ -81,46 +96,61 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
     /**
      * Creates a new GeminiLiveFormatter.
      *
+     * @param modelName the model name
      * @param proactiveAudio whether to enable proactive audio
      * @param affectiveDialog whether to enable affective dialog
      * @param enableThinking whether to enable thinking capability
      * @param thinkingBudget thinking budget in tokens
      * @param contextWindowCompression whether to enable context window compression
+     * @param triggerTokens trigger tokens for context window compression
      * @param slidingWindowTokens target tokens for sliding window
      * @param sessionResumption whether to enable session resumption
      * @param sessionResumptionHandle previous session handle for resumption
      * @param activityHandling activity handling mode
      * @param mediaResolution media resolution setting
+     * @param responseModalities response modalities (TEXT, AUDIO, IMAGE)
+     * @param inputAudioTranscription whether to enable input audio transcription
+     * @param outputAudioTranscription whether to enable output audio transcription
      * @param startOfSpeechSensitivity start of speech sensitivity
      * @param endOfSpeechSensitivity end of speech sensitivity
      * @param silenceDurationMs silence duration in milliseconds
      * @param prefixPaddingMs prefix padding in milliseconds
      */
     public GeminiLiveFormatter(
+            String modelName,
             Boolean proactiveAudio,
             Boolean affectiveDialog,
             Boolean enableThinking,
             Integer thinkingBudget,
             Boolean contextWindowCompression,
+            Integer triggerTokens,
             Integer slidingWindowTokens,
             Boolean sessionResumption,
             String sessionResumptionHandle,
             String activityHandling,
             String mediaResolution,
+            List<String> responseModalities,
+            Boolean inputAudioTranscription,
+            Boolean outputAudioTranscription,
             SpeechSensitivity startOfSpeechSensitivity,
             SpeechSensitivity endOfSpeechSensitivity,
             Integer silenceDurationMs,
             Integer prefixPaddingMs) {
+        this.modelName = modelName;
         this.proactiveAudio = proactiveAudio;
         this.affectiveDialog = affectiveDialog;
         this.enableThinking = enableThinking;
         this.thinkingBudget = thinkingBudget;
         this.contextWindowCompression = contextWindowCompression;
+        this.triggerTokens = triggerTokens;
         this.slidingWindowTokens = slidingWindowTokens;
         this.sessionResumption = sessionResumption;
         this.sessionResumptionHandle = sessionResumptionHandle;
         this.activityHandling = activityHandling;
         this.mediaResolution = mediaResolution;
+        this.responseModalities = responseModalities;
+        this.inputAudioTranscription = inputAudioTranscription;
+        this.outputAudioTranscription = outputAudioTranscription;
         this.startOfSpeechSensitivity = startOfSpeechSensitivity;
         this.endOfSpeechSensitivity = endOfSpeechSensitivity;
         this.silenceDurationMs = silenceDurationMs;
@@ -139,18 +169,17 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
 
     @Override
     protected String formatAudio(byte[] audioData) {
-        // Gemini uses realtimeInput
+        // Gemini uses realtimeInput with audio field (mediaChunks is deprecated)
         return toJson(
                 Map.of(
                         "realtimeInput",
                         Map.of(
-                                "mediaChunks",
-                                List.of(
-                                        Map.of(
-                                                "mimeType",
-                                                "audio/pcm;rate=16000",
-                                                "data",
-                                                encodeBase64(audioData))))));
+                                "audio",
+                                Map.of(
+                                        "mimeType",
+                                        "audio/pcm;rate=16000",
+                                        "data",
+                                        encodeBase64(audioData)))));
     }
 
     @Override
@@ -242,11 +271,20 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
     protected String buildSessionConfigJson(LiveConfig config, List<ToolSchema> toolSchemas) {
         Map<String, Object> setup = new LinkedHashMap<>();
 
+        // Model configuration
+        if (modelName != null) {
+            setup.put("model", "models/" + modelName);
+        }
+
         // Generation configuration
         Map<String, Object> generationConfig = new LinkedHashMap<>();
 
-        // Response modalities (default AUDIO)
-        generationConfig.put("responseModalities", List.of("AUDIO"));
+        // Response modalities (default TEXT + AUDIO)
+        if (responseModalities != null && !responseModalities.isEmpty()) {
+            generationConfig.put("responseModalities", responseModalities);
+        } else {
+            generationConfig.put("responseModalities", List.of("AUDIO"));
+        }
 
         // Voice configuration
         if (config.getVoice() != null) {
@@ -338,16 +376,30 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
             if (sessionResumptionHandle != null) {
                 sessionResumptionConfig.put("handle", sessionResumptionHandle);
             }
-            setup.put("sessionResumptionConfig", sessionResumptionConfig);
+            setup.put("sessionResumption", sessionResumptionConfig);
         }
 
-        // Context window compression configuration
-        if (Boolean.TRUE.equals(contextWindowCompression)) {
+        // Context window compression configuration (requires triggerTokens)
+        if (Boolean.TRUE.equals(contextWindowCompression) && triggerTokens != null) {
             Map<String, Object> compressionConfig = new LinkedHashMap<>();
+            compressionConfig.put("triggerTokens", triggerTokens);
             if (slidingWindowTokens != null) {
                 compressionConfig.put("slidingWindow", Map.of("targetTokens", slidingWindowTokens));
             }
-            setup.put("contextWindowCompressionConfig", compressionConfig);
+            setup.put("contextWindowCompression", compressionConfig);
+        }
+
+        // Transcription configuration (from LiveConfig or formatter settings)
+        boolean enableInputTranscript =
+                Boolean.TRUE.equals(inputAudioTranscription) || config.isEnableInputTranscription();
+        boolean enableOutputTranscript =
+                Boolean.TRUE.equals(outputAudioTranscription)
+                        || config.isEnableOutputTranscription();
+        if (enableInputTranscript) {
+            setup.put("inputAudioTranscription", Map.of());
+        }
+        if (enableOutputTranscript) {
+            setup.put("outputAudioTranscription", Map.of());
         }
 
         // Native Audio configuration
@@ -472,7 +524,7 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
                             .role(MsgRole.USER)
                             .content(TranscriptionBlock.input(text != null ? text : ""))
                             .build(),
-                    true);
+                    false);
         }
 
         // outputTranscription
@@ -485,7 +537,7 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
                             .role(MsgRole.ASSISTANT)
                             .content(TranscriptionBlock.output(text != null ? text : ""))
                             .build(),
-                    true);
+                    false);
         }
 
         // modelTurn
@@ -530,6 +582,20 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
         // Text output
         if (part.containsKey("text")) {
             String text = (String) part.get("text");
+
+            // Check if this is thought/reasoning content
+            Object thoughtFlag = part.get("thought");
+            boolean isThought = Boolean.TRUE.equals(thoughtFlag);
+
+            if (isThought) {
+                return LiveEvent.thinkingDelta(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(ThinkingBlock.builder().thinking(text).build())
+                                .build(),
+                        false);
+            }
+
             return LiveEvent.textDelta(
                     Msg.builder()
                             .role(MsgRole.ASSISTANT)
@@ -591,20 +657,36 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
 
     /** Builder for GeminiLiveFormatter. */
     public static class Builder {
+        private String modelName;
         private Boolean proactiveAudio;
         private Boolean affectiveDialog;
         private Boolean enableThinking;
         private Integer thinkingBudget;
         private Boolean contextWindowCompression;
+        private Integer triggerTokens;
         private Integer slidingWindowTokens;
         private Boolean sessionResumption;
         private String sessionResumptionHandle;
         private String activityHandling;
         private String mediaResolution;
+        private List<String> responseModalities;
+        private Boolean inputAudioTranscription;
+        private Boolean outputAudioTranscription;
         private SpeechSensitivity startOfSpeechSensitivity;
         private SpeechSensitivity endOfSpeechSensitivity;
         private Integer silenceDurationMs;
         private Integer prefixPaddingMs;
+
+        /**
+         * Sets the model name.
+         *
+         * @param modelName the model name
+         * @return this builder
+         */
+        public Builder modelName(String modelName) {
+            this.modelName = modelName;
+            return this;
+        }
 
         /**
          * Sets whether to enable proactive audio.
@@ -673,6 +755,17 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
         }
 
         /**
+         * Sets the trigger tokens for context window compression.
+         *
+         * @param triggerTokens the trigger tokens threshold
+         * @return this builder
+         */
+        public Builder triggerTokens(Integer triggerTokens) {
+            this.triggerTokens = triggerTokens;
+            return this;
+        }
+
+        /**
          * Sets whether to enable session resumption.
          *
          * @param sessionResumption true to enable session resumption
@@ -713,6 +806,39 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
          */
         public Builder mediaResolution(String mediaResolution) {
             this.mediaResolution = mediaResolution;
+            return this;
+        }
+
+        /**
+         * Sets the response modalities.
+         *
+         * @param responseModalities the response modalities (TEXT, AUDIO, IMAGE)
+         * @return this builder
+         */
+        public Builder responseModalities(List<String> responseModalities) {
+            this.responseModalities = responseModalities;
+            return this;
+        }
+
+        /**
+         * Sets whether to enable input audio transcription.
+         *
+         * @param inputAudioTranscription true to enable input transcription
+         * @return this builder
+         */
+        public Builder inputAudioTranscription(Boolean inputAudioTranscription) {
+            this.inputAudioTranscription = inputAudioTranscription;
+            return this;
+        }
+
+        /**
+         * Sets whether to enable output audio transcription.
+         *
+         * @param outputAudioTranscription true to enable output transcription
+         * @return this builder
+         */
+        public Builder outputAudioTranscription(Boolean outputAudioTranscription) {
+            this.outputAudioTranscription = outputAudioTranscription;
             return this;
         }
 
@@ -767,16 +893,21 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
          */
         public GeminiLiveFormatter build() {
             return new GeminiLiveFormatter(
+                    modelName,
                     proactiveAudio,
                     affectiveDialog,
                     enableThinking,
                     thinkingBudget,
                     contextWindowCompression,
+                    triggerTokens,
                     slidingWindowTokens,
                     sessionResumption,
                     sessionResumptionHandle,
                     activityHandling,
                     mediaResolution,
+                    responseModalities,
+                    inputAudioTranscription,
+                    outputAudioTranscription,
                     startOfSpeechSensitivity,
                     endOfSpeechSensitivity,
                     silenceDurationMs,

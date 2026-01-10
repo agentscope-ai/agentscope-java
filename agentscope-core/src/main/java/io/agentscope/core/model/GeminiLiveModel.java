@@ -28,7 +28,6 @@ import io.agentscope.core.live.transport.WebSocketConnection;
 import io.agentscope.core.live.transport.WebSocketRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,11 +89,13 @@ public class GeminiLiveModel extends LiveModelBase {
     private final Boolean enableThinking;
     private final Integer thinkingBudget;
     private final Boolean contextWindowCompression;
+    private final Integer triggerTokens;
     private final Integer slidingWindowTokens;
     private final Boolean sessionResumption;
     private final String sessionResumptionHandle;
     private final String activityHandling;
     private final String mediaResolution;
+    private final List<String> responseModalities;
 
     // VAD configuration
     private final SpeechSensitivity startOfSpeechSensitivity;
@@ -111,11 +112,13 @@ public class GeminiLiveModel extends LiveModelBase {
         this.enableThinking = builder.enableThinking;
         this.thinkingBudget = builder.thinkingBudget;
         this.contextWindowCompression = builder.contextWindowCompression;
+        this.triggerTokens = builder.triggerTokens;
         this.slidingWindowTokens = builder.slidingWindowTokens;
         this.sessionResumption = builder.sessionResumption;
         this.sessionResumptionHandle = builder.sessionResumptionHandle;
         this.activityHandling = builder.activityHandling;
         this.mediaResolution = builder.mediaResolution;
+        this.responseModalities = builder.responseModalities;
         this.startOfSpeechSensitivity = builder.startOfSpeechSensitivity;
         this.endOfSpeechSensitivity = builder.endOfSpeechSensitivity;
         this.silenceDurationMs = builder.silenceDurationMs;
@@ -273,16 +276,21 @@ public class GeminiLiveModel extends LiveModelBase {
      */
     private GeminiLiveFormatter createGeminiFormatter() {
         return new GeminiLiveFormatter(
+                getModelName(),
                 proactiveAudio,
                 affectiveDialog,
                 enableThinking,
                 thinkingBudget,
                 contextWindowCompression,
+                triggerTokens,
                 slidingWindowTokens,
                 sessionResumption,
                 sessionResumptionHandle,
                 activityHandling,
                 mediaResolution,
+                responseModalities,
+                null, // inputAudioTranscription - will be set from LiveConfig
+                null, // outputAudioTranscription - will be set from LiveConfig
                 startOfSpeechSensitivity,
                 endOfSpeechSensitivity,
                 silenceDurationMs,
@@ -296,8 +304,8 @@ public class GeminiLiveModel extends LiveModelBase {
 
     @Override
     protected Map<String, String> buildHeaders() {
-        // Gemini uses URL parameter for API key, no special headers needed
-        return new HashMap<>();
+        // Gemini uses API key in URL parameter
+        return Map.of();
     }
 
     @Override
@@ -359,7 +367,7 @@ public class GeminiLiveModel extends LiveModelBase {
     public static class Builder {
         // Connection configuration
         private String apiKey;
-        private String modelName = "gemini-2.0-flash-exp";
+        private String modelName = "gemini-2.5-flash-native-audio-preview-12-2025";
         private String baseUrl = DEFAULT_BASE_URL;
         private WebSocketClient webSocketClient;
 
@@ -368,12 +376,14 @@ public class GeminiLiveModel extends LiveModelBase {
         private Boolean affectiveDialog;
         private Boolean enableThinking;
         private Integer thinkingBudget;
-        private Boolean contextWindowCompression = true;
+        private Boolean contextWindowCompression;
+        private Integer triggerTokens;
         private Integer slidingWindowTokens;
         private Boolean sessionResumption = true;
         private String sessionResumptionHandle;
         private String activityHandling;
         private String mediaResolution;
+        private List<String> responseModalities;
 
         // VAD configuration
         private SpeechSensitivity startOfSpeechSensitivity;
@@ -482,7 +492,7 @@ public class GeminiLiveModel extends LiveModelBase {
         }
 
         /**
-         * Enable context window compression - supports unlimited session duration (default true).
+         * Enable context window compression. Requires triggerTokens to be set.
          *
          * @param enabled true to enable context window compression
          * @return this builder
@@ -500,6 +510,17 @@ public class GeminiLiveModel extends LiveModelBase {
          */
         public Builder slidingWindowTokens(Integer tokens) {
             this.slidingWindowTokens = tokens;
+            return this;
+        }
+
+        /**
+         * Set trigger tokens for context window compression.
+         *
+         * @param tokens Trigger tokens threshold (required for compression to work)
+         * @return this builder
+         */
+        public Builder triggerTokens(Integer tokens) {
+            this.triggerTokens = tokens;
             return this;
         }
 
@@ -545,6 +566,17 @@ public class GeminiLiveModel extends LiveModelBase {
          */
         public Builder mediaResolution(String resolution) {
             this.mediaResolution = resolution;
+            return this;
+        }
+
+        /**
+         * Set response modalities.
+         *
+         * @param modalities Response modalities (TEXT, AUDIO, IMAGE)
+         * @return this builder
+         */
+        public Builder responseModalities(List<String> modalities) {
+            this.responseModalities = modalities;
             return this;
         }
 

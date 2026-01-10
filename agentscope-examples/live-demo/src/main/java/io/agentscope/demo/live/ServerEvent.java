@@ -21,6 +21,9 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.RawSource;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.TranscriptionBlock;
 import java.util.Base64;
 import java.util.Map;
@@ -59,7 +62,8 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
      * @return the error ServerEvent
      */
     public static ServerEvent error(String errorMessage) {
-        return new ServerEvent("ERROR", true, new MessagePayload(errorMessage, null, null, null));
+        return new ServerEvent(
+                "ERROR", true, new MessagePayload(errorMessage, null, null, null, null, null));
     }
 
     /**
@@ -69,10 +73,17 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
      * @param audio audio data as Base64 encoded string
      * @param audioFormat audio format information
      * @param metadata additional metadata
+     * @param toolUse tool use request payload
+     * @param toolResult tool execution result payload
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MessagePayload(
-            String text, String audio, AudioFormat audioFormat, Map<String, String> metadata) {
+            String text,
+            String audio,
+            AudioFormat audioFormat,
+            Map<String, String> metadata,
+            ToolUsePayload toolUse,
+            ToolResultPayload toolResult) {
 
         /**
          * Create a MessagePayload from a Msg.
@@ -84,11 +95,15 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
             String text = null;
             String audio = null;
             AudioFormat audioFormat = null;
+            ToolUsePayload toolUse = null;
+            ToolResultPayload toolResult = null;
 
             if (msg.getContent() != null) {
                 for (ContentBlock block : msg.getContent()) {
                     if (block instanceof TextBlock textBlock) {
                         text = textBlock.getText();
+                    } else if (block instanceof ThinkingBlock thinkingBlock) {
+                        text = thinkingBlock.getThinking();
                     } else if (block instanceof AudioBlock audioBlock) {
                         if (audioBlock.getSource() instanceof RawSource rawSource) {
                             audio = Base64.getEncoder().encodeToString(rawSource.getData());
@@ -100,6 +115,21 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
                         }
                     } else if (block instanceof TranscriptionBlock transcriptionBlock) {
                         text = transcriptionBlock.getText();
+                    } else if (block instanceof ToolUseBlock toolUseBlock) {
+                        toolUse =
+                                new ToolUsePayload(
+                                        toolUseBlock.getId(),
+                                        toolUseBlock.getName(),
+                                        toolUseBlock.getInput());
+                    } else if (block instanceof ToolResultBlock toolResultBlock) {
+                        String output = extractToolResultOutput(toolResultBlock);
+                        boolean isError = output != null && output.startsWith("Error:");
+                        toolResult =
+                                new ToolResultPayload(
+                                        toolResultBlock.getId(),
+                                        toolResultBlock.getName(),
+                                        output,
+                                        isError);
                     }
                 }
             }
@@ -114,7 +144,23 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
                                                 Map.Entry::getKey, e -> e.getValue().toString()));
             }
 
-            return new MessagePayload(text, audio, audioFormat, metadata);
+            return new MessagePayload(text, audio, audioFormat, metadata, toolUse, toolResult);
+        }
+
+        private static String extractToolResultOutput(ToolResultBlock block) {
+            if (block.getOutput() == null || block.getOutput().isEmpty()) {
+                return null;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (ContentBlock content : block.getOutput()) {
+                if (content instanceof TextBlock textBlock) {
+                    if (sb.length() > 0) {
+                        sb.append("\n");
+                    }
+                    sb.append(textBlock.getText());
+                }
+            }
+            return sb.length() > 0 ? sb.toString() : null;
         }
     }
 
@@ -127,4 +173,25 @@ public record ServerEvent(String type, boolean isLast, MessagePayload message) {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AudioFormat(int sampleRate, int bitDepth, int channels) {}
+
+    /**
+     * Tool use payload for tool call requests.
+     *
+     * @param id tool call ID
+     * @param name tool name
+     * @param input tool input parameters
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ToolUsePayload(String id, String name, Map<String, Object> input) {}
+
+    /**
+     * Tool result payload for tool execution results.
+     *
+     * @param id tool call ID
+     * @param name tool name
+     * @param output tool execution output
+     * @param isError whether the result is an error
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ToolResultPayload(String id, String name, String output, boolean isError) {}
 }
