@@ -21,6 +21,8 @@ import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -111,8 +113,7 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
         Set<String> assistantNames = new HashSet<>();
         MsgRole lastRole = null;
         boolean hasConsecutiveAssistant = false;
-        boolean hasUserAndAssistant = false;
-        boolean hasUserWithAgentName = false;
+        boolean hasSystemNamedUserMessage = false;
 
         for (int i = 0; i < msgs.size(); i++) {
             Msg msg = msgs.get(i);
@@ -127,16 +128,10 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
                 log.debug("Found consecutive ASSISTANT messages at index {}", i);
             }
 
-            // Check if we have both USER and ASSISTANT messages (typical MsgHub pattern)
-            if ((lastRole == MsgRole.USER && currentRole == MsgRole.ASSISTANT)
-                    || (lastRole == MsgRole.ASSISTANT && currentRole == MsgRole.USER)) {
-                hasUserAndAssistant = true;
-            }
-
-            // Check if USER message has an agent name (indicates multi-agent context)
-            if (currentRole == MsgRole.USER && msgName != null && !msgName.equals("user")) {
-                hasUserWithAgentName = true;
-                log.debug("Found USER message with agent name: {}", msgName);
+            // Check if USER message has name="system" (indicates MsgHub announcement)
+            if (currentRole == MsgRole.USER && "system".equals(msgName)) {
+                hasSystemNamedUserMessage = true;
+                log.debug("Found USER message with name='system' (MsgHub announcement)");
             }
 
             // Collect ASSISTANT message names
@@ -148,20 +143,17 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
         }
 
         // Multi-agent if:
-        // 1. Multiple assistant names, OR
+        // 1. Multiple assistant names (different agents), OR
         // 2. Consecutive assistant messages, OR
-        // 3. User + Assistant pattern with named agent
+        // 3. System-named USER message (MsgHub announcement)
         boolean result =
-                assistantNames.size() > 1
-                        || hasConsecutiveAssistant
-                        || (hasUserAndAssistant && hasUserWithAgentName);
+                assistantNames.size() > 1 || hasConsecutiveAssistant || hasSystemNamedUserMessage;
         log.debug(
                 "isMultiAgentConversation: assistantNames={}, hasConsecutive={}, "
-                        + "hasUserAndAssistant={}, hasUserWithAgentName={}, result={}",
+                        + "hasSystemNamedUserMessage={}, result={}",
                 assistantNames,
                 hasConsecutiveAssistant,
-                hasUserAndAssistant,
-                hasUserWithAgentName,
+                hasSystemNamedUserMessage,
                 result);
         return result;
     }
@@ -176,16 +168,24 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
     private List<AnthropicMessage> formatMultiAgentConversation(List<Msg> msgs) {
         log.debug("formatMultiAgentConversation: processing {} messages", msgs.size());
 
-        // Simplified approach: separate system from non-system, merge everything else
+        // Separate messages into groups: SYSTEM, TOOL_SEQUENCE, AGENT_CONVERSATION
         List<AnthropicMessage> result = new ArrayList<>();
         List<Msg> systemMsgs = new ArrayList<>();
-        List<Msg> conversationMsgs = new ArrayList<>();
+        List<Msg> toolSequence = new ArrayList<>();
+        List<Msg> agentConversation = new ArrayList<>();
 
         for (Msg msg : msgs) {
-            if (msg.getRole() == MsgRole.SYSTEM) {
+            MsgRole role = msg.getRole();
+
+            if (role == MsgRole.SYSTEM) {
                 systemMsgs.add(msg);
+            } else if (msg.hasContentBlocks(ToolUseBlock.class)
+                    || msg.hasContentBlocks(ToolResultBlock.class)) {
+                // Tool-related messages: use standard converter
+                toolSequence.add(msg);
             } else {
-                conversationMsgs.add(msg);
+                // Regular conversation messages (USER, ASSISTANT without tools)
+                agentConversation.add(msg);
             }
         }
 
@@ -195,13 +195,20 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
             result.addAll(converted);
         }
 
-        // Merge all conversation messages into a single user message
-        if (!conversationMsgs.isEmpty()) {
-            log.debug("Merging {} conversation messages", conversationMsgs.size());
+        // Add tool sequence using standard converter
+        if (!toolSequence.isEmpty()) {
+            List<AnthropicMessage> converted = messageConverter.convert(toolSequence);
+            result.addAll(converted);
+            log.debug("Added {} tool messages using standard converter", toolSequence.size());
+        }
+
+        // Merge agent conversation into a single user message
+        if (!agentConversation.isEmpty()) {
+            log.debug("Merging {} agent conversation messages", agentConversation.size());
 
             List<Object> mergedContent =
                     AnthropicConversationMerger.mergeConversation(
-                            conversationMsgs, DEFAULT_CONVERSATION_HISTORY_PROMPT);
+                            agentConversation, DEFAULT_CONVERSATION_HISTORY_PROMPT);
 
             List<AnthropicContent> contentBlocks = new ArrayList<>();
 
@@ -230,7 +237,7 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
                 log.debug(
                         "Created merged user message with {} content blocks", contentBlocks.size());
             } else {
-                log.warn("No content blocks created from merged conversation");
+                log.warn("No content blocks created from merged agent conversation");
             }
         }
 
