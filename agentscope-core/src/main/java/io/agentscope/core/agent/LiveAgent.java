@@ -97,9 +97,6 @@ public class LiveAgent implements LiveableAgent {
     private final Sinks.Many<LiveAgentStateEvent> stateEventSink =
             Sinks.many().multicast().onBackpressureBuffer(256);
 
-    // Session resumption handle (for Gemini/Doubao)
-    private volatile String currentResumptionHandle;
-
     // ==================== Constructor ====================
 
     private LiveAgent(Builder builder) {
@@ -187,48 +184,8 @@ public class LiveAgent implements LiveableAgent {
                                             .then();
 
                             // Downstream task: receive events from liveSession, process tool calls
-                            // Error handling: recoverable errors attempt reconnection,
-                            // unrecoverable
-                            // errors propagate to user
                             Flux<LiveEvent> downstreamTask =
-                                    liveSession
-                                            .receive()
-                                            .flatMap(event -> processEvent(liveSession, event))
-                                            .onErrorResume(
-                                                    error -> {
-                                                        // Determine if recoverable
-                                                        if (isRecoverable(error, effectiveConfig)) {
-                                                            return doReconnect(effectiveConfig, 1)
-                                                                    .flatMapMany(
-                                                                            success -> {
-                                                                                if (success) {
-                                                                                    LiveSession
-                                                                                            newSession =
-                                                                                                    currentSession
-                                                                                                            .get();
-                                                                                    return newSession
-                                                                                            .receive()
-                                                                                            .flatMap(
-                                                                                                    e ->
-                                                                                                            processEvent(
-                                                                                                                    newSession,
-                                                                                                                    e));
-                                                                                }
-                                                                                return Flux.error(
-                                                                                        new ReconnectFailedException(
-                                                                                                "Reconnect"
-                                                                                                    + " failed"
-                                                                                                    + " after"
-                                                                                                    + " error:"
-                                                                                                    + " "
-                                                                                                        + error
-                                                                                                                .getMessage(),
-                                                                                                error));
-                                                                            });
-                                                        }
-                                                        // Unrecoverable, propagate to user
-                                                        return Flux.error(error);
-                                                    });
+                                    createDownstreamEventStream(liveSession, effectiveConfig);
 
                             // Agent state events
                             Flux<LiveEvent> agentStateEvents =
@@ -284,29 +241,58 @@ public class LiveAgent implements LiveableAgent {
         if (event.currentState() == ConnectionState.DISCONNECTED) {
             updateState(LiveAgentState.DISCONNECTED, event.reason());
 
-            // Decide whether to auto-reconnect based on provider capability
-            boolean supportsNativeRecovery = liveModel.supportsNativeRecovery();
-
-            if (config.isAutoReconnect() && supportsNativeRecovery) {
-                // Gemini/Doubao: supports native recovery, auto-reconnect
-                return doReconnect(config, 1)
-                        .flatMapMany(
-                                success -> {
-                                    if (success) {
-                                        return Flux.just(LiveEvent.reconnected());
-                                    }
-                                    return Flux.just(
-                                            LiveEvent.sessionEnded("RECONNECT_FAILED", false));
-                                });
-            } else {
-                // DashScope/OpenAI: does not support native recovery, end stream directly
-                return Flux.just(
-                        LiveEvent.connectionState("DISCONNECTED", event.reason(), false),
-                        LiveEvent.sessionEnded("CONNECTION_LOST", false));
-            }
+            // Use unified recovery method
+            return attemptRecovery(config, event.error(), 1)
+                    .flatMapMany(
+                            success -> {
+                                if (success) {
+                                    return Flux.just(LiveEvent.reconnected());
+                                }
+                                // Recovery not attempted or failed
+                                return Flux.just(
+                                        LiveEvent.connectionState(
+                                                "DISCONNECTED", event.reason(), false),
+                                        LiveEvent.sessionEnded("CONNECTION_LOST", false));
+                            });
         }
 
         return Flux.empty();
+    }
+
+    /**
+     * Create downstream event stream with error recovery support.
+     *
+     * <p>This method builds the downstream event processing pipeline that:
+     * <ul>
+     *   <li>Receives events from the live session</li>
+     *   <li>Processes each event (including tool calls)</li>
+     *   <li>Handles errors with unified recovery logic</li>
+     * </ul>
+     *
+     * @param session the live session to receive events from
+     * @param config the live config for recovery settings
+     * @return event stream with error recovery
+     */
+    private Flux<LiveEvent> createDownstreamEventStream(LiveSession session, LiveConfig config) {
+        return session.receive()
+                .flatMap(event -> processEvent(session, event))
+                .onErrorResume(
+                        error ->
+                                attemptRecovery(config, error, 1)
+                                        .flatMapMany(
+                                                success -> {
+                                                    if (success) {
+                                                        LiveSession newSession =
+                                                                currentSession.get();
+                                                        return createDownstreamEventStream(
+                                                                newSession, config);
+                                                    }
+                                                    return Flux.error(
+                                                            new ReconnectFailedException(
+                                                                    "Reconnect failed: "
+                                                                            + error.getMessage(),
+                                                                    error));
+                                                }));
     }
 
     /**
@@ -364,9 +350,8 @@ public class LiveAgent implements LiveableAgent {
                                     return liveSession.send(msg);
                                 }))
                 .onErrorResume(
-                        error -> {
-                            if (config.isAutoReconnect() && !state.get().isRecovering()) {
-                                return doReconnect(config, 1)
+                        error ->
+                                attemptRecovery(config, error, 1)
                                         .flatMap(
                                                 success -> {
                                                     if (success) {
@@ -376,11 +361,10 @@ public class LiveAgent implements LiveableAgent {
                                                     }
                                                     return Mono.error(
                                                             new ReconnectFailedException(
-                                                                    "Reconnect failed"));
-                                                });
-                            }
-                            return Mono.error(error);
-                        });
+                                                                    "Reconnect failed: "
+                                                                            + error.getMessage(),
+                                                                    error));
+                                                }));
     }
 
     /**
@@ -418,7 +402,7 @@ public class LiveAgent implements LiveableAgent {
         if (event.type() == LiveEventType.SESSION_RESUMPTION) {
             String handle = event.getMetadata("live.session.resumption_handle");
             if (handle != null) {
-                currentResumptionHandle = handle;
+                liveSession.setResumptionHandle(handle);
             }
         }
 
@@ -527,20 +511,21 @@ public class LiveAgent implements LiveableAgent {
     }
 
     /**
-     * Determine if error is recoverable.
+     * Determine if error is recoverable and recovery should be attempted.
      *
      * <p>Recoverable conditions:
      * <ol>
      *   <li>Auto-reconnect is enabled</li>
      *   <li>Provider supports native recovery (Gemini/Doubao)</li>
+     *   <li>Not currently in recovery state</li>
      *   <li>Error type is connection-related exception</li>
      * </ol>
      *
-     * @param error the error
+     * @param error the error (can be null for connection state changes)
      * @param config the config
      * @return true if recovery can be attempted
      */
-    private boolean isRecoverable(Throwable error, LiveConfig config) {
+    private boolean shouldAttemptRecovery(Throwable error, LiveConfig config) {
         // 1. Must have auto-reconnect enabled
         if (!config.isAutoReconnect()) {
             return false;
@@ -549,8 +534,33 @@ public class LiveAgent implements LiveableAgent {
         if (!liveModel.supportsNativeRecovery()) {
             return false;
         }
-        // 3. Must be connection-related exception (protocol parsing exceptions are not recoverable)
-        return error instanceof WebSocketTransportException;
+        // 3. Must not be currently recovering
+        if (state.get().isRecovering()) {
+            return false;
+        }
+        // 4. If error is provided, must be connection-related exception
+        if (error != null && !(error instanceof WebSocketTransportException)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Unified recovery execution entry point.
+     *
+     * <p>This method checks if recovery should be attempted and executes reconnection. All recovery
+     * attempts should go through this method to ensure consistent behavior.
+     *
+     * @param config the live config
+     * @param error the error that triggered recovery (can be null)
+     * @param attempt the current attempt number
+     * @return Mono emitting true if recovery succeeded, false otherwise
+     */
+    private Mono<Boolean> attemptRecovery(LiveConfig config, Throwable error, int attempt) {
+        if (!shouldAttemptRecovery(error, config)) {
+            return Mono.just(false);
+        }
+        return doReconnect(config, attempt);
     }
 
     // ==================== Builder ====================
