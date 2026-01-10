@@ -358,6 +358,120 @@
             margin-bottom: 16px;
             opacity: 0.5;
         }
+        /* Media Controls Styles */
+        .media-controls {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e9ecef;
+            background: #f8f9fa;
+        }
+        .video-section {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .video-container {
+            position: relative;
+            width: 240px;
+            height: 180px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.8);
+            color: #666;
+            font-size: 14px;
+        }
+        .video-overlay.hidden {
+            display: none;
+        }
+        .video-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .video-buttons button {
+            padding: 10px 16px;
+            font-size: 14px;
+            min-width: 100px;
+        }
+        .btn-capture {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-capture:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .btn-auto {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-auto.active {
+            background: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);
+            animation: autoPulse 1s infinite;
+        }
+        @keyframes autoPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .device-controls {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e9ecef;
+        }
+        .device-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 8px 0;
+        }
+        .device-row label {
+            width: 60px;
+            font-size: 13px;
+            color: #495057;
+            font-weight: 500;
+        }
+        .device-row select {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
+            outline: none;
+        }
+        .device-row select:focus {
+            border-color: #667eea;
+        }
+        .toggle-btn {
+            padding: 8px 16px;
+            min-width: 50px;
+            font-size: 13px;
+            border-radius: 6px;
+            background: #28a745;
+            color: white;
+        }
+        .toggle-btn:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+        .toggle-btn.off {
+            background: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -388,6 +502,36 @@
                 </svg>
                 Stop
             </button>
+        </div>
+
+        <!-- Media Controls: Camera and Microphone -->
+        <div class="media-controls">
+            <div class="video-section">
+                <div class="video-container">
+                    <video id="localVideo" autoplay playsinline muted></video>
+                    <div class="video-overlay" id="videoOverlay">Camera Off</div>
+                </div>
+                <div class="video-buttons">
+                    <button id="captureBtn" class="btn-capture" onclick="captureAndSendImage()" disabled>
+                        📸 Capture
+                    </button>
+                    <button id="autoCaptureBtn" class="btn-auto" onclick="toggleAutoCapture()" disabled>
+                        ⏱️ Auto: Off
+                    </button>
+                </div>
+            </div>
+            <div class="device-controls">
+                <div class="device-row">
+                    <label>Camera:</label>
+                    <select id="cameraSelect" onchange="switchCamera(this.value)"></select>
+                    <button id="cameraToggle" class="toggle-btn off" onclick="toggleCamera()">Off</button>
+                </div>
+                <div class="device-row">
+                    <label>Mic:</label>
+                    <select id="micSelect" onchange="switchMicrophone(this.value)"></select>
+                    <button id="micToggle" class="toggle-btn" onclick="toggleMicrophone()">On</button>
+                </div>
+            </div>
         </div>
 
         <div class="mode-selector">
@@ -461,6 +605,15 @@
         let currentMode = 'vad'; // 'vad' or 'manual'
         let isPTTActive = false;
 
+        // Video/Camera state
+        let videoStream = null;
+        let isCameraEnabled = false;
+        let isMicEnabled = true;
+        let isAutoCaptureEnabled = false;
+        let autoCaptureInterval = null;
+        let selectedCameraId = null;
+        let selectedMicId = null;
+
         function updateStatus(status, message) {
             const indicator = document.getElementById('statusIndicator');
             const text = document.getElementById('statusText');
@@ -496,6 +649,199 @@
             document.getElementById('pttBtn').disabled = !enabled;
             document.getElementById('commitBtn').disabled = !enabled;
             document.getElementById('clearBtn').disabled = !enabled;
+        }
+
+        // Device enumeration
+        async function enumerateDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameraSelect = document.getElementById('cameraSelect');
+                const micSelect = document.getElementById('micSelect');
+
+                cameraSelect.innerHTML = '';
+                micSelect.innerHTML = '';
+
+                devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `${device.kind} ${device.deviceId.slice(0, 8)}...`;
+
+                    if (device.kind === 'videoinput') {
+                        cameraSelect.appendChild(option);
+                    } else if (device.kind === 'audioinput') {
+                        micSelect.appendChild(option);
+                    }
+                });
+
+                // Set selected values
+                if (selectedCameraId) {
+                    cameraSelect.value = selectedCameraId;
+                }
+                if (selectedMicId) {
+                    micSelect.value = selectedMicId;
+                }
+            } catch (e) {
+                console.error('Failed to enumerate devices:', e);
+            }
+        }
+
+        // Camera control
+        async function initCamera(deviceId) {
+            try {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
+                    video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user', width: 640, height: 480 }
+                };
+
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                document.getElementById('localVideo').srcObject = videoStream;
+                document.getElementById('videoOverlay').classList.add('hidden');
+                isCameraEnabled = true;
+                updateCameraToggle();
+                updateCaptureButtonState();
+
+                // Re-enumerate to get device labels after permission granted
+                await enumerateDevices();
+            } catch (e) {
+                console.error('Failed to init camera:', e);
+                addMessage('system', 'Camera access denied.');
+            }
+        }
+
+        function toggleCamera() {
+            if (isCameraEnabled) {
+                if (videoStream) {
+                    videoStream.getVideoTracks().forEach(track => track.stop());
+                }
+                document.getElementById('localVideo').srcObject = null;
+                document.getElementById('videoOverlay').classList.remove('hidden');
+                isCameraEnabled = false;
+                // Stop auto capture when camera is off
+                if (isAutoCaptureEnabled) {
+                    toggleAutoCapture();
+                }
+            } else {
+                initCamera(selectedCameraId);
+            }
+            updateCameraToggle();
+            updateCaptureButtonState();
+        }
+
+        function updateCameraToggle() {
+            const btn = document.getElementById('cameraToggle');
+            btn.textContent = isCameraEnabled ? 'On' : 'Off';
+            btn.classList.toggle('off', !isCameraEnabled);
+        }
+
+        function updateCaptureButtonState() {
+            // Capture button enabled when camera is on
+            document.getElementById('captureBtn').disabled = !isCameraEnabled;
+            // Auto capture enabled when camera is on AND WebSocket connected
+            document.getElementById('autoCaptureBtn').disabled = !isCameraEnabled || !ws || ws.readyState !== WebSocket.OPEN;
+        }
+
+        function switchCamera(deviceId) {
+            selectedCameraId = deviceId;
+            if (isCameraEnabled) {
+                initCamera(deviceId);
+            }
+        }
+
+        // Microphone control
+        function toggleMicrophone() {
+            isMicEnabled = !isMicEnabled;
+            // Control existing mediaRecorder tracks
+            if (mediaRecorder && mediaRecorder.stream) {
+                mediaRecorder.stream.getAudioTracks().forEach(track => {
+                    track.enabled = isMicEnabled;
+                });
+            }
+            updateMicToggle();
+        }
+
+        function updateMicToggle() {
+            const btn = document.getElementById('micToggle');
+            btn.textContent = isMicEnabled ? 'On' : 'Off';
+            btn.classList.toggle('off', !isMicEnabled);
+        }
+
+        async function switchMicrophone(deviceId) {
+            selectedMicId = deviceId;
+            // Restart recording with new device if currently recording
+            if (isRecording && (currentMode === 'vad' || isPTTActive)) {
+                stopRecording();
+                await startRecording();
+            }
+        }
+
+        // Image capture and send
+        function captureAndSendImage() {
+            if (!isCameraEnabled || !videoStream) {
+                addMessage('system', 'Camera is not enabled.');
+                return;
+            }
+
+            const video = document.getElementById('localVideo');
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Compress to under 500KB
+            let quality = 0.8;
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+            // DashScope limit: 500KB, base64 is ~4/3 times larger
+            while (dataUrl.length > 500 * 1024 * 4 / 3 && quality > 0.1) {
+                quality -= 0.1;
+                dataUrl = canvas.toDataURL('image/jpeg', quality);
+            }
+
+            const base64Data = dataUrl.replace('data:image/jpeg;base64,', '');
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'image',
+                    data: base64Data,
+                    mediaType: 'image/jpeg'
+                }));
+                addMessage('system', '[Image sent]');
+            } else {
+                addMessage('system', 'WebSocket not connected.');
+            }
+        }
+
+        function toggleAutoCapture() {
+            isAutoCaptureEnabled = !isAutoCaptureEnabled;
+            const btn = document.getElementById('autoCaptureBtn');
+
+            if (isAutoCaptureEnabled) {
+                if (!isCameraEnabled) {
+                    addMessage('system', 'Please enable camera first.');
+                    isAutoCaptureEnabled = false;
+                    return;
+                }
+                autoCaptureInterval = setInterval(captureAndSendImage, 1000);
+                btn.textContent = '⏱️ Auto: On';
+                btn.classList.add('active');
+                addMessage('system', 'Auto capture enabled (1 frame/sec).');
+            } else {
+                clearInterval(autoCaptureInterval);
+                autoCaptureInterval = null;
+                btn.textContent = '⏱️ Auto: Off';
+                btn.classList.remove('active');
+                addMessage('system', 'Auto capture disabled.');
+            }
+        }
+
+        function updateMediaControlsState(enabled) {
+            // Auto capture requires WebSocket connection
+            updateCaptureButtonState();
         }
 
         function startPTT() {
@@ -616,7 +962,14 @@
                     document.getElementById('textInput').disabled = false;
                     document.getElementById('sendBtn').disabled = false;
                     updateManualControlsState(true);
+                    updateMediaControlsState(true);
                     addMessage('system', 'Session started. Speak or type your message.');
+
+                    // Enumerate devices after permission granted
+                    enumerateDevices();
+
+                    // Listen for device changes
+                    navigator.mediaDevices.ondevicechange = enumerateDevices;
 
                     // Start recording only in VAD mode
                     if (currentMode === 'vad') {
@@ -645,10 +998,20 @@
                     document.getElementById('textInput').disabled = true;
                     document.getElementById('sendBtn').disabled = true;
                     updateManualControlsState(false);
+                    updateMediaControlsState(false);
                     stopRecording();
                     isPTTActive = false;
                     document.getElementById('pttBtn').classList.remove('recording');
                     document.getElementById('recordingIndicator').classList.remove('visible');
+
+                    // Stop auto capture
+                    if (isAutoCaptureEnabled) {
+                        clearInterval(autoCaptureInterval);
+                        autoCaptureInterval = null;
+                        isAutoCaptureEnabled = false;
+                        document.getElementById('autoCaptureBtn').textContent = '⏱️ Auto: Off';
+                        document.getElementById('autoCaptureBtn').classList.remove('active');
+                    }
                 };
 
             } catch (error) {
@@ -663,6 +1026,26 @@
                 ws = null;
             }
             stopRecording();
+
+            // Stop video stream
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            isCameraEnabled = false;
+            document.getElementById('localVideo').srcObject = null;
+            document.getElementById('videoOverlay').classList.remove('hidden');
+            updateCameraToggle();
+
+            // Stop auto capture
+            if (autoCaptureInterval) {
+                clearInterval(autoCaptureInterval);
+                autoCaptureInterval = null;
+            }
+            isAutoCaptureEnabled = false;
+            document.getElementById('autoCaptureBtn').textContent = '⏱️ Auto: Off';
+            document.getElementById('autoCaptureBtn').classList.remove('active');
+
             addMessage('system', 'Session ended.');
         }
 
@@ -675,14 +1058,16 @@
 
             try {
                 console.log('Starting recording...');
-                const stream = await navigator.mediaDevices.getUserMedia({
+                const constraints = {
                     audio: {
                         sampleRate: 16000,
                         channelCount: 1,
                         echoCancellation: true,
-                        noiseSuppression: true
+                        noiseSuppression: true,
+                        ...(selectedMicId && { deviceId: { exact: selectedMicId } })
                     }
-                });
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
                 // Note: AudioContext may not support 16kHz, so we use default and resample
                 audioContext = new AudioContext();
@@ -956,6 +1341,18 @@
                 initPlaybackContext(24000);
             }
         }, { once: true });
+
+        // Initialize device enumeration on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Try to enumerate devices (may have limited info without permission)
+            await enumerateDevices();
+
+            // Listen for device changes
+            navigator.mediaDevices.ondevicechange = enumerateDevices;
+
+            // Initialize mic toggle state
+            updateMicToggle();
+        });
     </script>
 </body>
 </html>

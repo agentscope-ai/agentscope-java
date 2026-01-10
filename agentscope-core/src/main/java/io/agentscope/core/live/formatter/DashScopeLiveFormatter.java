@@ -20,6 +20,7 @@ import io.agentscope.core.live.audio.AudioFormat;
 import io.agentscope.core.live.audio.DashScopeModality;
 import io.agentscope.core.live.config.LiveConfig;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ControlBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -298,19 +299,25 @@ public class DashScopeLiveFormatter extends AbstractTextLiveFormatter {
     /**
      * Extract image data from ImageBlock.
      *
-     * <p>POC version limitation: Image input is not yet supported. Future versions need to implement
-     * extracting raw image bytes from ImageBlock.
+     * <p>Supports Base64Source images. Validates image size against DashScope limit (500KB).
      *
      * @param imageBlock the image block
-     * @return image byte data, POC version returns null
+     * @return image byte data, or null if extraction fails or image is too large
      */
     private byte[] extractImageData(ImageBlock imageBlock) {
-        // POC version: Image input not yet supported
-        // Future implementation needs to:
-        // 1. If ImageBlock uses Base64Source, decode Base64 data
-        // 2. If ImageBlock uses UrlSource, download image data
-        // 3. Validate image format is JPG/JPEG
-        // 4. Validate image size ≤ 500KB
+        Object source = imageBlock.getSource();
+        if (source instanceof Base64Source base64Source) {
+            String data = base64Source.getData();
+            byte[] imageData = java.util.Base64.getDecoder().decode(data);
+            // Validate image size <= 500KB (DashScope limit)
+            if (imageData.length > 500 * 1024) {
+                log.warn("Image too large: {} bytes, max 500KB", imageData.length);
+                return null;
+            }
+            return imageData;
+        }
+        // URLSource not yet supported
+        log.debug("Unsupported image source type: {}", source.getClass().getSimpleName());
         return null;
     }
 

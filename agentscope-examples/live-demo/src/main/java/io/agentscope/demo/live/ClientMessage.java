@@ -18,7 +18,9 @@ package io.agentscope.demo.live;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ControlBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.RawSource;
@@ -44,6 +46,7 @@ import java.util.Base64;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ClientMessage.Audio.class, name = "audio"),
     @JsonSubTypes.Type(value = ClientMessage.Text.class, name = "text"),
+    @JsonSubTypes.Type(value = ClientMessage.Image.class, name = "image"),
     @JsonSubTypes.Type(value = ClientMessage.Interrupt.class, name = "interrupt"),
     @JsonSubTypes.Type(value = ClientMessage.Commit.class, name = "commit"),
     @JsonSubTypes.Type(value = ClientMessage.CreateResponse.class, name = "createResponse"),
@@ -85,6 +88,23 @@ public sealed interface ClientMessage {
             return Msg.builder()
                     .role(MsgRole.USER)
                     .content(TextBlock.builder().text(data).build())
+                    .build();
+        }
+    }
+
+    /**
+     * Image message containing Base64 encoded image data.
+     *
+     * @param data Base64 encoded image data
+     * @param mediaType MIME type of the image (e.g., "image/jpeg")
+     */
+    record Image(String data, String mediaType) implements ClientMessage {
+        @Override
+        public Msg toMsg() {
+            Base64Source source = Base64Source.builder().data(data).mediaType(mediaType).build();
+            return Msg.builder()
+                    .role(MsgRole.USER)
+                    .content(ImageBlock.builder().source(source).build())
                     .build();
         }
     }
