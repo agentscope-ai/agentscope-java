@@ -107,8 +107,8 @@ class SkillBoxTest {
     @DisplayName("Should register skill load tools")
     void testRegisterSkillLoadTools() {
         // After registerSkillAccessTools is called, the tool should be available
-        skillBox.registerSkillAccessTool();
-        assertNotNull(toolkit.getTool("load_skill_resource"));
+        skillBox.registerSkillLoadTool();
+        assertNotNull(toolkit.getTool("load_skill_through_path"));
     }
 
     @Test

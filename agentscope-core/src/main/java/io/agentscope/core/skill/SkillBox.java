@@ -502,14 +502,14 @@ public class SkillBox implements StateModule {
      *
      * <p>This method registers the following tool:
      * <ul>
-     *   <li>load_skill_resource - Load skill resources or SKILL.md content. When a resource
+     *   <li>load_skill_through_path - Load skill resources or SKILL.md content. When a resource
      *       is not found, it automatically returns a list of available resources with SKILL.md
      *       as the first item.</li>
      * </ul>
      *
      * @throws IllegalArgumentException if toolkit is null
      */
-    public void registerSkillAccessTool() {
+    public void registerSkillLoadTool() {
         if (toolkit == null) {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
@@ -517,7 +517,7 @@ public class SkillBox implements StateModule {
         if (toolkit.getToolGroup("skill-build-in-tools") == null) {
             toolkit.createToolGroup(
                     "skill-build-in-tools",
-                    "skill build-in tools, could contain(load_skill_resource");
+                    "skill build-in tools, could contain(load_skill_through_path)");
         }
 
         toolkit.registration()
@@ -525,6 +525,6 @@ public class SkillBox implements StateModule {
                 .group("skill-build-in-tools")
                 .apply();
 
-        logger.info("Registered skill access tools to toolkit");
+        logger.info("Registered skill load tools to toolkit");
     }
 }

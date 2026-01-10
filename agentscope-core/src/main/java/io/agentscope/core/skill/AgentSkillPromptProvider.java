@@ -38,29 +38,31 @@ public class AgentSkillPromptProvider {
             When you need to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities, tools, and domain knowledge.
 
             How to use skills:
-            - Load skill: load_skill_resource(skillId="<skill-id>", path="SKILL.md")
+            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
-            - Additional resources (scripts, configs, templates) can be loaded using the same tool with different paths
+            - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
             Usage notes:
             - Only use skills listed in <available_skills> below
-            - Do not load a skill that is already activated in your current session
-            - Loading SKILL.md activates the skill and makes its tools available
-            - Each skill load is persistent within the session
-            - If you don't know available resources, use an invalid path to list them
+            - Loading SKILL.md activates the skill and will make its tools available
+
+            Template fields explanation:
+            - <name>: The skill's display name. Use it along with <description> to determine if this skill is relevant to your current task
+            - <description>: Detailed description of when and how to use this skill. Read carefully to decide whether to load this skill
+            - <skill-id>: The unique identifier used to load the skill via load_skill_through_path tool
             </usage>
 
             <available_skills>
 
             """;
 
-    // skillId, skillName, skillDescription
+    // skillName, skillDescription, skillId
     public static final String DEFAULT_AGENT_SKILL_TEMPLATE =
             """
             <skill>
-            <skill-id>%s</skill-id>
             <name>%s</name>
             <description>%s</description>
+            <skill-id>%s</skill-id>
             </skill>
 
             """;
@@ -98,9 +100,9 @@ public class AgentSkillPromptProvider {
             sb.append(
                     String.format(
                             DEFAULT_AGENT_SKILL_TEMPLATE,
-                            skill.getSkillId(),
                             skill.getName(),
-                            skill.getDescription()));
+                            skill.getDescription(),
+                            skill.getSkillId()));
         }
 
         // Close available_skills tag

@@ -39,15 +39,19 @@ class SkillToolFactory {
     }
 
     /**
-     * Create the load_skill_resource agent tool.
+     * Creates the load_skill_through_path agent tool.
      *
-     * @return AgentTool for LLM load skill resources(contain SKILL.md)
+     * <p>This tool allows agents to load and activate skills by their ID and resource path.
+     * It supports loading SKILL.md for skill documentation or other resources like scripts,
+     * configs, and templates.
+     *
+     * @return AgentTool for loading skill resources (including SKILL.md)
      */
     AgentTool createSkillAccessToolAgentTool() {
         return new AgentTool() {
             @Override
             public String getName() {
-                return "load_skill_resource";
+                return "load_skill_through_path";
             }
 
             @Override
@@ -56,10 +60,8 @@ class SkillToolFactory {
                         + "**Functionality:**\n"
                         + "1. Activates the specified skill (making its tools available)\n"
                         + "2. Returns the requested resource content\n"
-                        + "3. If resource not found, returns a list of all available resources\n\n"
-                        + "**Resource Types:**\n"
-                        + "- 'SKILL.md': The skill's markdown documentation (name, description,"
                         + " usage instructions)\n"
+                        + "- 'SKILL.md': The skill's markdown documentation (name, description,"
                         + "- Other paths: Additional resources like scripts, configs, templates, or"
                         + " data files";
             }
@@ -89,7 +91,7 @@ class SkillToolFactory {
                                                         "description",
                                                         "The path to the resource file within the"
                                                                 + " skill (e.g., 'SKILL.md,"
-                                                                + " scripts/example.py')")),
+                                                                + " references/references.md')")),
                         "required", List.of("skillId", "path"));
             }
 

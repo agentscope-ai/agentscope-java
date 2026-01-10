@@ -95,7 +95,7 @@ class AgentSkillPromptProviderTest {
 
         assertTrue(prompt.startsWith("## Available Skills\n"));
         assertTrue(prompt.contains("specialized capabilities"));
-        assertTrue(prompt.contains("load_skill_resource"));
+        assertTrue(prompt.contains("load_skill_through_path"));
         assertTrue(prompt.contains("<usage>"));
         assertTrue(prompt.contains("</usage>"));
         assertTrue(prompt.contains("<available_skills>"));

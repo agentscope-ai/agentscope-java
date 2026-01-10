@@ -70,16 +70,16 @@ class SkillBoxToolsTest {
         skillBox.registerSkill(skill2);
 
         // Register skill access tools
-        skillBox.registerSkillAccessTool();
+        skillBox.registerSkillLoadTool();
     }
 
     @Test
     @DisplayName("Should create load skill resource tool")
     void testCreateLoadSkillResourceTool() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         assertNotNull(tool);
-        assertEquals("load_skill_resource", tool.getName());
+        assertEquals("load_skill_through_path", tool.getName());
         assertNotNull(tool.getDescription());
         assertTrue(tool.getDescription().contains("Load and activate"));
     }
@@ -87,7 +87,7 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should load skill resource tool have correct parameters")
     void testLoadSkillResourceToolParameters() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
         Map<String, Object> params = tool.getParameters();
 
         assertNotNull(params);
@@ -113,13 +113,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should load skill markdown successfully")
     void testLoadSkillMarkdownSuccessfully() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-001")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -137,7 +137,7 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should activate skill when loading markdown")
     void testActivateSkillWhenLoadingMarkdown() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         assertFalse(skillBox.isSkillActive("test_skill_custom"));
 
@@ -145,7 +145,7 @@ class SkillBoxToolsTest {
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-002")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -158,13 +158,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should return error for non existent skill")
     void testReturnErrorForNonExistentSkill() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "non_existent_skill", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-003")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -181,13 +181,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should return error for missing skill id")
     void testReturnErrorForMissingSkillId() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-004")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -204,13 +204,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should return error for empty skill id")
     void testReturnErrorForEmptySkillId() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-005")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -225,13 +225,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should load skill resource successfully")
     void testLoadSkillResourceSuccessfully() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "config.json");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-006")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -249,7 +249,7 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should activate skill when loading resource")
     void testActivateSkillWhenLoadingResource() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         assertFalse(skillBox.isSkillActive("test_skill_custom"));
 
@@ -257,7 +257,7 @@ class SkillBoxToolsTest {
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-007")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -270,14 +270,14 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should return error for non existent resource and list available resources")
     void testReturnErrorForNonExistentResource() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input =
                 Map.of("skillId", "test_skill_custom", "path", "non_existent.txt");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-008")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -298,13 +298,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should return error for missing path parameter")
     void testReturnErrorForMissingPathParameter() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "test_skill_custom");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-009")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -321,13 +321,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should list all resource paths when using invalid path")
     void testListAllResourcePathsWithInvalidPath() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "list");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-010")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -346,13 +346,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should list only SKILL.md for skill without additional resources")
     void testListOnlySkillMdForSkillWithoutResources() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "empty_skill_custom", "path", "invalid");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-011")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -370,13 +370,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should handle whitespace in skill id")
     void testHandleWhitespaceInSkillId() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "  ", "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-012")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
@@ -391,13 +391,13 @@ class SkillBoxToolsTest {
     @Test
     @DisplayName("Should handle whitespace in resource path")
     void testHandleWhitespaceInResourcePath() {
-        AgentTool tool = toolkit.getTool("load_skill_resource");
+        AgentTool tool = toolkit.getTool("load_skill_through_path");
 
         Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "  ");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-013")
-                        .name("load_skill_resource")
+                        .name("load_skill_through_path")
                         .input(input)
                         .build();
         ToolCallParam param =
