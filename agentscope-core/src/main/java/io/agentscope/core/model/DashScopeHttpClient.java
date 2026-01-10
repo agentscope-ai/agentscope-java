@@ -110,17 +110,6 @@ public class DashScopeHttpClient {
     }
 
     /**
-     * Make a synchronous API call.
-     *
-     * @param request the DashScope request
-     * @return the DashScope response
-     * @throws DashScopeHttpException if the request fails
-     */
-    public DashScopeResponse call(DashScopeRequest request) {
-        return call(request, null, null, null);
-    }
-
-    /**
      * Make a synchronous API call with additional HTTP parameters.
      *
      * @param request the DashScope request
@@ -178,16 +167,6 @@ public class DashScopeHttpClient {
         } catch (HttpTransportException e) {
             throw new DashScopeHttpException("HTTP transport error: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Make a streaming API call.
-     *
-     * @param request the DashScope request
-     * @return a Flux of DashScope responses (one per SSE event)
-     */
-    public Flux<DashScopeResponse> stream(DashScopeRequest request) {
-        return stream(request, null, null, null);
     }
 
     /**

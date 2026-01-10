@@ -31,7 +31,7 @@
     <description>Example application demonstrating AgentScope with Quarkus</description>
 
     <properties>
-        <quarkus.version>3.30.5</quarkus.version>
+        <quarkus.version>3.30.6</quarkus.version>
         <!-- Skip tests by default for example projects (requires API keys) -->
         <skipExampleTests>true</skipExampleTests>
     </properties>

@@ -650,6 +650,7 @@
                 </div>
             </div>
             <div class="plan-actions">
+                <button class="action-btn primary" id="planMainBtn" onclick="handlePlanMainAction()">+ New Plan</button>
                 <button class="action-btn" onclick="openAddSubtaskModal()">+ Add Subtask</button>
             </div>
         </div>
@@ -725,6 +726,29 @@
             <div class="modal-actions">
                 <button class="action-btn" onclick="closeModal('editPlanModal')">Cancel</button>
                 <button class="action-btn primary" onclick="saveEditPlan()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Plan Modal -->
+    <div class="modal-overlay" id="createPlanModal">
+        <div class="modal">
+            <h3>Create New Plan</h3>
+            <div class="form-group">
+                <label>Plan Name *</label>
+                <input type="text" id="createPlanName" placeholder="e.g., Build a calculator">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="createPlanDescription" placeholder="What is this plan about?"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Expected Outcome</label>
+                <textarea id="createPlanExpectedOutcome" placeholder="What is the expected result?"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="closeModal('createPlanModal')">Cancel</button>
+                <button class="action-btn primary" onclick="createPlan()">Create Plan</button>
             </div>
         </div>
     </div>
@@ -808,10 +832,12 @@
                         <p>Start a conversation or create a plan manually.</p>
                     </div>
                 `;
+                updatePlanMainButton();
                 return;
             }
 
             currentPlan = plan;
+            updatePlanMainButton();
 
             status.textContent = `${plan.subtasks?.length || 0} subtasks • ${plan.state}`;
 
@@ -1117,6 +1143,71 @@
                 fetchCurrentPlan();
             } catch (error) {
                 alert('Failed to finish plan: ' + error.message);
+            }
+        }
+
+        // Create Plan functions
+        function openCreatePlanModal() {
+            document.getElementById('createPlanName').value = '';
+            document.getElementById('createPlanDescription').value = '';
+            document.getElementById('createPlanExpectedOutcome').value = '';
+            openModal('createPlanModal');
+        }
+
+        async function createPlan() {
+            const name = document.getElementById('createPlanName').value.trim();
+            const description = document.getElementById('createPlanDescription').value.trim();
+            const expectedOutcome = document.getElementById('createPlanExpectedOutcome').value.trim();
+
+            if (!name) {
+                alert('Please enter a plan name');
+                return;
+            }
+
+            try {
+                await fetch('/api/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, expectedOutcome, subtasks: [] })
+                });
+                closeModal('createPlanModal');
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to create plan: ' + error.message);
+            }
+        }
+
+        // Handle main plan button action (New Plan or Execute Plan)
+        function handlePlanMainAction() {
+            if (currentPlan && currentPlan.name) {
+                // Plan exists - execute it
+                executePlan();
+            } else {
+                // No plan - create new one
+                openCreatePlanModal();
+            }
+        }
+
+        // Execute plan - send message to agent
+        function executePlan() {
+            if (!confirm('Are you sure you want to execute this plan?')) {
+                return;
+            }
+            // Send "execute the plan" message
+            const input = document.getElementById('chatInput');
+            input.value = 'execute the plan';
+            sendMessage();
+        }
+
+        // Update main plan button based on current plan state
+        function updatePlanMainButton() {
+            const btn = document.getElementById('planMainBtn');
+            if (!btn) return;
+
+            if (currentPlan && currentPlan.name) {
+                btn.textContent = '▶ Execute Plan';
+            } else {
+                btn.textContent = '+ New Plan';
             }
         }
 

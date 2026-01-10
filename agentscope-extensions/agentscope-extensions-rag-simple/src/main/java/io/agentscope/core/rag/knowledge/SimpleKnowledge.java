@@ -23,6 +23,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.VDBStoreBase;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -148,7 +149,13 @@ public class SimpleKnowledge implements Knowledge {
                 .embed(queryBlock)
                 .flatMap(
                         queryEmbedding ->
-                                embeddingStore.search(queryEmbedding, config.getLimit(), null))
+                                embeddingStore.search(
+                                        SearchDocumentDto.builder()
+                                                .vectorName(config.getVectorName())
+                                                .queryEmbedding(queryEmbedding)
+                                                .limit(config.getLimit())
+                                                .scoreThreshold(null)
+                                                .build()))
                 .flatMap(
                         results ->
                                 Flux.fromIterable(results)

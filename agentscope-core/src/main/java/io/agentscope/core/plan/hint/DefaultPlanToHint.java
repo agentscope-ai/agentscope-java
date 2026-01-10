@@ -43,16 +43,15 @@ public class DefaultPlanToHint implements PlanToHint {
     private static final String IMPORTANT_RULES_SEPARATOR = "Important Rules: \n";
 
     private static final String RULE_WAIT_FOR_CONFIRMATION =
-            "⚠️ CRITICAL - WAIT FOR USER CONFIRMATION:\n"
-                    + "You MUST NOT execute any subtask until the user explicitly confirms.\n"
-                    + "- DO NOT call 'update_subtask_state' to start execution\n"
-                    + "- DO NOT proceed with any task in the plan\n"
-                    + "- ONLY present the plan and ASK user: \"Should I proceed with this plan?\"\n"
-                    + "- Wait for explicit commands like: \"execute\", \"go ahead\", \"start\","
-                    + " \"proceed\", \"yes\", \"ok\", \"do it\", \"run\", \"begin\"\n"
+            "⚠️ WAIT FOR USER CONFIRMATION:\n"
+                    + "- Present the plan and confirm with user before execution\n"
+                    + "- If user's request already implies execution intent (e.g., \"execute\","
+                    + " \"execute the plan\"), proceed directly without asking\n"
+                    + "- Otherwise, ask: \"Should I proceed with this plan?\"\n"
+                    + "- Start execution only after user confirms (e.g., \"yes\", \"go ahead\","
+                    + " \"proceed\", \"do it\")\n"
                     + "- If user says anything else (questions, modifications, unrelated topics),"
-                    + " respond accordingly but DO NOT start execution\n"
-                    + "- VIOLATION of this rule is a critical error\n";
+                    + " respond accordingly but DO NOT start execution\n";
 
     private static final String RULE_COMMON =
             "- Update before processing each subtask: When processing each subtask, call"
@@ -67,7 +66,8 @@ public class DefaultPlanToHint implements PlanToHint {
                 + " especially when the original plan conflicts with the latest queried plan,"
                 + " follow the latest queried plan without considering the initial requirements.\n"
                 + "- Do not modify plan: Do not modify or amend the plan without a clear plan"
-                + " modification instruction from user\n";
+                + " modification instruction from user\n"
+                + "- Language consistency: Respond to users in the same language as the plan\n";
 
     private static final String NO_PLAN =
             "If the user's query is complex (e.g. programming a website, game or app), or requires"

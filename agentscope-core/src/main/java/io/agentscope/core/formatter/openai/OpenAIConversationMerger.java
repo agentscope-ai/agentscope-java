@@ -27,6 +27,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -181,6 +182,39 @@ public class OpenAIConversationMerger {
                             .append("]\n");
                 }
 
+            } else if (block instanceof VideoBlock videoBlock) {
+                // Flush existing text to a content part
+                if (textBuffer.length() > 0) {
+                    allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                    textBuffer.setLength(0); // Clear buffer
+                }
+
+                // Process video
+                try {
+                    Source source = videoBlock.getSource();
+                    if (source == null) {
+                        log.warn("VideoBlock has null source, skipping");
+                        if (includePrefix) {
+                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                        }
+                        textBuffer.append("[Video - null source]\n");
+                    } else {
+                        String videoUrl = convertVideoSourceToUrl(source);
+                        allParts.add(OpenAIContentPart.videoUrl(videoUrl));
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process VideoBlock: {}", errorMsg);
+                    if (includePrefix) {
+                        appendRoleAndName(textBuffer, roleLabel, agentName);
+                    }
+                    textBuffer
+                            .append("[Video - processing failed: ")
+                            .append(errorMsg)
+                            .append("]\n");
+                }
+
             } else if (block instanceof AudioBlock audioBlock) {
                 // Flush existing text
                 if (textBuffer.length() > 0) {
@@ -291,6 +325,13 @@ public class OpenAIConversationMerger {
      */
     private String convertImageSourceToUrl(Source source) {
         return OpenAIConverterUtils.convertImageSourceToUrl(source);
+    }
+
+    /**
+     * Convert video Source to URL string for OpenAI API.
+     */
+    private String convertVideoSourceToUrl(Source source) {
+        return OpenAIConverterUtils.convertVideoSourceToUrl(source);
     }
 
     /**
