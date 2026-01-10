@@ -15,8 +15,24 @@
  */
 package io.agentscope.core.live.transport;
 
+import io.agentscope.core.model.transport.ProxyConfig;
+import java.io.IOException;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import okhttp3.Credentials;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -89,6 +105,93 @@ public class OkHttpWebSocketClient implements WebSocketClient {
      */
     public static OkHttpWebSocketClient create(OkHttpClient client) {
         return new OkHttpWebSocketClient(client);
+    }
+
+    /**
+     * Create a client with custom configuration.
+     *
+     * <p>This method supports proxy configuration and other advanced settings.
+     *
+     * @param config the WebSocket client configuration
+     * @return OkHttpWebSocketClient instance
+     */
+    public static OkHttpWebSocketClient create(WebSocketClientConfig config) {
+        return new OkHttpWebSocketClient(buildClient(config));
+    }
+
+    private static OkHttpClient buildClient(WebSocketClientConfig config) {
+        OkHttpClient.Builder builder =
+                new OkHttpClient.Builder()
+                        .connectTimeout(
+                                config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .pingInterval(config.getPingInterval().toMillis(), TimeUnit.MILLISECONDS);
+
+        // Configure SSL (optionally ignore certificate verification)
+        if (config.isIgnoreSsl()) {
+            log.warn(
+                    "SSL certificate verification is disabled. This is not recommended for"
+                            + " production.");
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                X509TrustManager trustManager = createTrustAllTrustManager();
+                sslContext.init(null, new TrustManager[] {trustManager}, new SecureRandom());
+                builder.sslSocketFactory(sslContext.getSocketFactory(), trustManager)
+                        .hostnameVerifier((hostname, session) -> true);
+            } catch (NoSuchAlgorithmException | KeyManagementException e) {
+                throw new RuntimeException("Failed to create trust-all SSL socket factory", e);
+            }
+        }
+
+        // Configure proxy
+        if (config.getProxyConfig() != null) {
+            ProxyConfig proxyConfig = config.getProxyConfig();
+
+            if (proxyConfig.getNonProxyHosts() != null
+                    && !proxyConfig.getNonProxyHosts().isEmpty()) {
+                builder.proxySelector(new NonProxyHostsSelector(proxyConfig));
+            } else {
+                builder.proxy(proxyConfig.toJavaProxy());
+            }
+
+            if (proxyConfig.hasAuthentication()) {
+                final String username = proxyConfig.getUsername();
+                final String password = proxyConfig.getPassword();
+                builder.proxyAuthenticator(
+                        (route, response) -> {
+                            if (response.request().header("Proxy-Authorization") != null) {
+                                return null; // Avoid infinite retry
+                            }
+                            String credential = Credentials.basic(username, password);
+                            return response.request()
+                                    .newBuilder()
+                                    .header("Proxy-Authorization", credential)
+                                    .build();
+                        });
+            }
+        }
+
+        return builder.build();
+    }
+
+    private static X509TrustManager createTrustAllTrustManager() {
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
     }
 
     @Override
@@ -194,5 +297,34 @@ public class OkHttpWebSocketClient implements WebSocketClient {
         log.debug("OkHttpWebSocketClient shutdown called");
         client.dispatcher().executorService().shutdown();
         client.connectionPool().evictAll();
+    }
+
+    /**
+     * ProxySelector that respects non-proxy hosts configuration.
+     */
+    private static class NonProxyHostsSelector extends ProxySelector {
+        private final ProxyConfig proxyConfig;
+        private final List<Proxy> proxyList;
+
+        NonProxyHostsSelector(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            this.proxyList = Collections.singletonList(proxyConfig.toJavaProxy());
+        }
+
+        @Override
+        public List<Proxy> select(URI uri) {
+            if (uri == null || uri.getHost() == null) {
+                return proxyList;
+            }
+            if (proxyConfig.shouldBypass(uri.getHost())) {
+                return Collections.singletonList(Proxy.NO_PROXY);
+            }
+            return proxyList;
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed: uri={}, address={}", uri, sa, ioe);
+        }
     }
 }

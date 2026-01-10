@@ -15,10 +15,27 @@
  */
 package io.agentscope.core.live.transport;
 
+import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.model.transport.ProxyType;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -81,6 +98,96 @@ public class JdkWebSocketClient implements WebSocketClient {
         return new JdkWebSocketClient(httpClient);
     }
 
+    /**
+     * Create a client with custom configuration.
+     *
+     * <p>This method supports proxy configuration and other advanced settings.
+     *
+     * @param config the WebSocket client configuration
+     * @return JdkWebSocketClient instance
+     */
+    public static JdkWebSocketClient create(WebSocketClientConfig config) {
+        return new JdkWebSocketClient(buildClient(config));
+    }
+
+    private static HttpClient buildClient(WebSocketClientConfig config) {
+        HttpClient.Builder builder =
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_2)
+                        .connectTimeout(config.getConnectTimeout());
+
+        // Configure SSL (optionally ignore certificate verification)
+        if (config.isIgnoreSsl()) {
+            log.warn(
+                    "SSL certificate verification is disabled. This is not recommended for"
+                            + " production.");
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(
+                        null,
+                        new TrustManager[] {createTrustAllTrustManager()},
+                        new SecureRandom());
+                builder.sslContext(sslContext);
+            } catch (NoSuchAlgorithmException | KeyManagementException e) {
+                throw new RuntimeException("Failed to create trust-all SSL context", e);
+            }
+        }
+
+        // Configure proxy
+        if (config.getProxyConfig() != null) {
+            ProxyConfig proxyConfig = config.getProxyConfig();
+
+            if (proxyConfig.getNonProxyHosts() != null
+                    && !proxyConfig.getNonProxyHosts().isEmpty()) {
+                builder.proxy(new NonProxyHostsSelector(proxyConfig));
+            } else {
+                builder.proxy(
+                        ProxySelector.of(
+                                new InetSocketAddress(
+                                        proxyConfig.getHost(), proxyConfig.getPort())));
+            }
+
+            // Note: JDK HttpClient does not support SOCKS5 authentication directly.
+            // For HTTP proxy authentication, use Authenticator.
+            if (proxyConfig.hasAuthentication() && proxyConfig.getType() == ProxyType.HTTP) {
+                final String username = proxyConfig.getUsername();
+                final String password = proxyConfig.getPassword();
+                builder.authenticator(
+                        new java.net.Authenticator() {
+                            @Override
+                            protected PasswordAuthentication getPasswordAuthentication() {
+                                if (getRequestorType() == RequestorType.PROXY) {
+                                    return new PasswordAuthentication(
+                                            username, password.toCharArray());
+                                }
+                                return null;
+                            }
+                        });
+            }
+        }
+
+        return builder.build();
+    }
+
+    private static X509TrustManager createTrustAllTrustManager() {
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
+    }
+
     @Override
     public <T> Mono<WebSocketConnection<T>> connect(
             WebSocketRequest request, Class<T> messageType) {
@@ -133,5 +240,34 @@ public class JdkWebSocketClient implements WebSocketClient {
         // JDK HttpClient does not require explicit shutdown
         // If a custom ExecutorService is used, it may need to be closed
         log.debug("JdkWebSocketClient shutdown called");
+    }
+
+    /**
+     * ProxySelector that respects non-proxy hosts configuration.
+     */
+    private static class NonProxyHostsSelector extends ProxySelector {
+        private final ProxyConfig proxyConfig;
+        private final List<Proxy> proxyList;
+
+        NonProxyHostsSelector(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            this.proxyList = Collections.singletonList(proxyConfig.toJavaProxy());
+        }
+
+        @Override
+        public List<Proxy> select(URI uri) {
+            if (uri == null || uri.getHost() == null) {
+                return proxyList;
+            }
+            if (proxyConfig.shouldBypass(uri.getHost())) {
+                return Collections.singletonList(Proxy.NO_PROXY);
+            }
+            return proxyList;
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed: uri={}, address={}", uri, sa, ioe);
+        }
     }
 }
