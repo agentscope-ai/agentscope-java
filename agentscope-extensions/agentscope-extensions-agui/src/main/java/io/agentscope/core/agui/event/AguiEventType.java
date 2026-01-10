@@ -60,6 +60,11 @@ public enum AguiEventType {
     TOOL_CALL_END,
 
     /**
+     * Contains the result of a tool call.
+     */
+    TOOL_CALL_RESULT,
+
+    /**
      * Contains a snapshot of the current state.
      */
     STATE_SNAPSHOT,

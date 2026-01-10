@@ -374,26 +374,67 @@ class AguiEventTest {
 
         @Test
         void testCreation() {
-            AguiEvent.ToolCallEnd event =
-                    new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Success");
+            AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1");
 
             assertEquals(AguiEventType.TOOL_CALL_END, event.getType());
             assertEquals("tc-1", event.toolCallId());
-            assertEquals("Success", event.result());
-        }
-
-        @Test
-        void testWithNullResult() {
-            AguiEvent.ToolCallEnd event =
-                    new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", null);
-
-            assertNull(event.result());
         }
 
         @Test
         void testToString() {
-            AguiEvent.ToolCallEnd event =
-                    new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Result");
+            AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1");
+
+            String str = event.toString();
+            assertTrue(str.contains("tc-1"));
+        }
+
+        @Test
+        void testNullToolCallIdThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.ToolCallEnd("thread-1", "run-1", null));
+        }
+
+        @Test
+        void testJsonSerialization() throws JsonProcessingException {
+            AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1");
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"type\":\"TOOL_CALL_END\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.ToolCallEnd);
+        }
+    }
+
+    @Nested
+    class ToolCallResultTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Success", "tool", "msg-1");
+
+            assertEquals(AguiEventType.TOOL_CALL_RESULT, event.getType());
+            assertEquals("tc-1", event.toolCallId());
+            assertEquals("Success", event.content());
+        }
+
+        @Test
+        void testWithNullContent() {
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", null, "tool", "msg-1");
+
+            assertNull(event.content());
+        }
+
+        @Test
+        void testToString() {
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Result", "tool", "msg-1");
 
             String str = event.toString();
             assertTrue(str.contains("tc-1"));
@@ -404,20 +445,23 @@ class AguiEventTest {
         void testNullToolCallIdThrows() {
             assertThrows(
                     NullPointerException.class,
-                    () -> new AguiEvent.ToolCallEnd("thread-1", "run-1", null, "result"));
+                    () ->
+                            new AguiEvent.ToolCallResult(
+                                    "thread-1", "run-1", null, "result", "tool", "msg-1"));
         }
 
         @Test
         void testJsonSerialization() throws JsonProcessingException {
-            AguiEvent.ToolCallEnd event =
-                    new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Operation completed");
+            AguiEvent.ToolCallResult event =
+                    new AguiEvent.ToolCallResult(
+                            "thread-1", "run-1", "tc-1", "Operation completed", "tool", "msg-1");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TOOL_CALL_END\""));
-            assertTrue(json.contains("\"result\":\"Operation completed\""));
+            assertTrue(json.contains("\"type\":\"TOOL_CALL_RESULT\""));
+            assertTrue(json.contains("\"content\":\"Operation completed\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
-            assertTrue(deserialized instanceof AguiEvent.ToolCallEnd);
+            assertTrue(deserialized instanceof AguiEvent.ToolCallResult);
         }
     }
 
@@ -706,6 +750,7 @@ class AguiEventTest {
             assertNotNull(AguiEventType.TOOL_CALL_START);
             assertNotNull(AguiEventType.TOOL_CALL_ARGS);
             assertNotNull(AguiEventType.TOOL_CALL_END);
+            assertNotNull(AguiEventType.TOOL_CALL_RESULT);
             assertNotNull(AguiEventType.STATE_SNAPSHOT);
             assertNotNull(AguiEventType.STATE_DELTA);
             assertNotNull(AguiEventType.RAW);
@@ -713,7 +758,7 @@ class AguiEventTest {
 
         @Test
         void testEventTypeCount() {
-            assertEquals(11, AguiEventType.values().length);
+            assertEquals(12, AguiEventType.values().length);
         }
 
         @Test
