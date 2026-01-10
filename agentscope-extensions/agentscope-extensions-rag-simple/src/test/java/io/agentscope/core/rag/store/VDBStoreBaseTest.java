@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -48,20 +49,27 @@ class VDBStoreBaseTest {
         }
 
         @Override
-        public Mono<List<Document>> search(
-                double[] queryEmbedding, int limit, Double scoreThreshold) {
+        public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
             return Mono.just(new ArrayList<>());
+        }
+
+        @Override
+        public Mono<Boolean> delete(String id) {
+            return Mono.just(Boolean.TRUE);
         }
     }
 
     @Test
-    @DisplayName("Should throw UnsupportedOperationException for delete by default")
-    void testDeleteDefault() {
+    @DisplayName("Should delete documents")
+    void testDelete() {
         VDBStoreBase store = new TestVDBStore();
 
         StepVerifier.create(store.delete("test-id"))
-                .expectError(UnsupportedOperationException.class)
-                .verify();
+                .assertNext(
+                        result -> {
+                            assertEquals(Boolean.TRUE, result);
+                        })
+                .verifyComplete();
     }
 
     @Test
@@ -82,7 +90,12 @@ class VDBStoreBaseTest {
         VDBStoreBase store = new TestVDBStore();
         double[] queryEmbedding = new double[] {0.1, 0.2, 0.3};
 
-        StepVerifier.create(store.search(queryEmbedding, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertTrue(results instanceof List);
@@ -97,7 +110,31 @@ class VDBStoreBaseTest {
         VDBStoreBase store = new TestVDBStore();
         double[] queryEmbedding = new double[] {0.1, 0.2, 0.3};
 
-        StepVerifier.create(store.search(queryEmbedding, 10, 0.5))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .scoreThreshold(0.5)
+                                        .build()))
+                .assertNext(results -> assertTrue(results.isEmpty()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should search vectors with vector name")
+    void testSearchWithVectorName() {
+        VDBStoreBase store = new TestVDBStore();
+        double[] queryEmbedding = new double[] {0.1, 0.2, 0.3};
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .vectorName("test-vector")
+                                        .limit(10)
+                                        .scoreThreshold(0.5)
+                                        .build()))
                 .assertNext(results -> assertTrue(results.isEmpty()))
                 .verifyComplete();
     }

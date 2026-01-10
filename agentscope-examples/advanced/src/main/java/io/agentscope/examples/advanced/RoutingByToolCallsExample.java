@@ -24,6 +24,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.advanced.util.MsgUtils;
 
@@ -85,7 +86,9 @@ public class RoutingByToolCallsExample {
         @Tool(
                 name = "generate_Python_code",
                 description = "Generate Python code based on the demand")
-        public Msg generatePython(String demand) {
+        public Msg generatePython(
+                @ToolParam(name = "demand", description = "The demand for the Python code")
+                        String demand) {
             System.out.println("I am PythonAgent,now generating Python code for demand: " + demand);
             String apiKey = ExampleUtils.getDashScopeApiKey();
             ReActAgent agent =
@@ -124,7 +127,9 @@ public class RoutingByToolCallsExample {
          * @param demand The demand for the poem.
          */
         @Tool(name = "generate_poem", description = "Generate a poem based on the demand")
-        public Msg generatePoem(String demand) {
+        public Msg generatePoem(
+                @ToolParam(name = "demand", description = "The demand for the poem")
+                        String demand) {
             System.out.println("I am PoemAgent,now generating a poem for demand: " + demand);
             String apiKey = ExampleUtils.getDashScopeApiKey();
             ReActAgent agent =

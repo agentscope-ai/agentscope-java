@@ -248,4 +248,112 @@ class OpenAIChatModelTest {
     void testGetModelName() {
         assertEquals("gpt-4", model.getModelName());
     }
+
+    @Test
+    @DisplayName("Should build model with custom endpoint path")
+    void testBuildModelWithEndpointPath() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        // Build model with custom endpoint path
+        OpenAIChatModel customPathModel =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .endpointPath("/v4/chat/completions")
+                        .formatter(new OpenAIChatFormatter())
+                        .httpTransport(transport)
+                        .build();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StepVerifier.create(customPathModel.stream(messages, null, null))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses custom endpoint path
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(
+                request.getPath().contains("/v4/chat/completions"),
+                "Path should contain custom endpoint path: " + request.getPath());
+    }
+
+    @Test
+    @DisplayName("Should build model with default endpoint path when not specified")
+    void testBuildModelWithDefaultEndpointPath() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        // Build model without endpoint path - should use default
+        OpenAIChatModel defaultPathModel =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .formatter(new OpenAIChatFormatter())
+                        .httpTransport(transport)
+                        .build();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        StepVerifier.create(defaultPathModel.stream(messages, null, null))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses default endpoint path
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(
+                request.getPath().endsWith("/chat/completions")
+                        || request.getPath().contains("/v1/chat/completions"),
+                "Path should contain default endpoint path: " + request.getPath());
+    }
 }

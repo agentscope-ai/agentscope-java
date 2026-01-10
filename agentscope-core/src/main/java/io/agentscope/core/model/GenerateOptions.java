@@ -31,6 +31,7 @@ public class GenerateOptions {
     // Connection-level configuration
     private final String apiKey;
     private final String baseUrl;
+    private final String endpointPath;
     private final String modelName;
     private final Boolean stream;
 
@@ -58,6 +59,7 @@ public class GenerateOptions {
     private GenerateOptions(Builder builder) {
         this.apiKey = builder.apiKey;
         this.baseUrl = builder.baseUrl;
+        this.endpointPath = builder.endpointPath;
         this.modelName = builder.modelName;
         this.stream = builder.stream;
         this.temperature = builder.temperature;
@@ -107,6 +109,21 @@ public class GenerateOptions {
      */
     public String getBaseUrl() {
         return baseUrl;
+    }
+
+    /**
+     * Gets the endpoint path for the API request.
+     *
+     * <p>This is the API endpoint path (e.g., "/v1/chat/completions").
+     * When null, the model's default endpoint path will be used.
+     *
+     * <p>This allows customization for OpenAI-compatible APIs that use different
+     * endpoint paths than the standard OpenAI API.
+     *
+     * @return the endpoint path, or null if not set
+     */
+    public String getEndpointPath() {
+        return endpointPath;
     }
 
     /**
@@ -363,6 +380,8 @@ public class GenerateOptions {
         Builder builder = builder();
         builder.apiKey(primary.apiKey != null ? primary.apiKey : fallback.apiKey);
         builder.baseUrl(primary.baseUrl != null ? primary.baseUrl : fallback.baseUrl);
+        builder.endpointPath(
+                primary.endpointPath != null ? primary.endpointPath : fallback.endpointPath);
         builder.modelName(primary.modelName != null ? primary.modelName : fallback.modelName);
         builder.stream(primary.stream != null ? primary.stream : fallback.stream);
         builder.temperature(
@@ -423,6 +442,7 @@ public class GenerateOptions {
         // Connection-level configuration
         private String apiKey;
         private String baseUrl;
+        private String endpointPath;
         private String modelName;
         private Boolean stream;
 
@@ -461,6 +481,21 @@ public class GenerateOptions {
          */
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets the endpoint path for the API request.
+         *
+         * <p>This allows customization for OpenAI-compatible APIs that use different
+         * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions",
+         * "/api/v1/llm/chat", etc.). When null, the default endpoint path will be used.
+         *
+         * @param endpointPath the endpoint path (e.g., "/v1/chat/completions")
+         * @return this builder instance
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
             return this;
         }
 
