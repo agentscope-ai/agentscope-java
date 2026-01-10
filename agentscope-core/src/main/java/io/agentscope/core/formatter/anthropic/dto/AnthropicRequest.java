@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.anthropic.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -154,8 +155,14 @@ public class AnthropicRequest {
         this.stopSequences = stopSequences;
     }
 
+    /**
+     * Returns an unmodifiable view of the metadata map.
+     * This prevents external modification of the internal state.
+     *
+     * @return unmodifiable view of metadata, or null if not set
+     */
     public Map<String, Object> getMetadata() {
-        return metadata;
+        return metadata != null ? Collections.unmodifiableMap(metadata) : null;
     }
 
     public void setMetadata(Map<String, Object> metadata) {
