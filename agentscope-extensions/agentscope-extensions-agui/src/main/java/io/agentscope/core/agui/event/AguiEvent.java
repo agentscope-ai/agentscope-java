@@ -28,8 +28,11 @@ import java.util.Objects;
 /**
  * Sealed interface for all AG-UI protocol events.
  *
- * <p>All events in the AG-UI protocol implement this interface and provide common properties like
- * event type, thread ID, and run ID. Using sealed interface with records provides a cleaner, more
+ * <p>
+ * All events in the AG-UI protocol implement this interface and provide common
+ * properties like
+ * event type, thread ID, and run ID. Using sealed interface with records
+ * provides a cleaner, more
  * concise implementation.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
@@ -42,6 +45,7 @@ import java.util.Objects;
     @JsonSubTypes.Type(value = AguiEvent.ToolCallStart.class, name = "TOOL_CALL_START"),
     @JsonSubTypes.Type(value = AguiEvent.ToolCallArgs.class, name = "TOOL_CALL_ARGS"),
     @JsonSubTypes.Type(value = AguiEvent.ToolCallEnd.class, name = "TOOL_CALL_END"),
+    @JsonSubTypes.Type(value = AguiEvent.ToolCallResult.class, name = "TOOL_CALL_RESULT"),
     @JsonSubTypes.Type(value = AguiEvent.StateSnapshot.class, name = "STATE_SNAPSHOT"),
     @JsonSubTypes.Type(value = AguiEvent.StateDelta.class, name = "STATE_DELTA"),
     @JsonSubTypes.Type(value = AguiEvent.Raw.class, name = "RAW")
@@ -55,6 +59,7 @@ public sealed interface AguiEvent
                 AguiEvent.ToolCallStart,
                 AguiEvent.ToolCallArgs,
                 AguiEvent.ToolCallEnd,
+                AguiEvent.ToolCallResult,
                 AguiEvent.StateSnapshot,
                 AguiEvent.StateDelta,
                 AguiEvent.Raw {
@@ -81,7 +86,8 @@ public sealed interface AguiEvent
     String getRunId();
 
     /**
-     * Event indicating that an agent run has started. This is the first event emitted when an agent
+     * Event indicating that an agent run has started. This is the first event
+     * emitted when an agent
      * begins processing a request.
      */
     record RunStarted(String threadId, String runId) implements AguiEvent {
@@ -110,7 +116,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event indicating that an agent run has finished. This is the last event emitted when an agent
+     * Event indicating that an agent run has finished. This is the last event
+     * emitted when an agent
      * completes processing a request.
      */
     record RunFinished(String threadId, String runId) implements AguiEvent {
@@ -139,7 +146,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event indicating the start of a text message. This event is emitted when the agent begins
+     * Event indicating the start of a text message. This event is emitted when the
+     * agent begins
      * generating a text response.
      */
     record TextMessageStart(String threadId, String runId, String messageId, String role)
@@ -174,7 +182,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event containing incremental text content for a message. This event is emitted during
+     * Event containing incremental text content for a message. This event is
+     * emitted during
      * streaming to deliver text content in chunks.
      */
     record TextMessageContent(String threadId, String runId, String messageId, String delta)
@@ -209,7 +218,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event indicating the end of a text message. This event is emitted when the agent has finished
+     * Event indicating the end of a text message. This event is emitted when the
+     * agent has finished
      * generating a text message.
      */
     record TextMessageEnd(String threadId, String runId, String messageId) implements AguiEvent {
@@ -241,7 +251,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event indicating the start of a tool call. This event is emitted when the agent begins a tool
+     * Event indicating the start of a tool call. This event is emitted when the
+     * agent begins a tool
      * invocation.
      */
     record ToolCallStart(String threadId, String runId, String toolCallId, String toolCallName)
@@ -276,7 +287,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event containing streaming arguments for a tool call. The delta contains a JSON fragment that
+     * Event containing streaming arguments for a tool call. The delta contains a
+     * JSON fragment that
      * forms part of the complete tool arguments.
      */
     record ToolCallArgs(String threadId, String runId, String toolCallId, String delta)
@@ -310,20 +322,20 @@ public sealed interface AguiEvent
         }
     }
 
-    /** Event indicating the end of a tool call. This event is emitted when a tool invocation completes. */
-    record ToolCallEnd(String threadId, String runId, String toolCallId, String result)
-            implements AguiEvent {
+    /**
+     * Event indicating the end of a tool call. This event is emitted when a tool
+     * invocation completes.
+     */
+    record ToolCallEnd(String threadId, String runId, String toolCallId) implements AguiEvent {
 
         @JsonCreator
         public ToolCallEnd(
                 @JsonProperty("threadId") String threadId,
                 @JsonProperty("runId") String runId,
-                @JsonProperty("toolCallId") String toolCallId,
-                @JsonProperty("result") String result) {
+                @JsonProperty("toolCallId") String toolCallId) {
             this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
             this.runId = Objects.requireNonNull(runId, "runId cannot be null");
             this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
-            this.result = result; // nullable
         }
 
         @Override
@@ -343,7 +355,60 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event containing a full state snapshot. This event replaces the entire client-side state with
+     * Event containing the result of a tool call.
+     */
+    record ToolCallResult(
+            String threadId,
+            String runId,
+            String toolCallId,
+            String content,
+            String role,
+            String messageId)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ToolCallResult(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("toolCallId") String toolCallId,
+                @JsonProperty("content") String content,
+                @JsonProperty("role") String role,
+                @JsonProperty("messageId") String messageId) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.toolCallId = Objects.requireNonNull(toolCallId, "toolCallId cannot be null");
+            this.content = content;
+            this.role = role;
+            this.messageId = messageId;
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.TOOL_CALL_RESULT;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public String getMessageId() {
+            return messageId;
+        }
+    }
+
+    /**
+     * Event containing a full state snapshot. This event replaces the entire
+     * client-side state with
      * the provided snapshot.
      */
     record StateSnapshot(String threadId, String runId, Map<String, Object> snapshot)
@@ -379,8 +444,10 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event containing an incremental state delta. This event contains a list of JSON Patch
-     * operations (RFC 6902) that should be applied to the current client-side state.
+     * Event containing an incremental state delta. This event contains a list of
+     * JSON Patch
+     * operations (RFC 6902) that should be applied to the current client-side
+     * state.
      */
     record StateDelta(String threadId, String runId, List<JsonPatchOperation> delta)
             implements AguiEvent {
@@ -413,7 +480,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Event containing raw/custom data. This event type allows passing through custom data that
+     * Event containing raw/custom data. This event type allows passing through
+     * custom data that
      * doesn't fit into the standard AG-UI event types.
      */
     record Raw(String threadId, String runId, Object rawEvent) implements AguiEvent {
@@ -445,7 +513,8 @@ public sealed interface AguiEvent
     }
 
     /**
-     * Represents a JSON Patch operation (RFC 6902). Used in {@link StateDelta} events for
+     * Represents a JSON Patch operation (RFC 6902). Used in {@link StateDelta}
+     * events for
      * incremental state updates.
      */
     record JsonPatchOperation(String op, String path, Object value, String from) {
@@ -465,7 +534,7 @@ public sealed interface AguiEvent
         /**
          * Creates an "add" operation.
          *
-         * @param path The path to add at
+         * @param path  The path to add at
          * @param value The value to add
          * @return A new add operation
          */
@@ -486,7 +555,7 @@ public sealed interface AguiEvent
         /**
          * Creates a "replace" operation.
          *
-         * @param path The path to replace
+         * @param path  The path to replace
          * @param value The new value
          * @return A new replace operation
          */
