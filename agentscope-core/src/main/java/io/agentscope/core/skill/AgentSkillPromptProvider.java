@@ -31,24 +31,40 @@ public class AgentSkillPromptProvider {
     private final SkillRegistry skillRegistry;
 
     public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
-            "# Agent Skills\n"
-                + "Agent skills are specialized capabilities you can load on-demand to handle"
-                + " specific tasks. Each skill below includes a brief description. When you need to"
-                + " use a skill:\n"
-                + "1. Use `skill_md_load_tool` with the skillId to read its detailed SKILL.md"
-                + " documentation\n"
-                + "2. If the skill requires additional resources, use `get_all_resources_path_tool`"
-                + " to see what's available\n"
-                + "3. Load specific resources with `skill_resources_load_tool` as needed\n\n"
-                + "Only load skill details when you actually need them for the current task.\n\n"
-                + "## Available Skills\n";
+            """
+            ## Available Skills
 
-    // skillId, skillDescription
+            <usage>
+            When you need to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities, tools, and domain knowledge.
+
+            How to use skills:
+            - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
+            - The skill will be activated and its documentation loaded with detailed instructions
+            - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
+
+            Usage notes:
+            - Only use skills listed in <available_skills> below
+            - Loading SKILL.md activates the skill and will make its tools available
+
+            Template fields explanation:
+            - <name>: The skill's display name. Use it along with <description> to determine if this skill is relevant to your current task
+            - <description>: Detailed description of when and how to use this skill. Read carefully to decide whether to load this skill
+            - <skill-id>: The unique identifier used to load the skill via load_skill_through_path tool
+            </usage>
+
+            <available_skills>
+
+            """;
+
+    // skillName, skillDescription, skillId
     public static final String DEFAULT_AGENT_SKILL_TEMPLATE =
             """
-            ### %s
-            %s
-            check "SKILL.md" for how to use this skill
+            <skill>
+            <name>%s</name>
+            <description>%s</description>
+            <skill-id>%s</skill-id>
+            </skill>
+
             """;
 
     /**
@@ -69,18 +85,28 @@ public class AgentSkillPromptProvider {
      */
     public String getSkillSystemPrompt() {
         StringBuilder sb = new StringBuilder();
+
+        // Check if there are any skills
+        if (skillRegistry.getAllRegisteredSkills().isEmpty()) {
+            return "";
+        }
+
+        // Add instruction header
+        sb.append(DEFAULT_AGENT_SKILL_INSTRUCTION);
+
+        // Add each skill
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
-
-            if (sb.isEmpty()) {
-                sb.append(DEFAULT_AGENT_SKILL_INSTRUCTION);
-            }
             sb.append(
                     String.format(
                             DEFAULT_AGENT_SKILL_TEMPLATE,
-                            skill.getSkillId(),
-                            skill.getDescription()));
+                            skill.getName(),
+                            skill.getDescription(),
+                            skill.getSkillId()));
         }
+
+        // Close available_skills tag
+        sb.append("</available_skills>");
 
         return sb.toString();
     }

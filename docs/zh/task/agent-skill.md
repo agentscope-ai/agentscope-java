@@ -12,7 +12,7 @@ Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含�
 
 采用**三阶段按需加载**优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(<5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。
 
-**工作流程:** 用户提问 → AI 识别相关 Skill → 调用工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务
+**工作流程:** 用户提问 → AI 识别相关 Skill → 调用 `load_skill_through_path` 工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务
 
 ### 适应性设计
 
@@ -129,7 +129,7 @@ AgentSkill skill = new AgentSkill(
 Toolkit toolkit = new Toolkit();
 
 SkillBox skillBox = new SkillBox(toolkit);
-skillBox.registerAgentSkill(skill1);
+skillBox.registerSkill(skill1);
 
 ReActAgent agent = ReActAgent.builder()
         .name("DataAnalyst")
@@ -147,7 +147,7 @@ ReActAgent agent = ReActAgent.builder()
 ```java
 SkillBox skillBox = new SkillBox();
 
-skillBox.registerAgentSkill(dataSkill);
+skillBox.registerSkill(dataSkill);
 
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")

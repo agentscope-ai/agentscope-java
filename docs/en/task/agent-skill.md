@@ -12,7 +12,7 @@ Agent Skills are modular skill packages that extend agent capabilities. Each Ski
 
 Adopts **three-stage on-demand loading** to optimize context: Initially loads only metadata (~100 tokens/Skill) → AI loads complete instructions when needed (<5k tokens) → On-demand access to resource files. Tools are also progressively disclosed, activated only when the Skill is in use.
 
-**Workflow:** User Query → AI Identifies Relevant Skill → Calls Tools to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion
+**Workflow:** User Query → AI Identifies Relevant Skill → Calls `load_skill_through_path` Tool to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion
 
 ### Adaptive Design
 
@@ -132,7 +132,7 @@ AgentSkill skill = new AgentSkill(
 Toolkit toolkit = new Toolkit();
 
 SkillBox skillBox = new SkillBox(toolkit);
-skillBox.registerAgentSkill(skill1);
+skillBox.registerSkill(skill1);
 
 ReActAgent agent = ReActAgent.builder()
         .name("DataAnalyst")
@@ -150,7 +150,7 @@ ReActAgent agent = ReActAgent.builder()
 ```java
 SkillBox skillBox = new SkillBox();
 
-skillBox.registerAgentSkill(dataSkill);
+skillBox.registerSkill(dataSkill);
 
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")

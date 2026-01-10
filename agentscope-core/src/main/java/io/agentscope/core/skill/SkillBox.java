@@ -15,12 +15,9 @@
  */
 package io.agentscope.core.skill;
 
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
@@ -28,15 +25,16 @@ import io.agentscope.core.tool.subagent.SubAgentProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
 
 public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
+    private final SkillToolFactory skillToolFactory;
     private Toolkit toolkit;
 
     public SkillBox() {
@@ -45,6 +43,7 @@ public class SkillBox implements StateModule {
 
     public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
+        this.skillToolFactory = new SkillToolFactory(skillRegistry);
         this.toolkit = toolkit;
     }
 
@@ -183,6 +182,14 @@ public class SkillBox implements StateModule {
         skillRegistry.registerSkill(skillId, skill, registered);
 
         logger.info("Registered skill '{}'", skillId);
+    }
+
+    /**
+     * Gets all skill IDs.
+     * @return All skill IDs
+     */
+    public Set<String> getAllSkillIds() {
+        return skillRegistry.getSkillIds();
     }
 
     /**
@@ -488,196 +495,36 @@ public class SkillBox implements StateModule {
         }
     }
 
-    // ==================== Skill Access Tools ====================
+    // ==================== Skill Build-In Tools ====================
 
     /**
-     * Load the markdown content of a skill by its ID.
+     * Registers skill access tools to the provided toolkit.
      *
-     * <p>This will activate the skill and return its full content including
-     * name, description, and implementation details.
+     * <p>This method registers the following tool:
+     * <ul>
+     *   <li>load_skill_through_path - Load skill resources or SKILL.md content. When a resource
+     *       is not found, it automatically returns a list of available resources with SKILL.md
+     *       as the first item.</li>
+     * </ul>
      *
-     * @param skillId The unique identifier of the skill to load
-     * @return Skill markdown content with metadata
-     * @throws IllegalArgumentException if skill doesn't exist
+     * @throws IllegalArgumentException if toolkit is null
      */
-    @Tool(
-            name = "skill_md_load_tool",
-            description =
-                    "Load the markdown content of a skill by its ID. "
-                            + "This will activate the skill and return its full content including "
-                            + "name, description, and implementation details.")
-    public Mono<ToolResultBlock> loadSkillMd(
-            @ToolParam(
-                            name = "skillId",
-                            description = "The unique identifier of the skill to load.")
-                    String skillId) {
-        try {
-            // Validate parameter
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
-            }
-
-            AgentSkill skill = validatedActiveSkill(skillId);
-
-            // Build response
-            StringBuilder result = new StringBuilder();
-            result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
-            result.append("Name: ").append(skill.getName()).append("\n");
-            result.append("Description: ").append(skill.getDescription()).append("\n");
-            result.append("Source: ").append(skill.getSource()).append("\n\n");
-            result.append("Content:\n");
-            result.append("---\n");
-            result.append(skill.getSkillContent());
-            result.append("\n---\n");
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error loading skill markdown: {}", skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
-        }
-    }
-
-    /**
-     * Load a specific resource file from a skill by its ID and resource path.
-     *
-     * <p>This will activate the skill and return the content of the requested resource.
-     *
-     * @param skillId The unique identifier of the skill
-     * @param path The path to the resource file within the skill (e.g., 'config.json')
-     * @return Resource content
-     * @throws IllegalArgumentException if skill or resource doesn't exist
-     */
-    @Tool(
-            name = "skill_resources_load_tool",
-            description =
-                    "Load a specific resource file from a skill by its ID and resource path. This"
-                            + " will activate the skill and return the content of the requested"
-                            + " resource.")
-    public Mono<ToolResultBlock> loadSkillResource(
-            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-                    String skillId,
-            @ToolParam(
-                            name = "path",
-                            description =
-                                    "The path to the resource file within the skill (e.g.,"
-                                            + " 'config.json').")
-                    String path) {
-        try {
-            // Validate parameters
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
-            }
-
-            if (path == null || path.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: path"));
-            }
-
-            // Get resource
-            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
-            if (resources == null || !resources.containsKey(path)) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "Resource not found: '%s' in skill '%s'. "
-                                        + "Use get_all_resources_path_tool to see available"
-                                        + " resources.",
-                                path, skillId));
-            }
-
-            String resourceContent = resources.get(path);
-
-            // Build response
-            StringBuilder result = new StringBuilder();
-            result.append("Successfully loaded resource from skill: ").append(skillId).append("\n");
-            result.append("Resource path: ").append(path).append("\n\n");
-            result.append("Content:\n");
-            result.append("---\n");
-            result.append(resourceContent);
-            result.append("\n---\n");
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error loading skill resource: {} from {}", path, skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
-        }
-    }
-
-    /**
-     * Get a list of all resource file paths available in a skill.
-     *
-     * <p>This will activate the skill and return the paths of all its resources.
-     *
-     * @param skillId The unique identifier of the skill
-     * @return List of resource paths formatted as a string
-     * @throws IllegalArgumentException if skill doesn't exist
-     */
-    @Tool(
-            name = "get_all_resources_path_tool",
-            description =
-                    "Get a list of all resource file paths available in a skill. "
-                            + "This will activate the skill and return the paths of all its"
-                            + " resources.")
-    public Mono<ToolResultBlock> getAllResourcesPath(
-            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-                    String skillId) {
-        try {
-            // Validate parameter
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
-            }
-
-            // Get resource paths
-            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
-            if (resources == null || resources.isEmpty()) {
-                return Mono.just(ToolResultBlock.text("No resources available for this skill."));
-            }
-
-            List<String> resourcePaths = new ArrayList<>(resources.keySet());
-
-            // Format resource paths
-            StringBuilder result = new StringBuilder();
-            result.append(
-                    String.format(
-                            "Available resource paths (%d total):\n\n", resourcePaths.size()));
-
-            for (int i = 0; i < resourcePaths.size(); i++) {
-                result.append(i + 1).append(". ").append(resourcePaths.get(i)).append("\n");
-            }
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error getting resources for skill: {}", skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
-        }
-    }
-
-    /**
-     * validate skill is not null and can get successfully, and set skill as active.
-     * @param skillId The unique identifier of the skill
-     * @return The skill instance get by skill ID
-     */
-    private AgentSkill validatedActiveSkill(String skillId) {
-        if (!skillRegistry.exists(skillId)) {
-            throw new IllegalArgumentException(
-                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
+    public void registerSkillLoadTool() {
+        if (toolkit == null) {
+            throw new IllegalArgumentException("Toolkit cannot be null");
         }
 
-        // Set skill as active
-        skillRegistry.setSkillActive(skillId, true);
-        logger.debug("Activated skill: {}", skillId);
-
-        // Get skill
-        AgentSkill skill = skillRegistry.getSkill(skillId);
-        if (skill == null) {
-            throw new IllegalStateException(
-                    String.format(
-                            "Failed to load skill '%s' after validation. This is an internal"
-                                    + " error.",
-                            skillId));
+        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
+            toolkit.createToolGroup(
+                    "skill-build-in-tools",
+                    "skill build-in tools, could contain(load_skill_through_path)");
         }
-        return skill;
+
+        toolkit.registration()
+                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
+                .group("skill-build-in-tools")
+                .apply();
+
+        logger.info("Registered skill load tools to toolkit");
     }
 }

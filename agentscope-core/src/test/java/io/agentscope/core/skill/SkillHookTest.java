@@ -64,7 +64,7 @@ class SkillHookTest {
         toolkit = new Toolkit();
         skillBox = new SkillBox(toolkit);
         skillHook = new SkillHook(skillBox);
-        toolkit.registerTool(skillBox);
+        skillBox.registerSkillLoadTool();
         testAgent = new TestAgent("test-agent");
         AgentSkill skill = new AgentSkill("empty_skill", "Empty Skill", "# Empty", null);
         skillBox.registration().skill(skill).apply(); // Should handle skill with no tools correctly
@@ -153,14 +153,15 @@ class SkillHookTest {
                 "ToolGroup should be inactive before loading");
 
         // Act: Mock LLM calling skill loader tool
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
+        AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
         loadParams.put("skillId", skillId);
+        loadParams.put("path", "SKILL.md");
 
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("call-001")
-                        .name("skill_md_load_tool")
+                        .name("load_skill_through_path")
                         .input(loadParams)
                         .build();
 
@@ -192,16 +193,17 @@ class SkillHookTest {
         String toolGroupName = skillId + "_skill_tools";
 
         // Load skill via loader tool (simulate LLM)
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
+        AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
         loadParams.put("skillId", skillId);
+        loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =
                 ToolCallParam.builder()
                         .toolUseBlock(
                                 ToolUseBlock.builder()
                                         .id("call-001")
-                                        .name("skill_md_load_tool")
+                                        .name("load_skill_through_path")
                                         .input(loadParams)
                                         .build())
                         .input(loadParams)
@@ -258,16 +260,17 @@ class SkillHookTest {
         String toolGroupName = skillId + "_skill_tools";
 
         // Activate skill via loader tool
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
+        AgentTool skillLoader = toolkit.getTool("load_skill_through_path");
         Map<String, Object> loadParams = new HashMap<>();
         loadParams.put("skillId", skillId);
+        loadParams.put("path", "SKILL.md");
 
         ToolCallParam callParam =
                 ToolCallParam.builder()
                         .toolUseBlock(
                                 ToolUseBlock.builder()
                                         .id("call-001")
-                                        .name("skill_md_load_tool")
+                                        .name("load_skill_through_path")
                                         .input(loadParams)
                                         .build())
                         .input(loadParams)
