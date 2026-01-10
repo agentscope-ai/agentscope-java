@@ -51,11 +51,7 @@ public class AnthropicToolsHelper {
         // Convert and add tools
         List<AnthropicTool> anthropicTools = new ArrayList<>();
         for (ToolSchema schema : tools) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> inputSchema =
-                    schema.getParameters() instanceof Map
-                            ? (Map<String, Object>) schema.getParameters()
-                            : convertToMap(schema.getParameters());
+            Map<String, Object> inputSchema = schema.getParameters();
 
             AnthropicTool tool =
                     new AnthropicTool(schema.getName(), schema.getDescription(), inputSchema);
