@@ -410,6 +410,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
     @Test
     void testParseStreamEventsMessageDelta() {
+        // message_delta events with only usage (no content) are filtered out
+        // The usage info would typically be attached to the last content block in a real stream
         AnthropicStreamEvent event = new AnthropicStreamEvent();
         event.setType("message_delta");
 
@@ -425,13 +427,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Flux<ChatResponse> responseFlux =
                 AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
 
-        StepVerifier.create(responseFlux)
-                .assertNext(
-                        res -> {
-                            assertNotNull(res.getUsage());
-                            assertEquals(150, res.getUsage().getOutputTokens());
-                        })
-                .verifyComplete();
+        // message_delta with only usage (no content) completes without emitting
+        StepVerifier.create(responseFlux).verifyComplete();
     }
 
     @Test
