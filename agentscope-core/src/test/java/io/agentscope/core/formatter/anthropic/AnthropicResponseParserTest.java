@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
@@ -233,5 +234,293 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         StepVerifier.create(AnthropicResponseParser.parseStreamEvents(errorFlux, startTime))
                 .expectError(RuntimeException.class)
                 .verify();
+    }
+
+    @Test
+    void testParseMessageWithNullContent() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_content");
+        response.setContent(null);
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(50);
+        usage.setOutputTokens(25);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertTrue(chatResponse.getContent().isEmpty());
+        assertNotNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithEmptyContent() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_empty_content");
+        response.setContent(List.of());
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(30);
+        usage.setOutputTokens(15);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertTrue(chatResponse.getContent().isEmpty());
+        assertNotNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithNullUsage() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_no_usage");
+        response.setContent(List.of(AnthropicContent.text("Hello")));
+        response.setUsage(null);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+        // Usage should be null when not provided
+        assertNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithNullTokensInUsage() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_tokens");
+        response.setContent(List.of(AnthropicContent.text("Response")));
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(null);
+        usage.setOutputTokens(null);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(0, chatResponse.getUsage().getInputTokens());
+        assertEquals(0, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParseMessageWithNullTextBlock() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_text");
+
+        AnthropicContent content = new AnthropicContent();
+        content.setType("text");
+        content.setText(null);
+        response.setContent(List.of(content));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Null text blocks should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseMessageWithUnknownContentType() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_unknown_type");
+
+        AnthropicContent content = new AnthropicContent();
+        content.setType("unknown_type");
+        response.setContent(List.of(content));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Unknown content types should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseStreamEventsContentBlockStart() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("content_block_start");
+        event.setIndex(0);
+
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_123");
+        toolContent.setName("calculator");
+        event.setContentBlock(toolContent);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertEquals(1, res.getContent().size());
+                            assertTrue(
+                                    res.getContent().get(0)
+                                            instanceof io.agentscope.core.message.ToolUseBlock);
+                            io.agentscope.core.message.ToolUseBlock toolUse =
+                                    (io.agentscope.core.message.ToolUseBlock)
+                                            res.getContent().get(0);
+                            assertEquals("tool_123", toolUse.getId());
+                            assertEquals("calculator", toolUse.getName());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsContentBlockDeltaWithPartialJson() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("content_block_delta");
+        event.setIndex(0);
+
+        AnthropicStreamEvent.Delta delta = new AnthropicStreamEvent.Delta();
+        delta.setType("input_json_delta");
+        delta.setPartialJson("{\"query\":");
+        event.setDelta(delta);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertEquals(1, res.getContent().size());
+                            assertTrue(
+                                    res.getContent().get(0)
+                                            instanceof io.agentscope.core.message.ToolUseBlock);
+                            io.agentscope.core.message.ToolUseBlock toolUse =
+                                    (io.agentscope.core.message.ToolUseBlock)
+                                            res.getContent().get(0);
+                            assertEquals("__fragment__", toolUse.getName());
+                            assertEquals("{\"query\":", toolUse.getContent());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsMessageDelta() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("message_delta");
+
+        AnthropicStreamEvent.Delta delta = new AnthropicStreamEvent.Delta();
+        event.setDelta(delta);
+
+        io.agentscope.core.formatter.anthropic.dto.AnthropicUsage usage =
+                new io.agentscope.core.formatter.anthropic.dto.AnthropicUsage();
+        usage.setOutputTokens(150);
+        event.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertNotNull(res.getUsage());
+                            assertEquals(150, res.getUsage().getOutputTokens());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsWithNullType() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType(null);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        // Should handle null type gracefully and complete
+        StepVerifier.create(responseFlux).verifyComplete();
+    }
+
+    @Test
+    void testParseMessageWithMultipleToolUseBlocks() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_multiple_tools");
+
+        AnthropicContent tool1 = new AnthropicContent();
+        tool1.setType("tool_use");
+        tool1.setId("tool_1");
+        tool1.setName("search");
+        tool1.setInput(Map.of("query", "test"));
+
+        AnthropicContent tool2 = new AnthropicContent();
+        tool2.setType("tool_use");
+        tool2.setId("tool_2");
+        tool2.setName("calculate");
+        tool2.setInput(Map.of("expression", "2+2"));
+
+        response.setContent(List.of(tool1, tool2));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+
+        io.agentscope.core.message.ToolUseBlock firstTool =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("tool_1", firstTool.getId());
+        assertEquals("search", firstTool.getName());
+
+        io.agentscope.core.message.ToolUseBlock secondTool =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(1);
+        assertEquals("tool_2", secondTool.getId());
+        assertEquals("calculate", secondTool.getName());
+    }
+
+    @Test
+    void testParseMessageWithToolUseNullInput() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_input");
+
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_1");
+        toolContent.setName("search");
+        toolContent.setInput(null);
+        response.setContent(List.of(toolContent));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+        io.agentscope.core.message.ToolUseBlock toolUse =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(0);
+        assertNotNull(toolUse.getInput());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    void testParseMessageWithThinkingNullText() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_thinking");
+
+        AnthropicContent thinkingContent = new AnthropicContent();
+        thinkingContent.setType("thinking");
+        thinkingContent.setThinking(null);
+        response.setContent(List.of(thinkingContent));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Null thinking should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
     }
 }

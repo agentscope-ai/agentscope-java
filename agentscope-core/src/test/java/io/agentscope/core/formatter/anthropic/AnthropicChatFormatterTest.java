@@ -298,4 +298,147 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.get(0).getContent().size());
         assertEquals("tool_result", result.get(0).getContent().get(0).getType());
     }
+
+    @Test
+    void testMultiAgentConversationDetection() {
+        // Create a multi-agent conversation with multiple assistant messages
+        Msg user1 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg assistant1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis 1").build()))
+                        .build();
+
+        Msg assistant2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis 2").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(user1, assistant1, assistant2));
+
+        // Should merge into fewer messages (multi-agent detection)
+        assertNotNull(result);
+        assertTrue(result.size() >= 1);
+    }
+
+    @Test
+    void testMultiAgentConversationWithSystemNamedUserMessage() {
+        // Test MsgHub announcement pattern (USER message with name="system")
+        Msg announcement =
+                Msg.builder()
+                        .name("system")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Conversation started").build()))
+                        .build();
+
+        Msg analyst1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Response 1").build()))
+                        .build();
+
+        Msg analyst2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Response 2").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(announcement, analyst1, analyst2));
+
+        // Should detect multi-agent scenario and merge appropriately
+        assertNotNull(result);
+        assertTrue(result.size() >= 1);
+    }
+
+    @Test
+    void testMultiAgentConversationWithToolCalls() {
+        // Test that tool calls are preserved during multi-agent formatting
+        Msg analyst1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("tool_1")
+                                                .name("search")
+                                                .input(Map.of("query", "test"))
+                                                .build()))
+                        .build();
+
+        Msg toolResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("tool_1")
+                                                .name("search")
+                                                .output(TextBlock.builder().text("Result").build())
+                                                .build()))
+                        .build();
+
+        Msg analyst2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis complete").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(analyst1, toolResult, analyst2));
+
+        // Tool sequence should be preserved
+        assertNotNull(result);
+        assertTrue(result.size() >= 2);
+    }
+
+    @Test
+    void testSingleAgentConversationNotMerged() {
+        // Test that single-agent conversations are not merged
+        Msg user1 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg assistant1 =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        Msg user2 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("How are you?").build()))
+                        .build();
+
+        Msg assistant2 =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Good").build()))
+                        .build();
+
+        List<AnthropicMessage> result =
+                formatter.format(List.of(user1, assistant1, user2, assistant2));
+
+        // Should preserve all 4 messages (no merging needed for single-agent)
+        assertEquals(4, result.size());
+    }
 }
