@@ -19,23 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import com.anthropic.models.messages.ContentBlock;
-import com.anthropic.models.messages.Message;
-import com.anthropic.models.messages.RawMessageStartEvent;
-import com.anthropic.models.messages.RawMessageStreamEvent;
-import com.anthropic.models.messages.TextBlock;
-import com.anthropic.models.messages.ThinkingBlock;
-import com.anthropic.models.messages.ToolUseBlock;
-import com.anthropic.models.messages.Usage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicStreamEvent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicUsage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -43,51 +36,31 @@ import reactor.test.StepVerifier;
 /** Unit tests for AnthropicResponseParser. */
 class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
-    /**
-     * Use reflection to call private parseStreamEvent method for unit testing individual event
-     * types.
-     */
-    private ChatResponse invokeParseStreamEvent(RawMessageStreamEvent event, Instant startTime)
-            throws Exception {
-        Method method =
-                AnthropicResponseParser.class.getDeclaredMethod(
-                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class);
-        method.setAccessible(true);
-        return (ChatResponse) method.invoke(null, event, startTime);
-    }
-
     @Test
     void testParseMessageWithTextBlock() {
-        // Create mock Message with text content
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_123");
+        response.setContent(List.of(AnthropicContent.text("Hello, world!")));
 
-        when(message.id()).thenReturn("msg_123");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(100L);
-        when(usage.outputTokens()).thenReturn(50L);
-
-        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
-        when(contentBlock.toolUse()).thenReturn(Optional.empty());
-        when(contentBlock.thinking()).thenReturn(Optional.empty());
-        when(textBlock.text()).thenReturn("Hello, world!");
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(100);
+        usage.setOutputTokens(50);
+        response.setUsage(usage);
 
         Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
 
-        assertNotNull(response);
-        assertEquals("msg_123", response.getId());
-        assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
+        assertNotNull(chatResponse);
+        assertEquals("msg_123", chatResponse.getId());
+        assertEquals(1, chatResponse.getContent().size());
+        assertTrue(
+                chatResponse.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
+        assertEquals(
+                "Hello, world!",
+                ((io.agentscope.core.message.TextBlock) chatResponse.getContent().get(0))
+                        .getText());
 
-        io.agentscope.core.message.TextBlock parsedText =
-                (io.agentscope.core.message.TextBlock) response.getContent().get(0);
-        assertEquals("Hello, world!", parsedText.getText());
-
-        ChatUsage responseUsage = response.getUsage();
+        ChatUsage responseUsage = chatResponse.getUsage();
         assertNotNull(responseUsage);
         assertEquals(100, responseUsage.getInputTokens());
         assertEquals(50, responseUsage.getOutputTokens());
@@ -95,278 +68,165 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
     @Test
     void testParseMessageWithToolUseBlock() {
-        // Create mock Message with tool use content
-        // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_456");
 
-        when(message.id()).thenReturn("msg_456");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(200L);
-        when(usage.outputTokens()).thenReturn(100L);
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_call_123");
+        toolContent.setName("search");
+        toolContent.setInput(Map.of("query", "test"));
+        response.setContent(List.of(toolContent));
 
-        when(contentBlock.text()).thenReturn(Optional.empty());
-        when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
-        when(contentBlock.thinking()).thenReturn(Optional.empty());
-
-        when(toolUseBlock.id()).thenReturn("tool_call_123");
-        when(toolUseBlock.name()).thenReturn("search");
-        when(toolUseBlock._input()).thenReturn(null); // Avoid Kotlin reflection issues
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(200);
+        usage.setOutputTokens(100);
+        response.setUsage(usage);
 
         Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
 
-        assertNotNull(response);
-        assertEquals("msg_456", response.getId());
-        assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.ToolUseBlock);
+        assertNotNull(chatResponse);
+        assertEquals("msg_456", chatResponse.getId());
+        assertEquals(1, chatResponse.getContent().size());
+        assertTrue(
+                chatResponse.getContent().get(0)
+                        instanceof io.agentscope.core.message.ToolUseBlock);
 
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
-        assertEquals("tool_call_123", parsedToolUse.getId());
-        assertEquals("search", parsedToolUse.getName());
-        assertNotNull(parsedToolUse.getInput());
-        // Null input should result in empty map
-        assertTrue(parsedToolUse.getInput().isEmpty());
+        io.agentscope.core.message.ToolUseBlock toolUse =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("tool_call_123", toolUse.getId());
+        assertEquals("search", toolUse.getName());
+        assertEquals("test", toolUse.getInput().get("query"));
     }
 
     @Test
     void testParseMessageWithThinkingBlock() {
-        // Create mock Message with thinking content
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
-        ThinkingBlock thinkingBlock = mock(ThinkingBlock.class);
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_789");
+        response.setContent(List.of(AnthropicContent.thinking("Let me think...")));
 
-        when(message.id()).thenReturn("msg_789");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(150L);
-        when(usage.outputTokens()).thenReturn(75L);
-
-        when(contentBlock.text()).thenReturn(Optional.empty());
-        when(contentBlock.toolUse()).thenReturn(Optional.empty());
-        when(contentBlock.thinking()).thenReturn(Optional.of(thinkingBlock));
-        when(thinkingBlock.thinking()).thenReturn("Let me think about this...");
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(150);
+        usage.setOutputTokens(75);
+        response.setUsage(usage);
 
         Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
 
-        assertNotNull(response);
-        assertEquals("msg_789", response.getId());
-        assertEquals(1, response.getContent().size());
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
         assertTrue(
-                response.getContent().get(0) instanceof io.agentscope.core.message.ThinkingBlock);
+                chatResponse.getContent().get(0)
+                        instanceof io.agentscope.core.message.ThinkingBlock);
 
-        io.agentscope.core.message.ThinkingBlock parsedThinking =
-                (io.agentscope.core.message.ThinkingBlock) response.getContent().get(0);
-        assertEquals("Let me think about this...", parsedThinking.getThinking());
+        io.agentscope.core.message.ThinkingBlock thinking =
+                (io.agentscope.core.message.ThinkingBlock) chatResponse.getContent().get(0);
+        assertEquals("Let me think...", thinking.getThinking());
     }
 
     @Test
     void testParseMessageWithMixedContent() {
-        // Create mock Message with multiple content blocks
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_mixed");
 
-        ContentBlock textContentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_xyz");
+        toolContent.setName("web_search");
+        toolContent.setInput(Map.of());
 
-        ContentBlock toolContentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        response.setContent(List.of(AnthropicContent.text("Let me search for that."), toolContent));
 
-        when(message.id()).thenReturn("msg_mixed");
-        when(message.content()).thenReturn(List.of(textContentBlock, toolContentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(300L);
-        when(usage.outputTokens()).thenReturn(150L);
-
-        // Text block
-        when(textContentBlock.text()).thenReturn(Optional.of(textBlock));
-        when(textContentBlock.toolUse()).thenReturn(Optional.empty());
-        when(textContentBlock.thinking()).thenReturn(Optional.empty());
-        when(textBlock.text()).thenReturn("Let me search for that.");
-
-        // Tool use block - use null input to avoid Kotlin reflection issues
-        when(toolContentBlock.text()).thenReturn(Optional.empty());
-        when(toolContentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
-        when(toolContentBlock.thinking()).thenReturn(Optional.empty());
-        when(toolUseBlock.id()).thenReturn("tool_xyz");
-        when(toolUseBlock.name()).thenReturn("web_search");
-        when(toolUseBlock._input()).thenReturn(null); // Avoid Kotlin reflection issues
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(300);
+        usage.setOutputTokens(150);
+        response.setUsage(usage);
 
         Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
 
-        assertNotNull(response);
-        assertEquals("msg_mixed", response.getId());
-        assertEquals(2, response.getContent().size());
-
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
-        assertTrue(response.getContent().get(1) instanceof io.agentscope.core.message.ToolUseBlock);
-    }
-
-    @Test
-    void testParseMessageWithEmptyContent() {
-        // Create mock Message with no content
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-
-        when(message.id()).thenReturn("msg_empty");
-        when(message.content()).thenReturn(List.of());
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(50L);
-        when(usage.outputTokens()).thenReturn(0L);
-
-        Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
-
-        assertNotNull(response);
-        assertEquals("msg_empty", response.getId());
-        assertTrue(response.getContent().isEmpty());
-    }
-
-    @Test
-    void testParseMessageWithNullToolInput() {
-        // Create mock Message with null tool input
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-        ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
-
-        when(message.id()).thenReturn("msg_null_input");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(100L);
-        when(usage.outputTokens()).thenReturn(50L);
-
-        when(contentBlock.text()).thenReturn(Optional.empty());
-        when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
-        when(contentBlock.thinking()).thenReturn(Optional.empty());
-
-        when(toolUseBlock.id()).thenReturn("tool_null");
-        when(toolUseBlock.name()).thenReturn("test_tool");
-        when(toolUseBlock._input()).thenReturn(null);
-
-        Instant startTime = Instant.now();
-        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
-
-        assertNotNull(response);
-        assertEquals(1, response.getContent().size());
-
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
-        assertEquals("tool_null", parsedToolUse.getId());
-        assertEquals("test_tool", parsedToolUse.getName());
-        // Null input should result in empty map
-        assertNotNull(parsedToolUse.getInput());
-        assertTrue(parsedToolUse.getInput().isEmpty());
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+        assertTrue(
+                chatResponse.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
+        assertTrue(
+                chatResponse.getContent().get(1)
+                        instanceof io.agentscope.core.message.ToolUseBlock);
     }
 
     @Test
     void testParseStreamEventsMessageStart() {
-        // Create mock MessageStart event
-        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
-        RawMessageStartEvent messageStartEvent = mock(RawMessageStartEvent.class);
-        Message message = mock(Message.class);
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("message_start");
 
-        when(event.isMessageStart()).thenReturn(true);
-        when(event.asMessageStart()).thenReturn(messageStartEvent);
-        when(messageStartEvent.message()).thenReturn(message);
-        when(message.id()).thenReturn("msg_stream_123");
+        // message_start event has a specialized 'message' field which is
+        // AnthropicResponse
+        AnthropicResponse message = new AnthropicResponse();
+        message.setId("msg_stream_123");
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(10);
+        usage.setOutputTokens(0);
+        message.setUsage(usage); // Set usage on the message structure
+
+        event.setMessage(message);
 
         Instant startTime = Instant.now();
         Flux<ChatResponse> responseFlux =
                 AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
 
-        // MessageStart events should be filtered out (empty content)
+        // Current implementation filters out empty content responses, so message_start
+        // is verified to complete empty
         StepVerifier.create(responseFlux).verifyComplete();
     }
 
     @Test
-    void testParseStreamEventMessageStart() throws Exception {
-        // Test MessageStart event - should set message ID but have empty content
-        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
-        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
-        Message message = mock(Message.class);
+    void testParseStreamEventsTextDelta() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("content_block_delta");
+        event.setIndex(0);
 
-        when(event.isMessageStart()).thenReturn(true);
-        when(event.asMessageStart()).thenReturn(messageStart);
-        when(messageStart.message()).thenReturn(message);
-        when(message.id()).thenReturn("msg_stream_123");
-
-        when(event.isContentBlockDelta()).thenReturn(false);
-        when(event.isContentBlockStart()).thenReturn(false);
-        when(event.isMessageDelta()).thenReturn(false);
-
-        Instant startTime = Instant.now();
-        ChatResponse response = invokeParseStreamEvent(event, startTime);
-
-        assertNotNull(response);
-        assertEquals("msg_stream_123", response.getId());
-        assertTrue(response.getContent().isEmpty()); // MessageStart has no content
-    }
-
-    @Test
-    void testParseStreamEventUnknownType() throws Exception {
-        // Test unknown event type - should return empty response
-        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
-
-        when(event.isMessageStart()).thenReturn(false);
-        when(event.isContentBlockDelta()).thenReturn(false);
-        when(event.isContentBlockStart()).thenReturn(false);
-        when(event.isMessageDelta()).thenReturn(false);
-
-        Instant startTime = Instant.now();
-        ChatResponse response = invokeParseStreamEvent(event, startTime);
-
-        assertNotNull(response);
-        assertNull(response.getId());
-        assertTrue(response.getContent().isEmpty());
-        assertNull(response.getUsage());
-    }
-
-    @Test
-    void testParseStreamEventsFiltersEmptyContent() {
-        // Test that parseStreamEvents filters out responses with empty content
-        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
-
-        when(event.isMessageStart()).thenReturn(false);
-        when(event.isContentBlockDelta()).thenReturn(false);
-        when(event.isContentBlockStart()).thenReturn(false);
-        when(event.isMessageDelta()).thenReturn(false);
+        AnthropicStreamEvent.Delta delta = new AnthropicStreamEvent.Delta();
+        delta.setType("text_delta");
+        delta.setText("Hello stream");
+        event.setDelta(delta);
 
         Instant startTime = Instant.now();
         Flux<ChatResponse> responseFlux =
                 AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
 
-        // Empty content responses should be filtered out
-        StepVerifier.create(responseFlux).verifyComplete();
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertEquals(1, res.getContent().size());
+                            assertTrue(
+                                    res.getContent().get(0)
+                                            instanceof io.agentscope.core.message.TextBlock);
+                            assertEquals(
+                                    "Hello stream",
+                                    ((io.agentscope.core.message.TextBlock) res.getContent().get(0))
+                                            .getText());
+                        })
+                .verifyComplete();
     }
 
     @Test
-    void testParseStreamEventsHandlesExceptions() {
-        // Test that exceptions in parsing are caught and logged
-        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
-
-        // Make the event throw an exception
-        when(event.isMessageStart()).thenThrow(new RuntimeException("Test exception"));
+    void testParseStreamEventsUnknownType() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("unknown_event");
 
         Instant startTime = Instant.now();
         Flux<ChatResponse> responseFlux =
                 AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
 
-        // Exception should be caught and result in empty flux
         StepVerifier.create(responseFlux).verifyComplete();
     }
 
     @Test
     void testParseStreamEventsErrorHandling() {
         // Create a Flux that emits an error
-        Flux<RawMessageStreamEvent> errorFlux = Flux.error(new RuntimeException("Stream error"));
+        Flux<AnthropicStreamEvent> errorFlux = Flux.error(new RuntimeException("Stream error"));
 
         Instant startTime = Instant.now();
 
@@ -374,5 +234,290 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         StepVerifier.create(AnthropicResponseParser.parseStreamEvents(errorFlux, startTime))
                 .expectError(RuntimeException.class)
                 .verify();
+    }
+
+    @Test
+    void testParseMessageWithNullContent() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_content");
+        response.setContent(null);
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(50);
+        usage.setOutputTokens(25);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertTrue(chatResponse.getContent().isEmpty());
+        assertNotNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithEmptyContent() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_empty_content");
+        response.setContent(List.of());
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(30);
+        usage.setOutputTokens(15);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertTrue(chatResponse.getContent().isEmpty());
+        assertNotNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithNullUsage() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_no_usage");
+        response.setContent(List.of(AnthropicContent.text("Hello")));
+        response.setUsage(null);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+        // Usage should be null when not provided
+        assertNull(chatResponse.getUsage());
+    }
+
+    @Test
+    void testParseMessageWithNullTokensInUsage() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_tokens");
+        response.setContent(List.of(AnthropicContent.text("Response")));
+
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(null);
+        usage.setOutputTokens(null);
+        response.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(0, chatResponse.getUsage().getInputTokens());
+        assertEquals(0, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParseMessageWithNullTextBlock() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_text");
+
+        AnthropicContent content = new AnthropicContent();
+        content.setType("text");
+        content.setText(null);
+        response.setContent(List.of(content));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Null text blocks should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseMessageWithUnknownContentType() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_unknown_type");
+
+        AnthropicContent content = new AnthropicContent();
+        content.setType("unknown_type");
+        response.setContent(List.of(content));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Unknown content types should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
+    }
+
+    @Test
+    void testParseStreamEventsContentBlockStart() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("content_block_start");
+        event.setIndex(0);
+
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_123");
+        toolContent.setName("calculator");
+        event.setContentBlock(toolContent);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertEquals(1, res.getContent().size());
+                            assertTrue(
+                                    res.getContent().get(0)
+                                            instanceof io.agentscope.core.message.ToolUseBlock);
+                            io.agentscope.core.message.ToolUseBlock toolUse =
+                                    (io.agentscope.core.message.ToolUseBlock)
+                                            res.getContent().get(0);
+                            assertEquals("tool_123", toolUse.getId());
+                            assertEquals("calculator", toolUse.getName());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsContentBlockDeltaWithPartialJson() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("content_block_delta");
+        event.setIndex(0);
+
+        AnthropicStreamEvent.Delta delta = new AnthropicStreamEvent.Delta();
+        delta.setType("input_json_delta");
+        delta.setPartialJson("{\"query\":");
+        event.setDelta(delta);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        res -> {
+                            assertEquals(1, res.getContent().size());
+                            assertTrue(
+                                    res.getContent().get(0)
+                                            instanceof io.agentscope.core.message.ToolUseBlock);
+                            io.agentscope.core.message.ToolUseBlock toolUse =
+                                    (io.agentscope.core.message.ToolUseBlock)
+                                            res.getContent().get(0);
+                            assertEquals("__fragment__", toolUse.getName());
+                            assertEquals("{\"query\":", toolUse.getContent());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsMessageDelta() {
+        // message_delta events with only usage (no content) are filtered out
+        // The usage info would typically be attached to the last content block in a real stream
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType("message_delta");
+
+        AnthropicStreamEvent.Delta delta = new AnthropicStreamEvent.Delta();
+        event.setDelta(delta);
+
+        io.agentscope.core.formatter.anthropic.dto.AnthropicUsage usage =
+                new io.agentscope.core.formatter.anthropic.dto.AnthropicUsage();
+        usage.setOutputTokens(150);
+        event.setUsage(usage);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        // message_delta with only usage (no content) completes without emitting
+        StepVerifier.create(responseFlux).verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsWithNullType() {
+        AnthropicStreamEvent event = new AnthropicStreamEvent();
+        event.setType(null);
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(event), startTime);
+
+        // Should handle null type gracefully and complete
+        StepVerifier.create(responseFlux).verifyComplete();
+    }
+
+    @Test
+    void testParseMessageWithMultipleToolUseBlocks() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_multiple_tools");
+
+        AnthropicContent tool1 = new AnthropicContent();
+        tool1.setType("tool_use");
+        tool1.setId("tool_1");
+        tool1.setName("search");
+        tool1.setInput(Map.of("query", "test"));
+
+        AnthropicContent tool2 = new AnthropicContent();
+        tool2.setType("tool_use");
+        tool2.setId("tool_2");
+        tool2.setName("calculate");
+        tool2.setInput(Map.of("expression", "2+2"));
+
+        response.setContent(List.of(tool1, tool2));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+
+        io.agentscope.core.message.ToolUseBlock firstTool =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("tool_1", firstTool.getId());
+        assertEquals("search", firstTool.getName());
+
+        io.agentscope.core.message.ToolUseBlock secondTool =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(1);
+        assertEquals("tool_2", secondTool.getId());
+        assertEquals("calculate", secondTool.getName());
+    }
+
+    @Test
+    void testParseMessageWithToolUseNullInput() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_input");
+
+        AnthropicContent toolContent = new AnthropicContent();
+        toolContent.setType("tool_use");
+        toolContent.setId("tool_1");
+        toolContent.setName("search");
+        toolContent.setInput(null);
+        response.setContent(List.of(toolContent));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+        io.agentscope.core.message.ToolUseBlock toolUse =
+                (io.agentscope.core.message.ToolUseBlock) chatResponse.getContent().get(0);
+        assertNotNull(toolUse.getInput());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    void testParseMessageWithThinkingNullText() {
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_null_thinking");
+
+        AnthropicContent thinkingContent = new AnthropicContent();
+        thinkingContent.setType("thinking");
+        thinkingContent.setThinking(null);
+        response.setContent(List.of(thinkingContent));
+
+        Instant startTime = Instant.now();
+        ChatResponse chatResponse = AnthropicResponseParser.parseMessage(response, startTime);
+
+        assertNotNull(chatResponse);
+        // Null thinking should be skipped
+        assertTrue(chatResponse.getContent().isEmpty());
     }
 }

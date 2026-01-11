@@ -17,17 +17,13 @@ package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import com.anthropic.models.messages.ContentBlockParam;
-import com.anthropic.models.messages.Message;
-import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.TextBlockParam;
-import com.anthropic.models.messages.Usage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicUsage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -39,7 +35,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -62,11 +58,11 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        List<MessageParam> result = formatter.format(List.of(msg));
+        List<AnthropicMessage> result = formatter.format(List.of(msg));
 
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        assertEquals("user", result.get(0).getRole());
     }
 
     @Test
@@ -78,12 +74,11 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .content(List.of(TextBlock.builder().text("You are helpful").build()))
                         .build();
 
-        List<MessageParam> result = formatter.format(List.of(msg));
+        List<AnthropicMessage> result = formatter.format(List.of(msg));
 
         assertNotNull(result);
         assertEquals(1, result.size());
-        // First system message converted to USER
-        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        assertEquals("user", result.get(0).getRole());
     }
 
     @Test
@@ -102,16 +97,16 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .content(List.of(TextBlock.builder().text("Hi").build()))
                         .build();
 
-        List<MessageParam> result = formatter.format(List.of(userMsg, assistantMsg));
+        List<AnthropicMessage> result = formatter.format(List.of(userMsg, assistantMsg));
 
         assertEquals(2, result.size());
-        assertEquals(MessageParam.Role.USER, result.get(0).role());
-        assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
+        assertEquals("user", result.get(0).getRole());
+        assertEquals("assistant", result.get(1).getRole());
     }
 
     @Test
     void testFormatEmptyMessageList() {
-        List<MessageParam> result = formatter.format(List.of());
+        List<AnthropicMessage> result = formatter.format(List.of());
 
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -119,48 +114,31 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     @Test
     void testParseResponseWithMessage() {
-        // Create mock Message
-        Message message = mock(Message.class);
-        Usage usage = mock(Usage.class);
-        com.anthropic.models.messages.ContentBlock contentBlock =
-                mock(com.anthropic.models.messages.ContentBlock.class);
-        com.anthropic.models.messages.TextBlock textBlock =
-                mock(com.anthropic.models.messages.TextBlock.class);
+        // Create mock Response using DTO
+        AnthropicResponse response = new AnthropicResponse();
+        response.setId("msg_test");
+        AnthropicContent content = AnthropicContent.text("Response");
+        response.setContent(List.of(content));
 
-        when(message.id()).thenReturn("msg_test");
-        when(message.content()).thenReturn(List.of(contentBlock));
-        when(message.usage()).thenReturn(usage);
-        when(usage.inputTokens()).thenReturn(100L);
-        when(usage.outputTokens()).thenReturn(50L);
-
-        when(contentBlock.text()).thenReturn(Optional.of(textBlock));
-        when(contentBlock.toolUse()).thenReturn(Optional.empty());
-        when(contentBlock.thinking()).thenReturn(Optional.empty());
-        when(textBlock.text()).thenReturn("Response");
+        AnthropicUsage usage = new AnthropicUsage();
+        usage.setInputTokens(100);
+        usage.setOutputTokens(50);
+        response.setUsage(usage);
 
         Instant startTime = Instant.now();
-        ChatResponse response = formatter.parseResponse(message, startTime);
+        ChatResponse chatResponse = formatter.parseResponse(response, startTime);
 
-        assertNotNull(response);
-        assertEquals("msg_test", response.getId());
-        assertEquals(1, response.getContent().size());
-        assertNotNull(response.getUsage());
-    }
-
-    @Test
-    void testParseResponseWithInvalidType() {
-        // Pass non-Message object should throw exception
-        String invalidResponse = "not a message";
-        Instant startTime = Instant.now();
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> formatter.parseResponse(invalidResponse, startTime));
+        assertNotNull(chatResponse);
+        assertEquals("msg_test", chatResponse.getId());
+        assertEquals(1, chatResponse.getContent().size());
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(100L, chatResponse.getUsage().getInputTokens());
+        assertEquals(50L, chatResponse.getUsage().getOutputTokens());
     }
 
     @Test
     void testApplySystemMessage() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
+        AnthropicRequest request = new AnthropicRequest();
 
         Msg systemMsg =
                 Msg.builder()
@@ -169,36 +147,14 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .content(List.of(TextBlock.builder().text("You are helpful").build()))
                         .build();
 
-        formatter.applySystemMessage(paramsBuilder, List.of(systemMsg));
+        formatter.applySystemMessage(request, List.of(systemMsg));
 
-        // Build and verify system message was set
-        // Note: Anthropic requires at least one message, add a dummy message
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        // System message should be present in params
-        // Note: We can't directly access the system field without building,
-        // but we can verify no exception was thrown
-        assertNotNull(params);
+        assertEquals("You are helpful", request.getSystem());
     }
 
     @Test
     void testApplySystemMessageWithNoSystemMessage() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
+        AnthropicRequest request = new AnthropicRequest();
 
         Msg userMsg =
                 Msg.builder()
@@ -207,213 +163,93 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        formatter.applySystemMessage(paramsBuilder, List.of(userMsg));
+        formatter.applySystemMessage(request, List.of(userMsg));
 
-        // Should handle gracefully with no system message
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        // System should remain null or empty
+        Object system = request.getSystem();
+        assertTrue(system == null || (system instanceof String && ((String) system).isEmpty()));
     }
 
     @Test
     void testApplySystemMessageWithEmptyMessages() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
-        formatter.applySystemMessage(paramsBuilder, List.of());
-
-        // Should handle empty list gracefully
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        AnthropicRequest request = new AnthropicRequest();
+        formatter.applySystemMessage(request, List.of());
+        Object system = request.getSystem();
+        assertTrue(system == null || (system instanceof String && ((String) system).isEmpty()));
     }
 
     @Test
     void testApplyOptions() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
+        AnthropicRequest request = new AnthropicRequest();
         GenerateOptions options =
                 GenerateOptions.builder().temperature(0.7).maxTokens(2000).topP(0.9).build();
 
         GenerateOptions defaultOptions = GenerateOptions.builder().build();
 
-        formatter.applyOptions(paramsBuilder, options, defaultOptions);
+        formatter.applyOptions(request, options, defaultOptions);
 
-        // Build params and verify no exception
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        assertEquals(0.7, request.getTemperature());
+        assertEquals(2000, request.getMaxTokens());
+        assertEquals(0.9, request.getTopP());
     }
 
     @Test
     void testApplyOptionsWithNullOptions() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
+        AnthropicRequest request = new AnthropicRequest();
         GenerateOptions defaultOptions =
                 GenerateOptions.builder().temperature(0.5).maxTokens(1024).build();
 
-        formatter.applyOptions(paramsBuilder, null, defaultOptions);
+        formatter.applyOptions(request, null, defaultOptions);
 
-        // Should use default options
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        assertEquals(0.5, request.getTemperature());
+        assertEquals(1024, request.getMaxTokens());
     }
 
     @Test
     void testApplyTools() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
+        AnthropicRequest request = new AnthropicRequest();
         ToolSchema searchTool =
                 ToolSchema.builder()
                         .name("search")
                         .description("Search the web")
-                        .parameters(
-                                java.util.Map.of(
-                                        "type", "object", "properties", java.util.Map.of()))
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
                         .build();
 
         // First set options, then apply tools (tools need options for tool_choice)
         GenerateOptions options =
                 GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
 
-        formatter.applyOptions(paramsBuilder, options, GenerateOptions.builder().build());
-        formatter.applyTools(paramsBuilder, List.of(searchTool));
+        formatter.applyOptions(request, options, GenerateOptions.builder().build());
+        formatter.applyTools(request, List.of(searchTool));
 
-        // Build params and verify no exception
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
+        assertNotNull(request.getTools());
+        assertEquals(1, request.getTools().size());
+        assertEquals("search", request.getTools().get(0).getName());
 
-        assertNotNull(params);
+        assertNotNull(request.getToolChoice());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> toolChoice = (Map<String, Object>) request.getToolChoice();
+        assertEquals("auto", toolChoice.get("type"));
     }
 
     @Test
     void testApplyToolsWithEmptyList() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
+        AnthropicRequest request = new AnthropicRequest();
         GenerateOptions options = GenerateOptions.builder().build();
-        formatter.applyOptions(paramsBuilder, options, GenerateOptions.builder().build());
-        formatter.applyTools(paramsBuilder, List.of());
+        formatter.applyOptions(request, options, GenerateOptions.builder().build());
+        formatter.applyTools(request, List.of());
 
-        // Should handle empty tools gracefully
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        assertTrue(request.getTools() == null || request.getTools().isEmpty());
     }
 
     @Test
     void testApplyToolsWithNullList() {
-        MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
-
+        AnthropicRequest request = new AnthropicRequest();
         GenerateOptions options = GenerateOptions.builder().build();
-        formatter.applyOptions(paramsBuilder, options, GenerateOptions.builder().build());
-        formatter.applyTools(paramsBuilder, null);
+        formatter.applyOptions(request, options, GenerateOptions.builder().build());
+        formatter.applyTools(request, null);
 
-        // Should handle null tools gracefully
-        MessageCreateParams params =
-                paramsBuilder
-                        .model("claude-3-5-sonnet-20241022")
-                        .maxTokens(1024)
-                        .addMessage(
-                                MessageParam.builder()
-                                        .role(MessageParam.Role.USER)
-                                        .content(
-                                                MessageParam.Content.ofBlockParams(
-                                                        List.of(
-                                                                ContentBlockParam.ofText(
-                                                                        TextBlockParam.builder()
-                                                                                .text("test")
-                                                                                .build()))))
-                                        .build())
-                        .build();
-
-        assertNotNull(params);
+        assertTrue(request.getTools() == null);
     }
 
     @Test
@@ -427,14 +263,16 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                                         ToolUseBlock.builder()
                                                 .id("tool_123")
                                                 .name("search")
-                                                .input(java.util.Map.of("query", "test"))
+                                                .input(Map.of("query", "test"))
                                                 .build()))
                         .build();
 
-        List<MessageParam> result = formatter.format(List.of(msg));
+        List<AnthropicMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        assertEquals(MessageParam.Role.ASSISTANT, result.get(0).role());
+        assertEquals("assistant", result.get(0).getRole());
+        assertEquals(1, result.get(0).getContent().size());
+        assertEquals("tool_use", result.get(0).getContent().get(0).getType());
     }
 
     @Test
@@ -452,10 +290,155 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                                                 .build()))
                         .build();
 
-        List<MessageParam> result = formatter.format(List.of(msg));
+        List<AnthropicMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         // Tool results are converted to USER messages
-        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        assertEquals("user", result.get(0).getRole());
+        assertEquals(1, result.get(0).getContent().size());
+        assertEquals("tool_result", result.get(0).getContent().get(0).getType());
+    }
+
+    @Test
+    void testMultiAgentConversationDetection() {
+        // Create a multi-agent conversation with multiple assistant messages
+        Msg user1 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg assistant1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis 1").build()))
+                        .build();
+
+        Msg assistant2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis 2").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(user1, assistant1, assistant2));
+
+        // Should merge into fewer messages (multi-agent detection)
+        assertNotNull(result);
+        assertTrue(result.size() >= 1);
+    }
+
+    @Test
+    void testMultiAgentConversationWithSystemNamedUserMessage() {
+        // Test MsgHub announcement pattern (USER message with name="system")
+        Msg announcement =
+                Msg.builder()
+                        .name("system")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Conversation started").build()))
+                        .build();
+
+        Msg analyst1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Response 1").build()))
+                        .build();
+
+        Msg analyst2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Response 2").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(announcement, analyst1, analyst2));
+
+        // Should detect multi-agent scenario and merge appropriately
+        assertNotNull(result);
+        assertTrue(result.size() >= 1);
+    }
+
+    @Test
+    void testMultiAgentConversationWithToolCalls() {
+        // Test that tool calls are preserved during multi-agent formatting
+        Msg analyst1 =
+                Msg.builder()
+                        .name("Analyst1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("tool_1")
+                                                .name("search")
+                                                .input(Map.of("query", "test"))
+                                                .build()))
+                        .build();
+
+        Msg toolResult =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("tool_1")
+                                                .name("search")
+                                                .output(TextBlock.builder().text("Result").build())
+                                                .build()))
+                        .build();
+
+        Msg analyst2 =
+                Msg.builder()
+                        .name("Analyst2")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Analysis complete").build()))
+                        .build();
+
+        List<AnthropicMessage> result = formatter.format(List.of(analyst1, toolResult, analyst2));
+
+        // Tool sequence should be preserved
+        assertNotNull(result);
+        assertTrue(result.size() >= 2);
+    }
+
+    @Test
+    void testSingleAgentConversationNotMerged() {
+        // Test that single-agent conversations are not merged
+        Msg user1 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg assistant1 =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        Msg user2 =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("How are you?").build()))
+                        .build();
+
+        Msg assistant2 =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Good").build()))
+                        .build();
+
+        List<AnthropicMessage> result =
+                formatter.format(List.of(user1, assistant1, user2, assistant2));
+
+        // Should preserve all 4 messages (no merging needed for single-agent)
+        assertEquals(4, result.size());
     }
 }

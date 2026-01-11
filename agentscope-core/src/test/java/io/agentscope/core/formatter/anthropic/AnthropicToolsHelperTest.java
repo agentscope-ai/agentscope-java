@@ -17,12 +17,10 @@ package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.Tool;
-import com.anthropic.models.messages.ToolUnion;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicTool;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -34,21 +32,11 @@ import org.junit.jupiter.api.Test;
 /** Unit tests for AnthropicToolsHelper. */
 class AnthropicToolsHelperTest {
 
-    /** Helper method to create a builder with required dummy message. */
-    private MessageCreateParams.Builder createBuilder() {
-        return MessageCreateParams.builder()
-                .model("claude-sonnet-4-5-20250929")
-                .maxTokens(1024)
-                .addMessage(
-                        MessageParam.builder()
-                                .role(MessageParam.Role.USER)
-                                .content("test")
-                                .build());
-    }
-
     @Test
     void testApplyToolsWithSimpleSchema() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
+        request.setModel("claude-sonnet-4-5-20250929");
+        request.setMaxTokens(1024);
 
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("type", "object");
@@ -63,23 +51,21 @@ class AnthropicToolsHelperTest {
                         .build();
 
         GenerateOptions options = GenerateOptions.builder().build();
-        AnthropicToolsHelper.applyTools(builder, List.of(toolSchema), options);
+        AnthropicToolsHelper.applyTools(request, List.of(toolSchema), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.tools().isPresent());
-        List<ToolUnion> tools = params.tools().get();
+        List<AnthropicTool> tools = request.getTools();
+        assertNotNull(tools);
         assertEquals(1, tools.size());
 
-        assertTrue(tools.get(0).isTool());
-        Tool tool = tools.get(0).asTool();
-        assertEquals("search", tool.name());
-        assertEquals("Search for information", tool.description().get());
-        // Note: inputSchema validation is handled by Anthropic SDK during API calls
+        AnthropicTool tool = tools.get(0);
+        assertEquals("search", tool.getName());
+        assertEquals("Search for information", tool.getDescription());
+        assertNotNull(tool.getInputSchema());
     }
 
     @Test
     void testApplyToolsWithMultipleSchemas() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         ToolSchema schema1 =
                 ToolSchema.builder()
@@ -96,32 +82,30 @@ class AnthropicToolsHelperTest {
                         .build();
 
         GenerateOptions options = GenerateOptions.builder().build();
-        AnthropicToolsHelper.applyTools(builder, List.of(schema1, schema2), options);
+        AnthropicToolsHelper.applyTools(request, List.of(schema1, schema2), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.tools().isPresent());
-        assertEquals(2, params.tools().get().size());
+        List<AnthropicTool> tools = request.getTools();
+        assertNotNull(tools);
+        assertEquals(2, tools.size());
     }
 
     @Test
     void testApplyToolsWithNullOrEmptyList() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         // Null list
-        AnthropicToolsHelper.applyTools(builder, null, null);
-        MessageCreateParams params1 = builder.build();
-        assertTrue(params1.tools().isEmpty());
+        AnthropicToolsHelper.applyTools(request, null, null);
+        assertNull(request.getTools());
 
         // Empty list
-        builder = createBuilder();
-        AnthropicToolsHelper.applyTools(builder, List.of(), null);
-        MessageCreateParams params2 = builder.build();
-        assertTrue(params2.tools().isEmpty());
+        request = new AnthropicRequest();
+        AnthropicToolsHelper.applyTools(request, List.of(), null);
+        assertNull(request.getTools());
     }
 
     @Test
     void testApplyToolChoiceAuto() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         ToolSchema schema =
                 ToolSchema.builder()
@@ -132,16 +116,17 @@ class AnthropicToolsHelperTest {
 
         GenerateOptions options =
                 GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+        AnthropicToolsHelper.applyTools(request, List.of(schema), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.toolChoice().isPresent());
-        assertTrue(params.toolChoice().get().isAuto());
+        @SuppressWarnings("unchecked")
+        Map<String, String> toolChoice = (Map<String, String>) request.getToolChoice();
+        assertNotNull(toolChoice);
+        assertEquals("auto", toolChoice.get("type"));
     }
 
     @Test
     void testApplyToolChoiceNone() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         ToolSchema schema =
                 ToolSchema.builder()
@@ -152,17 +137,19 @@ class AnthropicToolsHelperTest {
 
         GenerateOptions options =
                 GenerateOptions.builder().toolChoice(new ToolChoice.None()).build();
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+        AnthropicToolsHelper.applyTools(request, List.of(schema), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.toolChoice().isPresent());
-        // None maps to "any" in Anthropic
-        assertTrue(params.toolChoice().get().isAny());
+        @SuppressWarnings("unchecked")
+        Map<String, String> toolChoice = (Map<String, String>) request.getToolChoice();
+        assertNotNull(toolChoice);
+        // None maps to "any" in Anthropic implementation provided in
+        // AnthropicToolsHelper.java
+        assertEquals("any", toolChoice.get("type"));
     }
 
     @Test
     void testApplyToolChoiceRequired() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         ToolSchema schema =
                 ToolSchema.builder()
@@ -173,17 +160,19 @@ class AnthropicToolsHelperTest {
 
         GenerateOptions options =
                 GenerateOptions.builder().toolChoice(new ToolChoice.Required()).build();
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+        AnthropicToolsHelper.applyTools(request, List.of(schema), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.toolChoice().isPresent());
-        // Required maps to "any" in Anthropic
-        assertTrue(params.toolChoice().get().isAny());
+        @SuppressWarnings("unchecked")
+        Map<String, String> toolChoice = (Map<String, String>) request.getToolChoice();
+        assertNotNull(toolChoice);
+        // Required maps to "any" in Anthropic implementation provided in
+        // AnthropicToolsHelper.java
+        assertEquals("any", toolChoice.get("type"));
     }
 
     @Test
     void testApplyToolChoiceSpecific() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         ToolSchema schema =
                 ToolSchema.builder()
@@ -194,104 +183,92 @@ class AnthropicToolsHelperTest {
 
         GenerateOptions options =
                 GenerateOptions.builder().toolChoice(new ToolChoice.Specific("search")).build();
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), options);
+        AnthropicToolsHelper.applyTools(request, List.of(schema), options);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.toolChoice().isPresent());
-        assertTrue(params.toolChoice().get().isTool());
-        assertEquals("search", params.toolChoice().get().asTool().name());
+        @SuppressWarnings("unchecked")
+        Map<String, String> toolChoice = (Map<String, String>) request.getToolChoice();
+        assertNotNull(toolChoice);
+        assertEquals("tool", toolChoice.get("type"));
+        assertEquals("search", toolChoice.get("name"));
     }
 
     @Test
     void testApplyOptionsWithTemperature() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().temperature(0.7).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, null);
+        AnthropicToolsHelper.applyOptions(request, options, null);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.7, params.temperature().get(), 0.001);
+        assertEquals(0.7, request.getTemperature(), 0.001);
     }
 
     @Test
     void testApplyOptionsWithTopP() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().topP(0.9).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, null);
+        AnthropicToolsHelper.applyOptions(request, options, null);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.topP().isPresent());
-        assertEquals(0.9, params.topP().get(), 0.001);
+        assertEquals(0.9, request.getTopP(), 0.001);
     }
 
     @Test
     void testApplyOptionsWithMaxTokens() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().maxTokens(2048).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, null);
+        AnthropicToolsHelper.applyOptions(request, options, null);
 
-        MessageCreateParams params = builder.build();
-        assertEquals(2048, params.maxTokens());
+        assertEquals(2048, request.getMaxTokens());
     }
 
     @Test
     void testApplyOptionsWithAllParameters() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options =
                 GenerateOptions.builder().temperature(0.8).topP(0.95).maxTokens(3000).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, null);
+        AnthropicToolsHelper.applyOptions(request, options, null);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.8, params.temperature().get(), 0.001);
-        assertTrue(params.topP().isPresent());
-        assertEquals(0.95, params.topP().get(), 0.001);
-        assertEquals(3000, params.maxTokens());
+        assertEquals(0.8, request.getTemperature(), 0.001);
+        assertEquals(0.95, request.getTopP(), 0.001);
+        assertEquals(3000, request.getMaxTokens());
     }
 
     @Test
     void testApplyOptionsWithDefaultFallback() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions defaultOptions =
                 GenerateOptions.builder().temperature(0.5).topP(0.9).build();
 
         // No options provided, should use default
-        AnthropicToolsHelper.applyOptions(builder, null, defaultOptions);
+        AnthropicToolsHelper.applyOptions(request, null, defaultOptions);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.5, params.temperature().get(), 0.001);
-        assertTrue(params.topP().isPresent());
-        assertEquals(0.9, params.topP().get(), 0.001);
+        assertEquals(0.5, request.getTemperature(), 0.001);
+        assertEquals(0.9, request.getTopP(), 0.001);
     }
 
     @Test
     void testApplyOptionsOverridesDefault() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().temperature(0.7).build();
         GenerateOptions defaultOptions = GenerateOptions.builder().temperature(0.5).build();
 
         // Options should override default
-        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+        AnthropicToolsHelper.applyOptions(request, options, defaultOptions);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.7, params.temperature().get(), 0.001);
+        assertEquals(0.7, request.getTemperature(), 0.001);
     }
 
     @Test
     void testApplyToolsWithComplexParameters() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         Map<String, Object> properties = new HashMap<>();
         properties.put("name", Map.of("type", "string", "description", "Person name"));
@@ -310,207 +287,39 @@ class AnthropicToolsHelperTest {
                         .parameters(parameters)
                         .build();
 
-        AnthropicToolsHelper.applyTools(builder, List.of(schema), null);
+        AnthropicToolsHelper.applyTools(request, List.of(schema), null);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.tools().isPresent());
-        assertEquals(1, params.tools().get().size());
-        assertTrue(params.tools().get().get(0).isTool());
-        Tool tool = params.tools().get().get(0).asTool();
-        assertEquals("create_person", tool.name());
-        // Note: inputSchema validation is handled by Anthropic SDK during API calls
+        List<AnthropicTool> tools = request.getTools();
+        assertNotNull(tools);
+        assertEquals(1, tools.size());
+        AnthropicTool tool = tools.get(0);
+        assertEquals("create_person", tool.getName());
+        assertNotNull(tool.getInputSchema());
     }
 
     // ==================== New Parameters Tests ====================
 
     @Test
     void testApplyOptionsWithTopK() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().topK(40).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, null);
+        AnthropicToolsHelper.applyOptions(request, options, null);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.topK().isPresent());
-        assertEquals(40L, params.topK().get());
-    }
-
-    @Test
-    void testApplyOptionsWithAdditionalHeaders() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalHeader("X-Custom-Header", "custom-value")
-                        .additionalHeader("X-Request-Id", "req-123")
-                        .build();
-
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-
-        // Build should succeed with additional headers applied
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
-    }
-
-    @Test
-    void testApplyOptionsWithAdditionalBodyParams() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalBodyParam("custom_param", "value1")
-                        .additionalBodyParam("nested_param", Map.of("key", "value"))
-                        .build();
-
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-
-        // Build should succeed with additional body params applied
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
-    }
-
-    @Test
-    void testApplyOptionsWithAdditionalQueryParams() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalQueryParam("api_version", "2024-01-01")
-                        .additionalQueryParam("debug", "true")
-                        .build();
-
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-
-        // Build should succeed with additional query params applied
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
-    }
-
-    @Test
-    void testApplyOptionsWithAllNewParameters() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .temperature(0.8)
-                        .topK(50)
-                        .additionalHeader("X-Api-Key", "secret")
-                        .additionalBodyParam("stream", true)
-                        .additionalQueryParam("version", "v1")
-                        .build();
-
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.8, params.temperature().get(), 0.001);
-        assertTrue(params.topK().isPresent());
-        assertEquals(50L, params.topK().get());
+        assertEquals(40, request.getTopK());
     }
 
     @Test
     void testApplyOptionsTopKFromDefaultOptions() {
-        MessageCreateParams.Builder builder = createBuilder();
+        AnthropicRequest request = new AnthropicRequest();
 
         GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
         GenerateOptions defaultOptions = GenerateOptions.builder().topK(30).build();
 
-        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+        AnthropicToolsHelper.applyOptions(request, options, defaultOptions);
 
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.5, params.temperature().get(), 0.001);
-        assertTrue(params.topK().isPresent());
-        assertEquals(30L, params.topK().get());
-    }
-
-    @Test
-    void testApplyOptionsWithEmptyAdditionalParams() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
-
-        // Should handle empty additional params gracefully
-        AnthropicToolsHelper.applyOptions(builder, options, null);
-
-        MessageCreateParams params = builder.build();
-        assertTrue(params.temperature().isPresent());
-        assertEquals(0.5, params.temperature().get(), 0.001);
-    }
-
-    @Test
-    void testApplyOptionsMergesAdditionalHeadersFromBothOptionsAndDefault() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        // Default options has header A and B
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder()
-                        .additionalHeader("X-Header-A", "value-a-default")
-                        .additionalHeader("X-Header-B", "value-b")
-                        .build();
-
-        // Options has header A (override) and C (new)
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalHeader("X-Header-A", "value-a-override")
-                        .additionalHeader("X-Header-C", "value-c")
-                        .build();
-
-        // Should merge: A=override, B=value-b, C=value-c
-        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
-
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
-    }
-
-    @Test
-    void testApplyOptionsMergesAdditionalBodyParamsFromBothOptionsAndDefault() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        // Default options has param A and B
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder()
-                        .additionalBodyParam("param_a", "value-a-default")
-                        .additionalBodyParam("param_b", "value-b")
-                        .build();
-
-        // Options has param A (override) and C (new)
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalBodyParam("param_a", "value-a-override")
-                        .additionalBodyParam("param_c", "value-c")
-                        .build();
-
-        // Should merge: A=override, B=value-b, C=value-c
-        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
-
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
-    }
-
-    @Test
-    void testApplyOptionsMergesAdditionalQueryParamsFromBothOptionsAndDefault() {
-        MessageCreateParams.Builder builder = createBuilder();
-
-        // Default options has query param A and B
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder()
-                        .additionalQueryParam("query_a", "value-a-default")
-                        .additionalQueryParam("query_b", "value-b")
-                        .build();
-
-        // Options has query param A (override) and C (new)
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalQueryParam("query_a", "value-a-override")
-                        .additionalQueryParam("query_c", "value-c")
-                        .build();
-
-        // Should merge: A=override, B=value-b, C=value-c
-        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
-
-        MessageCreateParams params = builder.build();
-        assertNotNull(params);
+        assertEquals(0.5, request.getTemperature(), 0.001);
+        assertEquals(30, request.getTopK());
     }
 }

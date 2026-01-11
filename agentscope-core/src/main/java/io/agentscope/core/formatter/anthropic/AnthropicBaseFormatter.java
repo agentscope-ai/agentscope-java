@@ -15,65 +15,75 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.MessageParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 
 /**
- * Abstract base formatter for Anthropic API with shared logic for handling Anthropic-specific
+ * Abstract base formatter for Anthropic API with shared logic for handling
+ * Anthropic-specific
  * requirements.
  *
- * <p>This class handles:
+ * <p>
+ * This class handles:
  *
  * <ul>
- *   <li>System message extraction and application (Anthropic requires system via system parameter)
- *   <li>Tool choice configuration with GenerateOptions
+ * <li>System message extraction and application (Anthropic requires system via
+ * system parameter)
+ * <li>Tool choice configuration with GenerateOptions
  * </ul>
  */
 public abstract class AnthropicBaseFormatter
-        extends AbstractBaseFormatter<MessageParam, Object, MessageCreateParams.Builder> {
+        extends AbstractBaseFormatter<AnthropicMessage, AnthropicResponse, AnthropicRequest> {
 
     protected final AnthropicMessageConverter messageConverter;
 
-    /** Thread-local storage for generation options (passed from applyOptions to applyTools). */
+    /**
+     * Thread-local storage for generation options (passed from applyOptions to
+     * applyTools).
+     */
     private final ThreadLocal<GenerateOptions> currentOptions = new ThreadLocal<>();
 
     protected AnthropicBaseFormatter() {
         this.messageConverter = new AnthropicMessageConverter(this::convertToolResultToString);
     }
 
+    protected AnthropicBaseFormatter(AnthropicMessageConverter messageConverter) {
+        this.messageConverter = messageConverter;
+    }
+
     /**
      * Apply generation options to Anthropic request parameters.
      *
-     * @param paramsBuilder Anthropic request parameters builder
-     * @param options Generation options to apply
+     * @param request        Anthropic request
+     * @param options        Generation options to apply
      * @param defaultOptions Default options to use if options parameter is null
      */
     @Override
     public void applyOptions(
-            MessageCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            AnthropicRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Save options for applyTools
         currentOptions.set(options);
 
         // Apply other options
-        AnthropicToolsHelper.applyOptions(paramsBuilder, options, defaultOptions);
+        AnthropicToolsHelper.applyOptions(request, options, defaultOptions);
     }
 
     /**
-     * Apply tool schemas to Anthropic request parameters. This method uses the options saved from
+     * Apply tool schemas to Anthropic request parameters. This method uses the
+     * options saved from
      * applyOptions to apply tool choice configuration.
      *
-     * @param paramsBuilder Anthropic request parameters builder
-     * @param tools List of tool schemas to apply (may be null or empty)
+     * @param request Anthropic request
+     * @param tools   List of tool schemas to apply (may be null or empty)
      */
     @Override
-    public void applyTools(MessageCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
+    public void applyTools(AnthropicRequest request, List<ToolSchema> tools) {
         if (tools == null || tools.isEmpty()) {
             currentOptions.remove();
             return;
@@ -81,26 +91,29 @@ public abstract class AnthropicBaseFormatter
 
         // Use saved options to apply tools with tool choice
         GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(paramsBuilder, tools, options);
+        AnthropicToolsHelper.applyTools(request, tools, options);
 
         // Clean up thread-local storage
         currentOptions.remove();
     }
 
     /**
-     * Extract and apply system message if present. Anthropic API requires system message to be set
+     * Extract and apply system message if present. Anthropic API requires system
+     * message to be set
      * via the system parameter, not as a message.
      *
-     * <p>This method is called by Model to extract the first system message from the messages list
+     * <p>
+     * This method is called by Model to extract the first system message from the
+     * messages list
      * and apply it to the system parameter.
      *
-     * @param paramsBuilder Anthropic request parameters builder
+     * @param request  Anthropic request
      * @param messages All messages including potential system message
      */
-    public void applySystemMessage(MessageCreateParams.Builder paramsBuilder, List<Msg> messages) {
+    public void applySystemMessage(AnthropicRequest request, List<Msg> messages) {
         String systemMessage = messageConverter.extractSystemMessage(messages);
         if (systemMessage != null && !systemMessage.isEmpty()) {
-            paramsBuilder.system(systemMessage);
+            request.setSystem(systemMessage);
         }
     }
 }
