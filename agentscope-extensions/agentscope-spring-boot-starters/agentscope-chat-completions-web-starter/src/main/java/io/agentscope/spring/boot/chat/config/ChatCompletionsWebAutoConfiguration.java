@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.chat.config;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.converter.OpenAIToolConverter;
 import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.spring.boot.chat.service.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
@@ -72,6 +73,17 @@ public class ChatCompletionsWebAutoConfiguration {
     }
 
     /**
+     * Create the OpenAI tool converter bean.
+     *
+     * @return A new {@link OpenAIToolConverter} instance for converting OpenAI tools to ToolSchema
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OpenAIToolConverter openAIToolConverter() {
+        return new OpenAIToolConverter();
+    }
+
+    /**
      * Create the response builder bean.
      *
      * @return A new {@link ChatCompletionsResponseBuilder} instance for building chat completion
@@ -121,6 +133,7 @@ public class ChatCompletionsWebAutoConfiguration {
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
+     * @param toolConverter Converter for OpenAI tools to ToolSchema
      * @return The configured ChatCompletionsController bean
      */
     @Bean
@@ -129,8 +142,9 @@ public class ChatCompletionsWebAutoConfiguration {
             ObjectProvider<ReActAgent> agentProvider,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
-            ChatCompletionsStreamingService streamingService) {
+            ChatCompletionsStreamingService streamingService,
+            OpenAIToolConverter toolConverter) {
         return new ChatCompletionsController(
-                agentProvider, messageConverter, responseBuilder, streamingService);
+                agentProvider, messageConverter, responseBuilder, streamingService, toolConverter);
     }
 }

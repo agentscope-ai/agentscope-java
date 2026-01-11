@@ -18,6 +18,7 @@ package io.agentscope.spring.boot.chat.web;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.converter.OpenAIToolConverter;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.message.Msg;
@@ -83,6 +84,7 @@ public class ChatCompletionsController {
     private final ChatMessageConverter messageConverter;
     private final ChatCompletionsResponseBuilder responseBuilder;
     private final ChatCompletionsStreamingService streamingService;
+    private final OpenAIToolConverter toolConverter;
 
     /**
      * Constructs a new ChatCompletionsController.
@@ -91,16 +93,19 @@ public class ChatCompletionsController {
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
+     * @param toolConverter Converter for OpenAI tools to ToolSchema
      */
     public ChatCompletionsController(
             ObjectProvider<ReActAgent> agentProvider,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
-            ChatCompletionsStreamingService streamingService) {
+            ChatCompletionsStreamingService streamingService,
+            OpenAIToolConverter toolConverter) {
         this.agentProvider = agentProvider;
         this.messageConverter = messageConverter;
         this.responseBuilder = responseBuilder;
         this.streamingService = streamingService;
+        this.toolConverter = toolConverter;
     }
 
     /**
@@ -145,6 +150,18 @@ public class ChatCompletionsController {
                 return Mono.error(
                         new IllegalStateException(
                                 "Failed to create ReActAgent: agentProvider returned null"));
+            }
+
+            // Register schema-only tools from request if provided
+            if (request.getTools() != null && !request.getTools().isEmpty()) {
+                var toolSchemas = toolConverter.convertToToolSchemas(request.getTools());
+                if (!toolSchemas.isEmpty()) {
+                    agent.getToolkit().registerSchemas(toolSchemas);
+                    log.debug(
+                            "Registered {} schema-only tools from request: requestId={}",
+                            toolSchemas.size(),
+                            requestId);
+                }
             }
 
             // Convert all messages from the request
@@ -228,6 +245,18 @@ public class ChatCompletionsController {
                 return Flux.error(
                         new IllegalStateException(
                                 "Failed to create ReActAgent: agentProvider returned null"));
+            }
+
+            // Register schema-only tools from request if provided
+            if (request.getTools() != null && !request.getTools().isEmpty()) {
+                var toolSchemas = toolConverter.convertToToolSchemas(request.getTools());
+                if (!toolSchemas.isEmpty()) {
+                    agent.getToolkit().registerSchemas(toolSchemas);
+                    log.debug(
+                            "Registered {} schema-only tools from request: requestId={}",
+                            toolSchemas.size(),
+                            requestId);
+                }
             }
 
             // Convert all messages from the request
