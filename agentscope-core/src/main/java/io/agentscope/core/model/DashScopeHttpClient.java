@@ -447,7 +447,8 @@ public class DashScopeHttpClient {
             return JsonUtils.getJsonCodec().toJson(bodyMap);
         } catch (Exception e) {
             log.error("Failed to encrypt request body", e);
-            throw new DashScopeHttpException("Failed to encrypt request body: " + e.getMessage(), e);
+            throw new DashScopeHttpException(
+                    "Failed to encrypt request body: " + e.getMessage(), e);
         }
     }
 
@@ -475,7 +476,8 @@ public class DashScopeHttpClient {
             return JsonUtils.getJsonCodec().toJson(headerMap);
         } catch (Exception e) {
             log.error("Failed to build encryption header", e);
-            throw new DashScopeHttpException("Failed to build encryption header: " + e.getMessage(), e);
+            throw new DashScopeHttpException(
+                    "Failed to build encryption header: " + e.getMessage(), e);
         }
     }
 
@@ -512,7 +514,8 @@ public class DashScopeHttpClient {
                             context.secretKey, context.iv, encryptedOutput);
 
             // Replace output with decrypted value (parse as JSON object)
-            Object decryptedOutputObj = JsonUtils.getJsonCodec().fromJson(decryptedOutput, Object.class);
+            Object decryptedOutputObj =
+                    JsonUtils.getJsonCodec().fromJson(decryptedOutput, Object.class);
             responseMap.put("output", decryptedOutputObj);
 
             return JsonUtils.getJsonCodec().toJson(responseMap);
