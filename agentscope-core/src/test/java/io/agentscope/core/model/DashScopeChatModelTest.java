@@ -586,6 +586,89 @@ class DashScopeChatModelTest {
                 () -> invokeApplyThinkingMode(chatModel, request, options));
     }
 
+    // ========== Encryption Configuration Tests ==========
+
+    @Test
+    @DisplayName("Should create model with encryption configuration")
+    void testModelWithEncryption() throws Exception {
+        // Generate RSA key pair for testing
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeChatModel encryptedModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-max")
+                        .publicKeyId("test-public-key-id")
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertNotNull(encryptedModel, "Encrypted model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model without encryption (default)")
+    void testModelWithoutEncryption() {
+        DashScopeChatModel normalModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .build();
+
+        assertNotNull(normalModel, "Normal model should be created");
+    }
+
+    @Test
+    @DisplayName("Should allow null encryption parameters")
+    void testModelWithNullEncryptionParams() {
+        DashScopeChatModel modelWithNulls =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .publicKeyId(null)
+                        .publicKey(null)
+                        .build();
+
+        assertNotNull(modelWithNulls, "Model with null encryption params should be created");
+    }
+
+    @Test
+    @DisplayName("Should allow encryption with only publicKeyId set (encryption disabled)")
+    void testModelWithOnlyPublicKeyId() {
+        DashScopeChatModel modelWithOnlyId =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .publicKeyId("test-id")
+                        .publicKey(null)
+                        .build();
+
+        assertNotNull(modelWithOnlyId, "Model with only publicKeyId should be created");
+    }
+
+    @Test
+    @DisplayName("Should allow encryption with only publicKey set (encryption disabled)")
+    void testModelWithOnlyPublicKey() throws Exception {
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeChatModel modelWithOnlyKey =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .publicKeyId(null)
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertNotNull(modelWithOnlyKey, "Model with only publicKey should be created");
+    }
+
     /**
      *  Use reflection to invoke applyThinkingMode
      *

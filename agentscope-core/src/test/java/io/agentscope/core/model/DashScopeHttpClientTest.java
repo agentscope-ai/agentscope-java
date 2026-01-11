@@ -610,6 +610,116 @@ class DashScopeHttpClientTest {
         assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client3.getBaseUrl());
     }
 
+    // ==================== Encryption Tests ====================
+
+    @Test
+    void testEncryptionDisabled() {
+        assertFalse(client.isEncryptionEnabled());
+    }
+
+    @Test
+    void testEncryptionEnabled() throws Exception {
+        // Generate RSA key pair for testing
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeHttpClient encryptedClient =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .publicKeyId("test-key-id")
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertTrue(encryptedClient.isEncryptionEnabled());
+    }
+
+    @Test
+    void testEncryptionEnabledWithNullPublicKeyId() throws Exception {
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeHttpClient clientWithNullId =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .publicKeyId(null)
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertFalse(clientWithNullId.isEncryptionEnabled());
+    }
+
+    @Test
+    void testEncryptionEnabledWithNullPublicKey() throws Exception {
+        DashScopeHttpClient clientWithNullKey =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .publicKeyId("test-key-id")
+                        .publicKey(null)
+                        .build();
+
+        assertFalse(clientWithNullKey.isEncryptionEnabled());
+    }
+
+    @Test
+    void testEncryptionEnabledWithEmptyPublicKeyId() throws Exception {
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeHttpClient clientWithEmptyId =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .publicKeyId("")
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertFalse(clientWithEmptyId.isEncryptionEnabled());
+    }
+
+    @Test
+    void testEncryptionEnabledWithEmptyPublicKey() throws Exception {
+        DashScopeHttpClient clientWithEmptyKey =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .publicKeyId("test-key-id")
+                        .publicKey("")
+                        .build();
+
+        assertFalse(clientWithEmptyKey.isEncryptionEnabled());
+    }
+
+    @Test
+    void testBuilderWithEncryption() throws Exception {
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        java.security.KeyPair keyPair = keyGen.generateKeyPair();
+        java.security.PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+
+        DashScopeHttpClient encryptedClient =
+                DashScopeHttpClient.builder()
+                        .apiKey("test-api-key")
+                        .publicKeyId("test-key-id")
+                        .publicKey(publicKeyBase64)
+                        .build();
+
+        assertNotNull(encryptedClient);
+        assertTrue(encryptedClient.isEncryptionEnabled());
+    }
+
     private DashScopeRequest createTestRequest(String model, String content) {
         DashScopeMessage message = DashScopeMessage.builder().role("user").content(content).build();
 
