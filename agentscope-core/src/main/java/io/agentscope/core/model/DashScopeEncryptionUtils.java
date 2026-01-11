@@ -157,7 +157,8 @@ public final class DashScopeEncryptionUtils {
 
             Cipher rsaCipher = Cipher.getInstance("RSA");
             rsaCipher.init(Cipher.ENCRYPT_MODE, pubKey);
-            byte[] encryptedBytes = rsaCipher.doFinal(base64AesKey.getBytes(StandardCharsets.UTF_8));
+            byte[] encryptedBytes =
+                    rsaCipher.doFinal(base64AesKey.getBytes(StandardCharsets.UTF_8));
 
             return Base64.getEncoder().encodeToString(encryptedBytes);
         } catch (Exception e) {

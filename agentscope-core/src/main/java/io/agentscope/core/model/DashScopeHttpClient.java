@@ -129,7 +129,10 @@ public class DashScopeHttpClient {
      * @return true if both publicKeyId and publicKey are set
      */
     public boolean isEncryptionEnabled() {
-        return publicKeyId != null && !publicKeyId.isEmpty() && publicKey != null && !publicKey.isEmpty();
+        return publicKeyId != null
+                && !publicKeyId.isEmpty()
+                && publicKey != null
+                && !publicKey.isEmpty();
     }
 
     /**
@@ -252,12 +255,13 @@ public class DashScopeHttpClient {
                                 }
                             })
                     .filter(response -> response != null)
-                    .doFinally(signalType -> {
-                        // Clear encryption context when stream completes
-                        if (isEncryptionEnabled()) {
-                            clearEncryptionContext();
-                        }
-                    })
+                    .doFinally(
+                            signalType -> {
+                                // Clear encryption context when stream completes
+                                if (isEncryptionEnabled()) {
+                                    clearEncryptionContext();
+                                }
+                            })
                     .handle(
                             (response, sink) -> {
                                 if (response.isError()) {
@@ -426,10 +430,12 @@ public class DashScopeHttpClient {
             byte[] iv = DashScopeEncryptionUtils.generateIv();
 
             // Encrypt input
-            String encryptedInput = DashScopeEncryptionUtils.encryptWithAes(aesSecretKey, iv, inputJson);
+            String encryptedInput =
+                    DashScopeEncryptionUtils.encryptWithAes(aesSecretKey, iv, inputJson);
 
             // Encrypt AES key with RSA public key
-            String encryptedAesKey = DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesSecretKey, publicKey);
+            String encryptedAesKey =
+                    DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesSecretKey, publicKey);
 
             // Store encryption info for response decryption and header building
             // We need to store the AES key, IV, and encrypted AES key for this request
