@@ -93,4 +93,3 @@ public class OpenAIToolFunction {
         this.strict = strict;
     }
 }
-

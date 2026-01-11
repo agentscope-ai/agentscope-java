@@ -80,4 +80,3 @@ public class OpenAITool {
         this.function = function;
     }
 }
-

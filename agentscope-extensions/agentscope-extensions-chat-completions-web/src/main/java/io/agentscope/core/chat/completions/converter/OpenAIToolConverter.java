@@ -127,4 +127,3 @@ public class OpenAIToolConverter {
         return schemas.isEmpty() ? null : schemas.get(0);
     }
 }
-
