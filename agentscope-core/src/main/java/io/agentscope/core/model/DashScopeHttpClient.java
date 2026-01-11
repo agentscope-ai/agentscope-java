@@ -99,6 +99,16 @@ public class DashScopeHttpClient {
     }
 
     /**
+     * Create a new DashScopeHttpClient.
+     *
+     * @param apiKey the DashScope API key
+     * @param baseUrl the base URL (null for default)
+     */
+    public DashScopeHttpClient(String apiKey, String baseUrl) {
+        this(apiKey, baseUrl, null, null);
+    }
+
+    /**
      * Create a new DashScopeHttpClient with default transport from factory.
      *
      * <p>Uses {@link HttpTransportFactory#getDefault()} for the transport, which
