@@ -96,6 +96,8 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param baseUrl custom base URL for DashScope API (null for default)
      * @param formatter the message formatter to use (null for default DashScope formatter)
      * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
      */
     public DashScopeChatModel(
             String apiKey,
@@ -106,7 +108,9 @@ public class DashScopeChatModel extends ChatModelBase {
             GenerateOptions defaultOptions,
             String baseUrl,
             Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
-            HttpTransport httpTransport) {
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
         this.modelName = modelName;
         // Thinking mode requires streaming; override stream setting if needed
         if (enableThinking != null && enableThinking && !stream) {
@@ -129,6 +133,8 @@ public class DashScopeChatModel extends ChatModelBase {
                         .transport(transport)
                         .apiKey(apiKey)
                         .baseUrl(baseUrl)
+                        .publicKeyId(publicKeyId)
+                        .publicKey(publicKey)
                         .build();
     }
 
@@ -309,6 +315,8 @@ public class DashScopeChatModel extends ChatModelBase {
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
         private HttpTransport httpTransport;
+        private String publicKeyId;
+        private String publicKey;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -445,6 +453,58 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the RSA public key ID for encryption.
+         *
+         * <p>When both publicKeyId and publicKey are set, requests and responses will be
+         * encrypted using AES-GCM with RSA key exchange, following Aliyun's encryption protocol.
+         * This enables secure access to Aliyun models while complying with enterprise security
+         * policies (e.g., TLS encryption, token-based authentication).
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("qwen-max")
+         *     .publicKeyId("your-public-key-id")
+         *     .publicKey("your-base64-encoded-public-key")
+         *     .build();
+         * }</pre>
+         *
+         * @param publicKeyId the public key ID (null to disable encryption)
+         * @return this builder instance
+         */
+        public Builder publicKeyId(String publicKeyId) {
+            this.publicKeyId = publicKeyId;
+            return this;
+        }
+
+        /**
+         * Sets the RSA public key for encryption (Base64-encoded).
+         *
+         * <p>When both publicKeyId and publicKey are set, requests and responses will be
+         * encrypted using AES-GCM with RSA key exchange, following Aliyun's encryption protocol.
+         * This enables secure access to Aliyun models while complying with enterprise security
+         * policies (e.g., TLS encryption, token-based authentication).
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("qwen-max")
+         *     .publicKeyId("your-public-key-id")
+         *     .publicKey("your-base64-encoded-public-key")
+         *     .build();
+         * }</pre>
+         *
+         * @param publicKey the Base64-encoded RSA public key (null to disable encryption)
+         * @return this builder instance
+         */
+        public Builder publicKey(String publicKey) {
+            this.publicKey = publicKey;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -465,7 +525,9 @@ public class DashScopeChatModel extends ChatModelBase {
                     effectiveOptions,
                     baseUrl,
                     formatter,
-                    httpTransport);
+                    httpTransport,
+                    publicKeyId,
+                    publicKey);
         }
     }
 }
