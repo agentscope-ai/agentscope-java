@@ -52,7 +52,7 @@
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
-        
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-server</artifactId>
@@ -164,7 +164,7 @@
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
-        
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-nacos-a2a</artifactId>
@@ -217,6 +217,35 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+        </dependency>
+
+        <!-- SnakeYAML for Markdown skill parsing -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+
+        <!-- OkHttp for alternative HTTP transport -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+        </dependency>
+
+        <!-- Google Gemini SDK for GeminiChatModel -->
+        <dependency>
+            <groupId>com.google.genai</groupId>
+            <artifactId>google-genai</artifactId>
+        </dependency>
+
+        <!-- Anthropic SDK for AnthropicChatModel -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
         </dependency>
     </dependencies>
 
