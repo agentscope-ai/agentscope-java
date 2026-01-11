@@ -23,6 +23,7 @@ import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.chat.completions.model.ToolCall;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -99,9 +100,13 @@ public class ChatCompletionsResponseBuilder {
         ChatMessage message = convertMsgToChatMessage(reply);
         choice.setMessage(message);
 
-        // Set finish_reason based on whether there are tool calls
-        if (message.getToolCalls() != null && !message.getToolCalls().isEmpty()) {
+        // Set finish_reason based on GenerateReason or tool calls
+        GenerateReason generateReason = reply != null ? reply.getGenerateReason() : null;
+        if (generateReason == GenerateReason.TOOL_SUSPENDED
+                || (message.getToolCalls() != null && !message.getToolCalls().isEmpty())) {
             choice.setFinishReason("tool_calls");
+        } else if (generateReason == GenerateReason.MAX_ITERATIONS) {
+            choice.setFinishReason("length");
         } else {
             choice.setFinishReason("stop");
         }
