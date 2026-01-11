@@ -29,6 +29,21 @@ jobs:
           config: .licenserc.yaml
           mode: check
 
+  dependency-sync:
+    name: "Check Dependency Sync"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Check agentscope-core dependencies are synced to agentscope-all
+        run: |
+          chmod +x .github/scripts/check-dependency-sync.sh
+          ./.github/scripts/check-dependency-sync.sh
+
   build:
     runs-on: ubuntu-latest
     env:
