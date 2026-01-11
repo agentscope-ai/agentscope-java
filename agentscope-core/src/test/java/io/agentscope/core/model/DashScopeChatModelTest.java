@@ -596,7 +596,8 @@ class DashScopeChatModelTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeChatModel encryptedModel =
                 DashScopeChatModel.builder()
@@ -613,10 +614,7 @@ class DashScopeChatModelTest {
     @DisplayName("Should create model without encryption (default)")
     void testModelWithoutEncryption() {
         DashScopeChatModel normalModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .build();
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
 
         assertNotNull(normalModel, "Normal model should be created");
     }
@@ -656,7 +654,8 @@ class DashScopeChatModelTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeChatModel modelWithOnlyKey =
                 DashScopeChatModel.builder()

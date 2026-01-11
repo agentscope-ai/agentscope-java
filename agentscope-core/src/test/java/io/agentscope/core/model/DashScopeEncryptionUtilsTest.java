@@ -84,7 +84,8 @@ class DashScopeEncryptionUtilsTest {
         String encrypted = DashScopeEncryptionUtils.encryptWithAes(key, iv, plaintext);
         assertNotNull(encrypted);
         assertTrue(encrypted.length() > 0);
-        assertTrue(!encrypted.equals(plaintext), "Encrypted data should be different from plaintext");
+        assertTrue(
+                !encrypted.equals(plaintext), "Encrypted data should be different from plaintext");
 
         String decrypted = DashScopeEncryptionUtils.decryptWithAes(key, iv, encrypted);
         assertEquals(plaintext, decrypted);
@@ -175,7 +176,8 @@ class DashScopeEncryptionUtilsTest {
         SecretKey aesKey = DashScopeEncryptionUtils.generateAesSecretKey();
 
         // Encrypt AES key with RSA
-        String encryptedAesKey = DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesKey, publicKeyBase64);
+        String encryptedAesKey =
+                DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesKey, publicKeyBase64);
 
         assertNotNull(encryptedAesKey);
         assertTrue(encryptedAesKey.length() > 0);
@@ -225,4 +227,3 @@ class DashScopeEncryptionUtilsTest {
         assertEquals(cause, exception.getCause());
     }
 }
-

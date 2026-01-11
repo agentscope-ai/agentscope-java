@@ -624,7 +624,8 @@ class DashScopeHttpClientTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
@@ -643,7 +644,8 @@ class DashScopeHttpClientTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient clientWithNullId =
                 DashScopeHttpClient.builder()
@@ -675,7 +677,8 @@ class DashScopeHttpClientTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient clientWithEmptyId =
                 DashScopeHttpClient.builder()
@@ -707,7 +710,8 @@ class DashScopeHttpClientTest {
         keyGen.initialize(2048);
         java.security.KeyPair keyPair = keyGen.generateKeyPair();
         java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 = java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        String publicKeyBase64 =
+                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
