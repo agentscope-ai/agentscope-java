@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
@@ -154,5 +155,41 @@ class GeminiChatFormatterTest {
 
         assertEquals("user", contents.get(0).getRole());
         assertEquals("model", contents.get(1).getRole());
+    }
+
+    @Test
+    void testApplySystemInstructionIsStateless() {
+        Msg systemMsg1 =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("First system").build()))
+                        .build();
+        Msg systemMsg2 =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("Second system").build()))
+                        .build();
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        GeminiRequest request1 = new GeminiRequest();
+        formatter.applySystemInstruction(request1, List.of(systemMsg1));
+        assertNotNull(request1.getSystemInstruction());
+        assertEquals("First system", request1.getSystemInstruction().getParts().get(0).getText());
+
+        GeminiRequest request2 = new GeminiRequest();
+        formatter.applySystemInstruction(request2, List.of(systemMsg2));
+        assertNotNull(request2.getSystemInstruction());
+        assertEquals("Second system", request2.getSystemInstruction().getParts().get(0).getText());
+
+        // Ensure previous request remains unchanged
+        assertEquals("First system", request1.getSystemInstruction().getParts().get(0).getText());
+
+        GeminiRequest requestWithoutSystem = new GeminiRequest();
+        formatter.applySystemInstruction(requestWithoutSystem, List.of(userMsg));
+        assertNull(requestWithoutSystem.getSystemInstruction());
     }
 }

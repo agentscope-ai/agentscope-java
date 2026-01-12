@@ -74,9 +74,8 @@ public class GeminiResponseParser {
             // Log raw response for debugging
             try {
                 String responseJson = JsonUtils.getJsonCodec().toJson(response);
-                System.out.println("=== Raw Gemini response: " + responseJson);
             } catch (Exception e) {
-                System.out.println("Failed to serialize response for logging: " + e.getMessage());
+                log.error("Failed to serialize response for logging: {}", e.getMessage(), e);
             }
 
             List<ContentBlock> blocks = new ArrayList<>();
@@ -192,9 +191,8 @@ public class GeminiResponseParser {
      */
     protected void parsePartsToBlocks(List<GeminiPart> parts, List<ContentBlock> blocks) {
         // Debug: Log the parts received from Gemini
-        if (org.slf4j.LoggerFactory.getLogger(this.getClass()).isDebugEnabled()) {
+        if (log.isDebugEnabled()) {
             try {
-                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(this.getClass());
                 log.debug("=== Parsing {} parts from Gemini response", parts.size());
                 for (int i = 0; i < parts.size(); i++) {
                     GeminiPart part = parts.get(i);

@@ -24,6 +24,7 @@ import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -58,7 +59,6 @@ public class GeminiChatFormatter
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
     private final GeminiToolsHelper toolsHelper;
-    private GeminiContent systemInstruction;
 
     /**
      * Creates a new GeminiChatFormatter with default converters and parsers.
@@ -71,21 +71,17 @@ public class GeminiChatFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        // Extract and store SYSTEM message separately
-        systemInstruction = null;
-        int startIndex = 0;
-
-        if (!msgs.isEmpty() && msgs.get(0).getRole() == io.agentscope.core.message.MsgRole.SYSTEM) {
-            systemInstruction = messageConverter.convertMessages(List.of(msgs.get(0))).get(0);
-            startIndex = 1;
+        if (msgs == null) {
+            return new ArrayList<>();
         }
+        int startIndex = computeStartIndex(msgs);
 
         // Gemini API requires contents to start with "user" role
         // If first remaining message is ASSISTANT (from another agent), convert it to USER
         // Exception: Do not convert if it contains ToolUseBlock, as function calls must be MODEL
         // role
         if (startIndex < msgs.size()
-                && msgs.get(startIndex).getRole() == io.agentscope.core.message.MsgRole.ASSISTANT
+                && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT
                 && msgs.get(startIndex).getContent().stream()
                         .noneMatch(block -> block instanceof ToolUseBlock)) {
             List<GeminiContent> result = new ArrayList<>();
@@ -124,10 +120,14 @@ public class GeminiChatFormatter
      * Apply system instruction to the request if present.
      *
      * @param request The Gemini request to configure
+     * @param originalMessages The original message list (used to extract system prompt)
      */
-    public void applySystemInstruction(GeminiRequest request) {
+    public void applySystemInstruction(GeminiRequest request, List<Msg> originalMessages) {
+        GeminiContent systemInstruction = buildSystemInstruction(originalMessages);
         if (systemInstruction != null) {
             request.setSystemInstruction(systemInstruction);
+        } else {
+            request.setSystemInstruction(null);
         }
     }
 
@@ -263,5 +263,26 @@ public class GeminiChatFormatter
         if (toolConfig != null) {
             request.setToolConfig(toolConfig);
         }
+    }
+
+    private int computeStartIndex(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return 0;
+        }
+        return msgs.get(0).getRole() == MsgRole.SYSTEM ? 1 : 0;
+    }
+
+    private GeminiContent buildSystemInstruction(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return null;
+        }
+
+        Msg first = msgs.get(0);
+        if (first.getRole() != MsgRole.SYSTEM) {
+            return null;
+        }
+
+        List<GeminiContent> converted = messageConverter.convertMessages(List.of(first));
+        return converted.isEmpty() ? null : converted.get(0);
     }
 }

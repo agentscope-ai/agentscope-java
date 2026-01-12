@@ -57,7 +57,6 @@ public class GeminiMultiAgentFormatter
     private final GeminiToolsHelper toolsHelper;
     private final GeminiConversationMerger conversationMerger;
     private final GeminiChatFormatter chatFormatter;
-    private GeminiContent systemInstruction;
 
     /**
      * Create a GeminiMultiAgentFormatter with default conversation history prompt.
@@ -81,17 +80,11 @@ public class GeminiMultiAgentFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        List<GeminiContent> result = new ArrayList<>();
-        int startIndex = 0;
-
-        // Extract and store SYSTEM message separately for systemInstruction field
-        systemInstruction = null;
-        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Msg systemMsg = msgs.get(0);
-            // Convert SYSTEM message to GeminiContent for systemInstruction field
-            systemInstruction = messageConverter.convertMessages(List.of(systemMsg)).get(0);
-            startIndex = 1;
+        if (msgs == null) {
+            return new ArrayList<>();
         }
+        List<GeminiContent> result = new ArrayList<>();
+        int startIndex = computeStartIndex(msgs);
 
         // Gemini API requires contents to start with "user" role
         // If first remaining message is ASSISTANT (from another agent), convert it to USER
@@ -184,14 +177,39 @@ public class GeminiMultiAgentFormatter
      * Apply system instruction to the request if present.
      *
      * @param request The Gemini request to configure
+     * @param originalMessages The original message list (used to extract system prompt)
      */
-    public void applySystemInstruction(GeminiRequest request) {
+    public void applySystemInstruction(GeminiRequest request, List<Msg> originalMessages) {
+        GeminiContent systemInstruction = buildSystemInstruction(originalMessages);
         if (systemInstruction != null) {
             request.setSystemInstruction(systemInstruction);
+        } else {
+            request.setSystemInstruction(null);
         }
     }
 
     // ========== Private Helper Methods ==========
+
+    private int computeStartIndex(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return 0;
+        }
+        return msgs.get(0).getRole() == MsgRole.SYSTEM ? 1 : 0;
+    }
+
+    private GeminiContent buildSystemInstruction(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return null;
+        }
+
+        Msg first = msgs.get(0);
+        if (first.getRole() != MsgRole.SYSTEM) {
+            return null;
+        }
+
+        List<GeminiContent> converted = messageConverter.convertMessages(List.of(first));
+        return converted.isEmpty() ? null : converted.get(0);
+    }
 
     /**
      * Group messages sequentially into agent_message and tool_sequence groups.

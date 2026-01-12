@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
+import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig.GeminiThinkingConfig;
@@ -166,16 +167,12 @@ public class GeminiChatModel extends ChatModelBase {
                                 requestDto.setContents(contents);
 
                                 // Apply system instruction if formatter supports it
-                                if (formatter instanceof GeminiChatFormatter) {
-                                    ((GeminiChatFormatter) formatter)
-                                            .applySystemInstruction(requestDto);
+                                if (formatter instanceof GeminiChatFormatter chatFormatter) {
+                                    chatFormatter.applySystemInstruction(requestDto, messages);
                                 } else if (formatter
-                                        instanceof
-                                        io.agentscope.core.formatter.gemini
-                                                .GeminiMultiAgentFormatter) {
-                                    ((io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter)
-                                                    formatter)
-                                            .applySystemInstruction(requestDto);
+                                        instanceof GeminiMultiAgentFormatter multiAgentFormatter) {
+                                    multiAgentFormatter.applySystemInstruction(
+                                            requestDto, messages);
                                 }
 
                                 // Apply options, tools, tool choice

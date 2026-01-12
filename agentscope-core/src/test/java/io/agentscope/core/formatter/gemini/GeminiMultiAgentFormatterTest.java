@@ -17,9 +17,11 @@ package io.agentscope.core.formatter.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -47,8 +49,11 @@ class GeminiMultiAgentFormatterTest {
         // System message is now extracted to systemInstruction field, not included in contents
         assertEquals(0, contents.size());
 
-        // Verify system instruction was captured (need to call applySystemInstruction to use it)
-        // The systemInstruction field is set internally but not exposed directly in format()
+        GeminiRequest request = new GeminiRequest();
+        formatter.applySystemInstruction(request, List.of(systemMsg));
+        assertNotNull(request.getSystemInstruction());
+        assertEquals(
+                "You are a helpful AI", request.getSystemInstruction().getParts().get(0).getText());
     }
 
     @Test
@@ -105,5 +110,41 @@ class GeminiMultiAgentFormatterTest {
 
         assertNotNull(contents);
         assertTrue(contents.size() >= 1);
+    }
+
+    @Test
+    void testApplySystemInstructionIsStateless() {
+        Msg system1 =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("Sys1").build()))
+                        .build();
+        Msg system2 =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("Sys2").build()))
+                        .build();
+        Msg user =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("User message").build()))
+                        .build();
+
+        GeminiRequest request1 = new GeminiRequest();
+        formatter.applySystemInstruction(request1, List.of(system1));
+        assertNotNull(request1.getSystemInstruction());
+        assertEquals("Sys1", request1.getSystemInstruction().getParts().get(0).getText());
+
+        GeminiRequest request2 = new GeminiRequest();
+        formatter.applySystemInstruction(request2, List.of(system2));
+        assertNotNull(request2.getSystemInstruction());
+        assertEquals("Sys2", request2.getSystemInstruction().getParts().get(0).getText());
+
+        // Ensure no leakage between calls
+        assertEquals("Sys1", request1.getSystemInstruction().getParts().get(0).getText());
+
+        GeminiRequest requestWithoutSystem = new GeminiRequest();
+        formatter.applySystemInstruction(requestWithoutSystem, List.of(user));
+        assertNull(requestWithoutSystem.getSystemInstruction());
     }
 }
