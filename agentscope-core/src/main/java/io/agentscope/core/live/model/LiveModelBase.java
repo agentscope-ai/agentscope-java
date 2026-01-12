@@ -19,10 +19,9 @@ import io.agentscope.core.live.config.LiveConfig;
 import io.agentscope.core.live.formatter.LiveFormatter;
 import io.agentscope.core.live.session.LiveSession;
 import io.agentscope.core.live.transport.WebSocketClient;
+import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
-
-import io.agentscope.core.model.ToolSchema;
 import reactor.core.publisher.Mono;
 
 /**

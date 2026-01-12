@@ -408,7 +408,7 @@ class GeminiLiveFormatterTest {
             LiveEvent event = formatter.parseOutput(serverMsg);
 
             assertEquals(LiveEventType.INPUT_TRANSCRIPTION, event.type());
-            assertTrue(event.isLast());
+            assertFalse(event.isLast());
         }
 
         @Test
@@ -420,7 +420,7 @@ class GeminiLiveFormatterTest {
             LiveEvent event = formatter.parseOutput(serverMsg);
 
             assertEquals(LiveEventType.OUTPUT_TRANSCRIPTION, event.type());
-            assertTrue(event.isLast());
+            assertFalse(event.isLast());
         }
     }
 

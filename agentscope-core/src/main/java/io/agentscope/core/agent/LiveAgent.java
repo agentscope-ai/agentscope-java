@@ -22,6 +22,7 @@ import io.agentscope.core.live.LiveEventType;
 import io.agentscope.core.live.ReconnectFailedException;
 import io.agentscope.core.live.config.LiveConfig;
 import io.agentscope.core.live.config.ReconnectConfig;
+import io.agentscope.core.live.model.LiveModel;
 import io.agentscope.core.live.session.ConnectionState;
 import io.agentscope.core.live.session.ConnectionStateEvent;
 import io.agentscope.core.live.session.LiveSession;
@@ -31,7 +32,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.live.model.LiveModel;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -285,11 +285,18 @@ public class LiveAgent implements LiveableAgent {
                                                     if (success) {
                                                         LiveSession newSession =
                                                                 currentSession.get();
-                                                        log.info("Reconnect success. Old Session ID: {} . New Session Id: {}", session.getSessionId(), newSession.getSessionId());
+                                                        log.info(
+                                                                "Reconnect success. Old Session ID:"
+                                                                    + " {} . New Session Id: {}",
+                                                                session.getSessionId(),
+                                                                newSession.getSessionId());
                                                         return createDownstreamEventStream(
                                                                 newSession, config);
                                                     }
-                                                    log.error("Reconnect failed. Old Session ID: {}", session.getSessionId(), error);
+                                                    log.error(
+                                                            "Reconnect failed. Old Session ID: {}",
+                                                            session.getSessionId(),
+                                                            error);
                                                     return Flux.error(
                                                             new ReconnectFailedException(
                                                                     "Reconnect failed: "

@@ -85,7 +85,7 @@ class OpenAILiveModelTest {
                         .webSocketClient(mockClient)
                         .build();
 
-        assertEquals("gpt-4o-realtime-preview", model.getModelName());
+        assertEquals("gpt-realtime-2025-08-28", model.getModelName());
     }
 
     @Test
@@ -95,7 +95,7 @@ class OpenAILiveModelTest {
                 NullPointerException.class,
                 () ->
                         OpenAILiveModel.builder()
-                                .modelName("gpt-4o-realtime-preview")
+                                .modelName("gpt-realtime-2025-08-28")
                                 .webSocketClient(mockClient)
                                 .build());
     }

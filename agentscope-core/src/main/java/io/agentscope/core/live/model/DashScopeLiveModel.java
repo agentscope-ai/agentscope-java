@@ -27,6 +27,7 @@ import io.agentscope.core.live.session.LiveSession;
 import io.agentscope.core.live.transport.WebSocketClient;
 import io.agentscope.core.live.transport.WebSocketConnection;
 import io.agentscope.core.live.transport.WebSocketRequest;
+import io.agentscope.core.model.ToolSchema;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,8 +36,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import io.agentscope.core.model.ToolSchema;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 

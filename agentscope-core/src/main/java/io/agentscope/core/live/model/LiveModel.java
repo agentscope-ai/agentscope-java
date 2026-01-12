@@ -17,9 +17,8 @@ package io.agentscope.core.live.model;
 
 import io.agentscope.core.live.config.LiveConfig;
 import io.agentscope.core.live.session.LiveSession;
-import java.util.List;
-
 import io.agentscope.core.model.ToolSchema;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
