@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.store;
 
 import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -58,13 +59,11 @@ public interface VDBStoreBase {
      * Results include the document metadata and similarity scores. Optionally, embeddings
      * may also be included in the results (implementation-dependent).
      *
-     * @param queryEmbedding the query embedding vector
-     * @param limit the maximum number of results to return
-     * @param scoreThreshold optional minimum similarity score threshold (null for no filtering)
+     * @param searchDocumentDto the search document DTO
      * @return a Mono that emits a list of Document objects with scores set, sorted by similarity
      *     (descending)
      */
-    Mono<List<Document>> search(double[] queryEmbedding, int limit, Double scoreThreshold);
+    Mono<List<Document>> search(SearchDocumentDto searchDocumentDto);
 
     /**
      * Deletes a document from the store (optional).
@@ -74,11 +73,6 @@ public interface VDBStoreBase {
      *
      * @param id the document ID (UUID string) to delete
      * @return a Mono that emits true if the deletion was successful, false otherwise
-     * @throws UnsupportedOperationException if deletion is not supported by the implementation
      */
-    default Mono<Boolean> delete(String id) {
-        return Mono.error(
-                new UnsupportedOperationException(
-                        "Delete is not implemented for this vector store"));
-    }
+    Mono<Boolean> delete(String id);
 }

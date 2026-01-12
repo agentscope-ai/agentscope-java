@@ -28,6 +28,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.werewolf.GameConfiguration;
@@ -218,6 +219,7 @@ public class WerewolfWebGame {
                                 .model(model)
                                 .memory(new InMemoryMemory())
                                 .toolkit(new Toolkit())
+                                .structuredOutputReminder(StructuredOutputReminder.PROMPT)
                                 .build();
             }
 

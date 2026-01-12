@@ -98,6 +98,24 @@ class AgentscopeAutoConfigurationTest {
     }
 
     @Test
+    void shouldCreateOpenAIModelWithCustomEndpointPath() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues(
+                        "agentscope.agent.enabled=true",
+                        "agentscope.model.provider=openai",
+                        "agentscope.openai.api-key=test-openai-key",
+                        "agentscope.openai.model-name=gpt-4.1-mini",
+                        "agentscope.openai.endpoint-path=/v4/chat/completions")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context.getBean(Model.class))
+                                    .isInstanceOf(OpenAIChatModel.class);
+                        });
+    }
+
+    @Test
     void shouldCreateGeminiModelWhenProviderIsGemini() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))

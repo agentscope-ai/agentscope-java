@@ -254,6 +254,7 @@ class AutoContextHookTest {
                         .lastKeep(2)
                         .minConsecutiveToolMessages(10) // High to avoid tool compression
                         .largePayloadThreshold(10000) // High to avoid payload offloading
+                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
                         .build();
         TestModel testModel = new TestModel("Compressed summary");
         AutoContextMemory compressionMemory = new AutoContextMemory(compressionConfig, testModel);
@@ -346,12 +347,20 @@ class AutoContextHookTest {
                         + testModel.getCallCount());
 
         // Verify input messages were updated to reflect compressed memory
+        // Note: System prompt may be added if compressed messages exist, so size may be
+        // finalMessages.size() + 1
         List<Msg> updatedInputMessages = result.getInputMessages();
         assertNotNull(updatedInputMessages, "Input messages should not be null");
+        // Check if system prompt was added (first message is SYSTEM)
+        boolean hasSystemPrompt =
+                !updatedInputMessages.isEmpty()
+                        && updatedInputMessages.get(0).getRole() == MsgRole.SYSTEM;
+        int expectedSize = hasSystemPrompt ? finalMessages.size() + 1 : finalMessages.size();
         assertEquals(
-                finalMessages.size(),
+                expectedSize,
                 updatedInputMessages.size(),
-                "Input messages should be updated to match compressed memory size. "
+                "Input messages should be updated to match compressed memory size (plus system"
+                        + " prompt if added). "
                         + "Initial: "
                         + initialCount
                         + ", Final: "
@@ -411,12 +420,19 @@ class AutoContextHookTest {
         List<Msg> finalMessages = noCompressionMemory.getMessages();
         assertEquals(initialCount, finalMessages.size(), "Message count should not change");
 
-        // Verify input messages remain unchanged (compression not needed)
+        // Verify input messages - system prompt is always added, so size will be memory size + 1
         List<Msg> resultInputMessages = result.getInputMessages();
+        // System prompt is always added, so expected size is memory size + 1
+        int expectedSize = finalMessages.size() + 1;
         assertEquals(
-                inputMessages.size(),
+                expectedSize,
                 resultInputMessages.size(),
-                "Input messages should remain unchanged when compression is not needed");
+                "Input messages should include system prompt. Memory size: "
+                        + finalMessages.size()
+                        + ", Expected: "
+                        + expectedSize
+                        + ", Actual: "
+                        + resultInputMessages.size());
     }
 
     @Test

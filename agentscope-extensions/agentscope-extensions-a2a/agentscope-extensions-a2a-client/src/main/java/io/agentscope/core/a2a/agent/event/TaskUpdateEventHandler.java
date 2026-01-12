@@ -90,7 +90,9 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
         public void handle(TaskStatusUpdateEvent event, ClientEventContext context) {
             String currentRequestId = context.getCurrentRequestId();
             if (event.isFinal()) {
-                Msg msg = MessageConvertUtil.convertFromArtifact(context.getTask().getArtifacts());
+                Msg msg =
+                        MessageConvertUtil.convertFromArtifact(
+                                context.getTask().getArtifacts(), context.getAgent().getName());
                 context.getSink().success(msg);
                 LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
                 LoggerUtil.debug(
@@ -106,7 +108,9 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                 if (null == taskStatus.message()) {
                     return;
                 }
-                Msg msg = MessageConvertUtil.convertFromMessage(taskStatus.message());
+                Msg msg =
+                        MessageConvertUtil.convertFromMessage(
+                                taskStatus.message(), context.getAgent().getName());
                 LoggerUtil.debug(
                         log, "[{}] A2aAgent task status updated with messages: ", currentRequestId);
                 LoggerUtil.logTextMsgDetail(log, List.of(msg));
@@ -126,7 +130,9 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
             if (null == event.getArtifact()) {
                 return;
             }
-            Msg msg = MessageConvertUtil.convertFromArtifact(event.getArtifact());
+            Msg msg =
+                    MessageConvertUtil.convertFromArtifact(
+                            event.getArtifact(), context.getAgent().getName());
             LoggerUtil.debug(
                     log, "[{}] A2aAgent artifact append with messages: ", currentRequestTaskId);
             LoggerUtil.logTextMsgDetail(log, List.of(msg));

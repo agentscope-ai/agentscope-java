@@ -52,6 +52,13 @@
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
+        
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-a2a-server</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -157,6 +164,13 @@
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
+        
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-nacos-a2a</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
 
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
@@ -203,6 +217,12 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+        </dependency>
+
+        <!-- Jackson Java 8 Date/Time support (LocalDateTime, Instant, etc.) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
     </dependencies>
 

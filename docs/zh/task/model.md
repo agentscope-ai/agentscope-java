@@ -10,6 +10,7 @@
 | OpenAI     | `OpenAIChatModel`       | ✅    | ✅    | ✅    |       |
 | Anthropic  | `AnthropicChatModel`    | ✅    | ✅    | ✅    | ✅    |
 | Gemini     | `GeminiChatModel`       | ✅    | ✅    | ✅    | ✅    |
+| Ollama     | `OllamaChatModel`       | ✅    | ✅    | ✅    | ✅    |
 
 > **注意**：
 > - `OpenAIChatModel` 兼容 OpenAI API 规范，可用于 vLLM、DeepSeek 等提供商
@@ -58,6 +59,16 @@ DashScopeChatModel model = DashScopeChatModel.builder()
                 .thinkingBudget(5000)  // 思考 token 预算
                 .build())
         .build();
+
+OllamaChatModel model =
+        OllamaChatModel.builder()
+                .modelName("qwen3-max")
+                .baseUrl("http://localhost:11434")
+                .defaultOptions(OllamaOptions.builder()
+                        .thinkOption(ThinkOption.ThinkBoolean.ENABLED)
+                        .temperature(0.8)
+                        .build())
+                .build();
 ```
 
 ## OpenAI
@@ -149,6 +160,106 @@ GeminiChatModel model = GeminiChatModel.builder()
 | `credentials` | GCP 凭证（Vertex AI） |
 | `streamEnabled` | 是否启用流式输出，默认 `true` |
 
+## Ollama
+
+自托管开源 LLM 平台，支持多种模型。
+
+```java
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")  // 默认值
+        .build();
+```
+
+### 配置项
+
+| 配置项 | 说明 |
+|--------|------|
+| `modelName` | 模型名称，如 `qwen3-max`、`llama3.2`、`mistral`、`phi3` |
+| `baseUrl` | Ollama 服务器端点（可选，默认 `http://localhost:11434`） |
+| `defaultOptions` | 默认生成选项 |
+| `formatter` | 消息格式化器（可选） |
+| `httpTransport` | HTTP 传输配置（可选） |
+
+### 高级配置
+
+高级模型加载和生成参数：
+
+```java
+OllamaOptions options = OllamaOptions.builder()
+        .numCtx(4096)           // 上下文窗口大小
+        .temperature(0.7)       // 生成随机性
+        .topK(40)               // Top-K 采样
+        .topP(0.9)              // 核采样
+        .repeatPenalty(1.1)     // 重复惩罚
+        .build();
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(options)  // 内部转换为 OllamaOptions
+        .build();
+```
+
+### GenerateOptions 支持
+
+Ollama 也支持 `GenerateOptions` 进行标准配置：
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+        .temperature(0.7)           // 映射到 Ollama 的 temperature
+        .topP(0.9)                  // 映射到 Ollama 的 top_p
+        .topK(40)                   // 映射到 Ollama 的 top_k
+        .maxTokens(2000)            // 映射到 Ollama 的 num_predict
+        .seed(42L)                  // 映射到 Ollama 的 seed
+        .frequencyPenalty(0.5)      // 映射到 Ollama 的 frequency_penalty
+        .presencePenalty(0.5)       // 映射到 Ollama 的 presence_penalty
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_CTX.getKey(), 4096)      // 上下文窗口大小
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_GPU.getKey(), -1)        // 将所有层卸载到 GPU
+        .additionalBodyParam(OllamaOptions.ParamKey.REPEAT_PENALTY.getKey(), 1.1) // 重复惩罚
+        .additionalBodyParam(OllamaOptions.ParamKey.MAIN_GPU.getKey(), 0)        // 主 GPU 索引
+        .additionalBodyParam(OllamaOptions.ParamKey.LOW_VRAM.getKey(), false)    // 低显存模式
+        .additionalBodyParam(OllamaOptions.ParamKey.F16_KV.getKey(), true)       // 16位 KV 缓存
+        .additionalBodyParam(OllamaOptions.ParamKey.NUM_THREAD.getKey(), 8)      // CPU 线程数
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))  // 内部转换为 OllamaOptions
+        .build();
+```
+
+### 可用参数
+
+Ollama 支持超过 40 个参数进行精细调整：
+
+#### 模型加载参数
+- `numCtx`: 上下文窗口大小（默认：2048）
+- `numBatch`: 提示处理的批处理大小（默认：512）
+- `numGPU`: 卸载到 GPU 的层数（-1 表示全部）
+- `lowVRAM`: 为有限 GPU 内存启用低显存模式
+- `useMMap`: 使用内存映射加载模型
+- `useMLock`: 锁定模型在内存中以防止交换
+
+#### 生成参数
+- `temperature`: 生成随机性（0.0-2.0）
+- `topK`: Top-K 采样（标准：40）
+- `topP`: 核采样（标准：0.9）
+- `minP`: 最小概率阈值（默认：0.0）
+- `numPredict`: 生成的最大 token 数（-1 表示无限）
+- `repeatPenalty`: 重复惩罚（默认：1.1）
+- `presencePenalty`: 基于 token 存在性的惩罚
+- `frequencyPenalty`: 基于 token 频率的惩罚
+- `seed`: 可重现结果的随机种子
+- `stop`: 立即停止生成的字符串
+
+#### 采样策略
+- `mirostat`: Mirostat 采样（0=禁用，1=Mirostat v1，2=Mirostat v2）
+- `mirostatTau`: Mirostat 目标熵（默认：5.0）
+- `mirostatEta`: Mirostat 学习率（默认：0.1）
+- `tfsZ`: 尾部自由采样（默认：1.0 禁用）
+- `typicalP`: 典型概率采样（默认：1.0）
+
 ## 生成选项
 
 通过 `GenerateOptions` 配置生成参数：
@@ -167,6 +278,12 @@ DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
         .defaultOptions(options)
+        .build();
+
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .baseUrl("http://localhost:11434")
+        .defaultOptions(OllamaOptions.fromGenerateOptions(options))// 内部转换为 OllamaOptions
         .build();
 ```
 
@@ -229,6 +346,7 @@ Formatter 负责将 AgentScope 的统一消息格式转换为各 LLM 提供商�
 | OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
 | Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
 | Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
 
 ### 默认行为
 
@@ -267,6 +385,12 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .formatter(new GeminiMultiAgentFormatter())
+        .build();
+
+// Ollama 多智能体
+OllamaChatModel model = OllamaChatModel.builder()
+        .modelName("qwen3-max")
+        .formatter(new OllamaMultiAgentFormatter())
         .build();
 ```
 
