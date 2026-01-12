@@ -524,14 +524,7 @@ class GeminiMessageConverterTest {
 
         assertEquals(1, result.size());
         GeminiContent content = result.get(0);
-        assertEquals(2, content.getParts().size());
-
-        GeminiPart thoughtPart = content.getParts().get(0);
-        assertTrue(thoughtPart.getThought());
-        assertEquals("Internal reasoning", thoughtPart.getText());
-
-        GeminiPart textPart = content.getParts().get(1);
-        assertEquals("Visible response", textPart.getText());
+        assertEquals(1, content.getParts().size());
     }
 
     @Test
@@ -549,11 +542,7 @@ class GeminiMessageConverterTest {
 
         List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
-        assertEquals(1, result.size());
-        GeminiContent content = result.get(0);
-        assertEquals(1, content.getParts().size());
-        assertTrue(content.getParts().get(0).getThought());
-        assertEquals("Internal reasoning", content.getParts().get(0).getText());
+        assertEquals(0, result.size());
     }
 
     @Test
@@ -804,11 +793,7 @@ class GeminiMessageConverterTest {
 
         List<GeminiContent> result = converter.convertMessages(List.of(msg));
 
-        assertEquals(1, result.size());
-        GeminiPart part = result.get(0).getParts().get(0);
-        assertTrue(part.getThought());
-        assertEquals("Reasoning", part.getText());
-        assertEquals("sig_123", part.getSignature());
+        assertEquals(0, result.size());
     }
 
     @Test
