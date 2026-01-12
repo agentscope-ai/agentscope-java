@@ -134,20 +134,6 @@ public class GeminiMessageConverter {
 
                     parts.add(part);
 
-                } else if (block instanceof ThinkingBlock tb) {
-                    // Create Part with thought
-                    GeminiPart part = new GeminiPart();
-                    part.setThought(true);
-                    part.setText(tb.getThinking());
-
-                    // Add signature from metadata if available
-                    String signature = tb.getSignature(); // Uses convenience method
-                    if (signature != null && !signature.isEmpty()) {
-                        part.setSignature(signature);
-                    }
-
-                    parts.add(part);
-
                 } else if (block instanceof ToolResultBlock trb) {
                     // IMPORTANT: Tool result as independent Content with "user" role
                     String textOutput = convertToolResultToString(trb.getOutput());
