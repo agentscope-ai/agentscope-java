@@ -53,6 +53,7 @@ When using other models or features, add the corresponding dependencies:
 | **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **Bailian RAG**           | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)          | `com.aliyun:bailian20231229`     |
 | **Qdrant RAG**            | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
+| **PgVector RAG**          | [PostgreSQL Driver](https://central.sonatype.com/artifact/org.postgresql/postgresql) + [pgvector](https://central.sonatype.com/artifact/com.pgvector/pgvector) | `org.postgresql:postgresql` + `com.pgvector:pgvector` |
 | **Dify RAG**              | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **RAGFlow RAG**           | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **HayStack RAG**          | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
@@ -157,7 +158,7 @@ implementation 'io.agentscope:agentscope-core:1.0.6'
 | Module | Feature | Maven Coordinates |
 |--------|---------|-------------------|
 | [agentscope-extensions-rag-bailian](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian) | Bailian RAG | `io.agentscope:agentscope-extensions-rag-bailian` |
-| [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Qdrant RAG | `io.agentscope:agentscope-extensions-rag-simple` |
+| [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Simple RAG (Qdrant, Milvus, PgVector, InMemory) | `io.agentscope:agentscope-extensions-rag-simple` |
 | [agentscope-extensions-rag-dify](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-dify) | Dify RAG | `io.agentscope:agentscope-extensions-rag-dify` |
 | [agentscope-extensions-rag-ragflow](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-ragflow) | RAGFlow RAG | `io.agentscope:agentscope-extensions-rag-ragflow` |
 | [agentscope-extensions-rag-haystack](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-haystack) | HayStack RAG | `io.agentscope:agentscope-extensions-rag-haystack` |
