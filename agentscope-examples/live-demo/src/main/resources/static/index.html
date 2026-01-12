@@ -1339,6 +1339,10 @@
                     break;
 
                 case 'INPUT_TRANSCRIPTION':
+                    // Skip the final "done" event (isLast=true) since deltas already contain full text
+                    if (data.isLast) {
+                        break;
+                    }
                     if (data.message && data.message.text) {
                         if (!currentUserMessage) {
                             currentUserMessage = addMessage('user', data.message.text);

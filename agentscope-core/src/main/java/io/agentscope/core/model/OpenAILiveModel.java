@@ -372,7 +372,7 @@ public class OpenAILiveModel extends LiveModelBase {
     public static class Builder {
         // Connection configuration
         private String apiKey;
-        private String modelName = "gpt-4o-realtime-preview";
+        private String modelName = "gpt-realtime-2025-08-28";
         private String baseUrl = DEFAULT_BASE_URL;
         private WebSocketClient webSocketClient;
 
