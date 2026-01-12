@@ -15,12 +15,12 @@
  */
 package io.agentscope.core.session.mysql;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -90,7 +90,6 @@ public class MysqlSession implements Session {
     private final DataSource dataSource;
     private final String databaseName;
     private final String tableName;
-    private final ObjectMapper objectMapper;
 
     /**
      * Create a MysqlSession with default settings.
@@ -156,7 +155,6 @@ public class MysqlSession implements Session {
                 (tableName == null || tableName.trim().isEmpty())
                         ? DEFAULT_TABLE_NAME
                         : tableName.trim();
-        this.objectMapper = new ObjectMapper();
 
         // Validate database and table names to prevent SQL injection
         validateIdentifier(this.databaseName, "Database name");
@@ -296,7 +294,7 @@ public class MysqlSession implements Session {
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
 
-            String json = objectMapper.writeValueAsString(value);
+            String json = JsonUtils.getJsonCodec().toJson(value);
 
             stmt.setString(1, sessionId);
             stmt.setString(2, key);
@@ -493,7 +491,7 @@ public class MysqlSession implements Session {
         try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             int index = startIndex;
             for (State item : items) {
-                String json = objectMapper.writeValueAsString(item);
+                String json = JsonUtils.getJsonCodec().toJson(item);
                 stmt.setString(1, sessionId);
                 stmt.setString(2, key);
                 stmt.setInt(3, index);
@@ -552,7 +550,7 @@ public class MysqlSession implements Session {
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     String json = rs.getString("state_data");
-                    return Optional.of(objectMapper.readValue(json, type));
+                    return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
                 }
                 return Optional.empty();
             }
@@ -584,7 +582,7 @@ public class MysqlSession implements Session {
                 List<T> result = new ArrayList<>();
                 while (rs.next()) {
                     String json = rs.getString("state_data");
-                    result.add(objectMapper.readValue(json, itemType));
+                    result.add(JsonUtils.getJsonCodec().fromJson(json, itemType));
                 }
                 return result;
             }

@@ -111,15 +111,15 @@ System.out.println(response.getTextContent());
 
 ## AI 辅助开发
 
-AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了 LLM 友好的指南。该指南帮助 AI 助手理解 AgentScope Java 的 API、模式和最佳实践，以生成准确的代码。
+AgentScope 文档支持 [`llms.txt` 标准](https://llmstxt.org/)，使 Claude Code、Cursor、Windsurf 等 AI 编程助手能够理解 AgentScope API 并生成准确的代码。
 
 **Cursor 快速设置：**
 
 1. 打开 Cursor 设置 -> Features -> Docs
 2. 点击 "+ Add new Doc"
-3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
+3. 添加 URL：`https://java.agentscope.io/llms-full.txt`
 
-有关其他 AI IDE 的详细设置说明和最佳实践，请参阅[使用 AI 代码助手配合 AgentScope Java](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md)。
+更多工具和详细配置，请参阅 **[使用 AI 编程](task/ai-coding.md)**。
 
 ## 社区
 

@@ -16,7 +16,9 @@
 package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -113,10 +115,12 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Assistant response " + i, MsgRole.ASSISTANT));
         }
 
+        // Trigger compression explicitly
+        boolean compressed = memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
         // After compression, message count should be reduced or model should be called
         assertTrue(
-                messages.size() < 24 || testModel.getCallCount() > 0,
+                compressed || messages.size() < 24 || testModel.getCallCount() > 0,
                 "Messages should be compressed or model should be called");
     }
 
@@ -133,6 +137,7 @@ class AutoContextMemoryTest {
                         .lastKeep(2)
                         .minConsecutiveToolMessages(10) // High threshold to avoid tool compression
                         .largePayloadThreshold(10000) // High threshold to avoid payload offloading
+                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
                         .build();
         AutoContextMemory summaryMemory = new AutoContextMemory(summaryConfig, summaryTestModel);
 
@@ -155,11 +160,12 @@ class AutoContextMemoryTest {
         // Add one more user message (no assistant yet) to ensure latest assistant is found
         summaryMemory.addMessage(createTextMessage("Final user query", MsgRole.USER));
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         summaryTestModel.reset();
 
-        // Call getMessages - this should trigger summaryPreviousRoundMessages
+        // Trigger compression explicitly - this should trigger summaryPreviousRoundMessages
         // which will call summaryPreviousRoundConversation for each round
+        summaryMemory.compressIfNeeded();
         List<Msg> messages = summaryMemory.getMessages();
 
         // Verify that summaryPreviousRoundConversation was called
@@ -317,6 +323,8 @@ class AutoContextMemoryTest {
             customMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly to test lastKeep protection
+        customMemory.compressIfNeeded();
         List<Msg> messages = customMemory.getMessages();
         // Last 3 messages should be preserved
         assertTrue(messages.size() >= 3, "Should preserve at least lastKeep messages");
@@ -353,10 +361,11 @@ class AutoContextMemoryTest {
             toolMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly - tool messages should be compressed (strategy 1)
+        boolean compressed = toolMemory.compressIfNeeded();
         List<Msg> messages = toolMemory.getMessages();
-        // Tool messages should be compressed (strategy 1)
         assertTrue(
-                toolTestModel.getCallCount() > 0 || messages.size() < 22,
+                compressed || toolTestModel.getCallCount() > 0 || messages.size() < 22,
                 "Should compress tool messages or reduce message count");
 
         // Verify original storage contains all messages
@@ -383,6 +392,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .largePayloadThreshold(100)
                         .lastKeep(3)
+                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
                         .build();
         AutoContextMemory largePayloadMemory =
                 new AutoContextMemory(largePayloadConfig, largePayloadTestModel);
@@ -405,8 +415,9 @@ class AutoContextMemoryTest {
             largePayloadMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
+        // Trigger compression explicitly - large payload should be offloaded (strategy 2 or 3)
+        largePayloadMemory.compressIfNeeded();
         List<Msg> messages = largePayloadMemory.getMessages();
-        // Large payload should be offloaded (strategy 2 or 3)
         // Check if any message contains offload hint (UUID pattern) or if compression occurred
         boolean hasOffloadHint =
                 messages.stream()
@@ -414,6 +425,9 @@ class AutoContextMemoryTest {
                                 msg ->
                                         msg.getTextContent() != null
                                                 && (msg.getTextContent().contains("uuid:")
+                                                        || msg.getTextContent().contains("uuid=")
+                                                        || msg.getTextContent()
+                                                                .contains("CONTEXT_OFFLOAD")
                                                         || msg.getTextContent()
                                                                 .contains("reload")));
         // The test passes if: offload hint found, messages reduced, or model called
@@ -472,10 +486,12 @@ class AutoContextMemoryTest {
         String largeText = "x".repeat(200); // Exceeds largePayloadThreshold (100)
         currentRoundLargeMemory.addMessage(createTextMessage(largeText, MsgRole.ASSISTANT));
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         currentRoundLargeTestModel.reset();
 
-        // Call getMessages - this should trigger strategy 5 (summaryCurrentRoundLargeMessages)
+        // Trigger compression explicitly - this should trigger strategy 5
+        // (summaryCurrentRoundLargeMessages)
+        currentRoundLargeMemory.compressIfNeeded();
         List<Msg> messages = currentRoundLargeMemory.getMessages();
 
         // Verify that generateLargeMessageSummary was called (via summaryCurrentRoundLargeMessages)
@@ -510,6 +526,8 @@ class AutoContextMemoryTest {
             String content = msg.getTextContent();
             if (content != null
                     && (content.contains("uuid:")
+                            || content.contains("uuid=")
+                            || content.contains("CONTEXT_OFFLOAD")
                             || content.contains("reload")
                             || content.contains("context_reload")
                             || content.contains("offloaded"))) {
@@ -598,6 +616,7 @@ class AutoContextMemoryTest {
                         .largePayloadThreshold(
                                 10000) // High threshold to avoid payload offloading (strategy 2 &
                         // 3)
+                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
                         .build();
         AutoContextMemory currentRoundMemory =
                 new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
@@ -619,11 +638,12 @@ class AutoContextMemoryTest {
                     createToolResultMessage("test_tool", "call_" + i, "Result " + i));
         }
 
-        // Reset call count before getMessages
+        // Reset call count before compression
         currentRoundTestModel.reset();
 
-        // Call getMessages - this should trigger strategy 6 (current round summary)
+        // Trigger compression explicitly - this should trigger strategy 6 (current round summary)
         // which calls mergeAndCompressCurrentRoundMessages
+        currentRoundMemory.compressIfNeeded();
         List<Msg> messages = currentRoundMemory.getMessages();
 
         // Verify that generateCurrentRoundSummaryFromMessages was called (via
@@ -660,6 +680,8 @@ class AutoContextMemoryTest {
             String content = msg.getTextContent();
             if (content != null
                     && (content.contains("uuid:")
+                            || content.contains("uuid=")
+                            || content.contains("CONTEXT_OFFLOAD")
                             || content.contains("reload")
                             || content.contains("context_reload")
                             || content.contains("offloaded"))) {
@@ -687,6 +709,257 @@ class AutoContextMemoryTest {
         assertTrue(
                 offloadContext.size() >= 1,
                 "Should have at least 1 offloaded entry. Got " + offloadContext.size());
+    }
+
+    @Test
+    @DisplayName(
+            "Should skip tool message compression when token count is below"
+                    + " minCompressionTokenThreshold")
+    void testSummaryToolsMessagesSkipWhenBelowTokenThreshold() {
+        // Create a test model to track calls
+        TestModel skipCompressionTestModel = new TestModel("Compressed tool summary");
+        AutoContextConfig skipCompressionConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(3) // Low threshold to allow tool compression
+                        .minCompressionTokenThreshold(10000) // High threshold to skip compression
+                        .build();
+        AutoContextMemory skipCompressionMemory =
+                new AutoContextMemory(skipCompressionConfig, skipCompressionTestModel);
+
+        // Add user message
+        skipCompressionMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add multiple tool messages with very small content (low token count)
+        // These should be consecutive and before the last assistant message
+        // Using minimal content to ensure token count stays below threshold
+        for (int i = 0; i < 5; i++) {
+            skipCompressionMemory.addMessage(createToolUseMessage("tool", "id" + i));
+            skipCompressionMemory.addMessage(createToolResultMessage("tool", "id" + i, "ok"));
+        }
+
+        // Add assistant message (this marks the end of current round)
+        skipCompressionMemory.addMessage(
+                createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Add more messages to trigger compression (exceed threshold)
+        for (int i = 0; i < 10; i++) {
+            skipCompressionMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Reset call count before compression
+        skipCompressionTestModel.reset();
+
+        // Trigger compression explicitly - tool messages should be found but skipped due to low
+        // token count
+        skipCompressionMemory.compressIfNeeded();
+        List<Msg> messages = skipCompressionMemory.getMessages();
+
+        // Verify that summaryToolsMessages was called but skipped compression
+        // The method should return early without calling the model
+        // Since token count is below threshold, no compression should occur for tool messages
+        // However, other strategies might still compress, so we check that model was NOT called
+        // for tool compression specifically
+        // The key assertion is that tool messages are still present (not compressed)
+        // and no compression event was recorded for tool compression
+
+        // Verify original storage contains all messages
+        List<Msg> originalMessages = skipCompressionMemory.getOriginalMemoryMsgs();
+        assertEquals(
+                22, originalMessages.size(), "Original storage should contain all 22 messages");
+
+        // Check compression events - should NOT have TOOL_INVOCATION_COMPRESS event
+        List<CompressionEvent> compressionEvents = skipCompressionMemory.getCompressionEvents();
+        boolean hasToolCompressionEvent =
+                compressionEvents.stream()
+                        .anyMatch(
+                                event ->
+                                        CompressionEvent.TOOL_INVOCATION_COMPRESS.equals(
+                                                event.getEventType()));
+        assertFalse(
+                hasToolCompressionEvent,
+                "Should not have tool compression event when token count is below threshold");
+
+        // Verify that tool messages are still in the working memory (not compressed)
+        // Count tool messages in working memory
+        long toolMessageCount =
+                messages.stream().filter(msg -> MsgUtils.isToolMessage(msg)).count();
+        // Should have at least the original tool messages (10 tool messages: 5 tool use + 5 tool
+        // result)
+        assertTrue(
+                toolMessageCount >= 10,
+                "Tool messages should still be present (not compressed) when token count is below"
+                        + " threshold. Found "
+                        + toolMessageCount
+                        + " tool messages");
+    }
+
+    @Test
+    @DisplayName(
+            "Should compress tool invocations with compressToolsInvocation covering all branches")
+    void testCompressToolsInvocationFullCoverage() {
+        // Test 1: Normal compression with offload UUID
+        TestModel normalModel = new TestModel("Compressed tool summary");
+        AutoContextConfig normalConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(3)
+                        .minCompressionTokenThreshold(0) // Allow compression
+                        .build();
+        AutoContextMemory normalMemory = new AutoContextMemory(normalConfig, normalModel);
+
+        // Add user message
+        normalMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add multiple tool messages
+        for (int i = 0; i < 5; i++) {
+            normalMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            normalMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        // Add assistant message
+        normalMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        // Add more messages to trigger compression
+        for (int i = 0; i < 10; i++) {
+            normalMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        normalModel.reset();
+        normalMemory.compressIfNeeded();
+
+        // Verify compression occurred and model was called
+        assertTrue(
+                normalModel.getCallCount() > 0,
+                "Model should be called for tool compression. Got " + normalModel.getCallCount());
+
+        // Verify offload context contains the compressed messages
+        Map<String, List<Msg>> offloadContext = normalMemory.getOffloadContext();
+        assertTrue(
+                !offloadContext.isEmpty(), "OffloadContext should contain offloaded tool messages");
+
+        // Verify compression event was recorded
+        List<CompressionEvent> compressionEvents = normalMemory.getCompressionEvents();
+        boolean hasToolCompressionEvent =
+                compressionEvents.stream()
+                        .anyMatch(
+                                event ->
+                                        CompressionEvent.TOOL_INVOCATION_COMPRESS.equals(
+                                                event.getEventType()));
+        assertTrue(
+                hasToolCompressionEvent,
+                "Should have tool compression event when compression occurs");
+
+        // Test 2: Compression with plan-related tools (should be filtered)
+        TestModel planFilterModel = new TestModel("Compressed tool summary");
+        AutoContextConfig planFilterConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(3)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory planFilterMemory =
+                new AutoContextMemory(planFilterConfig, planFilterModel);
+
+        planFilterMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Add mix of plan-related and regular tool messages
+        // Plan-related tools should be filtered out
+        planFilterMemory.addMessage(createToolUseMessage("create_plan", "plan_call_1"));
+        planFilterMemory.addMessage(
+                createToolResultMessage("create_plan", "plan_call_1", "Plan created"));
+        planFilterMemory.addMessage(createToolUseMessage("test_tool", "call_1"));
+        planFilterMemory.addMessage(createToolResultMessage("test_tool", "call_1", "Result 1"));
+        planFilterMemory.addMessage(createToolUseMessage("test_tool", "call_2"));
+        planFilterMemory.addMessage(createToolResultMessage("test_tool", "call_2", "Result 2"));
+
+        planFilterMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        for (int i = 0; i < 10; i++) {
+            planFilterMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        planFilterModel.reset();
+        planFilterMemory.compressIfNeeded();
+
+        // Verify compression occurred (only non-plan tools should be compressed)
+        assertTrue(
+                planFilterModel.getCallCount() > 0,
+                "Model should be called for tool compression even with plan-related tools"
+                        + " filtered");
+
+        // Test 3: Compression with PlanNotebook (plan-aware hint should be added)
+        TestModel planAwareModel = new TestModel("Compressed tool summary");
+        AutoContextConfig planAwareConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(3)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory planAwareMemory = new AutoContextMemory(planAwareConfig, planAwareModel);
+
+        // Create and attach PlanNotebook with a plan
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan =
+                new Plan("Test Plan", "Test plan description", "Test outcome", new ArrayList<>());
+        planAwareMemory.attachPlanNote(planNotebook);
+
+        // Use reflection to set the plan (since PlanNotebook doesn't expose a setter)
+        try {
+            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            planField.setAccessible(true);
+            planField.set(planNotebook, plan);
+        } catch (Exception e) {
+            // If reflection fails, skip this part of the test
+        }
+
+        planAwareMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        for (int i = 0; i < 5; i++) {
+            planAwareMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            planAwareMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        planAwareMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        for (int i = 0; i < 10; i++) {
+            planAwareMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        planAwareModel.reset();
+        planAwareMemory.compressIfNeeded();
+
+        // Verify compression occurred with plan-aware hint
+        assertTrue(
+                planAwareModel.getCallCount() > 0,
+                "Model should be called for tool compression with plan-aware hint");
+
+        // Verify the captured messages include plan-aware hint
+        // This is verified indirectly by checking compression succeeded
+        List<CompressionEvent> planAwareEvents = planAwareMemory.getCompressionEvents();
+        boolean hasPlanAwareCompressionEvent =
+                planAwareEvents.stream()
+                        .anyMatch(
+                                event ->
+                                        CompressionEvent.TOOL_INVOCATION_COMPRESS.equals(
+                                                event.getEventType()));
+        assertTrue(
+                hasPlanAwareCompressionEvent,
+                "Should have tool compression event with plan-aware hint");
     }
 
     // Helper methods
@@ -815,8 +1088,8 @@ class AutoContextMemoryTest {
             planAwareMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
-        planAwareMemory.getMessages();
+        // Trigger compression explicitly
+        planAwareMemory.compressIfNeeded();
 
         // Verify that plan context was included in the compression
         // The capturing model should have received messages with plan_aware_hint
@@ -856,7 +1129,8 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
 
         // Should complete without errors
@@ -878,7 +1152,8 @@ class AutoContextMemoryTest {
             memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
         }
 
-        // Trigger compression
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
         List<Msg> messages = memory.getMessages();
 
         // Should complete without errors (no plan context added)
@@ -945,8 +1220,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression by getting messages
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify that default prompt was used (check captured messages)
         // Note: Compression may not always trigger depending on token count
@@ -1007,8 +1282,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression by getting messages
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify that custom prompt was used
         if (!capturingModel.getCapturedMessages().isEmpty()) {
@@ -1111,8 +1386,8 @@ class AutoContextMemoryTest {
         // Add assistant message
         memory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
 
-        // Trigger compression
-        memory.getMessages();
+        // Trigger compression explicitly
+        memory.compressIfNeeded();
 
         // Verify custom prompt is used for tool compression
         if (!capturingModel.getCapturedMessages().isEmpty()) {
@@ -1153,5 +1428,253 @@ class AutoContextMemoryTest {
         // Should complete without errors, using default prompts
         List<Msg> messages = memory.getMessages();
         assertNotNull(messages);
+    }
+
+    // ==================== getPlanStateContext Tests ====================
+
+    @Test
+    @DisplayName("Should return null when planNotebook is null")
+    void testGetPlanStateContextWithNullPlanNotebook() throws Exception {
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNull(result, "Should return null when planNotebook is null");
+    }
+
+    @Test
+    @DisplayName("Should return null when currentPlan is null")
+    void testGetPlanStateContextWithNullCurrentPlan() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNull(result, "Should return null when currentPlan is null");
+    }
+
+    @Test
+    @DisplayName("Should return plan context when plan exists without subtasks")
+    void testGetPlanStateContextWithoutSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when plan exists");
+        // Verify simplified format: Goal and Expected Outcome
+        assertTrue(result.contains("Goal: Test Description"), "Should contain goal (description)");
+        assertTrue(
+                result.contains("Expected Outcome: Test Outcome"),
+                "Should contain expected outcome");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with subtasks in different states")
+    void testGetPlanStateContextWithSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        SubTask task1 = new SubTask("Task 1", "Description 1", null);
+        task1.setState(SubTaskState.IN_PROGRESS);
+
+        SubTask task2 = new SubTask("Task 2", "Description 2", "Expected Outcome 2");
+        task2.setState(SubTaskState.DONE);
+        task2.setOutcome("Outcome 2");
+
+        SubTask task3 = new SubTask("Task 3", "Description 3", null);
+        task3.setState(SubTaskState.TODO);
+
+        Plan plan =
+                new Plan(
+                        "Test Plan",
+                        "Test Description",
+                        "Test Outcome",
+                        List.of(task1, task2, task3));
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when plan exists with subtasks");
+
+        // Verify simplified format: Goal, Current Progress, Progress, Expected Outcome
+        assertTrue(result.contains("Goal: Test Description"), "Should contain goal");
+        assertTrue(
+                result.contains("Current Progress: Task 1"),
+                "Should contain in-progress task name");
+        assertTrue(
+                result.contains("Progress: 1/3 subtasks completed"),
+                "Should contain progress count");
+        assertTrue(
+                result.contains("Expected Outcome: Test Outcome"),
+                "Should contain expected outcome");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with null subtasks list")
+    void testGetPlanStateContextWithNullSubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", null);
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when subtasks is null");
+        assertFalse(
+                result.contains("Subtasks:"),
+                "Should not contain subtasks section when subtasks is null");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with empty subtasks list")
+    void testGetPlanStateContextWithEmptySubtasks() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context when subtasks is empty");
+        assertFalse(
+                result.contains("Subtasks:"),
+                "Should not contain subtasks section when subtasks is empty");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with DONE subtask without outcome")
+    void testGetPlanStateContextWithDoneSubtaskWithoutOutcome() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        SubTask task = new SubTask("Task 1", "Description 1", null);
+        task.setState(SubTaskState.DONE);
+
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", List.of(task));
+        plan.setState(PlanState.IN_PROGRESS);
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        String result = (String) method.invoke(testMemory);
+        assertNotNull(result, "Should return plan context");
+        // Verify simplified format
+        assertTrue(result.contains("Goal: Test Description"), "Should contain goal");
+        assertTrue(
+                result.contains("Progress: 1/1 subtasks completed"),
+                "Should contain progress count for completed task");
+        assertTrue(
+                result.contains("Expected Outcome: Test Outcome"),
+                "Should contain expected outcome");
+    }
+
+    @Test
+    @DisplayName("Should return plan context with different plan states")
+    void testGetPlanStateContextWithDifferentPlanStates() throws Exception {
+        PlanNotebook planNotebook = PlanNotebook.builder().build();
+        Plan plan = new Plan("Test Plan", "Test Description", "Test Outcome", new ArrayList<>());
+
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+        testMemory.attachPlanNote(planNotebook);
+
+        // Set current plan using reflection
+        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        planField.setAccessible(true);
+        planField.set(planNotebook, plan);
+
+        // Use reflection to call private method
+        java.lang.reflect.Method method =
+                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        method.setAccessible(true);
+
+        // Test with IN_PROGRESS state
+        plan.setState(PlanState.IN_PROGRESS);
+        String resultInProgress = (String) method.invoke(testMemory);
+        assertNotNull(resultInProgress, "Should return plan context for IN_PROGRESS state");
+        assertTrue(
+                resultInProgress.contains("Goal: Test Description"),
+                "Should contain goal for IN_PROGRESS state");
+        assertTrue(
+                resultInProgress.contains("Expected Outcome: Test Outcome"),
+                "Should contain expected outcome");
+
+        // Test with TODO state
+        plan.setState(PlanState.TODO);
+        String resultTodo = (String) method.invoke(testMemory);
+        assertNotNull(resultTodo, "Should return plan context for TODO state");
+        assertTrue(
+                resultTodo.contains("Goal: Test Description"),
+                "Should contain goal for TODO state");
+
+        // Test with DONE state
+        plan.setState(PlanState.DONE);
+        String resultDone = (String) method.invoke(testMemory);
+        assertNotNull(resultDone, "Should return plan context for DONE state");
+        assertTrue(
+                resultDone.contains("Goal: Test Description"),
+                "Should contain goal for DONE state");
     }
 }

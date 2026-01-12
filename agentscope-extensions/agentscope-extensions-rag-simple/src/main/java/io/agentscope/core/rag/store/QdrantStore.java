@@ -15,32 +15,36 @@
  */
 package io.agentscope.core.rag.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import io.agentscope.core.util.JsonUtils;
+import io.qdrant.client.PointIdFactory;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
+import io.qdrant.client.QueryFactory;
+import io.qdrant.client.ValueFactory;
+import io.qdrant.client.VectorFactory;
+import io.qdrant.client.VectorsFactory;
+import io.qdrant.client.WithPayloadSelectorFactory;
+import io.qdrant.client.WithVectorsSelectorFactory;
 import io.qdrant.client.grpc.Collections.Distance;
 import io.qdrant.client.grpc.Collections.VectorParams;
 import io.qdrant.client.grpc.Common.PointId;
-import io.qdrant.client.grpc.JsonWithInt.NullValue;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
+import io.qdrant.client.grpc.Points;
 import io.qdrant.client.grpc.Points.PointStruct;
+import io.qdrant.client.grpc.Points.QueryPoints;
 import io.qdrant.client.grpc.Points.ScoredPoint;
-import io.qdrant.client.grpc.Points.SearchPoints;
 import io.qdrant.client.grpc.Points.Vector;
 import io.qdrant.client.grpc.Points.Vectors;
-import io.qdrant.client.grpc.Points.WithPayloadSelector;
-import io.qdrant.client.grpc.Points.WithVectorsSelector;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -106,7 +110,6 @@ import reactor.core.scheduler.Schedulers;
 public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(QdrantStore.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String location;
     private final String collectionName;
@@ -242,7 +245,12 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
     }
 
     @Override
-    public Mono<List<Document>> search(double[] queryEmbedding, int limit, Double scoreThreshold) {
+    public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
+        String vectorName = searchDocumentDto.getVectorName();
+        double[] queryEmbedding = searchDocumentDto.getQueryEmbedding();
+        int limit = searchDocumentDto.getLimit();
+        Double scoreThreshold = searchDocumentDto.getScoreThreshold();
+
         if (queryEmbedding == null) {
             return Mono.error(new IllegalArgumentException("Query embedding cannot be null"));
         }
@@ -261,8 +269,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
                         () -> {
                             try {
                                 ensureNotClosed();
-                                return searchDocumentsInQdrant(
-                                        queryEmbedding, limit, scoreThreshold);
+                                return queryDocumentsInQdrant(
+                                        vectorName, queryEmbedding, limit, scoreThreshold);
                             } catch (Exception e) {
                                 throw new VectorStoreException(
                                         "Failed to search documents in Qdrant", e);
@@ -279,9 +287,27 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
     @Override
     public Mono<Boolean> delete(String id) {
-        // Delete is not implemented for QdrantStore (matching Python implementation)
-        return Mono.error(
-                new UnsupportedOperationException("Delete is not implemented for QdrantStore"));
+        if (id == null || id.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Document ID cannot be null or empty"));
+        }
+
+        return Mono.fromCallable(
+                        () -> {
+                            try {
+                                ensureNotClosed();
+                                return deleteDocumentsInQdrant(id);
+                            } catch (Exception e) {
+                                throw new VectorStoreException(
+                                        "Failed to delete document in Qdrant", e);
+                            }
+                        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorMap(
+                        e ->
+                                e instanceof VectorStoreException
+                                        ? e
+                                        : new VectorStoreException(
+                                                "Failed to delete document in Qdrant", e));
     }
 
     /**
@@ -394,30 +420,31 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
                                         }
 
                                         // Generate deterministic UUID point ID
-                                        String pointIdStr = generatePointId(document.getMetadata());
                                         PointId pointId =
-                                                PointId.newBuilder().setUuid(pointIdStr).build();
+                                                PointIdFactory.id(
+                                                        UUID.fromString(document.getId()));
 
                                         // Build Vector
-                                        Vector vector =
-                                                Vector.newBuilder().addAllData(floatList).build();
-                                        Vectors vectors =
-                                                Vectors.newBuilder().setVector(vector).build();
+                                        Vector vector = VectorFactory.vector(floatList);
+                                        String vectorName = document.getVectorName();
 
-                                        // Convert DocumentMetadata to payload map
-                                        Map<String, Value> payloadMap =
-                                                convertMetadataToPayload(document.getMetadata());
+                                        Vectors vectors =
+                                                vectorName == null
+                                                        ? VectorsFactory.vectors(vector)
+                                                        : VectorsFactory.namedVectors(
+                                                                Map.of(vectorName, vector));
 
                                         // Build PointStruct with vector and payload
                                         PointStruct.Builder pointBuilder =
                                                 PointStruct.newBuilder()
                                                         .setId(pointId)
                                                         .setVectors(vectors);
-                                        for (Map.Entry<String, Value> entry :
-                                                payloadMap.entrySet()) {
-                                            pointBuilder.putPayload(
-                                                    entry.getKey(), entry.getValue());
-                                        }
+
+                                        // Convert DocumentMetadata to payload map
+                                        Map<String, Value> payloadMap =
+                                                convertMetadataToPayload(document.getMetadata());
+                                        pointBuilder.putAllPayload(payloadMap);
+
                                         return pointBuilder.build();
                                     } catch (Exception e) {
                                         throw new RuntimeException(
@@ -432,32 +459,10 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
     }
 
     /**
-     * Generates a deterministic UUID point ID based on metadata.
-     *
-     * <p>This matches the Python implementation's _map_text_to_uuid function, which generates
-     * a UUID v3 from a JSON representation of doc_id, chunk_id, and content.
-     *
-     * @param metadata the document metadata
-     * @return a deterministic UUID string
-     */
-    private String generatePointId(DocumentMetadata metadata) {
-        try {
-            Map<String, Object> keyMap = new LinkedHashMap<>();
-            keyMap.put("doc_id", metadata.getDocId());
-            keyMap.put("chunk_id", metadata.getChunkId());
-            keyMap.put("content", metadata.getContent());
-
-            String jsonKey = OBJECT_MAPPER.writeValueAsString(keyMap);
-            return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate point ID", e);
-        }
-    }
-
-    /**
      * Converts DocumentMetadata to Qdrant payload map.
      *
      * <p>Serializes the ContentBlock to JSON and stores it as a Qdrant Value.
+     * Also stores all custom payload fields from the metadata.
      *
      * @param metadata the document metadata
      * @return a map of payload key-value pairs
@@ -467,26 +472,33 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
         try {
             // Serialize ContentBlock to JSON, then convert to Qdrant Value
-            String contentJson = OBJECT_MAPPER.writeValueAsString(metadata.getContent());
+            String contentJson = JsonUtils.getJsonCodec().toJson(metadata.getContent());
             @SuppressWarnings("unchecked")
-            Map<String, Object> contentMap = OBJECT_MAPPER.readValue(contentJson, Map.class);
+            Map<String, Object> contentMap =
+                    JsonUtils.getJsonCodec().fromJson(contentJson, Map.class);
             Value contentValue = convertObjectToValue(contentMap);
             payloadMap.put("content", contentValue);
         } catch (Exception e) {
             log.error("Failed to serialize ContentBlock, using fallback", e);
             // Fallback: store as string
-            Value contentValue =
-                    Value.newBuilder().setStringValue(metadata.getContentText()).build();
+            Value contentValue = ValueFactory.value(metadata.getContentText());
             payloadMap.put("content", contentValue);
         }
 
         // Store doc_id
-        Value docIdValue = Value.newBuilder().setStringValue(metadata.getDocId()).build();
+        Value docIdValue = ValueFactory.value(metadata.getDocId());
         payloadMap.put("doc_id", docIdValue);
 
         // Store chunk_id
-        Value chunkIdValue = Value.newBuilder().setStringValue(metadata.getChunkId()).build();
+        Value chunkIdValue = ValueFactory.value(metadata.getChunkId());
         payloadMap.put("chunk_id", chunkIdValue);
+
+        // Store custom payload as nested Struct (dictionary)
+        Map<String, Object> customPayload = metadata.getPayload();
+        if (customPayload != null && !customPayload.isEmpty()) {
+            Value payloadValue = convertObjectToValue(customPayload);
+            payloadMap.put("payload", payloadValue);
+        }
 
         return payloadMap;
     }
@@ -499,78 +511,99 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
      */
     private Value convertObjectToValue(Object obj) {
         if (obj == null) {
-            return Value.newBuilder().setNullValue(NullValue.NULL_VALUE).build();
+            return ValueFactory.nullValue();
         } else if (obj instanceof String) {
-            return Value.newBuilder().setStringValue((String) obj).build();
+            return ValueFactory.value((String) obj);
         } else if (obj instanceof Number) {
             if (obj instanceof Double || obj instanceof Float) {
-                return Value.newBuilder().setDoubleValue(((Number) obj).doubleValue()).build();
+                return ValueFactory.value(((Number) obj).doubleValue());
             } else {
-                return Value.newBuilder().setIntegerValue(((Number) obj).longValue()).build();
+                return ValueFactory.value(((Number) obj).longValue());
             }
         } else if (obj instanceof Boolean) {
-            return Value.newBuilder().setBoolValue((Boolean) obj).build();
+            return ValueFactory.value((Boolean) obj);
         } else if (obj instanceof Map) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> map = (Map<String, Object>) obj;
-            Struct.Builder structBuilder = Struct.newBuilder();
-            for (Map.Entry<String, Object> entry : map.entrySet()) {
-                structBuilder.putFields(entry.getKey(), convertObjectToValue(entry.getValue()));
-            }
-            return Value.newBuilder().setStructValue(structBuilder.build()).build();
+            Map<String, Value> valueMap =
+                    ((Map<String, Object>) obj)
+                            .entrySet().stream()
+                                    .collect(
+                                            Collectors.toMap(
+                                                    Map.Entry::getKey,
+                                                    entry ->
+                                                            convertObjectToValue(
+                                                                    entry.getValue())));
+            return ValueFactory.value(valueMap);
         } else if (obj instanceof List) {
             @SuppressWarnings("unchecked")
-            List<Object> list = (List<Object>) obj;
-            io.qdrant.client.grpc.JsonWithInt.ListValue.Builder listBuilder =
-                    io.qdrant.client.grpc.JsonWithInt.ListValue.newBuilder();
-            for (Object item : list) {
-                listBuilder.addValues(convertObjectToValue(item));
-            }
-            return Value.newBuilder().setListValue(listBuilder.build()).build();
+            List<Value> values =
+                    ((List<Object>) obj)
+                            .stream().map(this::convertObjectToValue).collect(Collectors.toList());
+            return ValueFactory.list(values);
         } else {
-            // Fallback to string representation
-            return Value.newBuilder().setStringValue(obj.toString()).build();
+            // For custom objects, serialize to Map first using ObjectMapper
+            try {
+                String json = JsonUtils.getJsonCodec().toJson(obj);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+                return convertObjectToValue(map);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to serialize custom object of type "
+                                + obj.getClass().getName()
+                                + ", using string representation",
+                        e);
+                return ValueFactory.value(obj.toString());
+            }
         }
     }
 
     /**
      * Searches for similar documents in Qdrant.
      *
+     * @param vectorName     the name of the vector
      * @param queryEmbedding the query embedding vector
-     * @param limit the maximum number of results
+     * @param limit          the maximum number of results
      * @param scoreThreshold optional minimum score threshold
      * @return a list of documents with scores and embeddings set
      * @throws Exception if the operation fails
      */
-    private List<Document> searchDocumentsInQdrant(
-            double[] queryEmbedding, int limit, Double scoreThreshold) throws Exception {
+    private List<Document> queryDocumentsInQdrant(
+            String vectorName, double[] queryEmbedding, int limit, Double scoreThreshold)
+            throws Exception {
         // Convert double[] to List<Float>
         List<Float> floatList = new ArrayList<>(queryEmbedding.length);
         for (double d : queryEmbedding) {
             floatList.add((float) d);
         }
 
-        // Build SearchPoints
-        SearchPoints.Builder searchBuilder =
-                SearchPoints.newBuilder()
+        // Build QueryPoints
+        QueryPoints.Builder queryBuilder =
+                QueryPoints.newBuilder()
                         .setCollectionName(collectionName)
-                        .addAllVector(floatList)
+                        .setQuery(QueryFactory.nearest(floatList))
                         .setLimit(limit)
-                        .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true).build())
+                        .setWithPayload(
+                                WithPayloadSelectorFactory.enable(
+                                        true)) // Request vectors to include payload
                         .setWithVectors(
-                                WithVectorsSelector.newBuilder()
-                                        .setEnable(true)
-                                        .build()); // Request vectors to include embeddings
+                                WithVectorsSelectorFactory.enable(
+                                        true)); // Request vectors to include embeddings
+
+        // Add vector name if specified
+        if (vectorName != null) {
+            queryBuilder.setUsing(vectorName);
+        }
 
         // Add score threshold if specified
         if (scoreThreshold != null) {
-            searchBuilder.setScoreThreshold(scoreThreshold.floatValue());
+            queryBuilder.setScoreThreshold(scoreThreshold.floatValue());
         }
 
-        SearchPoints searchPoints = searchBuilder.build();
+        QueryPoints queryPoints = queryBuilder.build();
 
         // Search
-        ListenableFuture<List<ScoredPoint>> future = qdrantClient.searchAsync(searchPoints);
+        ListenableFuture<List<ScoredPoint>> future = qdrantClient.queryAsync(queryPoints);
         List<ScoredPoint> scoredPoints = future.get();
 
         // Extract results and reconstruct documents
@@ -584,7 +617,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             double score = scoredPoint.getScore();
 
             // Reconstruct document from payload and vectors
-            Document document = reconstructDocumentFromPayload(scoredPoint, id, score);
+            Document document = reconstructDocumentFromPayload(scoredPoint, id, vectorName, score);
             if (document != null) {
                 results.add(document);
             } else {
@@ -595,6 +628,14 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         return results;
     }
 
+    private Boolean deleteDocumentsInQdrant(String id) throws Exception {
+        ListenableFuture<Points.UpdateResult> future =
+                qdrantClient.deleteAsync(
+                        collectionName, List.of(PointIdFactory.id(UUID.fromString(id))));
+        Points.UpdateResult updateResult = future.get();
+        return updateResult.getStatus() == Points.UpdateStatus.Completed;
+    }
+
     /**
      * Reconstructs a Document from Qdrant payload and vectors.
      *
@@ -603,12 +644,13 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
      * embedding=point.vector, score=point.score)
      *
      * @param scoredPoint the scored point from Qdrant
-     * @param id the document ID (UUID string)
-     * @param score the similarity score
+     * @param id          the document ID (UUID string)
+     * @param vectorName  the name of the vector
+     * @param score       the similarity score
      * @return the reconstructed Document, or null if reconstruction fails
      */
     private Document reconstructDocumentFromPayload(
-            ScoredPoint scoredPoint, String id, double score) {
+            ScoredPoint scoredPoint, String id, String vectorName, double score) {
         try {
             Map<String, Value> payload = scoredPoint.getPayloadMap();
             if (payload == null || payload.isEmpty()) {
@@ -622,12 +664,16 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             Document document = new Document(metadata);
             document.setScore(score);
 
+            if (vectorName != null) {
+                document.setVectorName(vectorName);
+            }
+
             // Extract embedding from vectors if available
             if (scoredPoint.hasVectors()) {
                 var vectorsOutput = scoredPoint.getVectors();
                 if (vectorsOutput.hasVector()) {
                     var vectorOutput = vectorsOutput.getVector();
-                    List<Float> floatList = vectorOutput.getDataList();
+                    List<Float> floatList = vectorOutput.getDense().getDataList();
                     double[] embedding = new double[floatList.size()];
                     for (int i = 0; i < floatList.size(); i++) {
                         embedding[i] = floatList.get(i);
@@ -646,7 +692,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
     /**
      * Reconstructs DocumentMetadata from Qdrant payload map.
      *
-     * <p>Deserializes the content field from JSON to ContentBlock.
+     * <p>Deserializes the content field from JSON to ContentBlock and extracts
+     * all custom payload fields.
      *
      * @param payload the payload map from Qdrant
      * @return the reconstructed DocumentMetadata
@@ -663,8 +710,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         try {
             // Convert Qdrant Value to Map, then to JSON, then to ContentBlock
             Object contentObj = convertValueToObject(contentValue);
-            String contentJson = OBJECT_MAPPER.writeValueAsString(contentObj);
-            content = OBJECT_MAPPER.readValue(contentJson, ContentBlock.class);
+            String contentJson = JsonUtils.getJsonCodec().toJson(contentObj);
+            content = JsonUtils.getJsonCodec().fromJson(contentJson, ContentBlock.class);
         } catch (Exception e) {
             log.error("Failed to deserialize ContentBlock from payload, using fallback", e);
             // Fallback: create a TextBlock from string representation
@@ -686,7 +733,24 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         }
         String chunkId = chunkIdValue.getStringValue();
 
-        return new DocumentMetadata(content, docId, chunkId);
+        // Extract custom payload from payload field (nested Struct)
+        Map<String, Object> customPayload = new HashMap<>();
+        Value payloadValue = payload.get("payload");
+        if (payloadValue != null) {
+            Object payloadObj = convertValueToObject(payloadValue);
+            if (payloadObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> payloadMap = (Map<String, Object>) payloadObj;
+                customPayload = payloadMap;
+            } else {
+                log.warn(
+                        "Expected Map type for payload but got "
+                                + (payloadObj != null ? payloadObj.getClass().getName() : "null"));
+                customPayload = new HashMap<>();
+            }
+        }
+
+        return new DocumentMetadata(content, docId, chunkId, customPayload);
     }
 
     /**
@@ -925,7 +989,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
          * Sets the Qdrant server location.
          *
          * @param location the Qdrant server location (e.g., "http://localhost:6333" or
-         *     "localhost:6334")
+         *                 "localhost:6334")
          * @return this builder
          */
         public Builder location(String location) {
@@ -1002,7 +1066,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
          *
          * @return a new QdrantStore instance
          * @throws IllegalArgumentException if required parameters are invalid
-         * @throws VectorStoreException if client initialization or collection creation fails
+         * @throws VectorStoreException     if client initialization or collection creation fails
          */
         public QdrantStore build() throws VectorStoreException {
             if (location == null || location.trim().isEmpty()) {

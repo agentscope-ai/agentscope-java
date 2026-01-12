@@ -179,6 +179,9 @@ public class OkHttpTransport implements HttpTransport {
                 okHttpRequest.method(),
                 okHttpRequest.url());
 
+        boolean isNdjson =
+                TransportConstants.STREAM_FORMAT_NDJSON.equals(
+                        request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
         return Flux.<String>create(
                         sink -> {
                             Response response = null;
@@ -220,6 +223,12 @@ public class OkHttpTransport implements HttpTransport {
 
                                     // Skip empty lines
                                     if (line.isEmpty()) {
+                                        continue;
+                                    }
+
+                                    // Handle NDJSON format
+                                    if (isNdjson) {
+                                        sink.next(line);
                                         continue;
                                     }
 

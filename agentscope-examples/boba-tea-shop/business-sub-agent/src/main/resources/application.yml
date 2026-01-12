@@ -26,6 +26,7 @@ agentscope:
   dashscope:
     api-key: ${MODEL_API_KEY:-}
     model-name: ${MODEL_NAME:qwen-max}
+    base-url: ${MODEL_BASE_URL:-}
   openai:
     api-key: ${MODEL_API_KEY:-}
     model-name: ${MODEL_NAME:gpt-5}
@@ -35,6 +36,9 @@ agentscope:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
       namespace: ${NACOS_NAMESPACE:public}
   a2a:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      namespace: ${NACOS_NAMESPACE:public}
     server:
       card:
         name: business_agent

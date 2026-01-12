@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.studio;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.util.JsonUtils;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import java.net.URISyntaxException;
@@ -49,7 +49,6 @@ public class StudioWebSocketClient {
     private static final Logger logger = LoggerFactory.getLogger(StudioWebSocketClient.class);
 
     private final StudioConfig config;
-    private final ObjectMapper objectMapper;
     private Socket socket;
     private final Map<String, Sinks.One<UserInputData>> pendingRequests = new ConcurrentHashMap<>();
 
@@ -60,7 +59,6 @@ public class StudioWebSocketClient {
      */
     public StudioWebSocketClient(StudioConfig config) {
         this.config = config;
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -71,7 +69,6 @@ public class StudioWebSocketClient {
      */
     StudioWebSocketClient(StudioConfig config, Socket socket) {
         this.config = config;
-        this.objectMapper = new ObjectMapper();
         this.socket = socket;
     }
 
@@ -249,7 +246,8 @@ public class StudioWebSocketClient {
                 // Use Jackson to deserialize to ContentBlock
                 // Jackson will automatically determine the correct ContentBlock subtype
                 // based on the @JsonSubTypes annotation
-                ContentBlock block = objectMapper.convertValue(blockMap, ContentBlock.class);
+                ContentBlock block =
+                        JsonUtils.getJsonCodec().convertValue(blockMap, ContentBlock.class);
                 blocks.add(block);
 
             } catch (Exception e) {
@@ -309,7 +307,7 @@ public class StudioWebSocketClient {
         try {
             // Convert JSONObject to JSON string, then parse with Jackson
             String jsonString = jsonObject.toString();
-            return objectMapper.readValue(jsonString, Map.class);
+            return JsonUtils.getJsonCodec().fromJson(jsonString, Map.class);
         } catch (Exception e) {
             logger.error("Failed to convert JSONObject to Map", e);
             return new HashMap<>();

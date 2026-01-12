@@ -37,7 +37,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -56,19 +56,19 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("audio")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Audio Capability E2E Tests")
 class AudioCapabilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     // Test audio URL from DashScope documentation
     private static final String TEST_AUDIO_URL =
             "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250211/tixcef/cherry.wav";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getAudioProviders")
     @DisplayName("Should process audio input from URL")
     void testAudioInputFromURL(ModelProvider provider) {
         System.out.println(
@@ -123,7 +123,7 @@ class AudioCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getAudioProviders")
     @DisplayName("Should process audio input from Base64")
     void testAudioInputFromBase64(ModelProvider provider) {
         if (provider.getClass().getName().contains("Gpt4oAudioPreviewMultiAgentOpenAI")) {
@@ -192,7 +192,7 @@ class AudioCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getAudioProviders")
     @DisplayName("Should handle mixed audio and text conversation")
     void testAudioTextMixedConversation(ModelProvider provider) throws IOException {
         System.out.println(
@@ -277,7 +277,7 @@ class AudioCapabilityE2ETest {
     void testAudioProviderAvailability() {
         System.out.println("\n=== Test: Audio Provider Availability ===");
 
-        long enabledAudioProviders = ProviderFactory.getEnabledAudioProviders().count();
+        long enabledAudioProviders = ProviderFactory.getAudioProviders().count();
 
         System.out.println("Enabled audio providers: " + enabledAudioProviders);
 

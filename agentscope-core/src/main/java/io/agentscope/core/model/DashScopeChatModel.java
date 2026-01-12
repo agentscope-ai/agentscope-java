@@ -168,7 +168,7 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "dashscope", log);
+                responseFlux, options, defaultOptions, modelName, "dashscope");
     }
 
     /**
@@ -230,14 +230,23 @@ public class DashScopeChatModel extends ChatModelBase {
 
         if (stream) {
             // Streaming mode
-            return httpClient.stream(request)
+            return httpClient.stream(
+                            request,
+                            effectiveOptions.getAdditionalHeaders(),
+                            effectiveOptions.getAdditionalBodyParams(),
+                            effectiveOptions.getAdditionalQueryParams())
                     .map(response -> formatter.parseResponse(response, start));
         } else {
             // Non-streaming mode
             return Flux.defer(
                     () -> {
                         try {
-                            DashScopeResponse response = httpClient.call(request);
+                            DashScopeResponse response =
+                                    httpClient.call(
+                                            request,
+                                            effectiveOptions.getAdditionalHeaders(),
+                                            effectiveOptions.getAdditionalBodyParams(),
+                                            effectiveOptions.getAdditionalQueryParams());
                             ChatResponse chatResponse = formatter.parseResponse(response, start);
                             return Flux.just(chatResponse);
                         } catch (Exception e) {

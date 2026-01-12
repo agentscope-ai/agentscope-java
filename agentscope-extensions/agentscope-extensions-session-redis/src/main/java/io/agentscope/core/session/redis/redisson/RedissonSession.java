@@ -15,11 +15,11 @@
  */
 package io.agentscope.core.session.redis.redisson;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -61,7 +61,6 @@ public class RedissonSession implements Session {
 
     private final RedissonClient redissonClient;
     private final String keyPrefix;
-    private final ObjectMapper objectMapper;
 
     private RedissonSession(Builder builder) {
         if (builder.keyPrefix == null || builder.keyPrefix.trim().isEmpty()) {
@@ -72,7 +71,6 @@ public class RedissonSession implements Session {
         }
         this.keyPrefix = builder.keyPrefix;
         this.redissonClient = builder.redissonClient;
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -91,7 +89,7 @@ public class RedissonSession implements Session {
         String keysKey = getKeysKey(sessionId);
 
         try {
-            String json = objectMapper.writeValueAsString(value);
+            String json = JsonUtils.getJsonCodec().toJson(value);
 
             RBucket<String> bucket = redissonClient.getBucket(redisKey, StringCodec.INSTANCE);
             bucket.set(json);
@@ -121,7 +119,7 @@ public class RedissonSession implements Session {
                 List<? extends State> newItems = values.subList(existingCount, values.size());
 
                 for (State item : newItems) {
-                    String json = objectMapper.writeValueAsString(item);
+                    String json = JsonUtils.getJsonCodec().toJson(item);
                     rList.add(json);
                 }
             }
@@ -146,7 +144,7 @@ public class RedissonSession implements Session {
             if (json == null) {
                 return Optional.empty();
             }
-            return Optional.of(objectMapper.readValue(json, type));
+            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
         } catch (Exception e) {
             throw new RuntimeException("Failed to get state: " + key, e);
         }
@@ -166,7 +164,7 @@ public class RedissonSession implements Session {
 
             List<T> result = new ArrayList<>();
             for (String json : rList) {
-                T item = objectMapper.readValue(json, itemType);
+                T item = JsonUtils.getJsonCodec().fromJson(json, itemType);
                 result.add(item);
             }
             return result;

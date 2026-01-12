@@ -28,7 +28,7 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -45,15 +45,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("specialized")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Specialized Features E2E Tests (Consolidated)")
 class SpecializedFeaturesE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledThinkingProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getThinkingProviders")
     @DisplayName("Should handle DashScope thinking mode")
     void testDashScopeThinkingMode(ModelProvider provider) {
         System.out.println(
@@ -113,7 +113,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getSmallThinkingBudgetProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getThinkingBudgetProviders")
     @DisplayName("Should handle thinking mode with different budgets")
     void testThinkingModeWithBudgets(ModelProvider provider) {
         System.out.println(
@@ -150,7 +150,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getVideoProviders")
     @DisplayName("Should handle video analysis capabilities")
     void testVideoAnalysis(ModelProvider provider) {
         System.out.println(
@@ -191,7 +191,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getMultimodalProviders")
     @DisplayName("Should handle complex multimodal reasoning")
     void testComplexMultimodalReasoning(ModelProvider provider) {
         System.out.println(
@@ -249,9 +249,9 @@ class SpecializedFeaturesE2ETest {
     void testSpecializedFeatureAvailability() {
         System.out.println("\n=== Test: Specialized Feature Availability ===");
 
-        long enabledThinkingProviders = ProviderFactory.getEnabledThinkingProviders().count();
-        long enabledVideoProviders = ProviderFactory.getEnabledVideoProviders().count();
-        long enabledMultimodalProviders = ProviderFactory.getEnabledMultimodalProviders().count();
+        long enabledThinkingProviders = ProviderFactory.getThinkingProviders().count();
+        long enabledVideoProviders = ProviderFactory.getVideoProviders().count();
+        long enabledMultimodalProviders = ProviderFactory.getMultimodalProviders().count();
 
         System.out.println("Enabled thinking providers: " + enabledThinkingProviders);
         System.out.println("Enabled video providers: " + enabledVideoProviders);
@@ -270,7 +270,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle tool and thinking mode combination")
     void testToolAndThinkingCombination(ModelProvider provider) {
         System.out.println(

@@ -25,13 +25,13 @@ AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.5'
+implementation 'io.agentscope:agentscope:1.0.6'
 ```
 
 ### 默认包含的依赖
@@ -46,22 +46,23 @@ All-in-one 包默认带以下依赖，不用额外配置：
 
 用其他模型或功能时，需要手动加对应依赖：
 
-| 功能 | 依赖 | Maven 坐标 |
-|-----|------|-----------|
-| **OpenAI 模型** | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java) | `com.openai:openai-java` |
-| **Google Gemini 模型** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai) | `com.google.genai:google-genai` |
-| **Anthropic 模型** | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java` |
-| **Mem0 长期记忆** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **ReME 长期记忆** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **百炼 RAG** | [百炼 SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229) | `com.aliyun:bailian20231229` |
-| **Qdrant RAG** | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client) | `io.qdrant:client` |
-| **Dify RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **RAGFlow RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **HayStack RAG**     | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **MySQL Session** | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j) | `com.mysql:mysql-connector-j` |
-| **Redis Session** | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis) | `redis.clients:jedis` |
-| **PDF 处理** | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox) | `org.apache.pdfbox:pdfbox` |
-| **Word 处理** | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml) | `org.apache.poi:poi-ooxml` |
+| 功能                   | 依赖                                                                                       | Maven 坐标                         |
+|----------------------|------------------------------------------------------------------------------------------|----------------------------------|
+| **OpenAI 模型**        | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
+| **Google Gemini 模型** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
+| **Anthropic 模型**     | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
+| **Mem0 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **ReME 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **百炼 RAG**           | [百炼 SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)               | `com.aliyun:bailian20231229`     |
+| **Qdrant RAG**       | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
+| **Dify RAG**         | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **RAGFlow RAG**      | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **HayStack RAG**     | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **MySQL Session**    | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j)     | `com.mysql:mysql-connector-j`    |
+| **Redis Session**    | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
+| **PDF 处理**           | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox)          | `org.apache.pdfbox:pdfbox`       |
+| **Word 处理**          | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml)             | `org.apache.poi:poi-ooxml`       |
+| **Nacos注册中心**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
 #### 示例：用 OpenAI 模型
 
@@ -136,13 +137,13 @@ All-in-one 包默认带以下依赖，不用额外配置：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.5'
+implementation 'io.agentscope:agentscope-core:1.0.6'
 ```
 
 ### 扩展模块
@@ -202,7 +203,7 @@ implementation 'io.agentscope:agentscope-core:1.0.5'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -214,7 +215,7 @@ implementation 'io.agentscope:agentscope-core:1.0.5'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -231,7 +232,7 @@ implementation 'io.agentscope:agentscope-core:1.0.5'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -241,6 +242,6 @@ implementation 'io.agentscope:agentscope-core:1.0.5'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```

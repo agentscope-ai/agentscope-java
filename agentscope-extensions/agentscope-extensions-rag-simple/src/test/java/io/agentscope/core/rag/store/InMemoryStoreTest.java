@@ -25,7 +25,10 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -77,6 +80,17 @@ class InMemoryStoreTest {
     @DisplayName("Should add documents to store")
     void testAdd() {
         Document doc = createDocument("doc-1", "Test content", new double[] {1.0, 2.0, 3.0});
+
+        StepVerifier.create(store.add(List.of(doc))).verifyComplete();
+
+        assertEquals(1, store.size());
+    }
+
+    @Test
+    @DisplayName("Should add documents to store with vector name")
+    void testAddWithVectorName() {
+        Document doc = createDocument("doc-1", "Test content", new double[] {1.0, 2.0, 3.0});
+        doc.setVectorName("test-vector");
 
         StepVerifier.create(store.add(List.of(doc))).verifyComplete();
 
@@ -168,7 +182,9 @@ class InMemoryStoreTest {
         // Search for vector similar to doc1's embedding
         double[] query = {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 2, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(2).build()))
                 .assertNext(
                         results -> {
                             assertEquals(2, results.size());
@@ -184,7 +200,9 @@ class InMemoryStoreTest {
     void testSearchEmptyStore() {
         double[] query = {1.0, 2.0, 3.0};
 
-        StepVerifier.create(store.search(query, 5, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(5).build()))
                 .assertNext(results -> assertTrue(results.isEmpty()))
                 .verifyComplete();
     }
@@ -201,7 +219,9 @@ class InMemoryStoreTest {
 
         double[] query = {0.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 3, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(3).build()))
                 .assertNext(results -> assertEquals(3, results.size()))
                 .verifyComplete();
     }
@@ -220,7 +240,9 @@ class InMemoryStoreTest {
 
         double[] query = {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 3, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(3).build()))
                 .assertNext(
                         results -> {
                             assertEquals(3, results.size());
@@ -243,7 +265,13 @@ class InMemoryStoreTest {
         double[] query = {1.0, 0.0, 0.0};
 
         // Set high threshold to filter out less similar documents
-        StepVerifier.create(store.search(query, 10, 0.9))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.9)
+                                        .build()))
                 .assertNext(
                         results -> {
                             // Only doc1 should pass the threshold (similarity = 1.0)
@@ -256,7 +284,9 @@ class InMemoryStoreTest {
     @Test
     @DisplayName("Should throw error when searching with null query")
     void testSearchNullQuery() {
-        StepVerifier.create(store.search(null, 5, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(null).limit(5).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -266,13 +296,49 @@ class InMemoryStoreTest {
     void testSearchInvalidLimit() {
         double[] query = {1.0, 2.0, 3.0};
 
-        StepVerifier.create(store.search(query, 0, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(0).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
-        StepVerifier.create(store.search(query, -1, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(-1)
+                                        .build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
+    }
+
+    @Test
+    @DisplayName("Should search for similar vectors filtered by vector name")
+    void testSearchWithVectorName() {
+        // Add some documents with different embeddings
+        Document doc1 = createDocument("doc-1", "Content", new double[] {1.0, 0.0, 0.0});
+        doc1.setVectorName("test-vector");
+        Document doc2 = createDocument("doc-2", "Content", new double[] {1.0, 0.0, 0.0});
+
+        store.add(List.of(doc1, doc2)).block();
+
+        double[] query = {1.0, 0.0, 0.0};
+
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .vectorName("test-vector")
+                                        .limit(3)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertEquals(1, results.size());
+                            // First result should be doc-1 (identical, similarity = 1.0)
+                            assertEquals(doc1.getId(), results.get(0).getId());
+                            assertEquals(1.0, results.get(0).getScore(), 1e-9);
+                        })
+                .verifyComplete();
     }
 
     @Test
@@ -371,13 +437,110 @@ class InMemoryStoreTest {
 
         // Search should still use the original values (defensive copy was made)
         double[] query = {1.0, 2.0, 3.0};
-        List<Document> results = store.search(query, 1, null).block();
+        List<Document> results =
+                store.search(SearchDocumentDto.builder().queryEmbedding(query).limit(1).build())
+                        .block();
 
         assertNotNull(results);
         assertEquals(1, results.size());
         // The stored vector should not be affected by the modification
         // We verify this by checking the search result is still similar to the original query
         assertTrue(results.get(0).getScore() > 0.9);
+    }
+
+    @Test
+    @DisplayName("Should store and retrieve document with custom payload")
+    void testDocumentWithPayload() {
+        // Create document with custom payload
+        TextBlock content = TextBlock.builder().text("Test document content").build();
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "report.pdf");
+        payload.put("department", "Engineering");
+        payload.put("author", "John Doe");
+        payload.put("priority", 1);
+        payload.put("tags", List.of("urgent", "quarterly"));
+
+        // Create custom object
+        CustomObject customObject = new CustomObject();
+        customObject.setAuthor("Alice");
+        customObject.setVersion(2);
+        customObject.setActive(true);
+        customObject.setTags(List.of("important", "reviewed"));
+        payload.put("custom", customObject);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-payload-test", "0", payload);
+        Document doc = new Document(metadata);
+        doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
+
+        // Add document
+        StepVerifier.create(store.add(List.of(doc))).verifyComplete();
+
+        // Search for the document
+        double[] query = new double[] {1.0, 0.0, 0.0};
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertNotNull(results, "Search results should not be null");
+                            assertEquals(1, results.size(), "Should find exactly one document");
+
+                            Document retrievedDoc = results.get(0);
+                            assertNotNull(retrievedDoc, "Retrieved document should not be null");
+
+                            // Verify payload fields are correctly loaded
+                            assertEquals(
+                                    "report.pdf",
+                                    retrievedDoc.getPayloadValue("filename"),
+                                    "Filename should match");
+                            assertEquals(
+                                    "Engineering",
+                                    retrievedDoc.getPayloadValue("department"),
+                                    "Department should match");
+                            assertEquals(
+                                    "John Doe",
+                                    retrievedDoc.getPayloadValue("author"),
+                                    "Author should match");
+                            assertEquals(
+                                    1,
+                                    retrievedDoc.getPayloadValue("priority"),
+                                    "Priority should match");
+
+                            // Verify tags list
+                            Object tagsObj = retrievedDoc.getPayloadValue("tags");
+                            assertNotNull(tagsObj, "Tags should not be null");
+                            assertTrue(tagsObj instanceof List, "Tags should be a List");
+                            @SuppressWarnings("unchecked")
+                            List<String> tags = (List<String>) tagsObj;
+                            assertEquals(2, tags.size(), "Should have 2 tags");
+                            assertTrue(tags.contains("urgent"), "Should contain 'urgent' tag");
+                            assertTrue(
+                                    tags.contains("quarterly"), "Should contain 'quarterly' tag");
+
+                            // Verify payload key existence
+                            assertTrue(
+                                    retrievedDoc.hasPayloadKey("filename"),
+                                    "Should have filename key");
+                            assertFalse(
+                                    retrievedDoc.hasPayloadKey("nonexistent"),
+                                    "Should not have nonexistent key");
+
+                            // Verify content is preserved
+                            assertEquals(
+                                    "Test document content",
+                                    retrievedDoc.getMetadata().getContentText(),
+                                    "Content should match");
+
+                            // Verify custom object using getPayloadValueAs
+                            CustomObject retrievedCustom =
+                                    retrievedDoc.getPayloadValueAs("custom", CustomObject.class);
+                            assertNotNull(retrievedCustom, "Custom object should not be null");
+                        })
+                .verifyComplete();
     }
 
     /**
@@ -391,5 +554,47 @@ class InMemoryStoreTest {
             doc.setEmbedding(embedding);
         }
         return doc;
+    }
+
+    /**
+     * Custom object class for testing payload serialization
+     */
+    static class CustomObject {
+        private String author;
+        private int version;
+        private boolean active;
+        private List<String> tags;
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public void setAuthor(String author) {
+            this.author = author;
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public void setVersion(int version) {
+            this.version = version;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
+
+        public void setActive(boolean active) {
+            this.active = active;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+
+        public void setTags(List<String> tags) {
+            this.tags = tags;
+        }
     }
 }

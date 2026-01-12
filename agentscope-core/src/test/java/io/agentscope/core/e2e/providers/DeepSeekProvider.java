@@ -16,54 +16,48 @@
 package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
-import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.DeepSeekFormatter;
+import io.agentscope.core.formatter.openai.DeepSeekMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Provider for DeepSeek API - OpenAI compatible.
+ *
+ * <p>Supports DeepSeek Chat (V3) and DeepSeek R1 (Reasoner) models.
  */
-public class DeepSeekProvider implements ModelProvider {
+@ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
+public class DeepSeekProvider extends BaseModelProvider {
 
+    private static final String API_KEY_ENV = "DEEPSEEK_API_KEY";
     private static final String DEEPSEEK_BASE_URL = "https://api.deepseek.com";
-    private final String modelName;
-    private final boolean multiAgentFormatter;
 
     public DeepSeekProvider(String modelName, boolean multiAgentFormatter) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getProperty("DEEPSEEK_API_KEY");
-        }
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("DEEPSEEK_API_KEY environment variable is required");
-        }
-
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
         OpenAIChatModel model =
                 OpenAIChatModel.builder()
                         .baseUrl(DEEPSEEK_BASE_URL)
                         .apiKey(apiKey)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .stream(true)
                         .formatter(
-                                multiAgentFormatter
-                                        ? new OpenAIMultiAgentFormatter()
-                                        : new OpenAIChatFormatter())
+                                isMultiAgentFormatter()
+                                        ? new DeepSeekMultiAgentFormatter()
+                                        : new DeepSeekFormatter())
                         .build();
 
         return ReActAgent.builder()
                 .name(name)
                 .model(model)
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -72,27 +66,20 @@ public class DeepSeekProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        return false;
-    }
-
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getProperty("DEEPSEEK_API_KEY");
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
         }
-        return apiKey != null && !apiKey.isEmpty();
+        return caps;
     }
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-    /**
-     * DeepSeek Chat (V3).
-     */
+    /** DeepSeek Chat (V3). */
+    @ModelCapabilities({ModelCapability.BASIC, ModelCapability.TOOL_CALLING})
     public static class DeepSeekChat extends DeepSeekProvider {
         public DeepSeekChat() {
             super("deepseek-chat", false);
@@ -104,9 +91,12 @@ public class DeepSeekProvider implements ModelProvider {
         }
     }
 
-    /**
-     * DeepSeek Chat (V3) with Multi-Agent Formatter.
-     */
+    /** DeepSeek Chat (V3) with Multi-Agent Formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class DeepSeekChatMultiAgent extends DeepSeekProvider {
         public DeepSeekChatMultiAgent() {
             super("deepseek-chat", true);
@@ -115,44 +105,6 @@ public class DeepSeekProvider implements ModelProvider {
         @Override
         public String getProviderName() {
             return "DeepSeek Chat (V3) (MultiAgent)";
-        }
-    }
-
-    /**
-     * DeepSeek R1 (Reasoner).
-     */
-    public static class DeepSeekR1 extends DeepSeekProvider {
-        public DeepSeekR1() {
-            super("deepseek-reasoner", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "DeepSeek R1";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
-        }
-    }
-
-    /**
-     * DeepSeek R1 (Reasoner) with Multi-Agent Formatter.
-     */
-    public static class DeepSeekR1MultiAgent extends DeepSeekProvider {
-        public DeepSeekR1MultiAgent() {
-            super("deepseek-reasoner", true);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "DeepSeek R1 (MultiAgent)";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
         }
     }
 }

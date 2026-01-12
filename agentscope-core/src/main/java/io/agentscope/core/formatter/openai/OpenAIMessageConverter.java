@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -34,6 +33,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -50,7 +50,6 @@ public class OpenAIMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMessageConverter.class);
 
-    private final ObjectMapper objectMapper;
     private final Function<Msg, String> textExtractor;
     private final Function<List<ContentBlock>, String> toolResultConverter;
 
@@ -63,7 +62,6 @@ public class OpenAIMessageConverter {
     public OpenAIMessageConverter(
             Function<Msg, String> textExtractor,
             Function<List<ContentBlock>, String> toolResultConverter) {
-        this.objectMapper = new ObjectMapper();
         this.textExtractor = textExtractor;
         this.toolResultConverter = toolResultConverter;
     }
@@ -223,8 +221,23 @@ public class OpenAIMessageConverter {
                 }
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for OpenAI");
-            } else if (block instanceof VideoBlock) {
-                log.warn("VideoBlock is not supported by OpenAI ChatCompletion API");
+            } else if (block instanceof VideoBlock vb) {
+                try {
+                    Source source = vb.getSource();
+                    if (source == null) {
+                        log.warn("VideoBlock has null source, skipping");
+                        continue;
+                    }
+                    String videoUrl = convertVideoSourceToUrl(source);
+                    contentParts.add(OpenAIContentPart.videoUrl(videoUrl));
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process VideoBlock: {}", errorMsg);
+                    contentParts.add(
+                            OpenAIContentPart.text(
+                                    "[Video - processing failed: " + errorMsg + "]"));
+                }
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -255,6 +268,24 @@ public class OpenAIMessageConverter {
             String thinking = thinkingBlock.getThinking();
             if (thinking != null && !thinking.isEmpty()) {
                 builder.reasoningContent(thinking);
+            }
+
+            // Restore reasoning_details from ThinkingBlock metadata
+            // This is needed for OpenRouter/Gemini models that use reasoning tokens
+            if (thinkingBlock.getMetadata() != null) {
+                Object detailsObj =
+                        thinkingBlock.getMetadata().get(ThinkingBlock.METADATA_REASONING_DETAILS);
+                if (detailsObj instanceof List<?> list && !list.isEmpty()) {
+                    List<OpenAIReasoningDetail> details = new ArrayList<>();
+                    for (Object item : list) {
+                        if (item instanceof OpenAIReasoningDetail rd) {
+                            details.add(rd);
+                        }
+                    }
+                    if (!details.isEmpty()) {
+                        builder.reasoningDetails(details);
+                    }
+                }
             }
         }
 
@@ -291,14 +322,22 @@ public class OpenAIMessageConverter {
                     continue;
                 }
 
+                // Prioritize using content field (raw arguments string), fallback to input map
+                // serialization
                 String argsJson;
-                try {
-                    argsJson = objectMapper.writeValueAsString(toolUse.getInput());
-                } catch (Exception e) {
-                    String errorMsg =
-                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    log.warn("Failed to serialize tool call arguments: {}", errorMsg);
-                    argsJson = "{}";
+                if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
+                    argsJson = toolUse.getContent();
+                } else {
+                    try {
+                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
+                    } catch (Exception e) {
+                        String errorMsg =
+                                e.getMessage() != null
+                                        ? e.getMessage()
+                                        : e.getClass().getSimpleName();
+                        log.warn("Failed to serialize tool call arguments: {}", errorMsg);
+                        argsJson = "{}";
+                    }
                 }
 
                 // Add thought signature if present in metadata (required for Gemini)
@@ -407,6 +446,17 @@ public class OpenAIMessageConverter {
      */
     private String convertImageSourceToUrl(Source source) {
         return OpenAIConverterUtils.convertImageSourceToUrl(source);
+    }
+
+    /**
+     * Convert video Source to URL string for OpenAI API.
+     *
+     * @param source The Source to convert
+     * @return URL string (either a URL or base64 data URI)
+     * @throws IllegalArgumentException if source is null or of unknown type
+     */
+    private String convertVideoSourceToUrl(Source source) {
+        return OpenAIConverterUtils.convertVideoSourceToUrl(source);
     }
 
     /**

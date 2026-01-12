@@ -23,13 +23,13 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.5'
+implementation 'io.agentscope:agentscope:1.0.6'
 ```
 
 ### Included Dependencies
@@ -44,22 +44,23 @@ The all-in-one package includes these dependencies by default:
 
 When using other models or features, add the corresponding dependencies:
 
-| Feature | Dependency | Maven Coordinates |
-|---------|------------|-------------------|
-| **OpenAI Models** | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java) | `com.openai:openai-java` |
-| **Google Gemini Models** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai) | `com.google.genai:google-genai` |
-| **Anthropic Models** | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java` |
-| **Mem0 Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **Bailian RAG** | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229) | `com.aliyun:bailian20231229` |
-| **Qdrant RAG** | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client) | `io.qdrant:client` |
-| **Dify RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **RAGFlow RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **HayStack RAG**     | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
-| **MySQL Session** | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j) | `com.mysql:mysql-connector-j` |
-| **Redis Session** | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis) | `redis.clients:jedis` |
-| **PDF Processing** | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox) | `org.apache.pdfbox:pdfbox` |
-| **Word Processing** | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml) | `org.apache.poi:poi-ooxml` |
+| Feature                   | Dependency                                                                               | Maven Coordinates                |
+|---------------------------|------------------------------------------------------------------------------------------|----------------------------------|
+| **OpenAI Models**         | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
+| **Google Gemini Models**  | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
+| **Anthropic Models**      | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
+| **Mem0 Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **Bailian RAG**           | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)          | `com.aliyun:bailian20231229`     |
+| **Qdrant RAG**            | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
+| **Dify RAG**              | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **RAGFlow RAG**           | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **HayStack RAG**          | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **MySQL Session**         | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j)     | `com.mysql:mysql-connector-j`    |
+| **Redis Session**         | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
+| **PDF Processing**        | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox)          | `org.apache.pdfbox:pdfbox`       |
+| **Word Processing**       | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml)             | `org.apache.poi:poi-ooxml`       |
+| **Nacos Registry**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
 #### Example: Using OpenAI Models
 
@@ -132,13 +133,13 @@ For fine-grained dependency control, use `agentscope-core` with extension module
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.5'
+implementation 'io.agentscope:agentscope-core:1.0.6'
 ```
 
 ### Extension Modules
@@ -198,7 +199,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -210,7 +211,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -227,7 +228,7 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
@@ -237,6 +238,6 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```

@@ -129,7 +129,7 @@ public class A2aAgentTest {
         Msg result = agent.call(Msg.builder().textContent("test").build()).block();
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
-        assertEquals(1, agent.getMemory().getMessages().size());
+        assertEquals(2, agent.getMemory().getMessages().size());
     }
 
     @Test
@@ -424,7 +424,7 @@ public class A2aAgentTest {
         Msg result = agent.call(Msg.builder().textContent("test").build()).block();
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
-        assertEquals(2, agent.getMemory().getMessages().size());
+        assertEquals(3, agent.getMemory().getMessages().size());
     }
 
     private Answer<Void> mockSuccessMessage() {

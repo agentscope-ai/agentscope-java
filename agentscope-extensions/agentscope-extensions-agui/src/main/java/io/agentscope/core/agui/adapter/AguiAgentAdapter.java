@@ -15,12 +15,10 @@
  */
 package io.agentscope.core.agui.adapter;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.agui.AguiObjectMapper;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -29,6 +27,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -127,7 +127,7 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING && !event.isLast()) {
+        if (type == EventType.REASONING) {
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -143,13 +143,13 @@ public class AguiAgentAdapter {
                             state.startMessage(messageId);
                         }
 
-                        // In incremental mode, text is already the delta
-                        events.add(
-                                new AguiEvent.TextMessageContent(
-                                        state.threadId, state.runId, messageId, text));
-
-                        // End message if this is the last event
-                        if (event.isLast()) {
+                        if (!event.isLast()) {
+                            // In incremental mode, text is already the delta
+                            events.add(
+                                    new AguiEvent.TextMessageContent(
+                                            state.threadId, state.runId, messageId, text));
+                        } else {
+                            // End message if this is the last event
                             events.add(
                                     new AguiEvent.TextMessageEnd(
                                             state.threadId, state.runId, messageId));
@@ -274,8 +274,8 @@ public class AguiAgentAdapter {
             return "{}";
         }
         try {
-            return AguiObjectMapper.get().writeValueAsString(input);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(input);
+        } catch (JsonException e) {
             return "{}";
         }
     }

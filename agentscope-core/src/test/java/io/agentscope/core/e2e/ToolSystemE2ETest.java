@@ -37,7 +37,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,17 +54,17 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("tools")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Tool System E2E Tests (Consolidated)")
 class ToolSystemE2ETest {
 
     // Extended timeout for multi-tool tests: multiple sequential tool calls + streaming can take
     // time
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle multiple tool calls in sequence")
     void testMultipleToolCalls(ModelProvider provider) {
         System.out.println(
@@ -97,7 +97,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should handle complex calculation chains")
     void testComplexCalculationChains(ModelProvider provider) {
         System.out.println(
@@ -141,7 +141,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getMultimodalToolProviders")
     @DisplayName("Should handle tool returning image URLs")
     void testToolReturningImageURL(ModelProvider provider) {
         System.out.println(
@@ -177,7 +177,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getMultimodalToolProviders")
     @DisplayName("Should handle tool returning mixed multimodal content")
     void testToolReturningMixedMultimodalContent(ModelProvider provider) {
         System.out.println(
@@ -217,7 +217,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
     @DisplayName("Should verify tool call memory structure")
     void testToolCallMemoryStructure(ModelProvider provider) {
         assumeTrue(
@@ -286,9 +286,8 @@ class ToolSystemE2ETest {
     void testToolProviderAvailability() {
         System.out.println("\n=== Test: Tool Provider Availability ===");
 
-        long enabledToolProviders = ProviderFactory.getEnabledToolProviders().count();
-        long enabledMultimodalToolProviders =
-                ProviderFactory.getEnabledMultimodalToolProviders().count();
+        long enabledToolProviders = ProviderFactory.getToolProviders().count();
+        long enabledMultimodalToolProviders = ProviderFactory.getMultimodalToolProviders().count();
 
         System.out.println("Enabled tool providers: " + enabledToolProviders);
         System.out.println("Enabled multimodal tool providers: " + enabledMultimodalToolProviders);

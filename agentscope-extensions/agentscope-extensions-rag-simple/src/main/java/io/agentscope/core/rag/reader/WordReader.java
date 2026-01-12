@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.rag.reader;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -24,6 +22,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.ReaderException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -66,8 +66,6 @@ import reactor.core.publisher.Mono;
  * }</pre>
  */
 public class WordReader extends AbstractChunkingReader {
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final boolean includeImage;
     private final boolean separateTable;
@@ -400,9 +398,9 @@ public class WordReader extends AbstractChunkingReader {
 
         for (List<String> row : tableData) {
             try {
-                json.append(OBJECT_MAPPER.writeValueAsString(row));
+                json.append(JsonUtils.getJsonCodec().toJson(row));
                 json.append("\n");
-            } catch (JsonProcessingException e) {
+            } catch (JsonException e) {
                 // Fallback: manual JSON construction
                 json.append("[");
                 for (int i = 0; i < row.size(); i++) {

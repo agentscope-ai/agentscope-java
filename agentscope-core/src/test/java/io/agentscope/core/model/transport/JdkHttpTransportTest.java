@@ -807,4 +807,244 @@ class JdkHttpTransportTest {
         RecordedRequest recorded = mockServer.takeRequest();
         assertEquals("GET", recorded.getMethod());
     }
+
+    @Test
+    void testIgnoreSslConfiguration() {
+        HttpTransportConfig config = HttpTransportConfig.builder().ignoreSsl(true).build();
+
+        JdkHttpTransport sslIgnoreTransport = new JdkHttpTransport(config);
+
+        try {
+            assertNotNull(sslIgnoreTransport.getClient());
+            assertTrue(sslIgnoreTransport.getConfig().isIgnoreSsl());
+        } finally {
+            sslIgnoreTransport.close();
+        }
+    }
+
+    @Test
+    void testIgnoreSslDefaultFalse() {
+        HttpTransportConfig config = HttpTransportConfig.defaults();
+
+        assertFalse(config.isIgnoreSsl());
+
+        JdkHttpTransport defaultTransport = new JdkHttpTransport(config);
+        try {
+            assertFalse(defaultTransport.getConfig().isIgnoreSsl());
+        } finally {
+            defaultTransport.close();
+        }
+    }
+
+    @Test
+    void testStreamErrorResponseContainsFullBody() {
+        String errorBody = "{\"error\": \"detailed error message\", \"code\": \"ERR001\"}";
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setBody(errorBody)
+                        .setHeader("Content-Type", "application/json"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-error-body").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 400
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("detailed error message")
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("ERR001"))
+                .verify();
+    }
+
+    @Test
+    void testStreamErrorBodyForDifferentStatusCodes() {
+        // Test 403 Forbidden
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(403)
+                        .setBody("{\"error\": \"forbidden\", \"reason\": \"access denied\"}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-403").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 403
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("forbidden"))
+                .verify();
+
+        // Test 502 Bad Gateway
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(502)
+                        .setBody("{\"error\": \"bad gateway\", \"upstream\": \"timeout\"}"));
+
+        HttpRequest request2 =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-502").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request2))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 502
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("bad gateway"))
+                .verify();
+
+        // Test 503 Service Unavailable
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(503)
+                        .setBody("{\"error\": \"service unavailable\"}"));
+
+        HttpRequest request3 =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-503").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request3))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 503
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("service unavailable"))
+                .verify();
+    }
+
+    @Test
+    void testStreamErrorResponseWithEmptyBody() {
+        mockServer.enqueue(new MockResponse().setResponseCode(500).setBody(""));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-empty-error").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 500)
+                .verify();
+    }
+
+    @Test
+    void testStreamNdJsonFormat() {
+        // NDJSON response - each line is a separate JSON object
+        String ndJsonResponse =
+                "{\"id\":1,\"text\":\"Hello\"}\n"
+                        + "{\"id\":2,\"text\":\"World\"}\n"
+                        + "{\"id\":3,\"text\":\"NDJSON\"}\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(ndJsonResponse)
+                        .setHeader("Content-Type", "application/x-ndjson"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-ndjson").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .header(
+                                TransportConstants.STREAM_FORMAT_HEADER,
+                                TransportConstants.STREAM_FORMAT_NDJSON)
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":1,\"text\":\"Hello\"}")
+                .expectNext("{\"id\":2,\"text\":\"World\"}")
+                .expectNext("{\"id\":3,\"text\":\"NDJSON\"}")
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamNdJsonWithEmptyLines() {
+        // NDJSON response with empty lines
+        String ndJsonResponse =
+                "{\"id\":1,\"text\":\"Hello\"}\n\n" + "{\"id\":2,\"text\":\"World\"}\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(ndJsonResponse)
+                        .setHeader("Content-Type", "application/x-ndjson"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-ndjson-empty").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .header(
+                                TransportConstants.STREAM_FORMAT_HEADER,
+                                TransportConstants.STREAM_FORMAT_NDJSON)
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":1,\"text\":\"Hello\"}")
+                .expectNext("{\"id\":2,\"text\":\"World\"}")
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamNdJsonFormatWithoutHeaderDefaultsToSse() {
+        // This should be processed as SSE since no NDJSON header is provided
+        String sseResponse =
+                "data: {\"id\":\"1\",\"text\":\"Hello\"}\n\n"
+                        + "data: {\"id\":\"2\",\"text\":\"World\"}\n\n"
+                        + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-sse-default").toString())
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        // No STREAM_FORMAT_HEADER - should default to SSE
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNext("{\"id\":\"1\",\"text\":\"Hello\"}")
+                .expectNext(
+                        "{\"id\":\"2\",\"text\":\"World\"}") // This is sent before [DONE] marker
+                .verifyComplete();
+    }
 }

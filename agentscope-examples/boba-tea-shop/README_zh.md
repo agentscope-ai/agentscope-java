@@ -98,7 +98,7 @@ Boba Tea Shop 是一个基于 **AgentScope Java** 框架构建的多智能体系
 | 扩展 | 说明 |
 |------|------|
 | `agentscope-core` | 核心框架，包含 ReActAgent 等 |
-| `agentscope-extensions-a2a-nacos` | A2A 协议 Nacos 服务发现 |
+| `agentscope-extensions-nacos-a2a` | A2A 协议 Nacos 服务发现 |
 | `agentscope-extensions-mcp-nacos` | MCP 协议 Nacos 服务发现 |
 | `agentscope-extensions-mem0` | Mem0 记忆服务集成 |
 | `agentscope-extensions-session-mysql` | MySQL 会话持久化 |

@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiToolCall;
@@ -322,8 +321,7 @@ class AguiMessageConverterTest {
 
     @Test
     void testCustomObjectMapper() {
-        ObjectMapper customMapper = new ObjectMapper();
-        AguiMessageConverter customConverter = new AguiMessageConverter(customMapper);
+        AguiMessageConverter customConverter = new AguiMessageConverter();
 
         AguiMessage aguiMsg = AguiMessage.userMessage("msg-1", "Test");
         Msg msg = customConverter.toMsg(aguiMsg);

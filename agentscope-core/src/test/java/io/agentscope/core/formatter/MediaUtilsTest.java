@@ -96,12 +96,29 @@ class MediaUtilsTest {
     void testFileToBase64UnReadable() throws IOException {
         Path testFile = tempDir.resolve("unreadable.txt");
         Files.write(testFile, "content".getBytes());
-        testFile.toFile().setReadable(false);
 
-        assertThrows(
-                IOException.class,
-                () -> MediaUtils.fileToBase64(testFile.toString()),
-                "Should throw IOException for unreadable file");
+        // Attempt to make the file unreadable and check if it worked
+        boolean setReadableResult = testFile.toFile().setReadable(false);
+        boolean isActuallyUnreadable = !Files.isReadable(testFile);
+
+        if (setReadableResult && isActuallyUnreadable) {
+            // The file was successfully made unreadable, so MediaUtils should throw an exception
+            assertThrows(
+                    IOException.class,
+                    () -> MediaUtils.fileToBase64(testFile.toString()),
+                    "Should throw IOException for unreadable file");
+        } else {
+            // On systems where setReadable() doesn't work (like some Windows configurations),
+            // the file remains readable, so the method should work normally
+            // In this case, we're essentially testing the normal operation
+            String result = MediaUtils.fileToBase64(testFile.toString());
+            assertNotNull(
+                    result,
+                    "Should return base64 string for readable file when setReadable doesn't work");
+        }
+
+        // Restore file permissions to ensure it's readable again
+        testFile.toFile().setReadable(true);
     }
 
     @Test

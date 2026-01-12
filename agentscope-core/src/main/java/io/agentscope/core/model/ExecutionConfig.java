@@ -16,7 +16,12 @@
 
 package io.agentscope.core.model;
 
+import io.agentscope.core.model.exception.BadRequestException;
+import io.agentscope.core.model.exception.RateLimitException;
+import io.agentscope.core.model.transport.HttpTransportException;
+import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
 /**
@@ -68,25 +73,89 @@ public class ExecutionConfig {
     private final Predicate<Throwable> retryOn;
 
     /**
+     * Predicate that determines if an error should be retried.
+     *
+     * <p>Retryable errors include:
+     * <ul>
+     *   <li>HTTP 429 (Rate Limiting)</li>
+     *   <li>HTTP 5xx (Server errors)</li>
+     *   <li>Timeout errors</li>
+     *   <li>Network/IO errors</li>
+     * </ul>
+     *
+     * <p>Non-retryable errors include:
+     * <ul>
+     *   <li>HTTP 400 (Bad Request) - parameter validation failures</li>
+     *   <li>HTTP 401/403 (Authentication/Authorization errors)</li>
+     *   <li>Other 4xx client errors</li>
+     * </ul>
+     */
+    public static final Predicate<Throwable> RETRYABLE_ERRORS = ExecutionConfig::isRetryableError;
+
+    /**
+     * Checks if the given error is retryable.
+     *
+     * @param error the error to check
+     * @return true if the error should be retried
+     */
+    private static boolean isRetryableError(Throwable error) {
+        // BadRequestException (400) should not be retried - it's a permanent failure
+        if (error instanceof BadRequestException) {
+            return false;
+        }
+
+        // For HttpTransportException, use the built-in isRetryable() method
+        // which returns true for 429 (rate limiting) and 5xx (server errors)
+        if (error instanceof HttpTransportException hte) {
+            return hte.isRetryable();
+        }
+        if (error instanceof RateLimitException) {
+            return true;
+        }
+
+        // Timeout errors are retryable
+        if (error instanceof TimeoutException) {
+            return true;
+        }
+
+        // Network/IO errors are retryable
+        if (error instanceof IOException) {
+            return true;
+        }
+
+        // Check if cause is retryable (for wrapped exceptions)
+        Throwable cause = error.getCause();
+        if (cause != null && cause != error) {
+            return isRetryableError(cause);
+        }
+
+        // Unknown errors - don't retry by default to avoid hiding issues
+        return false;
+    }
+
+    /**
      * Standard defaults for model API calls.
      *
      * <ul>
      *   <li>Timeout: 5 minutes
      *   <li>Max attempts: 3 (initial + 2 retries)
-     *   <li>Initial backoff: 1 second
-     *   <li>Max backoff: 10 seconds
+     *   <li>Initial backoff: 2 seconds
+     *   <li>Max backoff: 30 seconds
      *   <li>Backoff multiplier: 2.0 (exponential)
-     *   <li>Retry on: all errors
+     *   <li>Retry on: retryable errors only (429, 5xx, timeout, network errors)
      * </ul>
+     *
+     * <p>Note: The backoff times are set higher (2s initial, 30s max) to better handle
+     * rate limiting (HTTP 429) from model providers during high-concurrency scenarios.
      */
     public static final ExecutionConfig MODEL_DEFAULTS =
             builder()
                     .timeout(Duration.ofMinutes(5))
                     .maxAttempts(3)
-                    .initialBackoff(Duration.ofSeconds(1))
-                    .maxBackoff(Duration.ofSeconds(10))
+                    .initialBackoff(Duration.ofSeconds(2))
+                    .maxBackoff(Duration.ofSeconds(30))
                     .backoffMultiplier(2.0)
-                    .retryOn(error -> true)
+                    .retryOn(RETRYABLE_ERRORS)
                     .build();
 
     /**

@@ -15,8 +15,7 @@
  */
 package io.agentscope.core.rag.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,12 +33,11 @@ import java.util.UUID;
  */
 public class Document {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private final String id;
     private final DocumentMetadata metadata;
     private double[] embedding;
     private Double score;
+    private String vectorName;
 
     /**
      * Creates a new Document instance.
@@ -112,6 +110,95 @@ public class Document {
     }
 
     /**
+     * Gets the custom payload from document metadata.
+     *
+     * <p>This is a convenience method that delegates to the metadata's getPayload().
+     * The payload contains business-specific fields such as filename, department,
+     * author, tags, and other custom metadata.
+     *
+     * @return an unmodifiable map of custom metadata fields (never null)
+     */
+    public Map<String, Object> getPayload() {
+        return metadata.getPayload();
+    }
+
+    /**
+     * Gets a specific payload value by key.
+     *
+     * <p>This is a convenience method that delegates to the metadata's getPayloadValue().
+     * Use this to retrieve individual payload values without accessing the entire map.
+     *
+     * @param key the payload key
+     * @return the payload value, or null if the key doesn't exist
+     * @throws NullPointerException if key is null
+     */
+    public Object getPayloadValue(String key) {
+        return metadata.getPayloadValue(key);
+    }
+
+    /**
+     * Gets a specific payload value by key and converts it to the specified type.
+     *
+     * <p>This method is useful when the payload contains complex objects (like custom POJOs)
+     * that were serialized to Map during storage. It uses Jackson's ObjectMapper to convert
+     * the Map back to the original type.
+     *
+     * @param <T> the target type
+     * @param key the payload key
+     * @param targetClass the target class to convert to
+     * @return the payload value converted to the specified type, or null if the key doesn't exist
+     * @throws IllegalArgumentException if the value cannot be converted to the target type
+     * @throws NullPointerException if key or clazz is null
+     */
+    public <T> T getPayloadValueAs(String key, Class<T> targetClass) {
+        Object value = getPayloadValue(key);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return JsonUtils.getJsonCodec().convertValue(value, targetClass);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException(
+                    String.format(
+                            "Failed to convert payload value for key '%s' to type %s",
+                            key, targetClass.getName()),
+                    e);
+        }
+    }
+
+    /**
+     * Checks if the document payload contains a specific key.
+     *
+     * <p>This is a convenience method that delegates to the metadata's hasPayloadKey().
+     * Use this to safely check for the existence of a payload field before retrieving it.
+     *
+     * @param key the payload key to check
+     * @return true if the key exists in the payload, false otherwise
+     * @throws NullPointerException if key is null
+     */
+    public boolean hasPayloadKey(String key) {
+        return metadata.hasPayloadKey(key);
+    }
+
+    /**
+     * Gets the document vector name.
+     *
+     * @return the document name, or null if not set
+     */
+    public String getVectorName() {
+        return vectorName;
+    }
+
+    /**
+     * Sets the document vector name.
+     *
+     * @param vectorName the document name
+     */
+    public void setVectorName(String vectorName) {
+        this.vectorName = vectorName;
+    }
+
+    /**
      * Generates a deterministic document ID based on metadata.
      *
      * <p>This method creates a UUID v3 (name-based with MD5) from a JSON representation
@@ -123,29 +210,25 @@ public class Document {
      * @return a deterministic UUID string
      */
     private static String generateDocumentId(DocumentMetadata metadata) {
-        try {
-            // Create a map with doc_id, chunk_id, and content (matching Python implementation)
-            Map<String, Object> keyMap = new LinkedHashMap<>();
-            keyMap.put("doc_id", metadata.getDocId());
-            keyMap.put("chunk_id", metadata.getChunkId());
-            keyMap.put("content", metadata.getContent());
+        // Create a map with doc_id, chunk_id, and content (matching Python implementation)
+        Map<String, Object> keyMap = new LinkedHashMap<>();
+        keyMap.put("doc_id", metadata.getDocId());
+        keyMap.put("chunk_id", metadata.getChunkId());
+        keyMap.put("content", metadata.getContent());
 
-            // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
-            String jsonKey = OBJECT_MAPPER.writeValueAsString(keyMap);
+        // Serialize to JSON (ensure_ascii=False in Python, so we use default UTF-8)
+        String jsonKey = JsonUtils.getJsonCodec().toJson(keyMap);
 
-            // Generate UUID v3 (name-based with MD5) from the JSON string
-            return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
-        } catch (JsonProcessingException e) {
-            // Fallback: use a random UUID if JSON serialization fails
-            throw new RuntimeException("Failed to generate document ID", e);
-        }
+        // Generate UUID v3 (name-based with MD5) from the JSON string
+        return UUID.nameUUIDFromBytes(jsonKey.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     @Override
     public String toString() {
         return String.format(
-                "Document(id=%s, score=%s, content=%s)",
+                "Document(id=%s, name=%s, score=%s, content=%s)",
                 id,
+                vectorName != null ? vectorName : "null",
                 score != null ? String.format("%.3f", score) : "null",
                 metadata.getContentText());
     }

@@ -62,7 +62,7 @@ public class AutoMemoryExample {
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(20).build();
+                AutoContextConfig.builder().tokenRatio(0.1).lastKeep(20).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();

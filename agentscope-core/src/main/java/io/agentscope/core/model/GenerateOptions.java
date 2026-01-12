@@ -16,7 +16,6 @@
 
 package io.agentscope.core.model;
 
-import io.agentscope.core.formatter.openai.ProviderCapability;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,18 +26,14 @@ import java.util.Map;
  *
  * <p>This class holds both per-request generation parameters (temperature, maxTokens, etc.)
  * and connection-level configuration (apiKey, baseUrl, modelName, stream).
- *
- * <p>For connection-level configuration that will be reused across multiple requests,
- * consider using {@link OpenAIConfig} to create a configuration context and then use
- * {@link OpenAIConfig#toOptions()} to create GenerateOptions instances.
  */
 public class GenerateOptions {
     // Connection-level configuration
     private final String apiKey;
     private final String baseUrl;
+    private final String endpointPath;
     private final String modelName;
     private final Boolean stream;
-    private final ProviderCapability providerCapability;
 
     // Generation parameters
     private final Double temperature;
@@ -47,6 +42,7 @@ public class GenerateOptions {
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
+    private final String reasoningEffort;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
     private final Integer topK;
@@ -63,15 +59,16 @@ public class GenerateOptions {
     private GenerateOptions(Builder builder) {
         this.apiKey = builder.apiKey;
         this.baseUrl = builder.baseUrl;
+        this.endpointPath = builder.endpointPath;
         this.modelName = builder.modelName;
         this.stream = builder.stream;
-        this.providerCapability = builder.providerCapability;
         this.temperature = builder.temperature;
         this.topP = builder.topP;
         this.maxTokens = builder.maxTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
+        this.reasoningEffort = builder.reasoningEffort;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
@@ -115,6 +112,21 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets the endpoint path for the API request.
+     *
+     * <p>This is the API endpoint path (e.g., "/v1/chat/completions").
+     * When null, the model's default endpoint path will be used.
+     *
+     * <p>This allows customization for OpenAI-compatible APIs that use different
+     * endpoint paths than the standard OpenAI API.
+     *
+     * @return the endpoint path, or null if not set
+     */
+    public String getEndpointPath() {
+        return endpointPath;
+    }
+
+    /**
      * Gets the model name to use for generation.
      *
      * <p>This specifies which model to use (e.g., "gpt-4", "gpt-3.5-turbo").
@@ -137,23 +149,6 @@ public class GenerateOptions {
      */
     public Boolean getStream() {
         return stream;
-    }
-
-    /**
-     * Gets the provider capability for this request.
-     *
-     * <p>When set, this explicitly specifies the provider's capability (tool_choice support, etc.)
-     * instead of auto-detecting from baseUrl or modelName. This is useful when:
-     * <ul>
-     *   <li>The auto-detection is incorrect</li>
-     *   <li>Using a custom proxy that doesn't match known provider patterns</li>
-     *   <li>Testing with different provider behaviors</li>
-     * </ul>
-     *
-     * @return the provider capability, or null if not set (auto-detect)
-     */
-    public ProviderCapability getProviderCapability() {
-        return providerCapability;
     }
 
     /**
@@ -224,6 +219,18 @@ public class GenerateOptions {
      */
     public Integer getThinkingBudget() {
         return thinkingBudget;
+    }
+
+    /**
+     * Gets the reasoning effort level for o1 models.
+     *
+     * <p>This parameter controls how much effort the model spends on reasoning.
+     * Valid values are "low", "medium", and "high".
+     *
+     * @return the reasoning effort level, or null if not set
+     */
+    public String getReasoningEffort() {
+        return reasoningEffort;
     }
 
     /**
@@ -373,12 +380,10 @@ public class GenerateOptions {
         Builder builder = builder();
         builder.apiKey(primary.apiKey != null ? primary.apiKey : fallback.apiKey);
         builder.baseUrl(primary.baseUrl != null ? primary.baseUrl : fallback.baseUrl);
+        builder.endpointPath(
+                primary.endpointPath != null ? primary.endpointPath : fallback.endpointPath);
         builder.modelName(primary.modelName != null ? primary.modelName : fallback.modelName);
         builder.stream(primary.stream != null ? primary.stream : fallback.stream);
-        builder.providerCapability(
-                primary.providerCapability != null
-                        ? primary.providerCapability
-                        : fallback.providerCapability);
         builder.temperature(
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
@@ -393,6 +398,10 @@ public class GenerateOptions {
                         : fallback.presencePenalty);
         builder.thinkingBudget(
                 primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
+        builder.reasoningEffort(
+                primary.reasoningEffort != null
+                        ? primary.reasoningEffort
+                        : fallback.reasoningEffort);
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
@@ -433,9 +442,9 @@ public class GenerateOptions {
         // Connection-level configuration
         private String apiKey;
         private String baseUrl;
+        private String endpointPath;
         private String modelName;
         private Boolean stream;
-        private ProviderCapability providerCapability;
 
         // Generation parameters
         private Double temperature;
@@ -444,6 +453,7 @@ public class GenerateOptions {
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
+        private String reasoningEffort;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
         private Integer topK;
@@ -475,6 +485,21 @@ public class GenerateOptions {
         }
 
         /**
+         * Sets the endpoint path for the API request.
+         *
+         * <p>This allows customization for OpenAI-compatible APIs that use different
+         * endpoint paths than the standard OpenAI API (e.g., "/v4/chat/completions",
+         * "/api/v1/llm/chat", etc.). When null, the default endpoint path will be used.
+         *
+         * @param endpointPath the endpoint path (e.g., "/v1/chat/completions")
+         * @return this builder instance
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
+            return this;
+        }
+
+        /**
          * Sets the model name to use for generation.
          *
          * @param modelName the model name (e.g., "gpt-4", "gpt-3.5-turbo")
@@ -493,20 +518,6 @@ public class GenerateOptions {
          */
         public Builder stream(Boolean stream) {
             this.stream = stream;
-            return this;
-        }
-
-        /**
-         * Sets the provider capability for this request.
-         *
-         * <p>When set, this explicitly specifies the provider's capability (tool_choice support, etc.)
-         * instead of auto-detecting from baseUrl or modelName.
-         *
-         * @param providerCapability the provider capability to use
-         * @return this builder instance
-         */
-        public Builder providerCapability(ProviderCapability providerCapability) {
-            this.providerCapability = providerCapability;
             return this;
         }
 
@@ -589,6 +600,20 @@ public class GenerateOptions {
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets the reasoning effort level for o1 models.
+         *
+         * <p>This parameter controls how much effort the model spends on reasoning.
+         * Valid values are "low", "medium", and "high".
+         *
+         * @param reasoningEffort the reasoning effort level
+         * @return this builder
+         */
+        public Builder reasoningEffort(String reasoningEffort) {
+            this.reasoningEffort = reasoningEffort;
             return this;
         }
 

@@ -40,6 +40,7 @@ import io.agentscope.core.rag.reader.ReaderInput;
 import io.agentscope.core.rag.reader.TextReader;
 import io.agentscope.core.rag.reader.WordReader;
 import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -476,7 +477,14 @@ class RAGInMemoryE2ETest {
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
         double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
 
-        List<Document> results = store.search(queryEmbedding, 3, 0.0).block();
+        List<Document> results =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(3)
+                                        .scoreThreshold(0.0)
+                                        .build())
+                        .block();
 
         assertNotNull(results);
         assertFalse(results.isEmpty(), "Search should return results");
@@ -773,8 +781,22 @@ class RAGInMemoryE2ETest {
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
         double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
 
-        List<Document> resultsLowThreshold = store.search(queryEmbedding, 10, 0.3).block();
-        List<Document> resultsHighThreshold = store.search(queryEmbedding, 10, 0.8).block();
+        List<Document> resultsLowThreshold =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .scoreThreshold(0.3)
+                                        .build())
+                        .block();
+        List<Document> resultsHighThreshold =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .scoreThreshold(0.8)
+                                        .build())
+                        .block();
 
         System.out.println("Query: " + queryText);
         System.out.println("Results with threshold 0.3: " + resultsLowThreshold.size());

@@ -20,9 +20,15 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +43,11 @@ import reactor.core.publisher.Mono;
  *   <li>Registers {@link ContextOffloadTool} to the agent's toolkit</li>
  *   <li>Attaches the agent's PlanNotebook to AutoContextMemory (if available)</li>
  * </ol>
+ *
+ * <p>Additionally, this hook handles {@link PreReasoningEvent} to trigger memory
+ * compression before LLM reasoning. This ensures compression happens at a
+ * deterministic point in the execution flow, and the compressed messages are
+ * used for reasoning.
  *
  * <p>This hook ensures that AutoContextMemory is properly integrated with the agent
  * without requiring manual setup steps. It uses an internal flag to ensure setup
@@ -60,6 +71,7 @@ import reactor.core.publisher.Mono;
  * // The hook will automatically:
  * // 1. Register ContextOffloadTool when agent is first called
  * // 2. Attach PlanNotebook to AutoContextMemory if available
+ * // 3. Trigger compression before each LLM reasoning call
  * }</pre>
  *
  * <p><b>Priority:</b> This hook has high priority (50) to ensure setup occurs early
@@ -91,13 +103,18 @@ public class AutoContextHook implements Hook {
             Mono<T> result = (Mono<T>) handlePreCall(preCallEvent);
             return result;
         }
+        if (event instanceof PreReasoningEvent preReasoningEvent) {
+            @SuppressWarnings("unchecked")
+            Mono<T> result = (Mono<T>) handlePreReasoning(preReasoningEvent);
+            return result;
+        }
         return Mono.just(event);
     }
 
     @Override
     public int priority() {
         // High priority to execute early in the hook chain
-        return 50;
+        return 0;
     }
 
     /**
@@ -177,6 +194,91 @@ public class AutoContextHook implements Hook {
             // Reset flag so we can retry on next call
             registered.set(false);
         }
+
+        return Mono.just(event);
+    }
+
+    /**
+     * Handles PreReasoningEvent by triggering compression if needed and updating input messages.
+     *
+     * <p>This method checks if the agent's memory is an AutoContextMemory instance and
+     * triggers compression before LLM reasoning. After compression, it updates the
+     * input messages in the event to reflect the compressed working memory.
+     *
+     * <p>This ensures compression happens at a deterministic point (before reasoning)
+     * and the LLM receives the compressed context.
+     *
+     * @param event the PreReasoningEvent
+     * @return Mono containing the potentially modified event
+     */
+    private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
+        Agent agent = event.getAgent();
+
+        // Only process ReActAgent instances
+        if (!(agent instanceof ReActAgent reActAgent)) {
+            return Mono.just(event);
+        }
+
+        // Get memory from agent and verify it's an AutoContextMemory instance
+        Memory memory = reActAgent.getMemory();
+        if (!(memory instanceof AutoContextMemory autoContextMemory)) {
+            return Mono.just(event);
+        }
+
+        // Trigger compression if needed (this modifies workingMemoryStorage in place)
+        autoContextMemory.compressIfNeeded();
+
+        // Always append system prompt instruction about compressed messages
+        List<Msg> originalInputMessages = event.getInputMessages();
+        List<Msg> newInputMessages = new ArrayList<>();
+
+        if (!originalInputMessages.isEmpty()
+                && originalInputMessages.get(0).getRole() == MsgRole.SYSTEM) {
+            // Append instruction to existing system prompt
+            Msg originalSystemMsg = originalInputMessages.get(0);
+            String originalSystemText = originalSystemMsg.getTextContent();
+            String appendedInstruction =
+                    "\n\n"
+                            + "You may see compressed messages containing <!-- CONTEXT_OFFLOAD"
+                            + " uuid=... -->.\n"
+                            + "- Use the UUID to call context_reload if you need full details.\n"
+                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
+                            + " metadata in your response.";
+
+            String newSystemText =
+                    originalSystemText != null
+                            ? originalSystemText + appendedInstruction
+                            : appendedInstruction.trim();
+
+            Msg updatedSystemMsg =
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name(originalSystemMsg.getName())
+                            .content(TextBlock.builder().text(newSystemText).build())
+                            .metadata(originalSystemMsg.getMetadata())
+                            .build();
+
+            newInputMessages.add(updatedSystemMsg);
+        } else {
+            // No system message exists, create a new one with the instruction
+            String instruction =
+                    "You may see compressed messages containing <!-- CONTEXT_OFFLOAD uuid=..."
+                            + " -->.\n"
+                            + "- Use the UUID to call context_reload if you need full details.\n"
+                            + "- NEVER mention, quote, or refer to UUIDs, offload tags, or internal"
+                            + " metadata in your response.";
+
+            newInputMessages.add(
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .name("system")
+                            .content(TextBlock.builder().text(instruction).build())
+                            .build());
+        }
+
+        // Add memory messages (compressed or not)
+        newInputMessages.addAll(autoContextMemory.getMessages());
+        event.setInputMessages(newInputMessages);
 
         return Mono.just(event);
     }

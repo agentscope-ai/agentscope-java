@@ -15,9 +15,7 @@
  */
 package io.agentscope.core.agui.converter;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiToolCall;
@@ -27,6 +25,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,24 +39,10 @@ import java.util.stream.Collectors;
  * message format and AgentScope's internal message format.
  */
 public class AguiMessageConverter {
-
-    private final ObjectMapper objectMapper;
-
     /**
-     * Creates a new AguiMessageConverter with a default ObjectMapper.
+     * Creates a new AguiMessageConverter
      */
-    public AguiMessageConverter() {
-        this(new ObjectMapper());
-    }
-
-    /**
-     * Creates a new AguiMessageConverter with the specified ObjectMapper.
-     *
-     * @param objectMapper The ObjectMapper to use for JSON operations
-     */
-    public AguiMessageConverter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
+    public AguiMessageConverter() {}
 
     /**
      * Convert an AG-UI message to an AgentScope message.
@@ -223,8 +209,9 @@ public class AguiMessageConverter {
             return Map.of();
         }
         try {
-            return objectMapper.readValue(arguments, new TypeReference<Map<String, Object>>() {});
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec()
+                    .fromJson(arguments, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonException e) {
             return Map.of();
         }
     }
@@ -240,8 +227,8 @@ public class AguiMessageConverter {
             return "{}";
         }
         try {
-            return objectMapper.writeValueAsString(arguments);
-        } catch (JsonProcessingException e) {
+            return JsonUtils.getJsonCodec().toJson(arguments);
+        } catch (JsonException e) {
             return "{}";
         }
     }

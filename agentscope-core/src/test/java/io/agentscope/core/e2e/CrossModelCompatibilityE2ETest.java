@@ -29,7 +29,7 @@ import java.time.Duration;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.condition.EnabledIf;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,12 +46,12 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 @Tag("e2e")
 @Tag("compatibility")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
+@ExtendWith(E2ETestCondition.class)
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Cross-Model Compatibility E2E Tests (Consolidated)")
 class CrossModelCompatibilityE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(300);
 
     @ParameterizedTest
     @MethodSource("getAllEnabledProviders")
@@ -90,7 +90,7 @@ class CrossModelCompatibilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("getEnabledToolProviders")
+    @MethodSource("getToolProviders")
     @DisplayName("Should handle equivalent tool calls consistently across providers")
     void testEquivalentToolCalls(ModelProvider provider) {
         System.out.println(
@@ -150,7 +150,7 @@ class CrossModelCompatibilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("getEnabledMultimodalProviders")
+    @MethodSource("getMultimodalProviders")
     @DisplayName("Should handle equivalent multimodal content across providers")
     void testEquivalentMultimodalContent(ModelProvider provider) {
         System.out.println(
@@ -197,7 +197,7 @@ class CrossModelCompatibilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("getEnabledToolProviders")
+    @MethodSource("getToolProviders")
     @DisplayName("Should handle error scenarios consistently across providers")
     void testErrorScenarios(ModelProvider provider) {
         System.out.println(
@@ -234,15 +234,15 @@ class CrossModelCompatibilityE2ETest {
 
     // Provider source methods
     static Stream<ModelProvider> getAllEnabledProviders() {
-        return ProviderFactory.getEnabledBasicProviders();
+        return ProviderFactory.getBasicProviders();
     }
 
-    static Stream<ModelProvider> getEnabledToolProviders() {
-        return ProviderFactory.getEnabledToolProviders();
+    static Stream<ModelProvider> getToolProviders() {
+        return ProviderFactory.getToolProviders();
     }
 
-    static Stream<ModelProvider> getEnabledMultimodalProviders() {
-        return ProviderFactory.getEnabledMultimodalProviders();
+    static Stream<ModelProvider> getMultimodalProviders() {
+        return ProviderFactory.getMultimodalProviders();
     }
 
     /** Business tools for error handling testing. */

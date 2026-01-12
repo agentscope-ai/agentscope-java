@@ -16,7 +16,6 @@
 package io.agentscope.core.tool.multimodal;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -27,6 +26,7 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.OpenAIClient;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,9 +64,6 @@ public class OpenAIMultiModalTool {
     /** OpenAI client for API calls. */
     private final OpenAIClient client;
 
-    /** JSON object mapper. */
-    private final ObjectMapper objectMapper;
-
     /** Base URL for OpenAI API (defaults to https://api.openai.com). */
     private final String baseUrl;
 
@@ -92,7 +89,6 @@ public class OpenAIMultiModalTool {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.client = new OpenAIClient();
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -104,7 +100,6 @@ public class OpenAIMultiModalTool {
         this.apiKey = "test-key";
         this.baseUrl = null;
         this.client = client;
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -193,9 +188,10 @@ public class OpenAIMultiModalTool {
                                     client.callApi(
                                             apiKey, baseUrl, "/v1/images/generations", request);
                             Map<String, Object> response =
-                                    objectMapper.readValue(
-                                            responseBody,
-                                            new TypeReference<Map<String, Object>>() {});
+                                    JsonUtils.getJsonCodec()
+                                            .fromJson(
+                                                    responseBody,
+                                                    new TypeReference<Map<String, Object>>() {});
 
                             @SuppressWarnings("unchecked")
                             List<Map<String, Object>> data =
@@ -335,9 +331,10 @@ public class OpenAIMultiModalTool {
                                     client.callApi(
                                             apiKey, baseUrl, "/v1/chat/completions", request);
                             Map<String, Object> response =
-                                    objectMapper.readValue(
-                                            responseBody,
-                                            new TypeReference<Map<String, Object>>() {});
+                                    JsonUtils.getJsonCodec()
+                                            .fromJson(
+                                                    responseBody,
+                                                    new TypeReference<Map<String, Object>>() {});
 
                             @SuppressWarnings("unchecked")
                             List<Map<String, Object>> choices =

@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.rag.integration.haystack;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.rag.integration.haystack.exception.HayStackApiException;
 import io.agentscope.core.rag.integration.haystack.model.HayStackResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -61,22 +61,14 @@ public class HayStackClient {
 
     private final HayStackConfig config;
 
-    private final ObjectMapper objectMapper;
-
     public HayStackClient(HayStackConfig config) {
-        this(config, new ObjectMapper());
-    }
-
-    public HayStackClient(HayStackConfig config, ObjectMapper objectMapper) {
         this.config = config;
-        this.objectMapper = objectMapper;
         this.httpClient = createHttpClient();
     }
 
-    HayStackClient(OkHttpClient httpClient, HayStackConfig config, ObjectMapper objectMapper) {
+    HayStackClient(OkHttpClient httpClient, HayStackConfig config) {
         this.httpClient = httpClient;
         this.config = config;
-        this.objectMapper = objectMapper;
     }
 
     /**
@@ -211,7 +203,7 @@ public class HayStackClient {
                         requestBody.put("window_size", config.getWindowSize());
                     }
 
-                    String jsonBody = objectMapper.writeValueAsString(requestBody);
+                    String jsonBody = JsonUtils.getJsonCodec().toJson(requestBody);
 
                     String url = config.getBaseUrl();
 
@@ -248,7 +240,8 @@ public class HayStackClient {
                         }
 
                         HayStackResponse hayStackResponse =
-                                objectMapper.readValue(responseBody, HayStackResponse.class);
+                                JsonUtils.getJsonCodec()
+                                        .fromJson(responseBody, HayStackResponse.class);
 
                         // Check if response indicates an error
                         if (hayStackResponse.getCode() != null

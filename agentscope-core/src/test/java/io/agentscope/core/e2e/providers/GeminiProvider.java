@@ -23,32 +23,41 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
+import java.util.Set;
 
-public class GeminiProvider implements ModelProvider {
+/**
+ * Provider for Google Gemini API.
+ *
+ * <p>Supports Gemini 2.5 Flash and other Gemini models with multimodal capabilities.
+ */
+@ModelCapabilities({
+    ModelCapability.BASIC,
+    ModelCapability.TOOL_CALLING,
+    ModelCapability.IMAGE,
+    ModelCapability.AUDIO,
+    ModelCapability.VIDEO,
+    ModelCapability.THINKING
+})
+public class GeminiProvider extends BaseModelProvider {
 
-    private final String modelName;
-    private final boolean multiAgentFormatter;
+    private static final String API_KEY_ENV = "GOOGLE_API_KEY";
+    private static final String BASE_URL_ENV = "GOOGLE_API_BASE_URL";
 
     public GeminiProvider(String modelName, boolean multiAgentFormatter) {
-        this.modelName = modelName;
-        this.multiAgentFormatter = multiAgentFormatter;
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
     }
 
     @Override
-    public ReActAgent createAgent(String name, Toolkit toolkit) {
-        String apiKey = System.getenv("GOOGLE_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("GOOGLE_API_KEY environment variable is required");
-        }
-
-        String baseUrl = System.getenv("GOOGLE_API_BASE_URL"); // Optional custom endpoint
+    protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
+        String baseUrl = System.getenv(BASE_URL_ENV);
 
         GeminiChatModel.Builder builder =
                 GeminiChatModel.builder()
                         .apiKey(apiKey)
-                        .modelName(modelName)
+                        .modelName(getModelName())
                         .formatter(
-                                multiAgentFormatter
+                                isMultiAgentFormatter()
                                         ? new GeminiMultiAgentFormatter()
                                         : new GeminiChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
@@ -61,8 +70,7 @@ public class GeminiProvider implements ModelProvider {
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .build();
+                .memory(new InMemoryMemory());
     }
 
     @Override
@@ -71,21 +79,27 @@ public class GeminiProvider implements ModelProvider {
     }
 
     @Override
-    public boolean supportsThinking() {
-        return false;
+    public Set<ModelCapability> getCapabilities() {
+        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
+        if (isMultiAgentFormatter()) {
+            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
+        }
+        return caps;
     }
 
-    @Override
-    public boolean isEnabled() {
-        String apiKey = System.getenv("GOOGLE_API_KEY");
-        return apiKey != null && !apiKey.isEmpty();
-    }
+    // ==========================================================================
+    // Provider Instances
+    // ==========================================================================
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
+    /** Gemini 2.5 Flash - Fast multimodal model. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING
+    })
     public static class Gemini25FlashGemini extends GeminiProvider {
         public Gemini25FlashGemini() {
             super("gemini-2.5-flash", false);
@@ -97,6 +111,16 @@ public class GeminiProvider implements ModelProvider {
         }
     }
 
+    /** Gemini 2.5 Flash with multi-agent formatter. */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.AUDIO,
+        ModelCapability.VIDEO,
+        ModelCapability.THINKING,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
     public static class Gemini25FlashMultiAgentGemini extends GeminiProvider {
         public Gemini25FlashMultiAgentGemini() {
             super("gemini-2.5-flash", true);
@@ -104,7 +128,7 @@ public class GeminiProvider implements ModelProvider {
 
         @Override
         public String getProviderName() {
-            return "Google";
+            return "Google (Multi-Agent)";
         }
     }
 }

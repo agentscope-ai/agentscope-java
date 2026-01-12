@@ -15,10 +15,6 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
@@ -28,6 +24,8 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -75,9 +73,6 @@ public class OpenAIClient {
     /** Chat completions API endpoint. */
     public static final String CHAT_COMPLETIONS_ENDPOINT = "/v1/chat/completions";
 
-    /** Shared ObjectMapper instance (thread-safe). */
-    private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
-
     private final HttpTransport transport;
 
     /**
@@ -97,13 +92,6 @@ public class OpenAIClient {
      */
     public OpenAIClient() {
         this(io.agentscope.core.model.transport.HttpTransportFactory.getDefault());
-    }
-
-    private static ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
@@ -267,7 +255,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -277,14 +265,20 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {
             // Ensure stream is false for non-streaming call
             request.setStream(false);
 
-            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
+            String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("OpenAI request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -300,7 +294,11 @@ public class OpenAIClient {
             if (!httpResponse.isSuccessful()) {
                 int statusCode = httpResponse.getStatusCode();
                 String responseBody = httpResponse.getBody();
-                String errorMessage = "OpenAI API request failed with status " + statusCode;
+                String errorMessage =
+                        "OpenAI API request failed with status "
+                                + statusCode
+                                + " | "
+                                + responseBody;
                 throw OpenAIException.create(statusCode, errorMessage, null, responseBody);
             }
 
@@ -315,8 +313,8 @@ public class OpenAIClient {
 
             OpenAIResponse response;
             try {
-                response = OBJECT_MAPPER.readValue(responseBody, OpenAIResponse.class);
-            } catch (JsonProcessingException e) {
+                response = JsonUtils.getJsonCodec().fromJson(responseBody, OpenAIResponse.class);
+            } catch (JsonException e) {
                 throw new OpenAIException(
                         "Failed to parse OpenAI response: "
                                 + e.getMessage()
@@ -353,21 +351,9 @@ public class OpenAIClient {
             }
 
             return response;
-        } catch (JsonProcessingException | HttpTransportException e) {
+        } catch (JsonException | HttpTransportException e) {
             throw new OpenAIException("Failed to execute request: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * Make a streaming API call.
-     *
-     * @param apiKey the API key for authentication
-     * @param baseUrl the base URL (null for default)
-     * @param request the OpenAI request
-     * @return a Flux of OpenAI responses (one per SSE event)
-     */
-    public Flux<OpenAIResponse> stream(String apiKey, String baseUrl, OpenAIRequest request) {
-        return stream(apiKey, baseUrl, request, null);
     }
 
     /**
@@ -386,7 +372,7 @@ public class OpenAIClient {
         String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
         String effectiveApiKey = getEffectiveApiKey(apiKey);
 
-        // Allow options to override apiKey and baseUrl
+        // Allow options to override apiKey, baseUrl, and endpointPath
         if (options != null) {
             if (options.getApiKey() != null) {
                 effectiveApiKey = options.getApiKey();
@@ -396,14 +382,20 @@ public class OpenAIClient {
             }
         }
 
-        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        // Get endpoint path from options or use default
+        String endpointPath = CHAT_COMPLETIONS_ENDPOINT;
+        if (options != null && options.getEndpointPath() != null) {
+            endpointPath = options.getEndpointPath();
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpointPath);
         String url = buildUrl(apiUrl, options);
 
         try {
             // Enable streaming
             request.setStream(true);
 
-            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
+            String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -447,14 +439,16 @@ public class OpenAIClient {
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof HttpTransportException) {
-                                    return new OpenAIException(
+                                    return OpenAIException.create(
+                                            ((HttpTransportException) ex).getStatusCode(),
                                             "HTTP transport error during streaming: "
                                                     + ex.getMessage(),
-                                            ex);
+                                            null,
+                                            ((HttpTransportException) ex).getResponseBody());
                                 }
                                 return ex;
                             });
-        } catch (JsonProcessingException | HttpTransportException e) {
+        } catch (JsonException | HttpTransportException e) {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
@@ -475,7 +469,7 @@ public class OpenAIClient {
                 log.debug("Ignoring empty SSE data");
                 return null;
             }
-            OpenAIResponse response = OBJECT_MAPPER.readValue(data, OpenAIResponse.class);
+            OpenAIResponse response = JsonUtils.getJsonCodec().fromJson(data, OpenAIResponse.class);
 
             // Defensive null check after deserialization
             if (response == null) {
@@ -485,7 +479,7 @@ public class OpenAIClient {
                 return null;
             }
             return response;
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             log.error(
                     "Failed to parse SSE data - JSON error: {}. Content: {}.",
                     e.getMessage(),
@@ -526,7 +520,7 @@ public class OpenAIClient {
 
         // Add User-Agent header with fallback if Version.getUserAgent() returns null
         String userAgent = Version.getUserAgent();
-        headers.put("User-Agent", userAgent != null ? userAgent : "agentscope-java/1.0");
+        headers.put("User-Agent", userAgent);
 
         // Apply additional headers from options
         if (options != null) {
@@ -628,7 +622,7 @@ public class OpenAIClient {
             String requestBodyJson =
                     requestBody instanceof String
                             ? (String) requestBody
-                            : OBJECT_MAPPER.writeValueAsString(requestBody);
+                            : JsonUtils.getJsonCodec().toJson(requestBody);
             log.debug("OpenAI API request to {}: {}", url, requestBodyJson);
 
             HttpRequest httpRequest =
@@ -657,7 +651,7 @@ public class OpenAIClient {
             }
             log.debug("OpenAI API response: {}", responseBody);
             return responseBody;
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             throw new OpenAIException("Failed to serialize request", e);
         } catch (HttpTransportException e) {
             throw new OpenAIException("HTTP transport error: " + e.getMessage(), e);
