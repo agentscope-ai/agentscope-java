@@ -110,7 +110,7 @@ class GeminiLiveModelTest {
 
         WebSocketRequest request = mockClient.getLastRequest();
         assertNotNull(request);
-        assertEquals("my-secret-key", request.getHeaders().get("key"));
+        assertEquals("my-secret-key", request.getHeaders().get("X-goog-api-key"));
     }
 
     @Test
