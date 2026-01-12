@@ -839,7 +839,8 @@ class DashScopeHttpClientTest {
 
         // Encrypt the output data
         String originalOutputJson =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Decrypted response!\"}}]}";
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Decrypted"
+                        + " response!\"}}]}";
         String encryptedOutput =
                 DashScopeEncryptionUtils.encryptWithAes(aesSecretKey, iv, originalOutputJson);
 
@@ -847,11 +848,11 @@ class DashScopeHttpClientTest {
         String encryptedResponseJson =
                 String.format(
                         """
-                {
-                  "request_id": "test-request-id",
-                  "output": "%s"
-                }
-                """,
+                        {
+                          "request_id": "test-request-id",
+                          "output": "%s"
+                        }
+                        """,
                         encryptedOutput);
 
         // Store encryption context manually (using reflection to access private method)
@@ -988,7 +989,8 @@ class DashScopeHttpClientTest {
         javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
         String originalOutputJson =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Full flow test response\"}}]}";
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Full flow test"
+                        + " response\"}}]}";
         String encryptedOutput =
                 DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, originalOutputJson);
 
@@ -1007,11 +1009,11 @@ class DashScopeHttpClientTest {
         String encryptedResponseJson =
                 String.format(
                         """
-                {
-                  "request_id": "test-request-id",
-                  "output": "%s"
-                }
-                """,
+                        {
+                          "request_id": "test-request-id",
+                          "output": "%s"
+                        }
+                        """,
                         encryptedOutput);
 
         mockServer.enqueue(
@@ -1064,7 +1066,8 @@ class DashScopeHttpClientTest {
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
 
         // Encrypt first chunk
-        String chunk1Output = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Stream\"}}]}";
+        String chunk1Output =
+                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Stream\"}}]}";
         String encryptedChunk1 =
                 DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, chunk1Output);
 
@@ -1215,11 +1218,11 @@ class DashScopeHttpClientTest {
         String encryptedResponseJson =
                 String.format(
                         """
-                {
-                  "request_id": "test-request-id",
-                  "output": "%s"
-                }
-                """,
+                        {
+                          "request_id": "test-request-id",
+                          "output": "%s"
+                        }
+                        """,
                         encryptedOutput);
 
         mockServer.enqueue(
@@ -1228,7 +1231,8 @@ class DashScopeHttpClientTest {
                         .setBody(encryptedResponseJson)
                         .setHeader("Content-Type", "application/json"));
 
-        // Create request (decryptResponse will be called, but context is null, so it should return original)
+        // Create request (decryptResponse will be called, but context is null, so it should return
+        // original)
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
         DashScopeResponse response = encryptedClient.call(request, null, null, null);
 
