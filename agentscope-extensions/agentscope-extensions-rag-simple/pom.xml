@@ -66,6 +66,18 @@
             <artifactId>milvus-sdk-java</artifactId>
         </dependency>
 
+        <!-- PostgreSQL JDBC Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- pgvector Java SDK for PostgreSQL vector extension -->
+        <dependency>
+            <groupId>com.pgvector</groupId>
+            <artifactId>pgvector</artifactId>
+        </dependency>
+
         <!-- Apache PDFBox for PDF document processing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
