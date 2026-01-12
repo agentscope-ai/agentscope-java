@@ -199,7 +199,15 @@ public class LiveAgent implements LiveableAgent {
                                             downstreamTask)
                                     .doOnTerminate(
                                             () -> {
-                                                liveSession.close().subscribe();
+                                                liveSession
+                                                        .close()
+                                                        .doOnError(
+                                                                e ->
+                                                                        log.warn(
+                                                                                "Error closing"
+                                                                                    + " session",
+                                                                                e))
+                                                        .subscribe();
                                                 updateState(
                                                         LiveAgentState.CLOSED, "Session closed");
                                                 log.info("Session closed");

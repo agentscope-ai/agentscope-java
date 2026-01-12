@@ -326,20 +326,6 @@ public class GeminiLiveModel extends LiveModelBase {
     }
 
     /**
-     * Extract session ID from SESSION_CREATED event.
-     *
-     * @param event The session created event
-     * @return Session ID, or null if not found
-     */
-    private String extractSessionId(LiveEvent event) {
-        if (event.message() != null && event.message().getMetadata() != null) {
-            Object value = event.message().getMetadata().get("live.session.id");
-            return value != null ? value.toString() : null;
-        }
-        return null;
-    }
-
-    /**
      * Extract error message from ERROR event.
      *
      * @param event The error event
