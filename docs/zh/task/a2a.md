@@ -314,7 +314,7 @@ rocketMQTransportConfig.setAccessKey(accessKey);
 rocketMQTransportConfig.setSecretKey(secretKey);
 //配置接收响应结果的轻量级LiteTopic
 rocketMQTransportConfig.setWorkAgentResponseTopic(workAgentResponseTopic);
-//配置订阅轻量级LiteTopic的消费者
+//配置订阅轻量级LiteTopic的消费者CID
 rocketMQTransportConfig.setWorkAgentResponseGroupID(workAgentResponseGroupID);
 //配置Apache RocketMQ的命名空间
 rocketMQTransportConfig.setRocketMQNamespace(rocketMQNamespace);
@@ -355,7 +355,7 @@ private static String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQN
 服务端对外开放Agent服务
 
 ```java
-//对外开放基于RocketMQ通信的AgentCard服务
+//对外开放基于Apache RocketMQ通信的AgentCard服务
 AgentInterface agentInterface = new AgentInterface(RocketMQA2AConstant.ROCKETMQ_PROTOCOL, buildRocketMQUrl());
 ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildRocketMQUrl()).preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL).additionalInterfaces(List.of(agentInterface)).description("基于Apache RocketMQ进行高可靠异步通信的智能助手").build();
 //配置DASHSCOPE_API_KEY以调用LLM服务
