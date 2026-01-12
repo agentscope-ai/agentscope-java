@@ -47,7 +47,7 @@ class MarkdownSkillParserTest {
         assertNotNull(parsed);
         assertTrue(parsed.hasFrontmatter());
 
-        Map<String, Object> metadata = parsed.getMetadata();
+        Map<String, String> metadata = parsed.getMetadata();
         assertEquals("test_skill", metadata.get("name"));
         assertEquals("A test skill", metadata.get("description"));
         assertEquals("1.0.0", metadata.get("version"));
@@ -123,37 +123,20 @@ class MarkdownSkillParserTest {
     }
 
     @Test
-    @DisplayName("Should parse with nested yaml")
-    void testParseWithNestedYaml() {
-        String markdown =
-                "---\n"
-                        + "name: complex_skill\n"
-                        + "metadata:\n"
-                        + "  author: John Doe\n"
-                        + "  tags:\n"
-                        + "    - ai\n"
-                        + "    - ml\n"
-                        + "---\n"
-                        + "Content";
-
-        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-
-        assertNotNull(parsed);
-        assertTrue(parsed.hasFrontmatter());
-        assertEquals("complex_skill", parsed.getMetadata().get("name"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> metadata = (Map<String, Object>) parsed.getMetadata().get("metadata");
-        assertNotNull(metadata);
-        assertEquals("John Doe", metadata.get("author"));
-    }
-
-    @Test
     @DisplayName("Should parse invalid yaml throws exception")
     void testParseInvalidYamlThrowsException() {
-        String markdown = "---\nname: test\n  invalid: yaml: syntax\n---\nContent";
+        // Invalid: line without proper key: value format
+        String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
 
-        assertThrows(IllegalArgumentException.class, () -> MarkdownSkillParser.parse(markdown));
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class, () -> MarkdownSkillParser.parse(markdown));
+        assertTrue(
+                exception.getMessage().contains("Invalid YAML line"),
+                "Exception message should indicate invalid YAML line");
+        assertTrue(
+                exception.getMessage().contains("expected 'key: value' format"),
+                "Exception message should mention expected format");
     }
 
     @Test
@@ -164,7 +147,9 @@ class MarkdownSkillParserTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class, () -> MarkdownSkillParser.parse(markdown));
-        assertTrue(exception.getMessage().contains("must be a map"));
+        assertTrue(
+                exception.getMessage().contains("Invalid YAML line"),
+                "Exception message should indicate invalid YAML line for list format");
     }
 
     @Test
@@ -207,7 +192,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should generate with metadata and content")
     void testGenerateWithMetadataAndContent() {
-        Map<String, Object> metadata = Map.of("name", "test_skill", "description", "Test");
+        Map<String, String> metadata = Map.of("name", "test_skill", "description", "Test");
         String content = "# Skill Content";
 
         String generated = MarkdownSkillParser.generate(metadata, content);
@@ -223,7 +208,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should generate with empty metadata")
     void testGenerateWithEmptyMetadata() {
-        Map<String, Object> metadata = Map.of();
+        Map<String, String> metadata = Map.of();
         String content = "Just content";
 
         String generated = MarkdownSkillParser.generate(metadata, content);
@@ -248,7 +233,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should generate with null content")
     void testGenerateWithNullContent() {
-        Map<String, Object> metadata = Map.of("name", "test");
+        Map<String, String> metadata = Map.of("name", "test");
 
         String generated = MarkdownSkillParser.generate(metadata, null);
 
@@ -260,36 +245,13 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should generate with empty content")
     void testGenerateWithEmptyContent() {
-        Map<String, Object> metadata = Map.of("name", "test");
+        Map<String, String> metadata = Map.of("name", "test");
 
         String generated = MarkdownSkillParser.generate(metadata, "");
 
         assertNotNull(generated);
         assertTrue(generated.contains("---"));
         assertTrue(generated.contains("name: test"));
-    }
-
-    @Test
-    @DisplayName("Should generate with nested metadata")
-    void testGenerateWithNestedMetadata() {
-        Map<String, Object> metadata =
-                Map.of(
-                        "name",
-                        "complex",
-                        "config",
-                        Map.of("timeout", 30, "retries", 3),
-                        "tags",
-                        java.util.List.of("ai", "ml"));
-
-        String content = "Content";
-
-        String generated = MarkdownSkillParser.generate(metadata, content);
-
-        assertNotNull(generated);
-        assertTrue(generated.contains("name: complex"));
-        assertTrue(generated.contains("config:"));
-        assertTrue(generated.contains("timeout: 30"));
-        assertTrue(generated.contains("tags:"));
     }
 
     @Test
@@ -319,7 +281,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should parsed markdown getters")
     void testParsedMarkdownGetters() {
-        Map<String, Object> metadata = Map.of("key", "value");
+        Map<String, String> metadata = Map.of("key", "value");
         String content = "content";
 
         ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
@@ -332,7 +294,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should parsed markdown immutability")
     void testParsedMarkdownImmutability() {
-        Map<String, Object> originalMetadata = new java.util.HashMap<>();
+        Map<String, String> originalMetadata = new java.util.HashMap<>();
         originalMetadata.put("key", "value");
 
         ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
@@ -349,7 +311,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should parsed markdown to string")
     void testParsedMarkdownToString() {
-        Map<String, Object> metadata = Map.of("name", "test");
+        Map<String, String> metadata = Map.of("name", "test");
         String content = "This is a very long content that should be truncated in toString";
 
         ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);
@@ -413,7 +375,7 @@ class MarkdownSkillParserTest {
     @Test
     @DisplayName("Should generate with special characters in content")
     void testGenerateWithSpecialCharactersInContent() {
-        Map<String, Object> metadata = Map.of("name", "special");
+        Map<String, String> metadata = Map.of("name", "special");
         String content = "Content with special chars: @#$%^&*(){}[]|\\:;\"'<>?,./";
 
         String generated = MarkdownSkillParser.generate(metadata, content);
@@ -434,5 +396,47 @@ class MarkdownSkillParserTest {
         assertEquals("测试技能", parsed.getMetadata().get("name"));
         assertEquals("テスト", parsed.getMetadata().get("description"));
         assertTrue(parsed.getContent().contains("한국어"));
+    }
+
+    @Test
+    @DisplayName("Should parse with quoted values")
+    void testParseWithQuotedValues() {
+        String markdown = "---\nname: \"quoted value\"\ndescription: 'single quoted'\n---\nContent";
+
+        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+        assertNotNull(parsed);
+        assertTrue(parsed.hasFrontmatter());
+        assertEquals("quoted value", parsed.getMetadata().get("name"));
+        assertEquals("single quoted", parsed.getMetadata().get("description"));
+    }
+
+    @Test
+    @DisplayName("Should parse with comments in frontmatter")
+    void testParseWithCommentsInFrontmatter() {
+        String markdown = "---\n# This is a comment\nname: test\n# Another comment\n---\nContent";
+
+        ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+        assertNotNull(parsed);
+        assertTrue(parsed.hasFrontmatter());
+        assertEquals("test", parsed.getMetadata().get("name"));
+        assertEquals(1, parsed.getMetadata().size());
+    }
+
+    @Test
+    @DisplayName("Should generate with value containing colon")
+    void testGenerateWithValueContainingColon() {
+        Map<String, String> metadata = Map.of("url", "http://example.com:8080");
+
+        String generated = MarkdownSkillParser.generate(metadata, "Content");
+
+        assertNotNull(generated);
+        // Value with colon should be quoted
+        assertTrue(generated.contains("url:"));
+
+        // Round trip should work
+        ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
+        assertEquals("http://example.com:8080", parsed.getMetadata().get("url"));
     }
 }
