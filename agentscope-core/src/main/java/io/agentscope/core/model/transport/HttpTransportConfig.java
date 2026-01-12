@@ -40,6 +40,7 @@ public class HttpTransportConfig {
     private final int maxIdleConnections;
     private final Duration keepAliveDuration;
     private final boolean ignoreSsl;
+    private final ProxyConfig proxyConfig;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -48,6 +49,7 @@ public class HttpTransportConfig {
         this.maxIdleConnections = builder.maxIdleConnections;
         this.keepAliveDuration = builder.keepAliveDuration;
         this.ignoreSsl = builder.ignoreSsl;
+        this.proxyConfig = builder.proxyConfig;
     }
 
     /**
@@ -109,6 +111,15 @@ public class HttpTransportConfig {
     }
 
     /**
+     * Get the proxy configuration.
+     *
+     * @return the proxy configuration, or null if no proxy is configured
+     */
+    public ProxyConfig getProxyConfig() {
+        return proxyConfig;
+    }
+
+    /**
      * Create a new builder for HttpTransportConfig.
      *
      * @return a new Builder instance
@@ -136,6 +147,7 @@ public class HttpTransportConfig {
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
         private boolean ignoreSsl = false;
+        private ProxyConfig proxyConfig = null;
 
         /**
          * Set the connect timeout.
@@ -204,6 +216,19 @@ public class HttpTransportConfig {
          */
         public Builder ignoreSsl(boolean ignoreSsl) {
             this.ignoreSsl = ignoreSsl;
+            return this;
+        }
+
+        /**
+         * Set the proxy configuration.
+         *
+         * <p>Supports HTTP and SOCKS proxies. See {@link ProxyConfig} for details.
+         *
+         * @param proxyConfig the proxy configuration
+         * @return this builder
+         */
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
             return this;
         }
 

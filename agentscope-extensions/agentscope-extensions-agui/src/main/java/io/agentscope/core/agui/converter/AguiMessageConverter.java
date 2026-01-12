@@ -168,6 +168,7 @@ public class AguiMessageConverter {
             case ASSISTANT -> "assistant";
             case SYSTEM -> "system";
             case TOOL -> "tool";
+            case CONTROL -> "control";
         };
     }
 

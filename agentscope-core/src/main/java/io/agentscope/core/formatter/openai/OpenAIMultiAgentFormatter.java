@@ -143,6 +143,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
         return switch (msg.getRole()) {
             case SYSTEM -> MessageGroupType.SYSTEM;
             case TOOL -> MessageGroupType.TOOL_SEQUENCE;
+            case CONTROL -> MessageGroupType.BYPASS; // Control messages bypass history
             case USER, ASSISTANT -> {
                 if (msg.hasContentBlocks(ToolUseBlock.class)) {
                     yield MessageGroupType.TOOL_SEQUENCE;
