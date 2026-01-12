@@ -694,7 +694,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event = new ActingChunkEvent(this, toolkit, toolUse, chunk);
+        ActingChunkEvent event =
+                new ActingChunkEvent(
+                        this,
+                        toolkit,
+                        toolUse,
+                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
