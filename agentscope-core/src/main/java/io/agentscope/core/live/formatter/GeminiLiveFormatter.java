@@ -18,8 +18,10 @@ package io.agentscope.core.live.formatter;
 import io.agentscope.core.live.LiveEvent;
 import io.agentscope.core.live.config.LiveConfig;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ControlBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.RawSource;
@@ -189,6 +191,11 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
             return formatTextInput(textBlock.getText());
         }
 
+        // Gemini supports image/video input via realtimeInput.video
+        if (block instanceof ImageBlock imageBlock) {
+            return formatImageInput(imageBlock);
+        }
+
         // Tool result
         if (block instanceof ToolResultBlock toolResult) {
             return formatToolResult(toolResult);
@@ -217,6 +224,31 @@ public class GeminiLiveFormatter extends AbstractTextLiveFormatter {
                                                 List.of(Map.of("text", text)))),
                                 "turnComplete",
                                 true)));
+    }
+
+    /**
+     * Formats image input as realtimeInput.video.
+     *
+     * <p>Gemini Live API uses the "video" field for images and video frames. The data should be
+     * Base64 encoded.
+     *
+     * @param imageBlock the image block to format
+     * @return JSON string for image input, or null if extraction fails
+     */
+    private String formatImageInput(ImageBlock imageBlock) {
+        Object source = imageBlock.getSource();
+        if (source instanceof Base64Source base64Source) {
+            String data = base64Source.getData();
+            String mimeType = base64Source.getMediaType();
+            if (mimeType == null) {
+                mimeType = "image/jpeg";
+            }
+            return toJson(
+                    Map.of(
+                            "realtimeInput",
+                            Map.of("video", Map.of("mimeType", mimeType, "data", data))));
+        }
+        return null;
     }
 
     /**

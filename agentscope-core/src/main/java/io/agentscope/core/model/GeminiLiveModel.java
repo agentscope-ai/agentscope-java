@@ -299,13 +299,13 @@ public class GeminiLiveModel extends LiveModelBase {
 
     @Override
     protected String buildWebSocketUrl() {
-        return baseUrl + "?key=" + apiKey;
+        return baseUrl;
     }
 
     @Override
     protected Map<String, String> buildHeaders() {
         // Gemini uses API key in URL parameter
-        return Map.of();
+        return Map.of("X-goog-api-key", apiKey);
     }
 
     @Override
