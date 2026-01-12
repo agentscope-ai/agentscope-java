@@ -181,6 +181,7 @@ class AguiAgentAdapterTest {
                                         .id("tc-1")
                                         .name("get_weather")
                                         .input(Map.of("city", "Beijing"))
+                                        .content("{\"city\":\"Beijing\"}")
                                         .build())
                         .build();
 
