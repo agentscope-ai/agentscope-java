@@ -40,7 +40,6 @@ import java.util.List;
  *   <li>{@code DashScopeLiveFormatter extends AbstractTextLiveFormatter} - DashScope (JSON)
  *   <li>{@code OpenAILiveFormatter extends AbstractTextLiveFormatter} - OpenAI (JSON)
  *   <li>{@code GeminiLiveFormatter extends AbstractTextLiveFormatter} - Gemini (JSON)
- *   <li>{@code DoubaoLiveFormatter extends AbstractBinaryLiveFormatter} - Doubao (Binary)
  * </ul>
  *
  * @param <T> The wire format type: String for text protocols, byte[] for binary protocols
