@@ -652,6 +652,7 @@
         let isRecording = false;
         let currentMode = 'vad'; // 'vad' or 'manual'
         let isPTTActive = false;
+        let hasAudioInput = false; // Track if there's uncommitted audio data
 
         // Video/Camera state
         let videoStream = null;
@@ -910,17 +911,21 @@
 
         function commitAudio() {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                // Send commit to finalize audio buffer
-                ws.send(JSON.stringify({ type: 'commit' }));
-                // Then trigger response generation
+                // Only commit if there's audio data (avoid empty buffer error)
+                if (hasAudioInput) {
+                    ws.send(JSON.stringify({ type: 'commit' }));
+                    hasAudioInput = false;
+                    addMessage('system', 'Audio committed, generating response...');
+                }
+                // Always trigger response generation
                 ws.send(JSON.stringify({ type: 'createResponse' }));
-                addMessage('system', 'Audio committed, generating response...');
             }
         }
 
         function clearAudio() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'clear' }));
+                hasAudioInput = false;
                 addMessage('system', 'Audio buffer cleared.');
             }
         }
@@ -1163,6 +1168,7 @@
                         // Convert to Base64
                         const base64 = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
                         ws.send(JSON.stringify({ type: 'audio', data: base64 }));
+                        hasAudioInput = true;
                     }
                 };
 
@@ -1195,6 +1201,10 @@
             const text = input.value.trim();
             if (text && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'text', data: text }));
+                // In VAD mode, auto-trigger response; in Manual mode, user clicks Done Speaking
+                if (currentMode === 'vad') {
+                    ws.send(JSON.stringify({ type: 'createResponse' }));
+                }
                 addMessage('user', text);
                 input.value = '';
             }
