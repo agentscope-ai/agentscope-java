@@ -144,7 +144,9 @@ public class DashScopeResponse {
                 return null;
             } else if (token == JsonToken.START_OBJECT) {
                 // Object value - normal deserialization
-                return p.getCodec().readValue(p, DashScopeOutput.class);
+                // Use DeserializationContext.readValue for standard deserialization
+                // This handles the case where output is a decrypted JSON object
+                return ctxt.readValue(p, DashScopeOutput.class);
             }
             // Unexpected token type
             throw new IOException(
