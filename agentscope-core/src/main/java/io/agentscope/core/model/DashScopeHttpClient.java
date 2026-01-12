@@ -164,14 +164,21 @@ public class DashScopeHttpClient {
         String url = buildUrl(endpoint, additionalQueryParams);
 
         try {
+            EncryptionContext encryptionContext = null;
             String requestBody = buildRequestBody(request, additionalBodyParams);
+            if (isEncryptionEnabled()) {
+                EncryptionResult encryptionResult = encryptRequestBodyIfNeeded(requestBody);
+                requestBody = encryptionResult.requestBody;
+                encryptionContext = encryptionResult.context;
+            }
+            final EncryptionContext finalEncryptionContext = encryptionContext;
             log.debug("DashScope request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(false, additionalHeaders))
+                            .headers(buildHeaders(false, additionalHeaders, finalEncryptionContext))
                             .body(requestBody)
                             .build();
 
@@ -188,9 +195,8 @@ public class DashScopeHttpClient {
             log.debug("DashScope response: {}", responseBody);
 
             // Decrypt response if encryption is enabled
-            if (isEncryptionEnabled()) {
-                responseBody = decryptResponse(responseBody);
-                clearEncryptionContext();
+            if (finalEncryptionContext != null) {
+                responseBody = decryptResponse(responseBody, finalEncryptionContext);
             }
 
             DashScopeResponse response =
@@ -234,14 +240,21 @@ public class DashScopeHttpClient {
                 request.getParameters().setIncrementalOutput(true);
             }
 
+            EncryptionContext encryptionContext = null;
             String requestBody = buildRequestBody(request, additionalBodyParams);
+            if (isEncryptionEnabled()) {
+                EncryptionResult encryptionResult = encryptRequestBodyIfNeeded(requestBody);
+                requestBody = encryptionResult.requestBody;
+                encryptionContext = encryptionResult.context;
+            }
+            final EncryptionContext finalEncryptionContext = encryptionContext;
             log.debug("DashScope streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(true, additionalHeaders))
+                            .headers(buildHeaders(true, additionalHeaders, finalEncryptionContext))
                             .body(requestBody)
                             .build();
 
@@ -250,8 +263,8 @@ public class DashScopeHttpClient {
                             data -> {
                                 try {
                                     // Decrypt response if encryption is enabled
-                                    if (isEncryptionEnabled()) {
-                                        data = decryptResponse(data);
+                                    if (finalEncryptionContext != null) {
+                                        data = decryptResponse(data, finalEncryptionContext);
                                     }
                                     return JsonUtils.getJsonCodec()
                                             .fromJson(data, DashScopeResponse.class);
@@ -265,13 +278,6 @@ public class DashScopeHttpClient {
                                 }
                             })
                     .filter(response -> response != null)
-                    .doFinally(
-                            signalType -> {
-                                // Clear encryption context when stream completes
-                                if (isEncryptionEnabled()) {
-                                    clearEncryptionContext();
-                                }
-                            })
                     .handle(
                             (response, sink) -> {
                                 if (response.isError()) {
@@ -325,7 +331,7 @@ public class DashScopeHttpClient {
     }
 
     private Map<String, String> buildHeaders(
-            boolean streaming, Map<String, String> additionalHeaders) {
+            boolean streaming, Map<String, String> additionalHeaders, EncryptionContext context) {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + apiKey);
         headers.put("Content-Type", "application/json");
@@ -335,9 +341,9 @@ public class DashScopeHttpClient {
             headers.put("X-DashScope-SSE", "enable");
         }
 
-        // Add encryption header if encryption is enabled
-        if (isEncryptionEnabled()) {
-            String encryptionHeader = buildEncryptionHeader();
+        // Add encryption header if encryption is enabled and we have a context for this request
+        if (context != null) {
+            String encryptionHeader = buildEncryptionHeader(context);
             if (encryptionHeader != null) {
                 headers.put("X-DashScope-EncryptionKey", encryptionHeader);
             }
@@ -392,10 +398,6 @@ public class DashScopeHttpClient {
         String requestBody = JsonUtils.getJsonCodec().toJson(request);
 
         if (additionalBodyParams == null || additionalBodyParams.isEmpty()) {
-            // Encrypt input field if encryption is enabled
-            if (isEncryptionEnabled()) {
-                requestBody = encryptRequestBody(requestBody);
-            }
             return requestBody;
         }
 
@@ -406,21 +408,16 @@ public class DashScopeHttpClient {
         bodyMap.putAll(additionalBodyParams);
         requestBody = JsonUtils.getJsonCodec().toJson(bodyMap);
 
-        // Encrypt input field if encryption is enabled
-        if (isEncryptionEnabled()) {
-            requestBody = encryptRequestBody(requestBody);
-        }
-
         return requestBody;
     }
 
     /**
-     * Encrypt the input field in the request body.
+     * Encrypt the input field in the request body if present.
      *
      * @param requestBody the original request body JSON string
-     * @return the request body with encrypted input field
+     * @return encryption result with possibly-updated body and context (null context if no input)
      */
-    private String encryptRequestBody(String requestBody) {
+    private EncryptionResult encryptRequestBodyIfNeeded(String requestBody) {
         try {
             // Parse request body to get input field
             Map<String, Object> bodyMap =
@@ -429,7 +426,7 @@ public class DashScopeHttpClient {
 
             Object inputObj = bodyMap.get("input");
             if (inputObj == null) {
-                return requestBody; // No input to encrypt
+                return new EncryptionResult(requestBody, null); // No input to encrypt
             }
 
             // Serialize input to JSON string
@@ -447,14 +444,12 @@ public class DashScopeHttpClient {
             String encryptedAesKey =
                     DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesSecretKey, publicKey);
 
-            // Store encryption info for response decryption and header building
-            // We need to store the AES key, IV, and encrypted AES key for this request
-            storeEncryptionContext(aesSecretKey, iv, encryptedAesKey);
+            EncryptionContext context = new EncryptionContext(aesSecretKey, iv, encryptedAesKey);
 
             // Replace input with encrypted value
             bodyMap.put("input", encryptedInput);
 
-            return JsonUtils.getJsonCodec().toJson(bodyMap);
+            return new EncryptionResult(JsonUtils.getJsonCodec().toJson(bodyMap), context);
         } catch (Exception e) {
             log.error("Failed to encrypt request body", e);
             throw new DashScopeHttpException(
@@ -467,14 +462,8 @@ public class DashScopeHttpClient {
      *
      * @return the encryption header JSON string
      */
-    private String buildEncryptionHeader() {
+    private String buildEncryptionHeader(EncryptionContext context) {
         try {
-            EncryptionContext context = getCurrentEncryptionContext();
-            if (context == null) {
-                log.warn("Encryption context not found, cannot build encryption header");
-                return null;
-            }
-
             String ivBase64 = java.util.Base64.getEncoder().encodeToString(context.iv);
 
             // Build header JSON: {"public_key_id": "...", "encrypt_key": "...", "iv": "..."}
@@ -497,7 +486,7 @@ public class DashScopeHttpClient {
      * @param responseBody the encrypted response body JSON string
      * @return the decrypted response body JSON string
      */
-    private String decryptResponse(String responseBody) {
+    private String decryptResponse(String responseBody, EncryptionContext context) {
         try {
             // Parse response to get encrypted output
             Map<String, Object> responseMap =
@@ -510,13 +499,6 @@ public class DashScopeHttpClient {
             }
 
             String encryptedOutput = (String) outputObj;
-
-            // Get encryption context for this request
-            EncryptionContext context = getCurrentEncryptionContext();
-            if (context == null) {
-                log.warn("Encryption context not found, cannot decrypt response");
-                return responseBody;
-            }
 
             // Decrypt output
             String decryptedOutput =
@@ -536,41 +518,6 @@ public class DashScopeHttpClient {
         }
     }
 
-    // Thread-local storage for encryption context (AES key and IV)
-    private static final ThreadLocal<EncryptionContext> encryptionContext = new ThreadLocal<>();
-
-    /**
-     * Store encryption context for current request.
-     *
-     * @param secretKey the AES secret key
-     * @param iv the initialization vector
-     * @param encryptedAesKey the RSA-encrypted AES key
-     */
-    private void storeEncryptionContext(
-            javax.crypto.SecretKey secretKey, byte[] iv, String encryptedAesKey) {
-        encryptionContext.set(new EncryptionContext(secretKey, iv, encryptedAesKey));
-    }
-
-    /**
-     * Get encryption context for current request.
-     *
-     * <p>Note: This method does NOT remove the context, as it may be needed for both
-     * header building and response decryption. The context should be cleared after
-     * the response is processed.
-     *
-     * @return the encryption context, or null if not set
-     */
-    private EncryptionContext getCurrentEncryptionContext() {
-        return encryptionContext.get();
-    }
-
-    /**
-     * Clear encryption context for current request.
-     */
-    private void clearEncryptionContext() {
-        encryptionContext.remove();
-    }
-
     /**
      * Internal class to store encryption context (AES key, IV, and encrypted AES key).
      */
@@ -583,6 +530,16 @@ public class DashScopeHttpClient {
             this.secretKey = secretKey;
             this.iv = iv;
             this.encryptedAesKey = encryptedAesKey;
+        }
+    }
+
+    private static class EncryptionResult {
+        final String requestBody;
+        final EncryptionContext context;
+
+        EncryptionResult(String requestBody, EncryptionContext context) {
+            this.requestBody = requestBody;
+            this.context = context;
         }
     }
 

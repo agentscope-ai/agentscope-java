@@ -30,11 +30,15 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -813,15 +817,10 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponse() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
+        java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
-        // Create encrypted client
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
                         .apiKey("test-api-key")
@@ -830,56 +829,37 @@ class DashScopeHttpClientTest {
                         .publicKey(publicKeyBase64)
                         .build();
 
-        // Create a test request
-        DashScopeRequest request = createTestRequest("qwen-plus", "Test message");
-
-        // Generate AES key and IV for encryption (same as what encryptRequestBody would do)
-        javax.crypto.SecretKey aesSecretKey = DashScopeEncryptionUtils.generateAesSecretKey();
-        byte[] iv = DashScopeEncryptionUtils.generateIv();
-
-        // Encrypt the output data
-        String originalOutputJson =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Decrypted"
-                        + " response!\"}}]}";
-        String encryptedOutput =
-                DashScopeEncryptionUtils.encryptWithAes(aesSecretKey, iv, originalOutputJson);
-
-        // Create encrypted response (output field is Base64-encoded encrypted string)
-        String encryptedResponseJson =
-                String.format(
-                        """
-                        {
-                          "request_id": "test-request-id",
-                          "output": "%s"
+        // Server dynamically encrypts response using AES key/IV derived from the request header
+        mockServer.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        try {
+                            SecretKey aesKey =
+                                    extractAesKeyFromRequest(request, keyPair.getPrivate());
+                            byte[] iv = extractIvFromRequest(request);
+                            String outputJson =
+                                    "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Decrypted"
+                                        + " response!\"}}]}";
+                            String encryptedOutput =
+                                    DashScopeEncryptionUtils.encryptWithAes(aesKey, iv, outputJson);
+                            String responseBody =
+                                    String.format(
+                                            "{\"request_id\":\"test-request-id\",\"output\":\"%s\"}",
+                                            encryptedOutput);
+                            return new MockResponse()
+                                    .setResponseCode(200)
+                                    .setHeader("Content-Type", "application/json")
+                                    .setBody(responseBody);
+                        } catch (Exception e) {
+                            return new MockResponse().setResponseCode(500).setBody(e.toString());
                         }
-                        """,
-                        encryptedOutput);
+                    }
+                });
 
-        // Store encryption context manually (using reflection to access private method)
-        // Note: This simulates what encryptRequestBody does internally
-        java.lang.reflect.Method storeMethod =
-                DashScopeHttpClient.class.getDeclaredMethod(
-                        "storeEncryptionContext",
-                        javax.crypto.SecretKey.class,
-                        byte[].class,
-                        String.class);
-        storeMethod.setAccessible(true);
-
-        String encryptedAesKey =
-                DashScopeEncryptionUtils.encryptAesKeyWithRsa(aesSecretKey, publicKeyBase64);
-        storeMethod.invoke(encryptedClient, aesSecretKey, iv, encryptedAesKey);
-
-        // Mock encrypted response
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody(encryptedResponseJson)
-                        .setHeader("Content-Type", "application/json"));
-
-        // Make the call (decryptResponse will be called internally)
+        DashScopeRequest request = createTestRequest("qwen-plus", "Test message");
         DashScopeResponse response = encryptedClient.call(request, null, null, null);
 
-        // Verify response was decrypted correctly
         assertNotNull(response);
         assertFalse(response.isError());
         assertNotNull(response.getOutput());
@@ -967,15 +947,10 @@ class DashScopeHttpClientTest {
 
     @Test
     void testCallWithEncryptionFullFlow() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
+        java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
-        // Create encrypted client
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
                         .apiKey("test-api-key")
@@ -984,75 +959,50 @@ class DashScopeHttpClientTest {
                         .publicKey(publicKeyBase64)
                         .build();
 
-        // Create encrypted response (simulating real encrypted response)
-        // In real scenario, server would encrypt the output, but for testing we simulate it
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
-        byte[] testIv = DashScopeEncryptionUtils.generateIv();
-        String originalOutputJson =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Full flow test"
-                        + " response\"}}]}";
-        String encryptedOutput =
-                DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, originalOutputJson);
-
-        // Store encryption context using reflection (simulating what encryptRequestBody does)
-        java.lang.reflect.Method storeMethod =
-                DashScopeHttpClient.class.getDeclaredMethod(
-                        "storeEncryptionContext",
-                        javax.crypto.SecretKey.class,
-                        byte[].class,
-                        String.class);
-        storeMethod.setAccessible(true);
-        String encryptedAesKey =
-                DashScopeEncryptionUtils.encryptAesKeyWithRsa(testAesKey, publicKeyBase64);
-        storeMethod.invoke(encryptedClient, testAesKey, testIv, encryptedAesKey);
-
-        String encryptedResponseJson =
-                String.format(
-                        """
-                        {
-                          "request_id": "test-request-id",
-                          "output": "%s"
+        mockServer.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        try {
+                            SecretKey aesKey =
+                                    extractAesKeyFromRequest(request, keyPair.getPrivate());
+                            byte[] iv = extractIvFromRequest(request);
+                            // Simulate 官网示例：解密后 output 为 {finish_reason,text}
+                            String outputJson =
+                                    "{\"finish_reason\":\"stop\",\"text\":\"我是Qwen，由阿里云开发的超大规模语言模型。\"}";
+                            String encryptedOutput =
+                                    DashScopeEncryptionUtils.encryptWithAes(aesKey, iv, outputJson);
+                            String responseBody =
+                                    String.format(
+                                            "{\"request_id\":\"test-request-id\",\"output\":\"%s\"}",
+                                            encryptedOutput);
+                            return new MockResponse()
+                                    .setResponseCode(200)
+                                    .setHeader("Content-Type", "application/json")
+                                    .setBody(responseBody);
+                        } catch (Exception e) {
+                            return new MockResponse().setResponseCode(500).setBody(e.toString());
                         }
-                        """,
-                        encryptedOutput);
+                    }
+                });
 
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody(encryptedResponseJson)
-                        .setHeader("Content-Type", "application/json"));
-
-        // Create request
-        DashScopeRequest request = createTestRequest("qwen-plus", "Full flow test");
-
-        // Make the call (full encryption flow: encrypt request, decrypt response)
+        DashScopeRequest request = createTextFormatRequest("qwen-plus", "Full flow test");
         DashScopeResponse response = encryptedClient.call(request, null, null, null);
 
-        // Verify response was processed correctly
         assertNotNull(response);
         assertFalse(response.isError());
         assertEquals("test-request-id", response.getRequestId());
         assertNotNull(response.getOutput());
-        assertEquals(
-                "Full flow test response",
-                response.getOutput().getFirstChoice().getMessage().getContentAsString());
-
-        // Verify request was sent with encryption
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        assertNotNull(recordedRequest.getHeader("X-DashScope-EncryptionKey"));
+        assertEquals("stop", response.getOutput().getFinishReason());
+        assertEquals("我是Qwen，由阿里云开发的超大规模语言模型。", response.getOutput().getText());
     }
 
     @Test
     void testStreamWithEncryptionFullFlow() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
+        java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
-        // Create encrypted client
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
                         .apiKey("test-api-key")
@@ -1061,61 +1011,60 @@ class DashScopeHttpClientTest {
                         .publicKey(publicKeyBase64)
                         .build();
 
-        // Generate AES key and IV for encryption
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
-        byte[] testIv = DashScopeEncryptionUtils.generateIv();
+        mockServer.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        try {
+                            SecretKey aesKey =
+                                    extractAesKeyFromRequest(request, keyPair.getPrivate());
+                            byte[] iv = extractIvFromRequest(request);
 
-        // Encrypt first chunk
-        String chunk1Output =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Stream\"}}]}";
-        String encryptedChunk1 =
-                DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, chunk1Output);
+                            String chunk1Output =
+                                    "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Stream\"}}]}";
+                            String chunk2Output =
+                                    "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\""
+                                        + " chunk 2\"}}]}";
+                            String encryptedChunk1 =
+                                    DashScopeEncryptionUtils.encryptWithAes(
+                                            aesKey, iv, chunk1Output);
+                            String encryptedChunk2 =
+                                    DashScopeEncryptionUtils.encryptWithAes(
+                                            aesKey, iv, chunk2Output);
 
-        // Encrypt second chunk
-        String chunk2Output =
-                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\" chunk 2\"}}]}";
-        String encryptedChunk2 =
-                DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, chunk2Output);
+                            String sseResponse =
+                                    String.format(
+                                            "data:"
+                                                + " {\"request_id\":\"stream-1\",\"output\":\"%s\"}\n\n"
+                                                + "data:"
+                                                + " {\"request_id\":\"stream-1\",\"output\":\"%s\"}\n\n"
+                                                + "data: [DONE]\n\n",
+                                            encryptedChunk1, encryptedChunk2);
+                            return new MockResponse()
+                                    .setResponseCode(200)
+                                    .setHeader("Content-Type", "text/event-stream")
+                                    .setBody(sseResponse);
+                        } catch (Exception e) {
+                            return new MockResponse().setResponseCode(500).setBody(e.toString());
+                        }
+                    }
+                });
 
-        // Store encryption context
-        java.lang.reflect.Method storeMethod =
-                DashScopeHttpClient.class.getDeclaredMethod(
-                        "storeEncryptionContext",
-                        javax.crypto.SecretKey.class,
-                        byte[].class,
-                        String.class);
-        storeMethod.setAccessible(true);
-        String encryptedAesKey =
-                DashScopeEncryptionUtils.encryptAesKeyWithRsa(testAesKey, publicKeyBase64);
-        storeMethod.invoke(encryptedClient, testAesKey, testIv, encryptedAesKey);
-
-        // Create SSE response with encrypted chunks
-        String sseResponse =
-                String.format(
-                        "data: {\"request_id\":\"stream-1\",\"output\":\"%s\"}\n\n"
-                                + "data: {\"request_id\":\"stream-1\",\"output\":\"%s\"}\n\n"
-                                + "data: [DONE]\n\n",
-                        encryptedChunk1, encryptedChunk2);
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody(sseResponse)
-                        .setHeader("Content-Type", "text/event-stream"));
-
-        // Create request
         DashScopeRequest request = createTestRequest("qwen-plus", "Stream test");
 
-        // Stream the response
         List<DashScopeResponse> responses = new ArrayList<>();
         StepVerifier.create(encryptedClient.stream(request, null, null, null))
                 .recordWith(() -> responses)
                 .expectNextCount(2)
                 .verifyComplete();
 
-        // Verify responses were decrypted
         assertEquals(2, responses.size());
-        assertNotNull(encryptedClient.isEncryptionEnabled());
+        assertEquals(
+                "Stream",
+                responses.get(0).getOutput().getFirstChoice().getMessage().getContentAsString());
+        assertEquals(
+                " chunk 2",
+                responses.get(1).getOutput().getFirstChoice().getMessage().getContentAsString());
     }
 
     @Test
@@ -1160,16 +1109,11 @@ class DashScopeHttpClientTest {
     }
 
     @Test
-    void testBuildEncryptionHeaderWithNullContext() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
+    void testEncryptionHeaderAbsentWhenNoInput() throws Exception {
+        java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
-        // Create encrypted client
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
                         .apiKey("test-api-key")
@@ -1178,28 +1122,40 @@ class DashScopeHttpClientTest {
                         .publicKey(publicKeyBase64)
                         .build();
 
-        // Use reflection to directly test buildEncryptionHeader with null context
-        // (context is null because we haven't made a request yet)
-        java.lang.reflect.Method buildHeaderMethod =
-                DashScopeHttpClient.class.getDeclaredMethod("buildEncryptionHeader");
-        buildHeaderMethod.setAccessible(true);
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
 
-        // When context is null, it should return null (not throw exception)
-        String header = (String) buildHeaderMethod.invoke(encryptedClient);
-        assertNull(header, "Header should be null when context is null");
+        // Build a request with no input -> request JSON will not contain "input"
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-plus")
+                        .parameters(
+                                DashScopeParameters.builder()
+                                        .resultFormat("message")
+                                        .incrementalOutput(false)
+                                        .build())
+                        .build();
+
+        encryptedClient.call(request, null, null, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNull(
+                recorded.getHeader("X-DashScope-EncryptionKey"),
+                "Encryption header should be absent when no input is present");
     }
 
     @Test
     void testDecryptResponseWithNullContext() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        // This test now validates: if there is no encryption context for this request,
+        // encrypted output will be left as-is and deserialized as null output (graceful behavior).
 
-        // Create encrypted client
+        java.security.KeyPair keyPair = generateRsaKeyPair();
+        String publicKeyBase64 =
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
+
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
                         .apiKey("test-api-key")
@@ -1208,22 +1164,16 @@ class DashScopeHttpClientTest {
                         .publicKey(publicKeyBase64)
                         .build();
 
-        // Create encrypted response
+        // Server returns an encrypted output string, but request has no input -> client has no
+        // context
         javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
         String originalOutputJson = "{\"choices\":[]}";
         String encryptedOutput =
                 DashScopeEncryptionUtils.encryptWithAes(testAesKey, testIv, originalOutputJson);
-
         String encryptedResponseJson =
                 String.format(
-                        """
-                        {
-                          "request_id": "test-request-id",
-                          "output": "%s"
-                        }
-                        """,
-                        encryptedOutput);
+                        "{\"request_id\":\"test-request-id\",\"output\":\"%s\"}", encryptedOutput);
 
         mockServer.enqueue(
                 new MockResponse()
@@ -1231,25 +1181,28 @@ class DashScopeHttpClientTest {
                         .setBody(encryptedResponseJson)
                         .setHeader("Content-Type", "application/json"));
 
-        // Create request (decryptResponse will be called, but context is null, so it should return
-        // original)
-        DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        DashScopeResponse response = encryptedClient.call(request, null, null, null);
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-plus")
+                        .parameters(
+                                DashScopeParameters.builder()
+                                        .resultFormat("message")
+                                        .incrementalOutput(false)
+                                        .build())
+                        .build();
 
-        // When context is null, decryptResponse returns original response body
-        // So the response will have encrypted output as string
+        DashScopeResponse response = encryptedClient.call(request, null, null, null);
         assertNotNull(response);
+        assertNull(
+                response.getOutput(),
+                "When encrypted output is not decrypted, output should be null (graceful)");
     }
 
     @Test
     void testDecryptResponseWithNonStringOutput() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
+        java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+                Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
         // Create encrypted client
         DashScopeHttpClient encryptedClient =
@@ -1286,20 +1239,6 @@ class DashScopeHttpClientTest {
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
 
-        // Store encryption context
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
-        byte[] testIv = DashScopeEncryptionUtils.generateIv();
-        String encryptedAesKey =
-                DashScopeEncryptionUtils.encryptAesKeyWithRsa(testAesKey, publicKeyBase64);
-        java.lang.reflect.Method storeMethod =
-                DashScopeHttpClient.class.getDeclaredMethod(
-                        "storeEncryptionContext",
-                        javax.crypto.SecretKey.class,
-                        byte[].class,
-                        String.class);
-        storeMethod.setAccessible(true);
-        storeMethod.invoke(encryptedClient, testAesKey, testIv, encryptedAesKey);
-
         // Make the call
         DashScopeResponse response = encryptedClient.call(request, null, null, null);
 
@@ -1322,5 +1261,49 @@ class DashScopeHttpClientTest {
                 .input(DashScopeInput.of(List.of(message)))
                 .parameters(params)
                 .build();
+    }
+
+    private DashScopeRequest createTextFormatRequest(String model, String content) {
+        DashScopeMessage message = DashScopeMessage.builder().role("user").content(content).build();
+        DashScopeParameters params =
+                DashScopeParameters.builder().resultFormat("text").incrementalOutput(false).build();
+        return DashScopeRequest.builder()
+                .model(model)
+                .input(DashScopeInput.of(List.of(message)))
+                .parameters(params)
+                .build();
+    }
+
+    private java.security.KeyPair generateRsaKeyPair() throws Exception {
+        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        return keyGen.generateKeyPair();
+    }
+
+    private byte[] extractIvFromRequest(RecordedRequest request) throws Exception {
+        Map<String, String> headerMap = parseEncryptionHeader(request);
+        return Base64.getDecoder().decode(headerMap.get("iv"));
+    }
+
+    private SecretKey extractAesKeyFromRequest(
+            RecordedRequest request, java.security.PrivateKey privateKey) throws Exception {
+        Map<String, String> headerMap = parseEncryptionHeader(request);
+        String encryptedKeyBase64 = headerMap.get("encrypt_key");
+        byte[] encryptedKeyBytes = Base64.getDecoder().decode(encryptedKeyBase64);
+
+        javax.crypto.Cipher rsaCipher = javax.crypto.Cipher.getInstance("RSA");
+        rsaCipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+        byte[] decrypted = rsaCipher.doFinal(encryptedKeyBytes);
+
+        String base64AesKey = new String(decrypted, StandardCharsets.UTF_8);
+        byte[] aesKeyBytes = Base64.getDecoder().decode(base64AesKey);
+        return new SecretKeySpec(aesKeyBytes, "AES");
+    }
+
+    private Map<String, String> parseEncryptionHeader(RecordedRequest request) throws Exception {
+        String encryptionHeader = request.getHeader("X-DashScope-EncryptionKey");
+        assertNotNull(encryptionHeader, "Encryption header should be present");
+        return JsonUtils.getJsonCodec()
+                .fromJson(encryptionHeader, new TypeReference<Map<String, String>>() {});
     }
 }

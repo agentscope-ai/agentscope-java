@@ -21,6 +21,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.io.IOException;
 
@@ -144,9 +145,13 @@ public class DashScopeResponse {
                 return null;
             } else if (token == JsonToken.START_OBJECT) {
                 // Object value - normal deserialization
-                // Use DeserializationContext.readValue for standard deserialization
+                // Use readTree and treeToValue for standard deserialization
                 // This handles the case where output is a decrypted JSON object
-                return ctxt.readValue(p, DashScopeOutput.class);
+                JsonNode node = p.getCodec().readTree(p);
+                if (node == null || node.isNull() || !node.isObject()) {
+                    return null;
+                }
+                return p.getCodec().treeToValue(node, DashScopeOutput.class);
             }
             // Unexpected token type
             throw new IOException(
