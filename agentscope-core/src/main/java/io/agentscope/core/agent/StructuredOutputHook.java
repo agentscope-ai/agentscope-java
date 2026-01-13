@@ -103,7 +103,11 @@ public class StructuredOutputHook implements Hook {
         // In TOOL_CHOICE mode, only force tool_choice when processing a TOOL_CHOICE reminder
         // message
         if (reminderMode == StructuredOutputReminder.TOOL_CHOICE) {
-            Msg lastMsg = event.getInputMessages().get(event.getInputMessages().size() - 1);
+            List<Msg> inputMessages = event.getInputMessages();
+            if (inputMessages == null || inputMessages.isEmpty()) {
+                return;
+            }
+            Msg lastMsg = inputMessages.get(inputMessages.size() - 1);
             if (lastMsg != null && isToolChoiceReminderMessage(lastMsg)) {
                 GenerateOptions options =
                         GenerateOptions.mergeOptions(

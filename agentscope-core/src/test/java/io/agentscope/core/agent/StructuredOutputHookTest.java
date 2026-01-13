@@ -57,6 +57,43 @@ class StructuredOutputHookTest {
     }
 
     @Test
+    void testToolChoiceMode_HandlesEmptyInputMessages() {
+        // Given: TOOL_CHOICE mode with an empty message list
+        StructuredOutputHook hook =
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+
+        List<Msg> inputMessages = new ArrayList<>();
+
+        PreReasoningEvent event =
+                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+
+        // When: handle the pre-reasoning event with empty list
+        hook.onEvent(event).block();
+
+        // Then: should not throw and tool_choice should not be set
+        assertNull(
+                event.getEffectiveGenerateOptions(),
+                "Should handle empty message list gracefully without throwing");
+    }
+
+    @Test
+    void testToolChoiceMode_HandlesNullInputMessages() {
+        // Given: TOOL_CHOICE mode with null message list
+        StructuredOutputHook hook =
+                new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, memory);
+
+        PreReasoningEvent event = new PreReasoningEvent(mockAgent, "test-model", null, null);
+
+        // When: handle the pre-reasoning event with null list
+        hook.onEvent(event).block();
+
+        // Then: should not throw and tool_choice should not be set
+        assertNull(
+                event.getEffectiveGenerateOptions(),
+                "Should handle null message list gracefully without throwing");
+    }
+
+    @Test
     void testToolChoiceMode_NotForcedOnInitialRequest() {
         // Given: TOOL_CHOICE mode with a regular user message (not a reminder)
         StructuredOutputHook hook =
