@@ -195,7 +195,13 @@ public class Mem0LongTermMemory implements LongTermMemory {
      * @return A configured Mem0SearchRequest for v2 API
      */
     private Mem0SearchRequest buildSearchRequest(String query) {
-        return Mem0SearchRequest.builder().query(query).userId(userId).agentId(agentId).runId(runId).topK(5).build();
+        return Mem0SearchRequest.builder()
+                .query(query)
+                .userId(userId)
+                .agentId(agentId)
+                .runId(runId)
+                .topK(5)
+                .build();
     }
 
     /**
