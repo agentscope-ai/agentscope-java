@@ -38,11 +38,36 @@ import java.util.List;
  *   <li>Delegating to the existing FileSystemSkillRepository for skill loading</li>
  * </ol>
  *
- * <p>Usage example:
+ * <p><b>Important:</b> Skills must be organized in a parent directory structure. You should pass
+ * the parent directory name (not individual skill paths) to the adapter. This is required because
+ * the adapter uses {@link FileSystemSkillRepository} internally, which scans a directory for
+ * multiple skill subdirectories.
+ *
+ * <p><b>Directory Structure:</b>
+ * <pre>
+ * resources/
+ * └── skills/              ← Pass "skills" to adapter
+ *     ├── skill-a/
+ *     │   └── SKILL.md
+ *     ├── skill-b/
+ *     │   └── SKILL.md
+ *     └── skill-c/
+ *         └── SKILL.md
+ * </pre>
+ *
+ * <p><b>Usage example:</b>
  * <pre>{@code
+ * // Load from parent directory containing multiple skills
  * try (JarSkillRepositoryAdapter adapter =
- *         new JarSkillRepositoryAdapter("writing-skills")) {
- *     AgentSkill skill = adapter.getSkill("writing-skills");
+ *         new JarSkillRepositoryAdapter("skills")) {
+ *     // Get all available skill names
+ *     List<String> skillNames = adapter.getAllSkillNames(); // ["skill-a", "skill-b", "skill-c"]
+ *
+ *     // Load a specific skill
+ *     AgentSkill skillA = adapter.getSkill("skill-a");
+ *
+ *     // Load all skills at once
+ *     List<AgentSkill> allSkills = adapter.getAllSkills();
  * }
  * }</pre>
  */
@@ -94,7 +119,7 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
             }
 
             // Use FileSystemSkillRepository for actual skill loading
-            this.repository = new FileSystemSkillRepository(skillBasePath.getParent(), false);
+            this.repository = new FileSystemSkillRepository(skillBasePath, false);
 
         } catch (URISyntaxException e) {
             throw new IOException("Invalid resource URI", e);
@@ -102,11 +127,10 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
     }
 
     /**
-     * gets a skill by name.
+     * Gets a skill by name.
      *
      * @param skillName The skill name (directory name)
      * @return The loaded AgentSkill object
-     * @throws IOException if loading fails
      */
     public AgentSkill getSkill(String skillName) {
         return repository.getSkill(skillName);

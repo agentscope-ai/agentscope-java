@@ -63,14 +63,13 @@ class JarSkillRepositoryAdapterTest {
         }
     }
 
-    // ==================== File System Tests ====================
+    // ==================== File System Loading Tests ====================
 
     @Test
-    @DisplayName("Should load skill from file system (development environment)")
-    void testGetSkillFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
+    @DisplayName("Should load single skill from file system")
+    void testLoadSingleSkillFromFileSystem() throws IOException {
+        adapter = new JarSkillRepositoryAdapter("test-skills");
 
-        assertNotNull(adapter);
         assertFalse(adapter.isJarEnvironment(), "Should detect file system environment");
 
         AgentSkill skill = adapter.getSkill("writing-skill");
@@ -82,8 +81,8 @@ class JarSkillRepositoryAdapterTest {
 
     @Test
     @DisplayName("Should load skill with nested resources from file system")
-    void testGetSkillWithNestedResourcesFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
+    void testLoadSkillWithResourcesFromFileSystem() throws IOException {
+        adapter = new JarSkillRepositoryAdapter("test-skills");
 
         AgentSkill skill = adapter.getSkill("writing-skill");
         assertNotNull(skill);
@@ -96,43 +95,35 @@ class JarSkillRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("Should get all skill names from file system")
-    void testGetAllSkillNamesFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
+    @DisplayName("Should load all skills from file system")
+    void testLoadAllSkillsFromFileSystem() throws IOException {
+        adapter = new JarSkillRepositoryAdapter("test-skills");
 
+        // Test getAllSkillNames()
         List<String> skillNames = adapter.getAllSkillNames();
         assertNotNull(skillNames);
         assertEquals(2, skillNames.size());
         assertTrue(skillNames.contains("writing-skill"));
         assertTrue(skillNames.contains("calculation-skill"));
-    }
 
-    @Test
-    @DisplayName("Should get all skills from file system")
-    void testGetAllSkillsFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
-
+        // Test getAllSkills()
         List<AgentSkill> skills = adapter.getAllSkills();
         assertNotNull(skills);
         assertEquals(2, skills.size());
-
-        // Verify both skills are loaded
-        List<String> skillNames = skills.stream().map(AgentSkill::getName).toList();
-        assertTrue(skillNames.contains("writing-skill"));
-        assertTrue(skillNames.contains("calculation-skill"));
+        List<String> loadedNames = skills.stream().map(AgentSkill::getName).toList();
+        assertTrue(loadedNames.contains("writing-skill"));
+        assertTrue(loadedNames.contains("calculation-skill"));
     }
 
-    // ==================== JAR Environment Tests ====================
+    // ==================== JAR Loading Tests ====================
 
     @Test
-    @DisplayName("Should load skill from JAR file")
-    void testGetSkillFromJar() throws Exception {
-        // Create a test JAR with a skill
-        Path jarPath = createTestJar("test-skill", "Test Skill", "Test content");
+    @DisplayName("Should load single skill from JAR")
+    void testLoadSingleSkillFromJar() throws Exception {
+        Path jarPath = createTestJarInFolder("test-skill", "Test Skill", "Test content");
 
-        // Load from JAR using custom ClassLoader
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("test-skill", classLoader);
+            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
 
             assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
 
@@ -145,13 +136,12 @@ class JarSkillRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("Should load skill with resources from JAR")
-    void testGetSkillWithResourcesFromJar() throws Exception {
-        // Create a JAR with skill and resources
+    @DisplayName("Should load skill with nested resources from JAR")
+    void testLoadSkillWithResourcesFromJar() throws Exception {
         Path jarPath = createTestJarWithResources();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skill", classLoader);
+            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
 
             assertTrue(adapter.isJarEnvironment());
 
@@ -159,7 +149,7 @@ class JarSkillRepositoryAdapterTest {
             assertNotNull(skill);
             assertEquals("jar-skill", skill.getName());
 
-            // Verify resources are loaded
+            // Verify nested resources are loaded
             assertTrue(skill.getResources().containsKey("config.json"));
             assertEquals("{\"key\": \"value\"}", skill.getResources().get("config.json"));
 
@@ -169,62 +159,37 @@ class JarSkillRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("Should handle multiple skills in same JAR")
-    void testMultipleSkillsInSameJar() throws Exception {
+    @DisplayName("Should load all skills from JAR")
+    void testLoadAllSkillsFromJar() throws Exception {
         Path jarPath = createTestJarWithMultipleSkills();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            // Load first skill
-            try (JarSkillRepositoryAdapter adapter1 =
-                    new JarSkillRepositoryAdapterWithClassLoader("skill-one", classLoader)) {
-                AgentSkill skill1 = adapter1.getSkill("skill-one");
-                assertEquals("skill-one", skill1.getName());
-            }
+            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
 
-            // Load second skill
-            try (JarSkillRepositoryAdapter adapter2 =
-                    new JarSkillRepositoryAdapterWithClassLoader("skill-two", classLoader)) {
-                AgentSkill skill2 = adapter2.getSkill("skill-two");
-                assertEquals("skill-two", skill2.getName());
-            }
-        }
-    }
+            assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
 
-    @Test
-    @DisplayName("Should get all skill names from JAR")
-    void testGetAllSkillNamesFromJar() throws Exception {
-        Path jarPath = createTestJarWithMultipleSkills();
+            // Test getAllSkillNames()
+            List<String> skillNames = adapter.getAllSkillNames();
+            assertNotNull(skillNames);
+            assertEquals(2, skillNames.size());
+            assertTrue(skillNames.contains("skill-one"));
+            assertTrue(skillNames.contains("skill-two"));
 
-        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            // Create adapter pointing to skill-one, then get all skills from parent directory
-            try (JarSkillRepositoryAdapter skillsAdapter =
-                    new JarSkillRepositoryAdapterWithClassLoader("skill-one", classLoader)) {
-                List<String> skillNames = skillsAdapter.getAllSkillNames();
-                assertNotNull(skillNames);
-                assertEquals(2, skillNames.size());
-                assertTrue(skillNames.contains("skill-one"));
-                assertTrue(skillNames.contains("skill-two"));
-            }
-        }
-    }
+            // Test getAllSkills()
+            List<AgentSkill> skills = adapter.getAllSkills();
+            assertNotNull(skills);
+            assertEquals(2, skills.size());
 
-    @Test
-    @DisplayName("Should get all skills from JAR")
-    void testGetAllSkillsFromJar() throws Exception {
-        Path jarPath = createTestJarWithMultipleSkills();
+            // Test getSkill() for individual skills
+            AgentSkill skill1 = adapter.getSkill("skill-one");
+            assertNotNull(skill1);
+            assertEquals("skill-one", skill1.getName());
+            assertEquals("First skill", skill1.getDescription());
 
-        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            try (JarSkillRepositoryAdapter skillsAdapter =
-                    new JarSkillRepositoryAdapterWithClassLoader("skill-one", classLoader)) {
-                List<AgentSkill> skills = skillsAdapter.getAllSkills();
-                assertNotNull(skills);
-                assertEquals(2, skills.size());
-
-                // Verify both skills are loaded
-                List<String> skillNames = skills.stream().map(AgentSkill::getName).toList();
-                assertTrue(skillNames.contains("skill-one"));
-                assertTrue(skillNames.contains("skill-two"));
-            }
+            AgentSkill skill2 = adapter.getSkill("skill-two");
+            assertNotNull(skill2);
+            assertEquals("skill-two", skill2.getName());
+            assertEquals("Second skill", skill2.getDescription());
         }
     }
 
@@ -242,7 +207,7 @@ class JarSkillRepositoryAdapterTest {
     @Test
     @DisplayName("Should throw exception when skill directory not found")
     void testSkillDirectoryNotFound() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
+        adapter = new JarSkillRepositoryAdapter("test-skills");
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -250,84 +215,63 @@ class JarSkillRepositoryAdapterTest {
                 "Should throw exception when skill directory doesn't exist");
     }
 
-    // ==================== AutoCloseable Tests ====================
+    // ==================== Lifecycle Management Tests ====================
 
     @Test
-    @DisplayName("Should close file system when closed (JAR environment)")
-    void testAutoCloseableClosesFileSystem() throws Exception {
-        Path jarPath = createTestJar("closeable-skill", "Closeable", "Content");
-
-        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("closeable-skill", classLoader);
-            assertTrue(adapter.isJarEnvironment());
-
-            // Load skill to ensure file system is created
-            adapter.getSkill("closeable-skill");
-
-            // Close should not throw exception
-            adapter.close();
-        }
-    }
-
-    @Test
-    @DisplayName("Should handle close idempotently")
-    void testCloseIdempotent() throws Exception {
-        Path jarPath = createTestJar("idempotent-skill", "Idempotent", "Content");
-
-        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("idempotent-skill", classLoader);
-
-            // Multiple closes should not throw exception
-            adapter.close();
-            adapter.close();
-            adapter.close();
-        }
-    }
-
-    @Test
-    @DisplayName("Should not throw when closing file system adapter")
-    void testCloseFileSystemAdapter() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills/writing-skill");
-        assertFalse(adapter.isJarEnvironment());
-
-        // Close should not throw exception even for file system
-        adapter.close();
-    }
-
-    // ==================== Environment Detection Tests ====================
-
-    @Test
-    @DisplayName("Should correctly detect JAR environment")
-    void testIsJarEnvironmentDetection() throws Exception {
+    @DisplayName("Should correctly detect environment type")
+    void testEnvironmentDetection() throws Exception {
         // File system environment
-        try (JarSkillRepositoryAdapter fsAdapter =
-                new JarSkillRepositoryAdapter("test-skills/writing-skill")) {
+        try (JarSkillRepositoryAdapter fsAdapter = new JarSkillRepositoryAdapter("test-skills")) {
             assertFalse(fsAdapter.isJarEnvironment());
         }
 
         // JAR environment
-        Path jarPath = createTestJar("env-test", "Env Test", "Content");
+        Path jarPath = createTestJarInFolder("env-test", "Env Test", "Content");
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
             try (JarSkillRepositoryAdapter jarAdapter =
-                    new JarSkillRepositoryAdapterWithClassLoader("env-test", classLoader)) {
+                    new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader)) {
                 assertTrue(jarAdapter.isJarEnvironment());
             }
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle close properly for both environments")
+    void testCloseHandling() throws Exception {
+        // Test file system adapter close
+        adapter = new JarSkillRepositoryAdapter("test-skills");
+        assertFalse(adapter.isJarEnvironment());
+        adapter.close();
+        adapter.close(); // Idempotent close
+
+        // Test JAR adapter close
+        Path jarPath = createTestJarInFolder("closeable-skill", "Closeable", "Content");
+        try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
+            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
+            assertTrue(adapter.isJarEnvironment());
+
+            adapter.getSkill("closeable-skill"); // Load skill to ensure file system is created
+            adapter.close();
+            adapter.close(); // Idempotent close
         }
     }
 
     // ==================== Helper Methods ====================
 
     /**
-     * Creates a test JAR file with a single skill.
+     * Creates a test JAR file with a single skill in the jar-skills parent folder.
      */
-    private Path createTestJar(String skillName, String description, String content)
+    private Path createTestJarInFolder(String skillName, String description, String content)
             throws IOException {
-        Path jarPath = tempDir.resolve(skillName + ".jar");
+        Path jarPath = tempDir.resolve(skillName + "-folder.jar");
 
         try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
-            // Add directory entry
-            JarEntry dirEntry = new JarEntry(skillName + "/");
-            jos.putNextEntry(dirEntry);
+            // Add parent directory
+            jos.putNextEntry(new JarEntry("jar-skills/"));
+            jos.closeEntry();
+
+            // Add skill directory
+            jos.putNextEntry(new JarEntry("jar-skills/" + skillName + "/"));
             jos.closeEntry();
 
             // Add SKILL.md
@@ -342,7 +286,7 @@ class JarSkillRepositoryAdapterTest {
                             + "---\n"
                             + content;
 
-            JarEntry entry = new JarEntry(skillName + "/SKILL.md");
+            JarEntry entry = new JarEntry("jar-skills/" + skillName + "/SKILL.md");
             jos.putNextEntry(entry);
             jos.write(skillMd.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
@@ -358,8 +302,12 @@ class JarSkillRepositoryAdapterTest {
         Path jarPath = tempDir.resolve("skill-with-resources.jar");
 
         try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
-            // Add directory entries
-            jos.putNextEntry(new JarEntry("jar-skill/"));
+            // Add parent directory
+            jos.putNextEntry(new JarEntry("jar-skills/"));
+            jos.closeEntry();
+
+            // Add skill directory
+            jos.putNextEntry(new JarEntry("jar-skills/jar-skill/"));
             jos.closeEntry();
 
             // Add SKILL.md
@@ -370,22 +318,22 @@ class JarSkillRepositoryAdapterTest {
                             + "---\n"
                             + "Main content";
 
-            JarEntry skillEntry = new JarEntry("jar-skill/SKILL.md");
+            JarEntry skillEntry = new JarEntry("jar-skills/jar-skill/SKILL.md");
             jos.putNextEntry(skillEntry);
             jos.write(skillMd.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
 
             // Add config.json
-            JarEntry configEntry = new JarEntry("jar-skill/config.json");
+            JarEntry configEntry = new JarEntry("jar-skills/jar-skill/config.json");
             jos.putNextEntry(configEntry);
             jos.write("{\"key\": \"value\"}".getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
 
             // Add nested resource directory and file
-            jos.putNextEntry(new JarEntry("jar-skill/data/"));
+            jos.putNextEntry(new JarEntry("jar-skills/jar-skill/data/"));
             jos.closeEntry();
 
-            JarEntry dataEntry = new JarEntry("jar-skill/data/sample.txt");
+            JarEntry dataEntry = new JarEntry("jar-skills/jar-skill/data/sample.txt");
             jos.putNextEntry(dataEntry);
             jos.write("Sample data".getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
@@ -401,8 +349,12 @@ class JarSkillRepositoryAdapterTest {
         Path jarPath = tempDir.resolve("multiple-skills.jar");
 
         try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            // Add parent directory
+            jos.putNextEntry(new JarEntry("jar-skills/"));
+            jos.closeEntry();
+
             // Add first skill directory
-            jos.putNextEntry(new JarEntry("skill-one/"));
+            jos.putNextEntry(new JarEntry("jar-skills/skill-one/"));
             jos.closeEntry();
 
             // Add first skill
@@ -412,13 +364,13 @@ class JarSkillRepositoryAdapterTest {
                             + "description: First skill\n"
                             + "---\n"
                             + "Content one";
-            JarEntry entry1 = new JarEntry("skill-one/SKILL.md");
+            JarEntry entry1 = new JarEntry("jar-skills/skill-one/SKILL.md");
             jos.putNextEntry(entry1);
             jos.write(skill1Md.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
 
             // Add second skill directory
-            jos.putNextEntry(new JarEntry("skill-two/"));
+            jos.putNextEntry(new JarEntry("jar-skills/skill-two/"));
             jos.closeEntry();
 
             // Add second skill
@@ -428,7 +380,7 @@ class JarSkillRepositoryAdapterTest {
                             + "description: Second skill\n"
                             + "---\n"
                             + "Content two";
-            JarEntry entry2 = new JarEntry("skill-two/SKILL.md");
+            JarEntry entry2 = new JarEntry("jar-skills/skill-two/SKILL.md");
             jos.putNextEntry(entry2);
             jos.write(skill2Md.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
