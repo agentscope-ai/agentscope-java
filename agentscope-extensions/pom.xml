@@ -19,7 +19,6 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
-
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -29,31 +28,9 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions</artifactId>
     <name>AgentScope Java - Extensions</name>
+    <artifactId>agentscope-extensions</artifactId>
     <packaging>pom</packaging>
-
-
-    <properties>
-        <!-- Kotlin -->
-        <kotlin.version>1.9.24</kotlin.version>
-        <kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
-    </properties>
-
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-dependencies-bom</artifactId>
-                <version>${revision}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
 
     <modules>
         <module>agentscope-extensions-a2a</module>
