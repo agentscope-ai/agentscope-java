@@ -1,0 +1,210 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.model.tts;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for DashScopeRealtimeTTSModel.
+ */
+class DashScopeRealtimeTTSModelTest {
+
+    @Nested
+    @DisplayName("Builder Tests")
+    class BuilderTests {
+
+        @Test
+        @DisplayName("should throw when API key is missing")
+        void shouldThrowWhenApiKeyMissing() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> DashScopeRealtimeTTSModel.builder().modelName("qwen3-tts-flash").build());
+        }
+
+        @Test
+        @DisplayName("should build with default values")
+        void shouldBuildWithDefaults() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertNotNull(model);
+            assertEquals("qwen3-tts-flash", model.getModelName());
+        }
+
+        @Test
+        @DisplayName("should build with custom values")
+        void shouldBuildWithCustomValues() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .modelName("custom-model")
+                            .voice("Cherry")
+                            .sampleRate(48000)
+                            .format("mp3")
+                            .build();
+
+            assertNotNull(model);
+            assertEquals("custom-model", model.getModelName());
+        }
+    }
+
+    @Nested
+    @DisplayName("Streaming Input Support Tests")
+    class StreamingInputSupportTests {
+
+        @Test
+        @DisplayName("should support streaming input")
+        void shouldSupportStreamingInput() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertTrue(model.supportsStreamingInput());
+        }
+    }
+
+    @Nested
+    @DisplayName("Session Tests")
+    class SessionTests {
+
+        @Test
+        @DisplayName("should start session without error")
+        void shouldStartSessionWithoutError() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            model.startSession();
+        }
+
+        @Test
+        @DisplayName("should handle multiple start session calls")
+        void shouldHandleMultipleStartSessionCalls() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw - idempotent operation
+            model.startSession();
+            model.startSession();
+        }
+    }
+
+    @Nested
+    @DisplayName("Push Tests")
+    class PushTests {
+
+        @Test
+        @DisplayName("should handle push without session start")
+        void shouldHandlePushWithoutSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // push should start session automatically (or handle gracefully)
+            assertNotNull(model.push("test"));
+        }
+
+        @Test
+        @DisplayName("should handle null text")
+        void shouldHandleNullText() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            assertNotNull(model.push(null));
+        }
+
+        @Test
+        @DisplayName("should handle empty text")
+        void shouldHandleEmptyText() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            assertNotNull(model.push(""));
+        }
+    }
+
+    @Nested
+    @DisplayName("Finish Tests")
+    class FinishTests {
+
+        @Test
+        @DisplayName("should handle finish without session start")
+        void shouldHandleFinishWithoutSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should return empty flux
+            assertNotNull(model.finish());
+        }
+    }
+
+    @Nested
+    @DisplayName("Synthesize Tests")
+    class SynthesizeTests {
+
+        @Test
+        @DisplayName("should return Mono for synchronous synthesis")
+        void shouldReturnMonoForSynchronousSynthesis() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Just verify it returns a Mono, actual network call is E2E test
+            assertNotNull(model.synthesize("test", null));
+        }
+    }
+
+    @Nested
+    @DisplayName("SynthesizeStream Tests")
+    class SynthesizeStreamTests {
+
+        @Test
+        @DisplayName("should return Flux for streaming synthesis")
+        void shouldReturnFluxForStreamingSynthesis() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Just verify it returns a Flux, actual network call is E2E test
+            assertNotNull(model.synthesizeStream("test"));
+        }
+
+        @Test
+        @DisplayName("should handle null text in synthesizeStream")
+        void shouldHandleNullTextInSynthesizeStream() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            assertNotNull(model.synthesizeStream(null));
+        }
+
+        @Test
+        @DisplayName("should handle empty text in synthesizeStream")
+        void shouldHandleEmptyTextInSynthesizeStream() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            assertNotNull(model.synthesizeStream(""));
+        }
+    }
+}
