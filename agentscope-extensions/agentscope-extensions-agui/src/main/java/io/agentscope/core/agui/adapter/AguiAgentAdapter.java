@@ -180,13 +180,15 @@ public class AguiAgentAdapter {
                                         toolCallId,
                                         toolUse.getName()));
                         state.startToolCall(toolCallId);
+                    }
 
-                        // Emit tool call args if enabled
-                        if (config.isEmitToolCallArgs()) {
-                            String argsJson = serializeToolArgs(toolUse.getInput());
+                    // Emit tool call args if enabled
+                    if (config.isEmitToolCallArgs() && !event.isLast()) {
+                        String args = toolUse.getContent();
+                        if (args != null && !args.isEmpty()) {
                             events.add(
                                     new AguiEvent.ToolCallArgs(
-                                            state.threadId, state.runId, toolCallId, argsJson));
+                                            state.threadId, state.runId, toolCallId, args));
                         }
                     }
                 }
@@ -198,9 +200,17 @@ public class AguiAgentAdapter {
                     String toolCallId = toolResult.getId();
                     String result = extractToolResultText(toolResult);
 
+                    // Ensure ToolCallEnd is emitted to close arguments phase
+                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+
                     events.add(
-                            new AguiEvent.ToolCallEnd(
-                                    state.threadId, state.runId, toolCallId, result));
+                            new AguiEvent.ToolCallResult(
+                                    state.threadId,
+                                    state.runId,
+                                    toolCallId,
+                                    result,
+                                    "tool",
+                                    msg.getId()));
                     state.endToolCall(toolCallId);
                 }
             }
@@ -228,8 +238,7 @@ public class AguiAgentAdapter {
         // End any tool calls that weren't properly ended
         for (String toolCallId : state.getStartedToolCalls()) {
             if (!state.hasEndedToolCall(toolCallId)) {
-                events.add(
-                        new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId, null));
+                events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
             }
         }
 
