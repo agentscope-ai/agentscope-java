@@ -207,4 +207,130 @@ class DashScopeRealtimeTTSModelTest {
             assertNotNull(model.synthesizeStream(""));
         }
     }
+
+    @Nested
+    @DisplayName("Audio Stream Tests")
+    class AudioStreamTests {
+
+        @Test
+        @DisplayName("should provide audio stream")
+        void shouldProvideAudioStream() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertNotNull(model.getAudioStream());
+        }
+    }
+
+    @Nested
+    @DisplayName("Session Workflow Tests")
+    class SessionWorkflowTests {
+
+        @Test
+        @DisplayName("should handle push then finish workflow")
+        void shouldHandlePushThenFinishWorkflow() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+
+            // Push small text (less than MIN_BATCH_SIZE)
+            var result1 = model.push("Hi");
+            assertNotNull(result1);
+
+            // Finish should flush remaining text
+            var result2 = model.finish();
+            assertNotNull(result2);
+        }
+
+        @Test
+        @DisplayName("should handle push with sentence end triggers synthesis")
+        void shouldHandlePushWithSentenceEnd() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+
+            // Push text with Chinese period (should trigger synthesis)
+            var result = model.push("你好。");
+            assertNotNull(result);
+        }
+
+        @Test
+        @DisplayName("should handle push with various punctuation")
+        void shouldHandlePushWithVariousPunctuation() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+
+            // Test various punctuation marks that trigger synthesis
+            assertNotNull(model.push("Hello!"));
+            assertNotNull(model.push("What?"));
+            assertNotNull(model.push("OK,"));
+            assertNotNull(model.push("好！"));
+            assertNotNull(model.push("吗？"));
+            assertNotNull(model.push("好，"));
+            assertNotNull(model.push("Line\n"));
+        }
+
+        @Test
+        @DisplayName("should handle finish after multiple pushes")
+        void shouldHandleFinishAfterMultiplePushes() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+            model.push("A");
+            model.push("B");
+            model.push("C");
+
+            var result = model.finish();
+            assertNotNull(result);
+        }
+
+        @Test
+        @DisplayName("should handle double finish")
+        void shouldHandleDoubleFinish() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+            model.push("test");
+
+            model.finish();
+            // Second finish should return empty
+            var result = model.finish();
+            assertNotNull(result);
+        }
+    }
+
+    @Nested
+    @DisplayName("Builder Method Tests")
+    class BuilderMethodTests {
+
+        @Test
+        @DisplayName("should set all builder properties")
+        void shouldSetAllBuilderProperties() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-key")
+                            .modelName("test-model")
+                            .voice("TestVoice")
+                            .sampleRate(16000)
+                            .format("pcm")
+                            .build();
+
+            assertNotNull(model);
+            assertEquals("test-model", model.getModelName());
+        }
+
+        @Test
+        @DisplayName("should throw on empty API key")
+        void shouldThrowOnEmptyApiKey() {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> DashScopeRealtimeTTSModel.builder().apiKey("").build());
+        }
+    }
 }

@@ -263,4 +263,192 @@ class TTSHookTest {
             verify(mockPlayer, never()).stop();
         }
     }
+
+    @Nested
+    @DisplayName("Realtime Mode Finish Tests")
+    class RealtimeModeFinishTests {
+
+        @Test
+        @DisplayName("should call finish on PostReasoningEvent in realtime mode")
+        void shouldCallFinishOnPostReasoningEventInRealtimeMode() {
+            AudioBlock mockAudio =
+                    AudioBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType("audio/wav")
+                                            .data("dGVzdA==")
+                                            .build())
+                            .build();
+
+            when(mockTtsModel.push(any())).thenReturn(Flux.just(mockAudio));
+            when(mockTtsModel.finish()).thenReturn(Flux.just(mockAudio));
+
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
+
+            // First send a chunk to start session
+            Msg chunk =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Hello").build())
+                            .build();
+            ReasoningChunkEvent chunkEvent =
+                    new ReasoningChunkEvent(
+                            mockAgent, "test-model", mockGenerateOptions, chunk, chunk);
+            hook.onEvent(chunkEvent).block();
+
+            // Then send PostReasoningEvent
+            Msg response =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Complete").build())
+                            .build();
+            PostReasoningEvent postEvent =
+                    new PostReasoningEvent(mockAgent, "test-model", mockGenerateOptions, response);
+            hook.onEvent(postEvent).block();
+
+            verify(mockTtsModel).finish();
+        }
+    }
+
+    @Nested
+    @DisplayName("Batch Mode Edge Cases")
+    class BatchModeEdgeCases {
+
+        @Test
+        @DisplayName("should handle null message in batch mode")
+        void shouldHandleNullMessageInBatchMode() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(false).build();
+
+            PostReasoningEvent event =
+                    new PostReasoningEvent(mockAgent, "test-model", mockGenerateOptions, null);
+            hook.onEvent(event).block();
+
+            verify(mockTtsModel, never()).synthesizeStream(any());
+        }
+
+        @Test
+        @DisplayName("should handle empty text in batch mode")
+        void shouldHandleEmptyTextInBatchMode() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(false).build();
+
+            Msg response =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("").build())
+                            .build();
+
+            PostReasoningEvent event =
+                    new PostReasoningEvent(mockAgent, "test-model", mockGenerateOptions, response);
+            hook.onEvent(event).block();
+
+            verify(mockTtsModel, never()).synthesizeStream(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Realtime Mode Edge Cases")
+    class RealtimeModeEdgeCases {
+
+        @Test
+        @DisplayName("should handle chunk with empty text content")
+        void shouldHandleChunkWithEmptyTextContent() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
+
+            // Message with empty text
+            Msg chunk =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("").build())
+                            .build();
+
+            ReasoningChunkEvent event =
+                    new ReasoningChunkEvent(
+                            mockAgent, "test-model", mockGenerateOptions, chunk, chunk);
+            hook.onEvent(event).block();
+
+            verify(mockTtsModel, never()).startSession();
+        }
+
+        @Test
+        @DisplayName("should handle chunk with null text content")
+        void shouldHandleChunkWithNullTextContent() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
+
+            // Message with no content blocks
+            Msg chunk = Msg.builder().role(MsgRole.ASSISTANT).build();
+
+            ReasoningChunkEvent event =
+                    new ReasoningChunkEvent(
+                            mockAgent, "test-model", mockGenerateOptions, chunk, chunk);
+            hook.onEvent(event).block();
+
+            verify(mockTtsModel, never()).startSession();
+        }
+    }
+
+    @Nested
+    @DisplayName("Audio Player Integration")
+    class AudioPlayerIntegration {
+
+        @Test
+        @DisplayName("should play audio when player is configured")
+        void shouldPlayAudioWhenPlayerConfigured() {
+            AudioBlock mockAudio =
+                    AudioBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType("audio/wav")
+                                            .data("dGVzdA==")
+                                            .build())
+                            .build();
+
+            when(mockTtsModel.synthesizeStream(any())).thenReturn(Flux.just(mockAudio));
+
+            TTSHook hook =
+                    TTSHook.builder()
+                            .ttsModel(mockTtsModel)
+                            .audioPlayer(mockPlayer)
+                            .autoStartPlayer(false) // Disable auto-start
+                            .realtimeMode(false)
+                            .build();
+
+            Msg response =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Test").build())
+                            .build();
+
+            PostReasoningEvent event =
+                    new PostReasoningEvent(mockAgent, "test-model", mockGenerateOptions, response);
+            hook.onEvent(event).block();
+
+            verify(mockPlayer).play(mockAudio);
+        }
+    }
+
+    @Nested
+    @DisplayName("Other Event Types")
+    class OtherEventTypes {
+
+        @Test
+        @DisplayName("should pass through unknown event types")
+        void shouldPassThroughUnknownEventTypes() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).build();
+
+            // Create a PreReasoningEvent (not handled by TTSHook)
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("User message").build())
+                            .build();
+            PreReasoningEvent event =
+                    new PreReasoningEvent(
+                            mockAgent, "test-model", mockGenerateOptions, java.util.List.of(msg));
+
+            var result = hook.onEvent(event).block();
+
+            assertNotNull(result);
+            assertEquals(event, result);
+        }
+    }
 }

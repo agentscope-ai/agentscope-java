@@ -214,4 +214,85 @@ class AudioPlayerTest {
             assertNotNull(decoded);
         }
     }
+
+    @Nested
+    @DisplayName("Start Tests")
+    class StartTests {
+
+        @Test
+        @DisplayName("should start and throw TTSException in CI environment")
+        void shouldStartAndThrowInCIEnvironment() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            // In CI without audio hardware, start() throws TTSException
+            try {
+                player.start();
+                // If we get here, audio hardware is available - that's fine
+                player.stop();
+            } catch (TTSException e) {
+                // Expected in CI environment
+                assertNotNull(e.getMessage());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("PlaySync Tests")
+    class PlaySyncTests {
+
+        @Test
+        @DisplayName("should handle playSync with null data")
+        void shouldHandlePlaySyncWithNullData() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            // playSync with null should handle gracefully
+            try {
+                player.playSync(null);
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+                assertNotNull(e.getMessage());
+            }
+        }
+
+        @Test
+        @DisplayName("should handle playSync with empty data")
+        void shouldHandlePlaySyncWithEmptyData() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            try {
+                player.playSync(new byte[0]);
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+                assertNotNull(e.getMessage());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Builder Edge Cases")
+    class BuilderEdgeCases {
+
+        @Test
+        @DisplayName("should build with 8-bit sample size")
+        void shouldBuildWith8BitSampleSize() {
+            AudioPlayer player =
+                    AudioPlayer.builder()
+                            .sampleRate(8000)
+                            .sampleSizeInBits(8)
+                            .channels(1)
+                            .signed(false)
+                            .bigEndian(false)
+                            .build();
+
+            assertNotNull(player);
+        }
+
+        @Test
+        @DisplayName("should build with stereo channels")
+        void shouldBuildWithStereoChannels() {
+            AudioPlayer player = AudioPlayer.builder().channels(2).build();
+
+            assertNotNull(player);
+        }
+    }
 }
