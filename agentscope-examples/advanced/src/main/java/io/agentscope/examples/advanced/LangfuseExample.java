@@ -113,10 +113,11 @@ public class LangfuseExample {
                 }
 
                 // Create user message
-                Msg userMsg = Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text(userInput).build())
-                        .build();
+                Msg userMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(userInput).build())
+                                .build();
 
                 // Call agent - this will be traced to Langfuse
                 System.out.println("[Turn " + turn + "] Agent thinking...");
@@ -128,7 +129,12 @@ public class LangfuseExample {
 
                 if (response != null) {
                     System.out.println(
-                            "[Turn " + turn + "] Agent (" + elapsed + "ms): " + response.getTextContent());
+                            "[Turn "
+                                    + turn
+                                    + "] Agent ("
+                                    + elapsed
+                                    + "ms): "
+                                    + response.getTextContent());
                     System.out.println();
                 }
 
@@ -165,7 +171,10 @@ public class LangfuseExample {
         TracerRegistry.register(langfuseTracer);
 
         System.out.println("  Endpoint: " + endpoint);
-        System.out.println("  Public Key: " + publicKey.substring(0, Math.min(10, publicKey.length())) + "...");
+        System.out.println(
+                "  Public Key: "
+                        + publicKey.substring(0, Math.min(10, publicKey.length()))
+                        + "...");
     }
 
     /**
