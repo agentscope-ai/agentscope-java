@@ -89,7 +89,6 @@ public class LangfuseExample {
 
         // Multi-turn conversation loop
         System.out.println("========================================");
-        System.out.println("Multi-turn Conversation Demo");
         System.out.println("All traces will be sent to Langfuse");
         System.out.println("Type 'exit' to quit");
         System.out.println("========================================\n");
@@ -144,7 +143,6 @@ public class LangfuseExample {
         } finally {
             System.out.println("\n========================================");
             System.out.println("Session complete!");
-            System.out.println("View your traces at: https://cloud.langfuse.com");
             System.out.println("========================================\n");
         }
     }
