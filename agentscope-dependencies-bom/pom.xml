@@ -85,6 +85,7 @@
         <milvus.version>2.6.11</milvus.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
+        <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.5.0</mysql.version>
         <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
@@ -102,6 +103,7 @@
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.5</snakeyaml.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
 
@@ -269,6 +271,18 @@
                 <version>${poi.version}</version>
             </dependency>
 
+            <!-- Apache Tika for document processing -->
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-core</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-parsers-standard-package</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+
             <!-- Socket.IO Client for WebSocket communication -->
             <dependency>
                 <groupId>io.socket</groupId>
@@ -394,6 +408,13 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-module-jackson</artifactId>
                 <version>${jsonschema-generator.version}</version>
+            </dependency>
+
+            <!-- Apache Commons Lang3 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
