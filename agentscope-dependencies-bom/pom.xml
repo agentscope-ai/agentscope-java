@@ -102,6 +102,8 @@
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.5</snakeyaml.version>
+        <kotlin.version>1.9.24</kotlin.version>
+        <kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
 
 
         <spotless.version>3.1.0</spotless.version>
