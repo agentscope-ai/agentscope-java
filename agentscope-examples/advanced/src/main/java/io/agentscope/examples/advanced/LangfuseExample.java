@@ -39,6 +39,7 @@ import java.util.Scanner;
  * <ul>
  *   <li>Set LANGFUSE_PUBLIC_KEY environment variable</li>
  *   <li>Set LANGFUSE_SECRET_KEY environment variable</li>
+ *   <li>Set LANGFUSE_ENDPOINT environment variable (optional, defaults to US region)</li>
  *   <li>Set DASHSCOPE_API_KEY environment variable (or your preferred model API key)</li>
  * </ul>
  *
@@ -54,16 +55,17 @@ public class LangfuseExample {
             "https://cloud.langfuse.com/api/public/otel/v1/traces";
 
     public static void main(String[] args) {
-        // Get API keys
+        // Get API keys and configuration
         String dashScopeApiKey = ExampleUtils.getDashScopeApiKey();
         String langfusePublicKey = getLangfusePublicKey();
         String langfuseSecretKey = getLangfuseSecretKey();
+        String langfuseEndpoint = getLangfuseEndpoint();
 
         System.out.println("Starting Langfuse Tracing Example...\n");
 
         // Initialize Langfuse tracing
         System.out.println("Initializing Langfuse tracing...");
-        initLangfuseTracing(langfusePublicKey, langfuseSecretKey);
+        initLangfuseTracing(langfusePublicKey, langfuseSecretKey, langfuseEndpoint);
         System.out.println("Langfuse tracing initialized\n");
 
         // Create agent
@@ -141,15 +143,12 @@ public class LangfuseExample {
      *
      * @param publicKey Langfuse public key
      * @param secretKey Langfuse secret key
+     * @param endpoint  Langfuse OTLP endpoint URL
      */
-    private static void initLangfuseTracing(String publicKey, String secretKey) {
+    private static void initLangfuseTracing(String publicKey, String secretKey, String endpoint) {
         // Build Basic Auth header
         String credentials = publicKey + ":" + secretKey;
         String authHeader = "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes());
-
-        // Get endpoint from environment or use default (US region)
-        String endpoint =
-                System.getenv().getOrDefault("LANGFUSE_OTLP_ENDPOINT", LANGFUSE_US_ENDPOINT);
 
         // Create and register TelemetryTracer with Langfuse configuration
         TelemetryTracer langfuseTracer =
@@ -194,5 +193,20 @@ public class LangfuseExample {
                             + "Get your keys from https://cloud.langfuse.com");
         }
         return key;
+    }
+
+    /**
+     * Get Langfuse OTLP endpoint from environment variable.
+     * Falls back to US region endpoint if not set.
+     *
+     * @return The OTLP endpoint URL
+     */
+    private static String getLangfuseEndpoint() {
+        String endpoint = System.getenv("LANGFUSE_ENDPOINT");
+        if (endpoint == null || endpoint.isBlank()) {
+            // Default to US region endpoint
+            return LANGFUSE_US_ENDPOINT;
+        }
+        return endpoint;
     }
 }
