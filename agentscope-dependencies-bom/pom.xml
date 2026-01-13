@@ -324,10 +324,9 @@
                 <version>${a2a-transport-jsonrpc.version}</version>
             </dependency>
 
-
             <!-- Jedis client for Redis-based session implementation -->
             <dependency>
-                <groupId>redis.clients</groupId> 
+                <groupId>redis.clients</groupId>
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
             </dependency>
