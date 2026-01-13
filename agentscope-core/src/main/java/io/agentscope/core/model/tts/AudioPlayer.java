@@ -133,7 +133,9 @@ public class AudioPlayer {
         if (audioData != null && audioData.length > 0) {
             boolean enqueued = audioQueue.offer(audioData);
             if (!enqueued) {
-                log.warn("Failed to enqueue audio data for asynchronous playback; audio data may be dropped.");
+                log.warn(
+                        "Failed to enqueue audio data for asynchronous playback; audio data may be"
+                                + " dropped.");
             }
         }
     }

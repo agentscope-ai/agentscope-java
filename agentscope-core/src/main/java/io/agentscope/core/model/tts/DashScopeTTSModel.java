@@ -96,13 +96,29 @@ public class DashScopeTTSModel implements TTSModel {
         return mapper;
     }
 
+    /**
+     * Synthesizes speech from text using DashScope TTS API.
+     *
+     * @param text the text to convert to speech
+     * @param options optional TTS configuration, uses defaults if null
+     * @return a Mono containing the TTS response with audio data
+     */
     @Override
     public Mono<TTSResponse> synthesize(String text, TTSOptions options) {
         return Mono.fromCallable(() -> doSynthesize(text, options));
     }
 
     /**
-     * Performs the actual TTS synthesis.
+     * Performs the actual TTS synthesis by calling the DashScope API.
+     *
+     * <p>This method builds the HTTP request, sends it to DashScope,
+     * and parses the response. If the API returns a URL instead of
+     * inline audio data, the audio is automatically downloaded.
+     *
+     * @param text the text to synthesize
+     * @param options optional TTS configuration
+     * @return TTSResponse containing audio data and metadata
+     * @throws TTSException if the API call fails or response parsing fails
      */
     private TTSResponse doSynthesize(String text, TTSOptions options) {
         TTSOptions effectiveOptions = options != null ? options : defaultOptions;
@@ -220,7 +236,12 @@ public class DashScopeTTSModel implements TTSModel {
     }
 
     /**
-     * Builds HTTP headers for the request.
+     * Builds HTTP headers for the DashScope API request.
+     *
+     * <p>Includes Authorization header with Bearer token, Content-Type,
+     * and User-Agent for request tracking.
+     *
+     * @return map of header names to values
      */
     private Map<String, String> buildHeaders() {
         Map<String, String> headers = new HashMap<>();
@@ -338,7 +359,14 @@ public class DashScopeTTSModel implements TTSModel {
     }
 
     /**
-     * Downloads audio from the given URL.
+     * Downloads audio data from a URL.
+     *
+     * <p>Used when DashScope returns an audio URL instead of inline base64 data.
+     * This typically happens in non-streaming mode.
+     *
+     * @param audioUrl the URL to download audio from
+     * @return the raw audio bytes
+     * @throws Exception if download fails (network error, invalid URL, etc.)
      */
     private byte[] downloadAudio(String audioUrl) throws Exception {
         java.net.URL url = new java.net.URL(audioUrl);
@@ -347,6 +375,11 @@ public class DashScopeTTSModel implements TTSModel {
         }
     }
 
+    /**
+     * Returns the name of the TTS model being used.
+     *
+     * @return the model name (e.g., "qwen3-tts-flash", "qwen-tts")
+     */
     @Override
     public String getModelName() {
         return modelName;
