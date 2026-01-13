@@ -306,13 +306,13 @@ public class SubAgentTool implements AgentTool {
                             null,
                             List.of(TextBlock.builder().text(json).build()),
                             Map.of(
-                                    "SubAgentEvent",
+                                    "subagent_event",
                                     event,
-                                    "SubAgentName",
+                                    "subagent_name",
                                     agent.getName(),
-                                    "SubAgentId",
+                                    "subagent_id",
                                     agent.getAgentId(),
-                                    "SubAgentSessionId",
+                                    "subagent_session_id",
                                     sessionId)));
         } catch (Exception e) {
             logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
