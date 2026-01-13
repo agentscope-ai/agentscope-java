@@ -235,6 +235,7 @@ public class TelemetryTracer implements Tracer {
 
         private boolean enabled = true;
         private String endpoint;
+        private java.util.Map<String, String> headers = new java.util.HashMap<>();
         private io.opentelemetry.api.trace.Tracer tracer;
 
         public Builder enabled(boolean enabled) {
@@ -244,6 +245,29 @@ public class TelemetryTracer implements Tracer {
 
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
+            return this;
+        }
+
+        /**
+         * Adds a header to be included in OTLP HTTP requests.
+         *
+         * @param key   The header name
+         * @param value The header value
+         * @return This builder
+         */
+        public Builder addHeader(String key, String value) {
+            this.headers.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all headers to be included in OTLP HTTP requests.
+         *
+         * @param headers Map of header name to value
+         * @return This builder
+         */
+        public Builder headers(java.util.Map<String, String> headers) {
+            this.headers = new java.util.HashMap<>(headers);
             return this;
         }
 
@@ -261,14 +285,17 @@ public class TelemetryTracer implements Tracer {
                 return new TelemetryTracer(tracer);
             }
 
+            var exporterBuilder = OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+
+            // Add headers for authentication (e.g., Langfuse)
+            for (var entry : headers.entrySet()) {
+                exporterBuilder.addHeader(entry.getKey(), entry.getValue());
+            }
+
             TracerProvider tracerProvider =
                     SdkTracerProvider.builder()
                             .addSpanProcessor(
-                                    BatchSpanProcessor.builder(
-                                                    OtlpHttpSpanExporter.builder()
-                                                            .setEndpoint(endpoint)
-                                                            .build())
-                                            .build())
+                                    BatchSpanProcessor.builder(exporterBuilder.build()).build())
                             .setSampler(Sampler.alwaysOn())
                             .build();
 
