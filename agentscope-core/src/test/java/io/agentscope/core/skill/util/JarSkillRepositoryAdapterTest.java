@@ -256,6 +256,31 @@ class JarSkillRepositoryAdapterTest {
         }
     }
 
+    @Test
+    @DisplayName("Should throw exception when using closed adapter")
+    void testOperationsAfterClose() throws Exception {
+        adapter = new JarSkillRepositoryAdapter("test-skills");
+
+        // Close the adapter
+        adapter.close();
+
+        // All operations should throw IllegalStateException
+        assertThrows(
+                IllegalStateException.class,
+                () -> adapter.getSkill("writing-skill"),
+                "Should throw exception when getting skill after close");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> adapter.getAllSkillNames(),
+                "Should throw exception when getting all skill names after close");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> adapter.getAllSkills(),
+                "Should throw exception when getting all skills after close");
+    }
+
     // ==================== Helper Methods ====================
 
     /**

@@ -77,6 +77,7 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
     private final Path skillBasePath;
     private final FileSystemSkillRepository repository;
     private final boolean isJar;
+    private boolean closed = false;
 
     /**
      * Creates an adapter for loading skills from resources.
@@ -131,8 +132,10 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
      *
      * @param skillName The skill name (directory name)
      * @return The loaded AgentSkill object
+     * @throws IllegalStateException if the adapter has been closed
      */
     public AgentSkill getSkill(String skillName) {
+        checkNotClosed();
         return repository.getSkill(skillName);
     }
 
@@ -140,8 +143,10 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
      * Gets all skill names available in the repository.
      *
      * @return A sorted list of skill names
+     * @throws IllegalStateException if the adapter has been closed
      */
     public List<String> getAllSkillNames() {
+        checkNotClosed();
         return repository.getAllSkillNames();
     }
 
@@ -149,8 +154,10 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
      * Gets all skills available in the repository.
      *
      * @return A list of all loaded AgentSkill objects
+     * @throws IllegalStateException if the adapter has been closed
      */
     public List<AgentSkill> getAllSkills() {
+        checkNotClosed();
         return repository.getAllSkills();
     }
 
@@ -164,12 +171,32 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
     }
 
     /**
+     * Checks if the adapter has been closed.
+     *
+     * @throws IllegalStateException if the adapter has been closed
+     */
+    private void checkNotClosed() {
+        if (closed) {
+            throw new IllegalStateException("JarSkillRepositoryAdapter has been closed");
+        }
+    }
+
+    /**
      * Closes the file system (if in JAR environment).
+     *
+     * <p>This method is idempotent - it can be safely called multiple times.
+     * Designed for use with try-with-resources.
+     *
+     * @throws IOException if an I/O error occurs during closing
      */
     @Override
     public void close() throws IOException {
+        if (closed) {
+            return;
+        }
         if (fileSystem != null) {
             fileSystem.close();
         }
+        closed = true;
     }
 }
