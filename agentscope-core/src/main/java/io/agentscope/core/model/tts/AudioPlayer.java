@@ -131,7 +131,10 @@ public class AudioPlayer {
             start();
         }
         if (audioData != null && audioData.length > 0) {
-            audioQueue.offer(audioData);
+            boolean enqueued = audioQueue.offer(audioData);
+            if (!enqueued) {
+                log.warn("Failed to enqueue audio data for asynchronous playback; audio data may be dropped.");
+            }
         }
     }
 
