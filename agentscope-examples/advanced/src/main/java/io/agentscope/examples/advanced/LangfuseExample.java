@@ -18,6 +18,8 @@ package io.agentscope.examples.advanced;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.tracing.telemetry.TelemetryTracer;
@@ -111,7 +113,10 @@ public class LangfuseExample {
                 }
 
                 // Create user message
-                Msg userMsg = Msg.userMsg(userInput);
+                Msg userMsg = Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text(userInput).build())
+                        .build();
 
                 // Call agent - this will be traced to Langfuse
                 System.out.println("[Turn " + turn + "] Agent thinking...");
