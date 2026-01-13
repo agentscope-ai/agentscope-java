@@ -276,7 +276,10 @@ public class DashScopeRealtimeTTSModel implements TTSModel {
         return synthesizeStream(text)
                 .doOnNext(
                         audio -> {
-                            audioQueue.offer(audio);
+                            boolean offered = audioQueue.offer(audio);
+                            if (!offered) {
+                                log.warn("Failed to enqueue audio block; audio queue is full.");
+                            }
                         });
     }
 
