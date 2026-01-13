@@ -28,10 +28,12 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -70,6 +72,7 @@ public class StructuredOutputHook implements Hook {
     private boolean completed = false;
     private Msg resultMsg = null;
     private int retryCount = 0;
+    private ChatUsage aggregatedUsage = null;
 
     /**
      * Creates a new StructuredOutputHook.
@@ -142,6 +145,11 @@ public class StructuredOutputHook implements Hook {
                     && Boolean.TRUE.equals(result.getMetadata().get("success"))) {
                 completed = true;
                 resultMsg = event.getToolResultMsg();
+
+                // Collect usage now, before memory compression (which happens in PostCall)
+                List<Msg> messages = new ArrayList<>(memory.getMessages());
+                aggregatedUsage = collectChatUsage(messages);
+
                 log.debug("generate_response completed successfully, stopping agent");
                 event.stopAgent();
             }
@@ -174,12 +182,65 @@ public class StructuredOutputHook implements Hook {
         if (resultMsg != null) {
             Msg finalMsg = extractFinalResponseMsg(resultMsg);
             if (finalMsg != null) {
+                // Merge collected usage into final message (usage was collected in
+                // handlePostActing)
+                if (aggregatedUsage != null) {
+                    finalMsg = mergeChatUsage(finalMsg, aggregatedUsage);
+                }
                 memory.addMessage(finalMsg);
             }
         }
 
         log.debug(
                 "Memory compressed: {} -> {} messages", originalSize, memory.getMessages().size());
+    }
+
+    /**
+     * Collect and aggregate ChatUsage from assistant messages that are being removed.
+     */
+    private ChatUsage collectChatUsage(List<Msg> messages) {
+        int totalInput = 0;
+        int totalOutput = 0;
+        double totalTime = 0;
+        boolean hasUsage = false;
+
+        for (Msg msg : messages) {
+            if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
+                ChatUsage usage = msg.getChatUsage();
+                if (usage != null) {
+                    hasUsage = true;
+                    totalInput += usage.getInputTokens();
+                    totalOutput += usage.getOutputTokens();
+                    totalTime += usage.getTime();
+                }
+            }
+        }
+
+        return hasUsage
+                ? ChatUsage.builder()
+                        .inputTokens(totalInput)
+                        .outputTokens(totalOutput)
+                        .time(totalTime)
+                        .build()
+                : null;
+    }
+
+    /**
+     * Create a new message with the given ChatUsage merged into its metadata.
+     */
+    private Msg mergeChatUsage(Msg msg, ChatUsage chatUsage) {
+        Map<String, Object> metadata =
+                new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
+        metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(msg.getContent())
+                .metadata(metadata)
+                .timestamp(msg.getTimestamp())
+                .build();
     }
 
     /**
@@ -266,6 +327,15 @@ public class StructuredOutputHook implements Hook {
      */
     public Msg getResultMsg() {
         return resultMsg;
+    }
+
+    /**
+     * Get the aggregated ChatUsage from all reasoning rounds.
+     *
+     * @return The aggregated ChatUsage, or null if no usage was collected
+     */
+    public ChatUsage getAggregatedUsage() {
+        return aggregatedUsage;
     }
 
     @Override
