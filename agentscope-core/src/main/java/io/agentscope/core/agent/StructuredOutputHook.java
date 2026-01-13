@@ -100,17 +100,31 @@ public class StructuredOutputHook implements Hook {
     }
 
     private void handlePreReasoning(PreReasoningEvent event) {
-        // In TOOL_CHOICE mode, force tool_choice to generate_response
+        // In TOOL_CHOICE mode, only force tool_choice when processing a TOOL_CHOICE reminder
+        // message
         if (reminderMode == StructuredOutputReminder.TOOL_CHOICE) {
-            GenerateOptions options =
-                    GenerateOptions.mergeOptions(
-                            GenerateOptions.builder()
-                                    .toolChoice(new ToolChoice.Specific(TOOL_NAME))
-                                    .build(),
-                            baseOptions);
-            event.setGenerateOptions(options);
-            log.debug("Set tool_choice to force generate_response");
+            Msg lastMsg = event.getInputMessages().get(event.getInputMessages().size() - 1);
+            if (lastMsg != null && isToolChoiceReminderMessage(lastMsg)) {
+                GenerateOptions options =
+                        GenerateOptions.mergeOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(new ToolChoice.Specific(TOOL_NAME))
+                                        .build(),
+                                baseOptions);
+                event.setGenerateOptions(options);
+                log.debug("Set tool_choice to force generate_response on retry");
+            }
         }
+    }
+
+    private boolean isToolChoiceReminderMessage(Msg msg) {
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+        return StructuredOutputReminder.TOOL_CHOICE
+                .toString()
+                .equals(metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE));
     }
 
     private void handlePostReasoning(PostReasoningEvent event) {
@@ -127,8 +141,9 @@ public class StructuredOutputHook implements Hook {
                     "Model didn't call any tool, requesting retry ({}/{})",
                     retryCount,
                     MAX_RETRIES);
-            // Always add reminder message and goto reasoning
-            event.gotoReasoning(createReminderMessage());
+
+            // Add reminder message and goto reasoning
+            event.gotoReasoning(createReminderMessage(reminderMode));
         }
         // If max retries exceeded, let it continue to summarizing which will report error
     }
@@ -236,7 +251,24 @@ public class StructuredOutputHook implements Hook {
                 && results.stream().allMatch(tr -> TOOL_NAME.equals(tr.getName()));
     }
 
-    private Msg createReminderMessage() {
+    /**
+     * Creates a reminder message to prompt the model to call generate_response.
+     *
+     * <p>The message includes metadata to identify it as a reminder and store the
+     * reminder mode, which is used by {@link #handlePreReasoning} to determine
+     * whether to force tool_choice on retry.
+     *
+     * @param mode The structured output reminder mode
+     * @return A reminder message with appropriate metadata
+     */
+    private Msg createReminderMessage(StructuredOutputReminder mode) {
+        Map<String, Object> metadata =
+                Map.of(
+                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER,
+                        true,
+                        MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER_TYPE,
+                        mode.toString());
+
         return Msg.builder()
                 .name("system")
                 .role(MsgRole.USER)
@@ -246,7 +278,7 @@ public class StructuredOutputHook implements Hook {
                                         "Please call the 'generate_response' function to provide"
                                                 + " your response.")
                                 .build())
-                .metadata(Map.of(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true))
+                .metadata(metadata)
                 .build();
     }
 
