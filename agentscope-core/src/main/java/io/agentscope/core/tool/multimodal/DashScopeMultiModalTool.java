@@ -391,7 +391,21 @@ public class DashScopeMultiModalTool {
     }
 
     /**
-     * Synthesize audio using Qwen TTS models via multimodal-generation API.
+     * Synthesizes audio using Qwen TTS models via the multimodal-generation API.
+     *
+     * <p>This method handles the HTTP communication with DashScope's Qwen TTS endpoint,
+     * building the request payload with text, voice, and language parameters, then
+     * parsing the response to extract audio data.
+     *
+     * <p>The method uses the multimodal-generation API endpoint which differs from
+     * the standard speech synthesis endpoint used by other models.
+     *
+     * @param text the text to synthesize into speech
+     * @param model the Qwen TTS model name (e.g., "qwen3-tts-flash", "qwen-tts")
+     * @param voice the voice name for synthesis, defaults to "Cherry" if null/empty
+     * @param language the language type, defaults to "Chinese" if null/empty
+     * @return a Mono containing ToolResultBlock with AudioBlock on success,
+     *         or an error ToolResultBlock on failure
      */
     private Mono<ToolResultBlock> synthesizeWithQwenTTS(
             String text, String model, String voice, String language) {
@@ -460,7 +474,29 @@ public class DashScopeMultiModalTool {
     }
 
     /**
-     * Parse Qwen TTS API response.
+     * Parses the Qwen TTS API response and extracts audio data.
+     *
+     * <p>The response structure from Qwen TTS API is:
+     * <pre>{@code
+     * {
+     *   "request_id": "...",
+     *   "output": {
+     *     "audio": {
+     *       "url": "https://..."  // or "data": "base64..."
+     *     }
+     *   }
+     * }
+     * }</pre>
+     *
+     * <p>The method handles two audio formats:
+     * <ul>
+     *   <li>URL-based: returns AudioBlock with URLSource</li>
+     *   <li>Base64-encoded: returns AudioBlock with Base64Source</li>
+     * </ul>
+     *
+     * @param responseBody the raw JSON response body from the API
+     * @return ToolResultBlock containing AudioBlock on success,
+     *         or an error ToolResultBlock if parsing fails or response contains an error
      */
     private ToolResultBlock parseQwenTTSResponse(String responseBody) {
         try {

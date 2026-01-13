@@ -179,7 +179,10 @@ public class TTSHook implements Hook {
      */
     private void emitAudio(AudioBlock audio) {
         // 1. Emit to reactive stream (for SSE/WebSocket consumers)
-        audioSink.tryEmitNext(audio);
+        Sinks.EmitResult result = audioSink.tryEmitNext(audio);
+        if (result.isFailure()) {
+            log.warn("Failed to emit audio to sink: {}", result);
+        }
 
         // 2. Call callback if provided
         if (audioCallback != null) {
@@ -238,7 +241,10 @@ public class TTSHook implements Hook {
             playerStarted = false;
         }
         sessionStarted = false;
-        audioSink.tryEmitComplete();
+        Sinks.EmitResult result = audioSink.tryEmitComplete();
+        if (result.isFailure()) {
+            log.warn("Failed to complete audio sink: {}", result);
+        }
     }
 
     /**
