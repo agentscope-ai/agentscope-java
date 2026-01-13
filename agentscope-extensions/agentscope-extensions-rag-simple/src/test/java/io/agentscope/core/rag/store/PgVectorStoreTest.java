@@ -62,10 +62,10 @@ import reactor.test.StepVerifier;
 @DisplayName("PgVectorStore Unit Tests")
 class PgVectorStoreTest {
 
-    private static final String TEST_JDBC_URL = "jdbc:postgresql://39.99.176.43:30088/aidb";
-    private static final String TEST_USERNAME = "aiuser";
-    private static final String TEST_PASSWORD = "aiuserpasswd";
-    private static final String TEST_TABLE = "miss_pg_embedding";
+    private static final String TEST_JDBC_URL = "jdbc:postgresql://localhost:5432/db";
+    private static final String TEST_USERNAME = "postgres";
+    private static final String TEST_PASSWORD = "postgres";
+    private static final String TEST_TABLE = "vectordb";
     private static final String TEST_SCHEMA = "public";
     private static final int TEST_DIMENSIONS = 3;
 
