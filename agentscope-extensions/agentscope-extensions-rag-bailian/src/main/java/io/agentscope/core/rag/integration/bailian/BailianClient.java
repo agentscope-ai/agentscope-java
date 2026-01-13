@@ -255,8 +255,8 @@ public class BailianClient {
 
                     if (response.getBody().getData() == null) {
                         log.warn(
-                                "Bailian API returned no data for query: {}. requestId={},statu={}, code={},"
-                                        + " message={}",
+                                "Bailian API returned no data for query: {}. requestId={},statu={},"
+                                        + " code={}, message={}",
                                 query,
                                 response.getBody().getRequestId(),
                                 response.getBody().getStatus(),
