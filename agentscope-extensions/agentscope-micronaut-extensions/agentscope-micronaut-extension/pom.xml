@@ -30,7 +30,7 @@
     <description>Micronaut integration for AgentScope Java</description>
 
     <properties>
-        <micronaut.version>4.10.6</micronaut.version>
+        <micronaut.version>4.10.7</micronaut.version>
         <!-- GraalVM Native Image Configuration -->
         <graalvm.version>24.0.1</graalvm.version>
     </properties>

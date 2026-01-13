@@ -16,6 +16,8 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -160,7 +162,14 @@ public class ExampleUtils {
                     AtomicReference<String> lastThinkingContent = new AtomicReference<>("");
                     AtomicReference<String> lastTextContent = new AtomicReference<>("");
 
-                    agent.stream(userMsg)
+                    StreamOptions streamOptions =
+                            StreamOptions.builder()
+                                    .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                                    .incremental(true)
+                                    .includeReasoningResult(false)
+                                    .build();
+
+                    agent.stream(userMsg, streamOptions)
                             .doOnNext(
                                     event -> {
                                         Msg msg = event.getMessage();
