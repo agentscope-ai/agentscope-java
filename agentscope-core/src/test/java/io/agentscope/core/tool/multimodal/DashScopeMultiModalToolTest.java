@@ -603,7 +603,8 @@ class DashScopeMultiModalToolTest {
                         });
 
         Mono<ToolResultBlock> result =
-                multiModalTool.dashscopeTextToAudio("hello", "sambert-zhichu-v1", 48000);
+                multiModalTool.dashscopeTextToAudio(
+                        "hello", "sambert-zhichu-v1", null, null, 48000);
 
         StepVerifier.create(result)
                 .assertNext(
@@ -634,7 +635,8 @@ class DashScopeMultiModalToolTest {
                         });
 
         Mono<ToolResultBlock> result =
-                multiModalTool.dashscopeTextToAudio("hello", "sambert-zhichu-v1", 48000);
+                multiModalTool.dashscopeTextToAudio(
+                        "hello", "sambert-zhichu-v1", null, null, 48000);
 
         StepVerifier.create(result)
                 .assertNext(
@@ -662,7 +664,8 @@ class DashScopeMultiModalToolTest {
                         });
 
         Mono<ToolResultBlock> result =
-                multiModalTool.dashscopeTextToAudio("hello", "sambert-zhichu-v1", 48000);
+                multiModalTool.dashscopeTextToAudio(
+                        "hello", "sambert-zhichu-v1", null, null, 48000);
 
         StepVerifier.create(result)
                 .assertNext(
@@ -690,7 +693,8 @@ class DashScopeMultiModalToolTest {
                         });
 
         Mono<ToolResultBlock> result =
-                multiModalTool.dashscopeTextToAudio("hello", "sambert-zhichu-v1", 48000);
+                multiModalTool.dashscopeTextToAudio(
+                        "hello", "sambert-zhichu-v1", null, null, 48000);
 
         StepVerifier.create(result)
                 .assertNext(
