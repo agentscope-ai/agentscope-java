@@ -193,7 +193,7 @@ public class AguiAgentAdapter {
                     }
                 }
             }
-        } else if (type == EventType.TOOL_RESULT) {
+        } else if (type == EventType.TOOL_RESULT && event.isLast()) {
             // Handle tool results
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof ToolResultBlock toolResult) {
