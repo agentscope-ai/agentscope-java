@@ -287,7 +287,7 @@ public class DashScopeRealtimeTTSModel implements TTSModel {
             // Check for errors
             if (root.has("code") && !root.get("code").isNull()) {
                 String code = root.get("code").asText();
-                if (!"".equals(code)) {
+                if (!code.isEmpty()) {
                     log.warn(
                             "TTS API error: {}",
                             root.has("message") ? root.get("message").asText() : code);
