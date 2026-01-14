@@ -17,6 +17,7 @@ package io.agentscope.core.studio;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -27,12 +28,21 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -228,5 +238,124 @@ class StudioMessageHookTest {
         // Verify both messages were pushed
         verify(mockStudioClient, times(1)).pushMessage(msg1);
         verify(mockStudioClient, times(1)).pushMessage(msg2);
+    }
+
+    @Test
+    @DisplayName("Should forward reasoning chunk to Studio")
+    void testReasoningChunkEventForwards() {
+        // Mock push success
+        when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
+
+        // Build incremental and accumulated msg
+        Msg incremental =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("partial chunk").build())
+                        .build();
+        Msg accumulated =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("accumulated so far").build())
+                        .build();
+
+        ReasoningChunkEvent event =
+                new ReasoningChunkEvent(mockAgent, "test-model", null, incremental, accumulated);
+
+        Mono<HookEvent> result = hook.onEvent(event);
+
+        StepVerifier.create(result).expectNext(event).verifyComplete();
+
+        verify(mockStudioClient, times(1))
+                .pushMessage(argThat(m -> {
+                    Map<String, Object> md = m.getMetadata();
+                    return md != null
+                            && "reasoning".equals(md.get("studio_event_type"))
+                            && Boolean.FALSE.equals(md.get("studio_is_last"));
+                }));
+    }
+
+    @Test
+    @DisplayName("Should forward final reasoning result to Studio")
+    void testPostReasoningEventForwards() {
+        // Mock push success
+        when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
+
+        Msg finalMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("final reasoning").build())
+                        .build();
+
+        PostReasoningEvent event = new PostReasoningEvent(mockAgent, "test-model", null, finalMsg);
+
+        Mono<HookEvent> result = hook.onEvent(event);
+
+        StepVerifier.create(result).expectNext(event).verifyComplete();
+
+        verify(mockStudioClient, times(1))
+                .pushMessage(argThat(m -> {
+                    Map<String, Object> md = m.getMetadata();
+                    return md != null
+                            && "reasoning".equals(md.get("studio_event_type"))
+                            && Boolean.TRUE.equals(md.get("studio_is_last"));
+                }));
+    }
+
+    @Test
+    @DisplayName("Should forward acting (tool) chunk to Studio")
+    void testActingChunkEventForwards() {
+        // Mock push success
+        when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
+
+        Toolkit toolkit = new Toolkit();
+        ToolUseBlock toolUse = ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
+        ToolResultBlock chunk = ToolResultBlock.text("progress update");
+
+        ActingChunkEvent event = new ActingChunkEvent(mockAgent, toolkit, toolUse, chunk);
+
+        Mono<HookEvent> result = hook.onEvent(event);
+
+        StepVerifier.create(result).expectNext(event).verifyComplete();
+
+        verify(mockStudioClient, times(1))
+                .pushMessage(argThat(m -> {
+                    // Expect a TOOL role message with metadata and a ToolResultBlock in content
+                    Map<String, Object> md = m.getMetadata();
+                    boolean hasMeta = md != null && "tool_result".equals(md.get("studio_event_type")) && Boolean.FALSE.equals(md.get("studio_is_last"));
+                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
+                    boolean hasToolResult =
+                            !m.getContentBlocks(io.agentscope.core.message.ToolResultBlock.class).isEmpty();
+                    return hasMeta && isToolRole && hasToolResult;
+                }));
+    }
+
+    @Test
+    @DisplayName("Should forward final acting (tool) result to Studio")
+    void testPostActingEventForwards() {
+        // Mock push success
+        when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
+
+        Toolkit toolkit = new Toolkit();
+        ToolUseBlock toolUse = ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
+        ToolResultBlock resultBlock = ToolResultBlock.text("final result");
+
+        PostActingEvent event = new PostActingEvent(mockAgent, toolkit, toolUse, resultBlock);
+
+        Mono<HookEvent> result = hook.onEvent(event);
+
+        StepVerifier.create(result).expectNext(event).verifyComplete();
+
+        verify(mockStudioClient, times(1))
+                .pushMessage(argThat(m -> {
+                    Map<String, Object> md = m.getMetadata();
+                    boolean hasMeta = md != null && "tool_result".equals(md.get("studio_event_type")) && Boolean.TRUE.equals(md.get("studio_is_last"));
+                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
+                    boolean hasToolResult =
+                            !m.getContentBlocks(io.agentscope.core.message.ToolResultBlock.class).isEmpty();
+                    return hasMeta && isToolRole && hasToolResult;
+                }));
     }
 }
