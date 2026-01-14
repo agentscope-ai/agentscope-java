@@ -783,7 +783,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event = new ActingChunkEvent(this, toolkit, toolUse, chunk);
+        ActingChunkEvent event =
+                new ActingChunkEvent(
+                        this,
+                        toolkit,
+                        toolUse,
+                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
@@ -1461,14 +1466,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *
          * <p>This method automatically:
          * <ul>
-         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
-            agentToolkit.registerTool(skillBox);
+            skillBox.registerSkillLoadTool();
 
             hooks.add(new SkillHook(skillBox));
         }
