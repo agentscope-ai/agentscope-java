@@ -34,6 +34,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
@@ -123,6 +124,51 @@ class AguiAgentAdapterTest {
         assertTrue(hasTextEnd, "Should have TextMessageEnd");
 
         assertInstanceOf(AguiEvent.RunFinished.class, events.get(events.size() - 1));
+    }
+
+    @Test
+    void testRunWithThinkingEvent() {
+        Msg thinkingMsg =
+                Msg.builder()
+                        .id("msg-th1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Thinking deeply...").build())
+                        .build();
+
+        Event thinkingEvent = new Event(EventType.THINKING, thinkingMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(thinkingEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Thinking content should be mapped to TEXT_MESSAGE_* events with special messageId
+        boolean hasTextStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageStart);
+        boolean hasTextContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+
+        assertTrue(hasTextStart, "Thinking should have TextMessageStart");
+        assertTrue(hasTextContent, "Thinking should have TextMessageContent");
+
+        // Verify messageId prefix
+        AguiEvent.TextMessageStart startEvent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(
+                startEvent.messageId().startsWith("thinking-"),
+                "Thinking messageId should start with 'thinking-'");
     }
 
     @Test

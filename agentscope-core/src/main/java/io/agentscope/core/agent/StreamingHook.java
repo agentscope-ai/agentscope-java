@@ -24,6 +24,7 @@ import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -62,21 +63,44 @@ class StreamingHook implements Hook {
         if (event instanceof PostReasoningEvent) {
             PostReasoningEvent e = (PostReasoningEvent) event;
             // postReasoning is called after streaming completes
-            // This is the last/complete message
-            if (options.shouldStream(EventType.REASONING)
+            // This is the last/complete message (may contain thinking + text + tool calls)
+            Msg fullMsg = e.getReasoningMessage();
+
+            // Split into thinking-only and reasoning-only messages
+            Msg thinkingMsg = filterContent(fullMsg, true);
+            Msg reasoningMsg = filterContent(fullMsg, false);
+
+            if (thinkingMsg != null
+                    && options.shouldStream(EventType.THINKING)
                     && options.shouldIncludeReasoningEmission(false)) {
-                emitEvent(EventType.REASONING, e.getReasoningMessage(), true);
+                emitEvent(EventType.THINKING, thinkingMsg, true);
+            }
+
+            if (reasoningMsg != null
+                    && options.shouldStream(EventType.REASONING)
+                    && options.shouldIncludeReasoningEmission(false)) {
+                emitEvent(EventType.REASONING, reasoningMsg, true);
             }
             return Mono.just(event);
         } else if (event instanceof ReasoningChunkEvent) {
             ReasoningChunkEvent e = (ReasoningChunkEvent) event;
             // This is an intermediate chunk
-            if (options.shouldStream(EventType.REASONING)
-                    && options.shouldIncludeReasoningEmission(true)) {
+            if (options.shouldIncludeReasoningEmission(true)) {
                 // Use incremental or accumulated based on StreamOptions
                 Msg msgToEmit =
                         options.isIncremental() ? e.getIncrementalChunk() : e.getAccumulated();
-                emitEvent(EventType.REASONING, msgToEmit, false);
+                ContentBlock block = msgToEmit.getFirstContentBlock();
+
+                if (block instanceof ThinkingBlock) {
+                    if (options.shouldStream(EventType.THINKING)) {
+                        emitEvent(EventType.THINKING, msgToEmit, false);
+                    }
+                } else {
+                    // TextBlock or ToolUseBlock are treated as reasoning content
+                    if (options.shouldStream(EventType.REASONING)) {
+                        emitEvent(EventType.REASONING, msgToEmit, false);
+                    }
+                }
             }
             return Mono.just(event);
         } else if (event instanceof PostActingEvent) {
@@ -138,5 +162,38 @@ class StreamingHook implements Hook {
         } else {
             previousContent.remove(msg.getId());
         }
+    }
+
+    /**
+     * Filter content blocks in a message by whether they are thinking content.
+     *
+     * @param source the original message
+     * @param thinking true to keep only ThinkingBlock, false to drop ThinkingBlock
+     * @return a new Msg with filtered content, or null if no content remains
+     */
+    private Msg filterContent(Msg source, boolean thinking) {
+        if (source == null || source.getContent() == null || source.getContent().isEmpty()) {
+            return null;
+        }
+
+        List<ContentBlock> filtered = new ArrayList<>();
+        for (ContentBlock block : source.getContent()) {
+            boolean isThinking = block instanceof ThinkingBlock;
+            if (thinking == isThinking) {
+                filtered.add(block);
+            }
+        }
+
+        if (filtered.isEmpty()) {
+            return null;
+        }
+
+        return Msg.builder()
+                .id(source.getId())
+                .name(source.getName())
+                .role(source.getRole())
+                .content(filtered)
+                .metadata(source.getMetadata())
+                .build();
     }
 }

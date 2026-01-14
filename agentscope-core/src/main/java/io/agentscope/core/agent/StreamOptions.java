@@ -25,20 +25,24 @@ import java.util.Set;
  *
  * <p>Controls which event types to receive and how streaming content is delivered.
  *
- * <p><b>Reasoning filtering (Issue #265):</b>
- * Some streaming backends emit both:
+ * <p><b>Reasoning/thinking filtering (Issue #265):</b>
+ * Some streaming backends emit multiple reasoning-related emissions:
  * <ul>
- *   <li><b>Reasoning chunks</b>: incremental deltas during the reasoning process</li>
+ *   <li><b>Thinking chunks</b>: incremental deltas of the internal reasoning process
+ *       (mapped to {@link EventType#THINKING})</li>
+ *   <li><b>Reasoning chunks</b>: incremental deltas of the final answer and tool decisions
+ *       (mapped to {@link EventType#REASONING})</li>
  *   <li><b>Reasoning result</b>: the final consolidated reasoning output</li>
  * </ul>
  *
- * <p>Use {@link #isIncludeReasoningChunk()} and {@link #isIncludeReasoningResult()} to filter
- * these reasoning-related emissions when {@link EventType#REASONING} is enabled.
+ * <p>Use {@link #isIncludeReasoningChunk()} and {@link #isIncludeReasoningResult()} together
+ * with {@link EventType#THINKING} and {@link EventType#REASONING} to filter these
+ * reasoning-related emissions.
  *
  * <p><b>Example usage:</b>
  *
  * <pre>{@code
- * // Only reasoning events, incremental mode
+ * // Only final reasoning events (no thinking), incremental mode
  * StreamOptions options = StreamOptions.builder()
  *     .eventTypes(EventType.REASONING)
  *     .incremental(true)
@@ -52,9 +56,9 @@ import java.util.Set;
  *     .incremental(true)
  *     .build();
  *
- * // Multiple specific types
+ * // Thinking + reasoning + tool results
  * StreamOptions options = StreamOptions.builder()
- *     .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+ *     .eventTypes(EventType.THINKING, EventType.REASONING, EventType.TOOL_RESULT)
  *     .incremental(true)
  *     .build();
  * }</pre>

@@ -164,7 +164,12 @@ public class ExampleUtils {
 
                     StreamOptions streamOptions =
                             StreamOptions.builder()
-                                    .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                                    // Subscribe to both THINKING (internal reasoning) and
+                                    // REASONING (final answer / tool decisions)
+                                    .eventTypes(
+                                            EventType.THINKING,
+                                            EventType.REASONING,
+                                            EventType.TOOL_RESULT)
                                     .incremental(true)
                                     .includeReasoningResult(false)
                                     .build();

@@ -35,7 +35,8 @@ class EventTest {
     @Test
     void testEventTypeValues() {
         // Verify all expected event types exist
-        assertEquals(6, EventType.values().length);
+        assertEquals(7, EventType.values().length);
+        assertNotNull(EventType.valueOf("THINKING"));
         assertNotNull(EventType.valueOf("REASONING"));
         assertNotNull(EventType.valueOf("TOOL_RESULT"));
         assertNotNull(EventType.valueOf("HINT"));
@@ -162,6 +163,9 @@ class EventTest {
                         .build();
 
         // Test each event type
+        Event thinkingEvent = new Event(EventType.THINKING, msg, true);
+        assertEquals(EventType.THINKING, thinkingEvent.getType());
+
         Event reasoningEvent = new Event(EventType.REASONING, msg, true);
         assertEquals(EventType.REASONING, reasoningEvent.getType());
 

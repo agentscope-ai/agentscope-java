@@ -25,6 +25,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
@@ -46,6 +47,7 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Event Mapping:</b>
  * <ul>
+ *   <li>AgentScope THINKING events → AG-UI TEXT_MESSAGE_* events (with "thinking-{id}" messageId)</li>
  *   <li>AgentScope REASONING events → AG-UI TEXT_MESSAGE_* events</li>
  *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
  *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
@@ -127,7 +129,47 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING) {
+        if (type == EventType.THINKING) {
+            // Handle thinking events - convert ThinkingBlock to text messages with special
+            // messageId
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof ThinkingBlock thinkingBlock) {
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        // Use special messageId prefix to identify thinking content
+                        String originalMessageId = msg.getId();
+                        String thinkingMessageId = "thinking-" + originalMessageId;
+
+                        // Start message if not started
+                        if (!state.hasStartedMessage(thinkingMessageId)) {
+                            events.add(
+                                    new AguiEvent.TextMessageStart(
+                                            state.threadId,
+                                            state.runId,
+                                            thinkingMessageId,
+                                            "assistant"));
+                            state.startMessage(thinkingMessageId);
+                        }
+
+                        if (!event.isLast()) {
+                            // In incremental mode, thinking is already the delta
+                            events.add(
+                                    new AguiEvent.TextMessageContent(
+                                            state.threadId,
+                                            state.runId,
+                                            thinkingMessageId,
+                                            thinking));
+                        } else {
+                            // End message if this is the last event
+                            events.add(
+                                    new AguiEvent.TextMessageEnd(
+                                            state.threadId, state.runId, thinkingMessageId));
+                            state.endMessage(thinkingMessageId);
+                        }
+                    }
+                }
+            }
+        } else if (type == EventType.REASONING) {
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {

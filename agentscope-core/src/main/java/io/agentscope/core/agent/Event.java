@@ -31,15 +31,27 @@ import io.agentscope.core.message.Msg;
  * agent.stream(userMsg, options)
  *     .subscribe(event -> {
  *         switch (event.getType()) {
+ *             case THINKING -> {
+ *                 // Internal reasoning / deep thinking content
+ *                 if (!event.isLast()) {
+ *                     System.out.print("…"); // thinking progress indicator
+ *                 } else {
+ *                     System.out.println("Thinking finished");
+ *                 }
+ *             }
  *             case REASONING -> {
  *                 if (event.isLast()) {
- *                     System.out.println("✓ Reasoning complete");
+ *                     System.out.println("✓ Reasoning complete: "
+ *                             + event.getMessage().getTextContent());
  *                 } else {
- *                     System.out.print("...");  // Progress indicator
+ *                     System.out.print("...");  // reasoning progress indicator
  *                 }
  *             }
  *             case TOOL_RESULT -> {
  *                 System.out.println("Tool: " + event.getMessage().getTextContent());
+ *             }
+ *             default -> {
+ *                 // ignore other event types
  *             }
  *         }
  *     });

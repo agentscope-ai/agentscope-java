@@ -29,6 +29,7 @@ class StreamOptionsTest {
         StreamOptions options = StreamOptions.defaults();
 
         // Default should include ALL event types (based on current StreamOptions implementation)
+        assertTrue(options.shouldStream(EventType.THINKING));
         assertTrue(options.shouldStream(EventType.REASONING));
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertTrue(options.shouldStream(EventType.HINT));

@@ -23,12 +23,24 @@ package io.agentscope.core.agent;
  */
 public enum EventType {
     /**
-     * Reasoning event - Agent thinking and planning.
+     * Thinking event - Agent's internal reasoning process.
      *
      * <p>Characteristics:
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
-     *   <li>Content: TextBlock, ThinkingBlock, and/or tool call requests</li>
+     *   <li>Content: ThinkingBlock (model internal reasoning / deep thinking)</li>
+     *   <li>Streaming: Supported (multiple events with same message ID)</li>
+     * </ul>
+     */
+    THINKING,
+
+    /**
+     * Reasoning event - Agent final answer and action decisions.
+     *
+     * <p>Characteristics:
+     * <ul>
+     *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
+     *   <li>Content: TextBlock and/or ToolUseBlock</li>
      *   <li>Streaming: Supported (multiple events with same message ID)</li>
      * </ul>
      */
