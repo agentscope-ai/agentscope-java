@@ -29,9 +29,7 @@ class TelemetryTracerTest {
     @DisplayName("Builder with endpoint should create valid tracer")
     void testBuilderWithEndpoint() {
         TelemetryTracer tracer =
-                TelemetryTracer.builder()
-                        .endpoint("http://localhost:4318/v1/traces")
-                        .build();
+                TelemetryTracer.builder().endpoint("http://localhost:4318/v1/traces").build();
 
         assertNotNull(tracer);
     }
