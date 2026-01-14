@@ -156,10 +156,26 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
             this.operator = operator;
         }
 
+        /**
+         * Gets the index operator class name for this distance type.
+         *
+         * <p>This is used when creating HNSW indexes in PostgreSQL with pgvector.
+         * For example: {@code CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)}
+         *
+         * @return the index operator class name (e.g., "vector_cosine_ops", "vector_l2_ops")
+         */
         public String getIndexOps() {
             return indexOps;
         }
 
+        /**
+         * Gets the SQL operator for this distance type.
+         *
+         * <p>This operator is used in ORDER BY clauses to sort results by similarity.
+         * For example: {@code ORDER BY embedding <=> query_vector}
+         *
+         * @return the SQL operator (e.g., "{@code <=>}" for cosine, "{@code <->}" for L2)
+         */
         public String getOperator() {
             return operator;
         }
