@@ -918,7 +918,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private RAGMode ragMode = RAGMode.GENERIC;
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
-        private boolean enableOnlyForUserQueries = true;
 
         private Builder() {}
 
@@ -1250,17 +1249,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets whether to enable RAG only for user queries.
-         *
-         * @param enableOnlyForUserQueries If true, RAG is only triggered for user messages
-         * @return This builder instance for method chaining
-         */
-        public Builder enableOnlyForUserQueries(boolean enableOnlyForUserQueries) {
-            this.enableOnlyForUserQueries = enableOnlyForUserQueries;
-            return this;
-        }
-
-        /**
          * Sets the tool execution context for this agent.
          *
          * <p>This context will be passed to all tools invoked by this agent and can include
@@ -1363,8 +1351,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case GENERIC -> {
                     // Create and add GenericRAGHook
                     GenericRAGHook ragHook =
-                            new GenericRAGHook(
-                                    aggregatedKnowledge, retrieveConfig, enableOnlyForUserQueries);
+                            new GenericRAGHook(aggregatedKnowledge, retrieveConfig);
                     hooks.add(ragHook);
                 }
                 case AGENTIC -> {
