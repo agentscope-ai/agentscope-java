@@ -36,6 +36,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
@@ -154,8 +155,7 @@ public class McpClientBuilder {
      * @param customizer consumer to customize the HttpClient.Builder
      * @return this builder
      */
-    public McpClientBuilder customizeSseClient(
-            java.util.function.Consumer<java.net.http.HttpClient.Builder> customizer) {
+    public McpClientBuilder customizeSseClient(Consumer<HttpClient.Builder> customizer) {
         if (transportConfig instanceof SseTransportConfig) {
             ((SseTransportConfig) transportConfig).customizeHttpClient(customizer);
         }
@@ -190,8 +190,7 @@ public class McpClientBuilder {
      * @param customizer consumer to customize the HttpClient.Builder
      * @return this builder
      */
-    public McpClientBuilder customizeStreamableHttpClient(
-            java.util.function.Consumer<java.net.http.HttpClient.Builder> customizer) {
+    public McpClientBuilder customizeStreamableHttpClient(Consumer<HttpClient.Builder> customizer) {
         if (transportConfig instanceof StreamableHttpTransportConfig) {
             ((StreamableHttpTransportConfig) transportConfig).customizeHttpClient(customizer);
         }
@@ -485,8 +484,7 @@ public class McpClientBuilder {
 
     private static class SseTransportConfig extends HttpTransportConfig {
         private HttpClientSseClientTransport.Builder clientTransportBuilder = null;
-        private java.util.function.Consumer<java.net.http.HttpClient.Builder> httpClientCustomizer =
-                null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
 
         public SseTransportConfig(String url) {
             super(url);
@@ -497,8 +495,7 @@ public class McpClientBuilder {
             this.clientTransportBuilder = clientTransportBuilder;
         }
 
-        public void customizeHttpClient(
-                java.util.function.Consumer<HttpClient.Builder> customizer) {
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
             this.httpClientCustomizer = customizer;
         }
 
@@ -528,8 +525,7 @@ public class McpClientBuilder {
 
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
         private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
-        private java.util.function.Consumer<java.net.http.HttpClient.Builder> httpClientCustomizer =
-                null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
 
         public StreamableHttpTransportConfig(String url) {
             super(url);
@@ -540,8 +536,7 @@ public class McpClientBuilder {
             this.clientTransportBuilder = clientTransportBuilder;
         }
 
-        public void customizeHttpClient(
-                java.util.function.Consumer<HttpClient.Builder> customizer) {
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
             this.httpClientCustomizer = customizer;
         }
 
