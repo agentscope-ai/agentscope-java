@@ -17,7 +17,6 @@ package io.agentscope.core.memory.mem0;
 
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
