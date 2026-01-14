@@ -57,6 +57,8 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
