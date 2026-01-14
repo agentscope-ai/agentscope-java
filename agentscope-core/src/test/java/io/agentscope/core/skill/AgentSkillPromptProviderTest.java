@@ -52,10 +52,14 @@ class AgentSkillPromptProviderTest {
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.contains("# Agent Skills"));
-        assertTrue(prompt.contains("## test_skill_custom"));
-        assertTrue(prompt.contains("Test Skill Description"));
-        assertTrue(prompt.contains("check \"SKILL.md\" for how to use this skill"));
+        assertTrue(prompt.contains("## Available Skills"));
+        assertTrue(prompt.contains("<available_skills>"));
+        assertTrue(prompt.contains("<skill>"));
+        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
+        assertTrue(prompt.contains("<name>test_skill</name>"));
+        assertTrue(prompt.contains("<description>Test Skill Description</description>"));
+        assertTrue(prompt.contains("</skill>"));
+        assertTrue(prompt.contains("</available_skills>"));
     }
 
     @Test
@@ -71,11 +75,13 @@ class AgentSkillPromptProviderTest {
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.contains("# Agent Skills"));
-        assertTrue(prompt.contains("## skill1_custom"));
-        assertTrue(prompt.contains("First Skill"));
-        assertTrue(prompt.contains("## skill2_custom"));
-        assertTrue(prompt.contains("Second Skill"));
+        assertTrue(prompt.contains("## Available Skills"));
+        assertTrue(prompt.contains("<skill-id>skill1_custom</skill-id>"));
+        assertTrue(prompt.contains("<name>skill1</name>"));
+        assertTrue(prompt.contains("<description>First Skill</description>"));
+        assertTrue(prompt.contains("<skill-id>skill2_custom</skill-id>"));
+        assertTrue(prompt.contains("<name>skill2</name>"));
+        assertTrue(prompt.contains("<description>Second Skill</description>"));
     }
 
     @Test
@@ -87,11 +93,13 @@ class AgentSkillPromptProviderTest {
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.startsWith("# Agent Skills\n"));
-        assertTrue(prompt.contains("specialized capabilities you can load on-demand"));
-        assertTrue(prompt.contains("skill_md_load_tool"));
-        assertTrue(prompt.contains("Only load skill details when you actually need them"));
-        assertTrue(prompt.contains("## test_skill_custom\nTest Description"));
+        assertTrue(prompt.startsWith("## Available Skills\n"));
+        assertTrue(prompt.contains("specialized capabilities"));
+        assertTrue(prompt.contains("load_skill_through_path"));
+        assertTrue(prompt.contains("<usage>"));
+        assertTrue(prompt.contains("</usage>"));
+        assertTrue(prompt.contains("<available_skills>"));
+        assertTrue(prompt.contains("</available_skills>"));
     }
 
     @Test
