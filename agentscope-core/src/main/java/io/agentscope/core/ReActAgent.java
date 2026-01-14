@@ -783,7 +783,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event = new ActingChunkEvent(this, toolkit, toolUse, chunk);
+        ActingChunkEvent event =
+                new ActingChunkEvent(
+                        this,
+                        toolkit,
+                        toolUse,
+                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
@@ -913,7 +918,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private RAGMode ragMode = RAGMode.GENERIC;
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
-        private boolean enableOnlyForUserQueries = true;
 
         private Builder() {}
 
@@ -1245,17 +1249,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets whether to enable RAG only for user queries.
-         *
-         * @param enableOnlyForUserQueries If true, RAG is only triggered for user messages
-         * @return This builder instance for method chaining
-         */
-        public Builder enableOnlyForUserQueries(boolean enableOnlyForUserQueries) {
-            this.enableOnlyForUserQueries = enableOnlyForUserQueries;
-            return this;
-        }
-
-        /**
          * Sets the tool execution context for this agent.
          *
          * <p>This context will be passed to all tools invoked by this agent and can include
@@ -1358,8 +1351,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case GENERIC -> {
                     // Create and add GenericRAGHook
                     GenericRAGHook ragHook =
-                            new GenericRAGHook(
-                                    aggregatedKnowledge, retrieveConfig, enableOnlyForUserQueries);
+                            new GenericRAGHook(aggregatedKnowledge, retrieveConfig);
                     hooks.add(ragHook);
                 }
                 case AGENTIC -> {
@@ -1461,14 +1453,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *
          * <p>This method automatically:
          * <ul>
-         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
-            agentToolkit.registerTool(skillBox);
+            skillBox.registerSkillLoadTool();
 
             hooks.add(new SkillHook(skillBox));
         }
