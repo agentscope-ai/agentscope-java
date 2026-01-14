@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-24T02:37:43+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-01-14T03:13:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -432,7 +432,7 @@
 <section id="id3">
 <h3>渐进式披露机制<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <p>采用<strong>三阶段按需加载</strong>优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(&lt;5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。</p>
-<p><strong>工作流程:</strong> 用户提问 → AI 识别相关 Skill → 调用工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务</p>
+<p><strong>工作流程:</strong> 用户提问 → AI 识别相关 Skill → 调用 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务</p>
 </section>
 <section id="id4">
 <h3>适应性设计<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
@@ -547,7 +547,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 
 <span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
-<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">skill1</span><span class="p">);</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerSkill</span><span class="p">(</span><span class="n">skill1</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;DataAnalyst&quot;</span><span class="p">)</span>
@@ -568,7 +568,7 @@
 <h2>简化的集成方式<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">();</span>
 
-<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">);</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerSkill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
@@ -700,7 +700,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-24</div>
+              Last updated on 2026-01-14</div>
           </div>
           <div class="right-details">
             <div class="icons">
