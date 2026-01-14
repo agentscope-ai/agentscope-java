@@ -247,7 +247,7 @@ public class SubAgentTool implements AgentTool {
                         : StreamOptions.defaults();
 
         return agent.stream(List.of(userMsg), streamOptions)
-                .doOnNext(event -> forwardEvent(event, emitter, streamOptions))
+                .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
                 .filter(Event::isLast)
                 .last()
                 .map(
@@ -294,12 +294,20 @@ public class SubAgentTool implements AgentTool {
      *
      * @param event The event to forward
      * @param emitter The emitter to send the event to
-     * @param streamOptions The stream options (currently unused, reserved for future filtering)
+     * @param agent The agent
+     * @param sessionId Current session ID
      */
-    private void forwardEvent(Event event, ToolEmitter emitter, StreamOptions streamOptions) {
+    private void forwardEvent(Event event, ToolEmitter emitter, Agent agent, String sessionId) {
         try {
             String json = JsonUtils.getJsonCodec().toJson(event);
-            emitter.emit(ToolResultBlock.text(json));
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("subagent_event", event == null ? "" : event);
+            metadata.put("subagent_name", agent.getName() == null ? "" : agent.getName());
+            metadata.put("subagent_id", agent.getAgentId() == null ? "" : agent.getAgentId());
+            metadata.put("subagent_session_id", sessionId == null ? "" : sessionId);
+            emitter.emit(
+                    new ToolResultBlock(
+                            null, null, List.of(TextBlock.builder().text(json).build()), metadata));
         } catch (Exception e) {
             logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
         }

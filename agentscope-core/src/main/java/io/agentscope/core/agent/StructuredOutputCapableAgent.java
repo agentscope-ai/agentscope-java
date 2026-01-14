@@ -23,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.AgentTool;
@@ -170,7 +171,13 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                                         // Extract result from hook's output
                                         Msg hookResult = hook.getResultMsg();
                                         if (hookResult != null) {
-                                            return Mono.just(extractStructuredResult(hookResult));
+                                            Msg extracted = extractStructuredResult(hookResult);
+                                            // Merge aggregated ChatUsage from reasoning rounds
+                                            ChatUsage usage = hook.getAggregatedUsage();
+                                            if (usage != null && extracted != null) {
+                                                extracted = mergeChatUsage(extracted, usage);
+                                            }
+                                            return Mono.just(extracted);
                                         }
                                         return Mono.just(result);
                                     })
@@ -283,9 +290,10 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         if (responseMsg.getMetadata() != null
                 && responseMsg.getMetadata().containsKey("response")) {
             Object responseData = responseMsg.getMetadata().get("response");
-            // Store structured output under dedicated key to avoid conflicts with other metadata
-            Map<String, Object> metadata = new HashMap<>();
+            // Preserve all original metadata and add structured output under dedicated key
+            Map<String, Object> metadata = new HashMap<>(responseMsg.getMetadata());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
+            metadata.remove("response"); // Remove temp key, use standard key
             return Msg.builder()
                     .name(responseMsg.getName())
                     .role(responseMsg.getRole())
@@ -294,5 +302,23 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                     .build();
         }
         return responseMsg;
+    }
+
+    /**
+     * Create a new message with the given ChatUsage merged into its metadata.
+     */
+    private Msg mergeChatUsage(Msg msg, ChatUsage chatUsage) {
+        Map<String, Object> metadata =
+                new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
+        metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(msg.getContent())
+                .metadata(metadata)
+                .timestamp(msg.getTimestamp())
+                .build();
     }
 }
