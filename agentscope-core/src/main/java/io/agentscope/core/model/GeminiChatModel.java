@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
@@ -26,6 +24,8 @@ import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig.GeminiThin
 import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -82,7 +82,7 @@ public class GeminiChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter;
     private final OkHttpClient httpClient;
-    private final ObjectMapper objectMapper;
+    private final JsonCodec jsonCodec;
 
     /**
      * Creates a new Gemini chat model instance.
@@ -133,8 +133,7 @@ public class GeminiChatModel extends ChatModelBase {
                             .build();
         }
 
-        this.objectMapper =
-                new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        this.jsonCodec = JsonUtils.getJsonCodec();
     }
 
     /**
@@ -206,7 +205,7 @@ public class GeminiChatModel extends ChatModelBase {
                                 }
 
                                 // 2. Serialize Request
-                                String requestJson = objectMapper.writeValueAsString(requestDto);
+                                String requestJson = jsonCodec.toJson(requestDto);
                                 log.trace("Gemini Request JSON: {}", requestJson);
                                 log.debug(
                                         "Gemini request: model={}, system_instruction={},"
@@ -310,7 +309,7 @@ public class GeminiChatModel extends ChatModelBase {
                 }
 
                 GeminiResponse geminiResponse =
-                        objectMapper.readValue(bodyString, GeminiResponse.class);
+                        jsonCodec.fromJson(bodyString, GeminiResponse.class);
                 ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
                 return Flux.just(chatResponse);
             }
@@ -353,8 +352,7 @@ public class GeminiChatModel extends ChatModelBase {
                                     if (!json.isEmpty()) {
                                         try {
                                             GeminiResponse geminiResponse =
-                                                    objectMapper.readValue(
-                                                            json, GeminiResponse.class);
+                                                    jsonCodec.fromJson(json, GeminiResponse.class);
                                             ChatResponse chatResponse =
                                                     formatter.parseResponse(
                                                             geminiResponse, startTime);

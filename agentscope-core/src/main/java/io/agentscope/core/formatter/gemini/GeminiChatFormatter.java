@@ -69,7 +69,12 @@ public class GeminiChatFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        return messageConverter.convertMessages(msgs);
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
+        }
+
+        int startIndex = computeStartIndex(msgs);
+        return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
     }
 
     /**

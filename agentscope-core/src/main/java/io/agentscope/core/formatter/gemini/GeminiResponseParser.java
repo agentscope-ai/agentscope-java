@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,12 +72,6 @@ public class GeminiResponseParser {
      */
     public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         try {
-            // Log raw response for debugging
-            try {
-                String responseJson = JsonUtils.getJsonCodec().toJson(response);
-            } catch (Exception e) {
-                log.error("Failed to serialize response for logging: {}", e.getMessage(), e);
-            }
 
             List<ContentBlock> blocks = new ArrayList<>();
             String finishReason = null;
@@ -170,7 +165,7 @@ public class GeminiResponseParser {
                     .id(
                             response.getResponseId() != null
                                     ? response.getResponseId()
-                                    : java.util.UUID.randomUUID().toString())
+                                    : UUID.randomUUID().toString())
                     .content(blocks)
                     .usage(usage)
                     .finishReason(finishReason)

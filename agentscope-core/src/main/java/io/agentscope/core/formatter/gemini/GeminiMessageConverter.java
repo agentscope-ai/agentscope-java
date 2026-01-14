@@ -129,6 +129,10 @@ public class GeminiMessageConverter {
                                 tub.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
                         if (thoughtSig instanceof String) {
                             part.setThoughtSignature((String) thoughtSig);
+                        } else if (thoughtSig instanceof byte[]) {
+                            // Backward compatibility: older metadata stored raw bytes
+                            part.setThoughtSignature(
+                                    Base64.getEncoder().encodeToString((byte[]) thoughtSig));
                         }
                     }
 
@@ -185,6 +189,20 @@ public class GeminiMessageConverter {
         }
 
         return result;
+    }
+
+    private boolean isSystemInstruction(Msg msg) {
+        if (msg.getRole() != MsgRole.SYSTEM || msg.getContent() == null) {
+            return false;
+        }
+
+        // Treat as system instruction only if all blocks are TextBlock instances.
+        for (ContentBlock block : msg.getContent()) {
+            if (!(block instanceof TextBlock)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

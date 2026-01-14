@@ -21,6 +21,7 @@ import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig.GeminiFunctionCallingConfig;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -90,10 +91,7 @@ public class GeminiToolsHelper {
 
                     // Debug: Log the cleaned schema
                     try {
-                        String schemaJson =
-                                new com.fasterxml.jackson.databind.ObjectMapper()
-                                        .writerWithDefaultPrettyPrinter()
-                                        .writeValueAsString(cleanedParams);
+                        String schemaJson = JsonUtils.getJsonCodec().toPrettyJson(cleanedParams);
                         log.debug(
                                 "Cleaned schema for tool '{}': {}",
                                 toolSchema.getName(),
