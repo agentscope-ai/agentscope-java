@@ -27,7 +27,7 @@ Detailed error messages.
 
 **Environment (please complete the following information):**
 
-- AgentScope-Java Version: [e.g. 1.0.6, check your pom.xml dependency version or run `mvn dependency:tree | grep agentscope-parent:pom`(only mac/linux)]
+- AgentScope-Java Version: [e.g. 1.0.7, check your pom.xml dependency version or run `mvn dependency:tree | grep agentscope-parent:pom`(only mac/linux)]
 - Java Version: [e.g. 17]
 - OS: [e.g. macos, windows]
 

@@ -74,18 +74,13 @@ public class SkillUtil {
     public static AgentSkill createFrom(
             String skillMd, Map<String, String> resources, String source) {
         ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMd);
-        Map<String, Object> metadata = parsed.getMetadata();
+        Map<String, String> metadata = parsed.getMetadata();
 
-        Object name = metadata.get("name");
-        Object description = metadata.get("description");
-        String nameStr = name != null ? String.valueOf(name) : "";
-        String descriptionStr = description != null ? String.valueOf(description) : "";
+        String name = metadata.get("name");
+        String description = metadata.get("description");
         String skillContent = parsed.getContent();
 
-        if (nameStr == null
-                || nameStr.isEmpty()
-                || descriptionStr == null
-                || descriptionStr.isEmpty()) {
+        if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
             throw new IllegalArgumentException(
                     "The SKILL.md must have a YAML Front Matter including `name` and"
                             + " `description` fields.");
@@ -95,6 +90,6 @@ public class SkillUtil {
                     "The SKILL.md must have content except for the YAML Front Matter.");
         }
 
-        return new AgentSkill(nameStr, descriptionStr, skillContent, resources, source);
+        return new AgentSkill(name, description, skillContent, resources, source);
     }
 }

@@ -101,17 +101,15 @@ class GenericRAGHookTest {
         assertNotNull(newHook);
         assertEquals(knowledge, newHook.getKnowledgeBase());
         assertNotNull(newHook.getDefaultConfig());
-        assertTrue(newHook.isEnableOnlyForUserQueries());
     }
 
     @Test
     @DisplayName("Should create GenericRAGHook with custom configuration")
     void testCreateWithCustomConfig() {
         RetrieveConfig config = RetrieveConfig.builder().limit(10).scoreThreshold(0.7).build();
-        GenericRAGHook newHook = new GenericRAGHook(knowledge, config, false);
+        GenericRAGHook newHook = new GenericRAGHook(knowledge, config);
         assertNotNull(newHook);
         assertEquals(config, newHook.getDefaultConfig());
-        assertTrue(!newHook.isEnableOnlyForUserQueries());
     }
 
     @Test
@@ -123,8 +121,7 @@ class GenericRAGHookTest {
     @Test
     @DisplayName("Should throw exception for null config")
     void testCreateNullConfig() {
-        assertThrows(
-                IllegalArgumentException.class, () -> new GenericRAGHook(knowledge, null, true));
+        assertThrows(IllegalArgumentException.class, () -> new GenericRAGHook(knowledge, null));
     }
 
     @Test
@@ -167,7 +164,7 @@ class GenericRAGHookTest {
     }
 
     @Test
-    @DisplayName("Should skip non-user messages when enableOnlyForUserQueries is true")
+    @DisplayName("Should skip non-user messages")
     void testSkipNonUserMessages() {
         // Create assistant message
         Msg assistantMsg =
@@ -186,40 +183,9 @@ class GenericRAGHookTest {
                         result -> {
                             PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
                             List<Msg> messages = preReasoningEvent.getInputMessages();
-                            // Should not add knowledge message
+                            // Should not add knowledge message (no user message to extract query
+                            // from)
                             assertEquals(1, messages.size());
-                        })
-                .verifyComplete();
-    }
-
-    @Test
-    @DisplayName("Should process all messages when enableOnlyForUserQueries is false")
-    void testProcessAllMessages() {
-        GenericRAGHook hookAll = new GenericRAGHook(knowledge, hook.getDefaultConfig(), false);
-
-        // Add documents
-        Document doc = createDocument("doc1", "Test content");
-        knowledge.addDocuments(List.of(doc)).block();
-
-        // Create assistant message
-        Msg assistantMsg =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Response").build())
-                        .build();
-
-        List<Msg> inputMessages = List.of(assistantMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
-
-        StepVerifier.create(hookAll.onEvent(event))
-                .assertNext(
-                        result -> {
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> messages = preReasoningEvent.getInputMessages();
-                            // Should try to extract query (may be empty)
-                            assertNotNull(messages);
                         })
                 .verifyComplete();
     }
