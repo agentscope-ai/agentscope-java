@@ -79,7 +79,7 @@ class StreamingHookTest {
     void shouldEmitThinkingEventForThinkingChunk() {
         Msg incremental =
                 Msg.builder()
-                        .id("msg-thinking-1")
+                        .id("msg-thinking-0")
                         .name("assistant")
                         .role(MsgRole.ASSISTANT)
                         .content(ThinkingBlock.builder().thinking("I think ").build())
