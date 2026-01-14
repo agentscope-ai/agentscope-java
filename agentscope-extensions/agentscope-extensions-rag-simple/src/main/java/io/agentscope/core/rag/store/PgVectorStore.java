@@ -34,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -115,6 +116,16 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
     private static final String COL_PAYLOAD = "payload";
 
     private static final String DEFAULT_SCHEMA = "public";
+
+    /**
+     * Pattern for validating database identifiers (schema and table names).
+     * Only allows alphanumeric characters and underscores, must start with a letter or underscore.
+     * This prevents SQL injection attacks through malicious identifier names.
+     */
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+
+    /** PostgreSQL identifier length limit (63 bytes). */
+    private static final int MAX_IDENTIFIER_LENGTH = 63;
 
     private final String jdbcUrl;
     private final String schema;
@@ -383,6 +394,10 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
 
     /**
      * Gets the fully qualified table name including schema.
+     *
+     * <p>This method safely concatenates schema and table name. Both values are validated
+     * during construction via {@link #validateIdentifier(String, String)} to ensure they
+     * contain only safe characters (alphanumeric and underscores), preventing SQL injection.
      *
      * @return the fully qualified table name (schema.table)
      */
@@ -1000,6 +1015,12 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
                 throw new IllegalArgumentException("Distance type cannot be null");
             }
 
+            // Validate identifiers to prevent SQL injection
+            validateIdentifier(tableName, "Table name");
+            if (schema != null && !schema.isEmpty()) {
+                validateIdentifier(schema, "Schema name");
+            }
+
             return new PgVectorStore(this);
         }
     }
@@ -1011,5 +1032,34 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Validates a database identifier (schema or table name) to prevent SQL injection.
+     *
+     * <p>This method ensures that identifiers only contain safe characters (alphanumeric and
+     * underscores) and start with a letter or underscore. This is critical for security since
+     * schema and table names cannot be parameterized in prepared statements.
+     *
+     * @param identifier the identifier to validate (schema or table name)
+     * @param identifierType description of the identifier type for error messages
+     * @throws IllegalArgumentException if the identifier is invalid or contains unsafe characters
+     */
+    private static void validateIdentifier(String identifier, String identifierType) {
+        if (identifier == null || identifier.isEmpty()) {
+            throw new IllegalArgumentException(identifierType + " cannot be null or empty");
+        }
+        if (identifier.length() > MAX_IDENTIFIER_LENGTH) {
+            throw new IllegalArgumentException(
+                    identifierType + " cannot exceed " + MAX_IDENTIFIER_LENGTH + " characters");
+        }
+        if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
+            throw new IllegalArgumentException(
+                    identifierType
+                            + " contains invalid characters. Only alphanumeric characters and"
+                            + " underscores are allowed, and it must start with a letter or"
+                            + " underscore. Invalid value: "
+                            + identifier);
+        }
     }
 }
