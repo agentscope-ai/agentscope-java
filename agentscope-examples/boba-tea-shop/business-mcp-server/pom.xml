@@ -32,7 +32,7 @@
     <description>Business MCP Server Module</description>
 
     <properties>
-        <mcp-sdk.version>0.17.0</mcp-sdk.version>
+        <mcp-sdk.version>0.17.1</mcp-sdk.version>
     </properties>
 
     <dependencies>

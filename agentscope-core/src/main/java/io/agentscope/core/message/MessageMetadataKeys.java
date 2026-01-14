@@ -59,6 +59,18 @@ public final class MessageMetadataKeys {
     public static final String STRUCTURED_OUTPUT_REMINDER = "_structured_output_reminder";
 
     /**
+     * Metadata key for the type of structured output reminder.
+     *
+     * <p>Stores the {@link io.agentscope.core.model.StructuredOutputReminder} mode
+     * (e.g., TOOL_CHOICE, PROMPT) used when creating reminder messages. This allows
+     * the hook to apply mode-specific behavior.
+     *
+     * <p><b>Type:</b> String (StructuredOutputReminder enum name)
+     * <p><b>Internal use only</b>
+     */
+    public static final String STRUCTURED_OUTPUT_REMINDER_TYPE = "_structured_output_reminder_type";
+
+    /**
      * Metadata key for chat usage statistics.
      *
      * <p>Contains token usage information (input tokens, output tokens, and time)
