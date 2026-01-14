@@ -181,6 +181,13 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-kotlin</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-nacos-a2a</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
