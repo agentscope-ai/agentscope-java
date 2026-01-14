@@ -105,7 +105,7 @@
         <snakeyaml.version>2.5</snakeyaml.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
-        <kotlin.coroutines.version>1.8.1</kotlin.coroutines.version>
+        <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
 
 
         <spotless.version>3.1.0</spotless.version>
