@@ -25,13 +25,11 @@ import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -71,49 +69,7 @@ public class GeminiChatFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        if (msgs == null) {
-            return new ArrayList<>();
-        }
-        int startIndex = computeStartIndex(msgs);
-
-        // Gemini API requires contents to start with "user" role
-        // If first remaining message is ASSISTANT (from another agent), convert it to USER
-        // Exception: Do not convert if it contains ToolUseBlock, as function calls must be MODEL
-        // role
-        if (startIndex < msgs.size()
-                && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT
-                && msgs.get(startIndex).getContent().stream()
-                        .noneMatch(block -> block instanceof ToolUseBlock)) {
-            List<GeminiContent> result = new ArrayList<>();
-
-            // Convert first ASSISTANT message to USER role for multi-agent compatibility
-            GeminiContent userContent = new GeminiContent();
-            userContent.setRole("user");
-            userContent.setParts(
-                    messageConverter
-                            .convertMessages(List.of(msgs.get(startIndex)))
-                            .get(0)
-                            .getParts());
-            result.add(userContent);
-
-            // Add remaining messages
-            if (startIndex + 1 < msgs.size()) {
-                result.addAll(
-                        messageConverter.convertMessages(
-                                msgs.subList(startIndex + 1, msgs.size())));
-            }
-
-            return result;
-        }
-
-        // Return remaining messages (excluding SYSTEM)
-        if (startIndex > 0 && startIndex < msgs.size()) {
-            return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
-        } else if (startIndex == 0) {
-            return messageConverter.convertMessages(msgs);
-        }
-
-        return new ArrayList<>();
+        return messageConverter.convertMessages(msgs);
     }
 
     /**
