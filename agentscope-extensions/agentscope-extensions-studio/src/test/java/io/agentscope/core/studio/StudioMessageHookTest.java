@@ -25,24 +25,23 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.ActingChunkEvent;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.Toolkit;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -268,12 +267,14 @@ class StudioMessageHookTest {
         StepVerifier.create(result).expectNext(event).verifyComplete();
 
         verify(mockStudioClient, times(1))
-                .pushMessage(argThat(m -> {
-                    Map<String, Object> md = m.getMetadata();
-                    return md != null
-                            && "reasoning".equals(md.get("studio_event_type"))
-                            && Boolean.FALSE.equals(md.get("studio_is_last"));
-                }));
+                .pushMessage(
+                        argThat(
+                                m -> {
+                                    Map<String, Object> md = m.getMetadata();
+                                    return md != null
+                                            && "reasoning".equals(md.get("studio_event_type"))
+                                            && Boolean.FALSE.equals(md.get("studio_is_last"));
+                                }));
     }
 
     @Test
@@ -296,12 +297,14 @@ class StudioMessageHookTest {
         StepVerifier.create(result).expectNext(event).verifyComplete();
 
         verify(mockStudioClient, times(1))
-                .pushMessage(argThat(m -> {
-                    Map<String, Object> md = m.getMetadata();
-                    return md != null
-                            && "reasoning".equals(md.get("studio_event_type"))
-                            && Boolean.TRUE.equals(md.get("studio_is_last"));
-                }));
+                .pushMessage(
+                        argThat(
+                                m -> {
+                                    Map<String, Object> md = m.getMetadata();
+                                    return md != null
+                                            && "reasoning".equals(md.get("studio_event_type"))
+                                            && Boolean.TRUE.equals(md.get("studio_is_last"));
+                                }));
     }
 
     @Test
@@ -311,7 +314,8 @@ class StudioMessageHookTest {
         when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
 
         Toolkit toolkit = new Toolkit();
-        ToolUseBlock toolUse = ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
         ToolResultBlock chunk = ToolResultBlock.text("progress update");
 
         ActingChunkEvent event = new ActingChunkEvent(mockAgent, toolkit, toolUse, chunk);
@@ -321,15 +325,26 @@ class StudioMessageHookTest {
         StepVerifier.create(result).expectNext(event).verifyComplete();
 
         verify(mockStudioClient, times(1))
-                .pushMessage(argThat(m -> {
-                    // Expect a TOOL role message with metadata and a ToolResultBlock in content
-                    Map<String, Object> md = m.getMetadata();
-                    boolean hasMeta = md != null && "tool_result".equals(md.get("studio_event_type")) && Boolean.FALSE.equals(md.get("studio_is_last"));
-                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
-                    boolean hasToolResult =
-                            !m.getContentBlocks(io.agentscope.core.message.ToolResultBlock.class).isEmpty();
-                    return hasMeta && isToolRole && hasToolResult;
-                }));
+                .pushMessage(
+                        argThat(
+                                m -> {
+                                    // Expect a TOOL role message with metadata and a
+                                    // ToolResultBlock in content
+                                    Map<String, Object> md = m.getMetadata();
+                                    boolean hasMeta =
+                                            md != null
+                                                    && "tool_result"
+                                                            .equals(md.get("studio_event_type"))
+                                                    && Boolean.FALSE.equals(
+                                                            md.get("studio_is_last"));
+                                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
+                                    boolean hasToolResult =
+                                            !m.getContentBlocks(
+                                                            io.agentscope.core.message
+                                                                    .ToolResultBlock.class)
+                                                    .isEmpty();
+                                    return hasMeta && isToolRole && hasToolResult;
+                                }));
     }
 
     @Test
@@ -339,7 +354,8 @@ class StudioMessageHookTest {
         when(mockStudioClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
 
         Toolkit toolkit = new Toolkit();
-        ToolUseBlock toolUse = ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("call-1").name("test_tool").input(Map.of()).build();
         ToolResultBlock resultBlock = ToolResultBlock.text("final result");
 
         PostActingEvent event = new PostActingEvent(mockAgent, toolkit, toolUse, resultBlock);
@@ -349,13 +365,23 @@ class StudioMessageHookTest {
         StepVerifier.create(result).expectNext(event).verifyComplete();
 
         verify(mockStudioClient, times(1))
-                .pushMessage(argThat(m -> {
-                    Map<String, Object> md = m.getMetadata();
-                    boolean hasMeta = md != null && "tool_result".equals(md.get("studio_event_type")) && Boolean.TRUE.equals(md.get("studio_is_last"));
-                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
-                    boolean hasToolResult =
-                            !m.getContentBlocks(io.agentscope.core.message.ToolResultBlock.class).isEmpty();
-                    return hasMeta && isToolRole && hasToolResult;
-                }));
+                .pushMessage(
+                        argThat(
+                                m -> {
+                                    Map<String, Object> md = m.getMetadata();
+                                    boolean hasMeta =
+                                            md != null
+                                                    && "tool_result"
+                                                            .equals(md.get("studio_event_type"))
+                                                    && Boolean.TRUE.equals(
+                                                            md.get("studio_is_last"));
+                                    boolean isToolRole = m.getRole() == MsgRole.TOOL;
+                                    boolean hasToolResult =
+                                            !m.getContentBlocks(
+                                                            io.agentscope.core.message
+                                                                    .ToolResultBlock.class)
+                                                    .isEmpty();
+                                    return hasMeta && isToolRole && hasToolResult;
+                                }));
     }
 }

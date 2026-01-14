@@ -15,23 +15,22 @@
  */
 package io.agentscope.core.studio;
 
+import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 /**
  * Hook for automatically forwarding agent messages to Studio.
@@ -144,11 +143,12 @@ public class StudioMessageHook implements Hook {
             ToolResultBlock chunk = e.getChunk();
             if (chunk != null && studioClient != null) {
                 // build a Msg with TOOL role similar to streaming hook
-                Msg toolMsg = Msg.builder()
-                        .name("tool")
-                        .role(MsgRole.TOOL)
-                        .content(List.of(chunk))
-                        .build();
+                Msg toolMsg =
+                        Msg.builder()
+                                .name("tool")
+                                .role(MsgRole.TOOL)
+                                .content(List.of(chunk))
+                                .build();
                 Msg tagged = withEventMetadata(toolMsg, "tool_result", false);
                 return studioClient
                         .pushMessage(tagged)
@@ -167,11 +167,12 @@ public class StudioMessageHook implements Hook {
             PostActingEvent e = (PostActingEvent) event;
             ToolResultBlock result = e.getToolResult();
             if (result != null && studioClient != null) {
-                Msg toolMsg = Msg.builder()
-                        .name("tool")
-                        .role(MsgRole.TOOL)
-                        .content(List.of(result))
-                        .build();
+                Msg toolMsg =
+                        Msg.builder()
+                                .name("tool")
+                                .role(MsgRole.TOOL)
+                                .content(List.of(result))
+                                .build();
                 Msg tagged = withEventMetadata(toolMsg, "tool_result", true);
                 return studioClient
                         .pushMessage(tagged)
@@ -198,7 +199,8 @@ public class StudioMessageHook implements Hook {
         }
         meta.put("studio_event_type", eventType);
         meta.put("studio_is_last", isLast);
-        // Rebuild msg copying fields and injecting metadata; adapt if Msg.Builder has different methods
+        // Rebuild msg copying fields and injecting metadata; adapt if Msg.Builder has different
+        // methods
         return Msg.builder()
                 .name(orig.getName())
                 .role(orig.getRole())
