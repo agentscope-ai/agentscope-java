@@ -235,7 +235,7 @@ public class TelemetryTracer implements Tracer {
 
         private boolean enabled = true;
         private String endpoint;
-        private java.util.Map<String, String> headers = new java.util.HashMap<>();
+        private Map<String, String> headers = new HashMap<>();
         private io.opentelemetry.api.trace.Tracer tracer;
 
         public Builder enabled(boolean enabled) {
