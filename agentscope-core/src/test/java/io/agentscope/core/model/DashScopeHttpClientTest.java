@@ -618,6 +618,146 @@ class DashScopeHttpClientTest {
         assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client3.getBaseUrl());
     }
 
+    // ==================== Fetch Public Key Tests ====================
+
+    @Test
+    void testFetchPublicKeySuccess() throws Exception {
+        String publicKeyResponse =
+                """
+                {
+                  "request_id": "test-request-id",
+                  "data": {
+                    "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnojrB579xgPQN5f46SvoRAiQBPWBaPzWh7hp51fWI+OsQk7KqH0qMcw8i0eK5rfOvJIPujOQgnes1ph9/gKAst9NzXVIl9JJYUSPtzTvOabhp4yvS3KBf9g3xHYVjYgW33SOY74Ue/tgbCXn717rV6gXb4sVvq9XK/1BrDcGbEOQEZEgBTFkm/g3lpWLQtACwwqHffoA9eQtkkz15ZFKosAgbR8LedfIvxAl2zk15REzxXiRcFgc9/tLF0U1t2Sxt9FkQefxYwn6EZawTsRJvf4kqF3MaPdTcDbOp0iSNvCl2qzPSf/F+Oll2CUM1tFAEu81oa4l0WaDR3UtvqOtyQIDAQAB",
+                    "public_key_id": "1"
+                  }
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(publicKeyResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+        io.agentscope.core.model.transport.OkHttpTransport transport =
+                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+
+        try {
+            DashScopeHttpClient.PublicKeyResult result =
+                    DashScopeHttpClient.fetchPublicKey("test-api-key", baseUrl, transport);
+
+            assertNotNull(result);
+            assertEquals("1", result.publicKeyId());
+            assertNotNull(result.publicKey());
+            assertTrue(result.publicKey().length() > 0);
+
+            RecordedRequest recorded = mockServer.takeRequest();
+            assertEquals(DashScopeHttpClient.PUBLIC_KEYS_ENDPOINT, recorded.getPath());
+            assertEquals("GET", recorded.getMethod());
+            assertEquals("Bearer test-api-key", recorded.getHeader("Authorization"));
+        } finally {
+            transport.close();
+        }
+    }
+
+    @Test
+    void testFetchPublicKeyWithErrorResponse() throws Exception {
+        String errorResponse =
+                """
+                {
+                  "request_id": "test-request-id",
+                  "code": "InvalidAPIKey",
+                  "message": "Invalid API key provided"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+        io.agentscope.core.model.transport.OkHttpTransport transport =
+                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+
+        try {
+            DashScopeHttpClient.DashScopeHttpException exception =
+                    assertThrows(
+                            DashScopeHttpClient.DashScopeHttpException.class,
+                            () ->
+                                    DashScopeHttpClient.fetchPublicKey(
+                                            "test-api-key", baseUrl, transport));
+
+            assertTrue(exception.getMessage().contains("Invalid API key"));
+            assertEquals("InvalidAPIKey", exception.getErrorCode());
+        } finally {
+            transport.close();
+        }
+    }
+
+    @Test
+    void testFetchPublicKeyWithHttpError() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("Internal Server Error")
+                        .setHeader("Content-Type", "text/plain"));
+
+        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+        io.agentscope.core.model.transport.OkHttpTransport transport =
+                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+
+        try {
+            DashScopeHttpClient.DashScopeHttpException exception =
+                    assertThrows(
+                            DashScopeHttpClient.DashScopeHttpException.class,
+                            () ->
+                                    DashScopeHttpClient.fetchPublicKey(
+                                            "test-api-key", baseUrl, transport));
+
+            assertEquals(500, exception.getStatusCode());
+        } finally {
+            transport.close();
+        }
+    }
+
+    @Test
+    void testFetchPublicKeyWithMissingData() throws Exception {
+        String responseWithoutData =
+                """
+                {
+                  "request_id": "test-request-id"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(responseWithoutData)
+                        .setHeader("Content-Type", "application/json"));
+
+        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+        io.agentscope.core.model.transport.OkHttpTransport transport =
+                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+
+        try {
+            DashScopeHttpClient.DashScopeHttpException exception =
+                    assertThrows(
+                            DashScopeHttpClient.DashScopeHttpException.class,
+                            () ->
+                                    DashScopeHttpClient.fetchPublicKey(
+                                            "test-api-key", baseUrl, transport));
+
+            assertTrue(
+                    exception.getMessage().contains("data is missing or incomplete"),
+                    "Exception message should mention missing data");
+        } finally {
+            transport.close();
+        }
+    }
+
     // ==================== Encryption Tests ====================
 
     @Test

@@ -315,8 +315,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
         private HttpTransport httpTransport;
-        private String publicKeyId;
-        private String publicKey;
+        private boolean enableEncrypt = false;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -453,54 +452,32 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
-         * Sets the RSA public key ID for encryption.
+         * Sets whether encryption should be enabled.
          *
-         * <p>When both publicKeyId and publicKey are set, requests and responses will be
-         * encrypted using AES-GCM with RSA key exchange, following Aliyun's encryption protocol.
-         * This enables secure access to Aliyun models while complying with enterprise security
-         * policies (e.g., TLS encryption, token-based authentication).
+         * <p>When enabled, the model will automatically fetch the latest RSA public key from
+         * DashScope API and use it to encrypt requests and responses using AES-GCM with RSA key
+         * exchange, following Aliyun's encryption protocol. This enables secure access to Aliyun
+         * models while complying with enterprise security policies (e.g., TLS encryption,
+         * token-based authentication).
          *
-         * <p>Example:
-         * <pre>{@code
-         * DashScopeChatModel model = DashScopeChatModel.builder()
-         *     .apiKey("sk-xxx")
-         *     .modelName("qwen-max")
-         *     .publicKeyId("your-public-key-id")
-         *     .publicKey("your-base64-encoded-public-key")
-         *     .build();
-         * }</pre>
-         *
-         * @param publicKeyId the public key ID (null to disable encryption)
-         * @return this builder instance
-         */
-        public Builder publicKeyId(String publicKeyId) {
-            this.publicKeyId = publicKeyId;
-            return this;
-        }
-
-        /**
-         * Sets the RSA public key for encryption (Base64-encoded).
-         *
-         * <p>When both publicKeyId and publicKey are set, requests and responses will be
-         * encrypted using AES-GCM with RSA key exchange, following Aliyun's encryption protocol.
-         * This enables secure access to Aliyun models while complying with enterprise security
-         * policies (e.g., TLS encryption, token-based authentication).
+         * <p>If fetching the public key fails during build(), an exception will be thrown to
+         * prevent creating a model with incorrect encryption configuration.
          *
          * <p>Example:
          * <pre>{@code
          * DashScopeChatModel model = DashScopeChatModel.builder()
          *     .apiKey("sk-xxx")
          *     .modelName("qwen-max")
-         *     .publicKeyId("your-public-key-id")
-         *     .publicKey("your-base64-encoded-public-key")
+         *     .enableEncrypt(true)
          *     .build();
          * }</pre>
          *
-         * @param publicKey the Base64-encoded RSA public key (null to disable encryption)
+         * @param enableEncrypt true to enable encryption (will fetch public key automatically),
+         *     false to disable encryption
          * @return this builder instance
          */
-        public Builder publicKey(String publicKey) {
-            this.publicKey = publicKey;
+        public Builder enableEncrypt(boolean enableEncrypt) {
+            this.enableEncrypt = enableEncrypt;
             return this;
         }
 
@@ -510,11 +487,28 @@ public class DashScopeChatModel extends ChatModelBase {
          * <p>This method ensures that the defaultOptions always has proper executionConfig
          * applied.
          *
+         * <p>If encryption is enabled, this method will automatically fetch the public key
+         * from DashScope API. If the fetch fails, an exception will be thrown.
+         *
          * @return configured DashScopeChatModel instance
+         * @throws DashScopeHttpClient.DashScopeHttpException if encryption is enabled and
+         *     public key fetching fails
          */
         public DashScopeChatModel build() {
             GenerateOptions effectiveOptions =
                     ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
+
+            String finalPublicKeyId = null;
+            String finalPublicKey = null;
+
+            if (enableEncrypt) {
+                HttpTransport transport =
+                        httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+                DashScopeHttpClient.PublicKeyResult publicKeyResult =
+                        DashScopeHttpClient.fetchPublicKey(apiKey, baseUrl, transport);
+                finalPublicKeyId = publicKeyResult.publicKeyId();
+                finalPublicKey = publicKeyResult.publicKey();
+            }
 
             return new DashScopeChatModel(
                     apiKey,
@@ -526,8 +520,8 @@ public class DashScopeChatModel extends ChatModelBase {
                     baseUrl,
                     formatter,
                     httpTransport,
-                    publicKeyId,
-                    publicKey);
+                    finalPublicKeyId,
+                    finalPublicKey);
         }
     }
 }

@@ -589,25 +589,50 @@ class DashScopeChatModelTest {
     // ========== Encryption Configuration Tests ==========
 
     @Test
-    @DisplayName("Should create model with encryption configuration")
+    @DisplayName("Should create model with encryption enabled")
     void testModelWithEncryption() throws Exception {
-        // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
 
-        DashScopeChatModel encryptedModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-max")
-                        .publicKeyId("test-public-key-id")
-                        .publicKey(publicKeyBase64)
-                        .build();
+        try {
+            // Mock public key API response
+            String publicKeyResponse =
+                    """
+                    {
+                      "request_id": "test-request-id",
+                      "data": {
+                        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnojrB579xgPQN5f46SvoRAiQBPWBaPzWh7hp51fWI+OsQk7KqH0qMcw8i0eK5rfOvJIPujOQgnes1ph9/gKAst9NzXVIl9JJYUSPtzTvOabhp4yvS3KBf9g3xHYVjYgW33SOY74Ue/tgbCXn717rV6gXb4sVvq9XK/1BrDcGbEOQEZEgBTFkm/g3lpWLQtACwwqHffoA9eQtkkz15ZFKosAgbR8LedfIvxAl2zk15REzxXiRcFgc9/tLF0U1t2Sxt9FkQefxYwn6EZawTsRJvf4kqF3MaPdTcDbOp0iSNvCl2qzPSf/F+Oll2CUM1tFAEu81oa4l0WaDR3UtvqOtyQIDAQAB",
+                        "public_key_id": "1"
+                      }
+                    }
+                    """;
 
-        assertNotNull(encryptedModel, "Encrypted model should be created");
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody(publicKeyResponse)
+                            .setHeader("Content-Type", "application/json"));
+
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+
+            DashScopeChatModel encryptedModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(mockApiKey)
+                            .modelName("qwen-max")
+                            .enableEncrypt(true)
+                            .baseUrl(baseUrl)
+                            .httpTransport(OkHttpTransport.builder().build())
+                            .build();
+
+            assertNotNull(encryptedModel, "Encrypted model should be created");
+
+            // Verify that the public key API was called
+            RecordedRequest recorded = mockServer.takeRequest();
+            assertEquals(DashScopeHttpClient.PUBLIC_KEYS_ENDPOINT, recorded.getPath());
+            assertEquals("Bearer " + mockApiKey, recorded.getHeader("Authorization"));
+        } finally {
+            mockServer.shutdown();
+        }
     }
 
     @Test
@@ -620,52 +645,47 @@ class DashScopeChatModelTest {
     }
 
     @Test
-    @DisplayName("Should allow null encryption parameters")
-    void testModelWithNullEncryptionParams() {
-        DashScopeChatModel modelWithNulls =
+    @DisplayName("Should create model with encryption disabled explicitly")
+    void testModelWithEncryptionDisabled() {
+        DashScopeChatModel model =
                 DashScopeChatModel.builder()
                         .apiKey(mockApiKey)
                         .modelName("qwen-plus")
-                        .publicKeyId(null)
-                        .publicKey(null)
+                        .enableEncrypt(false)
                         .build();
 
-        assertNotNull(modelWithNulls, "Model with null encryption params should be created");
+        assertNotNull(model, "Model with encryption disabled should be created");
     }
 
     @Test
-    @DisplayName("Should allow encryption with only publicKeyId set (encryption disabled)")
-    void testModelWithOnlyPublicKeyId() {
-        DashScopeChatModel modelWithOnlyId =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .publicKeyId("test-id")
-                        .publicKey(null)
-                        .build();
+    @DisplayName("Should throw exception when public key fetch fails")
+    void testModelWithEncryptionFetchFails() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
 
-        assertNotNull(modelWithOnlyId, "Model with only publicKeyId should be created");
-    }
+        try {
+            // Mock error response from public key API
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(500)
+                            .setBody("Internal Server Error")
+                            .setHeader("Content-Type", "text/plain"));
 
-    @Test
-    @DisplayName("Should allow encryption with only publicKey set (encryption disabled)")
-    void testModelWithOnlyPublicKey() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
 
-        DashScopeChatModel modelWithOnlyKey =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .publicKeyId(null)
-                        .publicKey(publicKeyBase64)
-                        .build();
-
-        assertNotNull(modelWithOnlyKey, "Model with only publicKey should be created");
+            assertThrows(
+                    DashScopeHttpClient.DashScopeHttpException.class,
+                    () ->
+                            DashScopeChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("qwen-max")
+                                    .enableEncrypt(true)
+                                    .baseUrl(baseUrl)
+                                    .httpTransport(OkHttpTransport.builder().build())
+                                    .build());
+        } finally {
+            mockServer.shutdown();
+        }
     }
 
     /**

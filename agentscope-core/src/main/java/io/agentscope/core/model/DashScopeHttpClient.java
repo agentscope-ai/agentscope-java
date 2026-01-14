@@ -17,6 +17,7 @@ package io.agentscope.core.model;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.Version;
+import io.agentscope.core.formatter.dashscope.dto.DashScopePublicKeyResponse;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
 import io.agentscope.core.model.transport.HttpRequest;
@@ -69,6 +70,9 @@ public class DashScopeHttpClient {
     /** Multimodal generation API endpoint. */
     public static final String MULTIMODAL_GENERATION_ENDPOINT =
             "/api/v1/services/aigc/multimodal-generation/generation";
+
+    /** Public keys API endpoint. */
+    public static final String PUBLIC_KEYS_ENDPOINT = "/api/v1/public-keys/latest";
 
     private final HttpTransport transport;
     private final String apiKey;
@@ -329,6 +333,76 @@ public class DashScopeHttpClient {
     public boolean requiresMultimodalApi(String modelName) {
         return MULTIMODAL_GENERATION_ENDPOINT.equals(selectEndpoint(modelName));
     }
+
+    /**
+     * Fetch the latest RSA public key from DashScope API.
+     *
+     * <p>This method calls the DashScope public keys API to retrieve the latest public key
+     * and key ID for encryption purposes.
+     *
+     * @param apiKey the DashScope API key
+     * @param baseUrl the base URL (null for default)
+     * @param transport the HTTP transport to use
+     * @return PublicKeyResult containing the public key ID and public key
+     * @throws DashScopeHttpException if the request fails
+     */
+    public static PublicKeyResult fetchPublicKey(
+            String apiKey, String baseUrl, HttpTransport transport) {
+        String url = (baseUrl != null ? baseUrl : DEFAULT_BASE_URL) + PUBLIC_KEYS_ENDPOINT;
+
+        try {
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Authorization", "Bearer " + apiKey);
+            headers.put("Content-Type", "application/json");
+            headers.put("User-Agent", Version.getUserAgent());
+
+            HttpRequest httpRequest =
+                    HttpRequest.builder().url(url).method("GET").headers(headers).build();
+
+            HttpResponse httpResponse = transport.execute(httpRequest);
+
+            if (!httpResponse.isSuccessful()) {
+                throw new DashScopeHttpException(
+                        "Failed to fetch public key: HTTP " + httpResponse.getStatusCode(),
+                        httpResponse.getStatusCode(),
+                        httpResponse.getBody());
+            }
+
+            String responseBody = httpResponse.getBody();
+            DashScopePublicKeyResponse response =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(responseBody, DashScopePublicKeyResponse.class);
+
+            if (response.isError()) {
+                throw new DashScopeHttpException(
+                        "Failed to fetch public key: " + response.getMessage(),
+                        response.getCode(),
+                        responseBody);
+            }
+
+            DashScopePublicKeyResponse.PublicKeyData data = response.getData();
+            if (data == null || data.getPublicKey() == null || data.getPublicKeyId() == null) {
+                throw new DashScopeHttpException(
+                        "Invalid public key response: data is missing or incomplete",
+                        null,
+                        responseBody);
+            }
+
+            return new PublicKeyResult(data.getPublicKeyId(), data.getPublicKey());
+        } catch (JsonException e) {
+            throw new DashScopeHttpException("Failed to parse public key response", e);
+        } catch (HttpTransportException e) {
+            throw new DashScopeHttpException("HTTP transport error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Result of fetching a public key from DashScope API.
+     *
+     * @param publicKeyId the public key ID
+     * @param publicKey the Base64-encoded public key
+     */
+    public static record PublicKeyResult(String publicKeyId, String publicKey) {}
 
     private Map<String, String> buildHeaders(
             boolean streaming, Map<String, String> additionalHeaders, EncryptionContext context) {
