@@ -81,6 +81,14 @@ public class StreamOptions {
     private final boolean includeReasoningResult;
 
     /**
+     * Whether to include the incremental chunks from tool execution during streaming.
+     * <p>
+     * If false, intermediate acting chunk emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeActingChunk;
+
+    /**
      * Private constructor called by the builder.
      *
      * @param builder The builder containing configuration values
@@ -90,6 +98,7 @@ public class StreamOptions {
         this.incremental = builder.incremental;
         this.includeReasoningChunk = builder.includeReasoningChunk;
         this.includeReasoningResult = builder.includeReasoningResult;
+        this.includeActingChunk = builder.includeActingChunk;
     }
 
     /**
@@ -156,6 +165,17 @@ public class StreamOptions {
     }
 
     /**
+     * Whether acting (tool execution) chunk emissions should be included.
+     *
+     * <p>Acting chunks are the incremental outputs from tool execution via ToolEmitter.</p>
+     *
+     * @return true if acting chunks should be included
+     */
+    public boolean isIncludeActingChunk() {
+        return includeActingChunk;
+    }
+
+    /**
      * Check if a specific event type should be streamed.
      *
      * @param type The event type to check
@@ -186,6 +206,7 @@ public class StreamOptions {
         // Defaults are "true" to preserve existing behavior.
         private boolean includeReasoningChunk = true;
         private boolean includeReasoningResult = true;
+        private boolean includeActingChunk = true;
 
         /**
          * Set which event types to stream.
@@ -243,6 +264,20 @@ public class StreamOptions {
          */
         public Builder includeReasoningResult(boolean includeReasoningResult) {
             this.includeReasoningResult = includeReasoningResult;
+            return this;
+        }
+
+        /**
+         * Include or exclude tool execution chunk emissions.
+         *
+         * <p>When {@link EventType#TOOL_RESULT} is enabled, tools may emit intermediate chunks via
+         * ToolEmitter. Set to false to hide these and only receive the final tool result.</p>
+         *
+         * @param includeActingChunk true to include chunk emissions, false to filter them out
+         * @return this builder
+         */
+        public Builder includeActingChunk(boolean includeActingChunk) {
+            this.includeActingChunk = includeActingChunk;
             return this;
         }
 

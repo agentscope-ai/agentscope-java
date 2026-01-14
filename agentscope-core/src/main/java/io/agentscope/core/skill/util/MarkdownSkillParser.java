@@ -20,11 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
-import org.yaml.snakeyaml.representer.Representer;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -50,7 +45,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * <pre>{@code
  * // Parse markdown with frontmatter
  * ParsedMarkdown parsed = MarkdownSkillParser.parse(markdownContent);
- * Map<String, Object> metadata = parsed.getMetadata();
+ * Map<String, String> metadata = parsed.getMetadata();
  * String content = parsed.getContent();
  *
  * // Generate markdown with frontmatter
@@ -108,29 +103,11 @@ public class MarkdownSkillParser {
         }
 
         try {
-            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
-            Object loaded = yaml.load(yamlContent);
-
-            if (loaded == null) {
-                return new ParsedMarkdown(Map.of(), markdownContent);
-            }
-
-            if (!(loaded instanceof Map)) {
-                throw new IllegalArgumentException(
-                        "YAML frontmatter must be a map, not a "
-                                + loaded.getClass().getSimpleName());
-            }
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> metadata = (Map<String, Object>) loaded;
-
+            Map<String, String> metadata = SimpleYamlParser.parse(yamlContent);
             return new ParsedMarkdown(metadata, markdownContent);
-
         } catch (IllegalArgumentException e) {
-            // Re-throw our own IllegalArgumentException
             throw e;
         } catch (RuntimeException e) {
-            // Only catch YAML parsing related runtime exceptions
             throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
         }
     }
@@ -145,30 +122,13 @@ public class MarkdownSkillParser {
      * @param content Markdown content (can be null or empty)
      * @return Complete markdown with frontmatter
      */
-    public static String generate(Map<String, Object> metadata, String content) {
+    public static String generate(Map<String, String> metadata, String content) {
         StringBuilder sb = new StringBuilder();
 
         // Add frontmatter if metadata exists
         if (metadata != null && !metadata.isEmpty()) {
             sb.append("---\n");
-
-            DumperOptions options = new DumperOptions();
-            options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-            options.setPrettyFlow(true);
-            options.setIndent(2);
-
-            Representer representer = new Representer(options);
-            representer.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-
-            Yaml yaml = new Yaml(representer, options);
-            String yamlContent = yaml.dump(metadata);
-
-            sb.append(yamlContent);
-
-            // Ensure frontmatter ends properly
-            if (!yamlContent.endsWith("\n")) {
-                sb.append("\n");
-            }
+            sb.append(SimpleYamlParser.generate(metadata));
             sb.append("---\n");
         }
 
@@ -185,12 +145,268 @@ public class MarkdownSkillParser {
     }
 
     /**
+     * Simple YAML parser for flat key-value structures.
+     * Only supports String:String mappings.
+     */
+    private static class SimpleYamlParser {
+
+        // Pattern to match key: value format
+        // Captures: group(1) = key, group(2) = value (may include quotes)
+        private static final Pattern KEY_VALUE_PATTERN =
+                Pattern.compile("^([a-zA-Z_][a-zA-Z0-9_-]*)\\s*:\\s*(.*)$");
+
+        /**
+         * Parse YAML string into a map of key-value pairs.
+         *
+         * @param yaml YAML content to parse
+         * @return Map of key-value pairs
+         * @throws IllegalArgumentException if YAML syntax is invalid
+         */
+        static Map<String, String> parse(String yaml) {
+            Map<String, String> result = new LinkedHashMap<>();
+
+            if (yaml == null || yaml.isEmpty()) {
+                return result;
+            }
+
+            String[] lines = yaml.split("[\\r\\n]+");
+
+            for (String line : lines) {
+                // Skip empty lines
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+
+                // Skip comments
+                if (line.trim().startsWith("#")) {
+                    continue;
+                }
+
+                Matcher matcher = KEY_VALUE_PATTERN.matcher(line.trim());
+                if (!matcher.matches()) {
+                    throw new IllegalArgumentException(
+                            "Invalid YAML line (expected 'key: value' format): " + line);
+                }
+
+                String key = matcher.group(1);
+                String value = parseValue(matcher.group(2));
+
+                result.put(key, value);
+            }
+
+            return result;
+        }
+
+        /**
+         * Parse a YAML value, handling quoted strings.
+         *
+         * @param rawValue Raw value string from YAML
+         * @return Parsed value with quotes removed if present
+         */
+        private static String parseValue(String rawValue) {
+            if (rawValue == null) {
+                return "";
+            }
+
+            String value = rawValue.trim();
+
+            if (value.isEmpty()) {
+                return "";
+            }
+
+            // Handle double-quoted strings
+            if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
+                return unescapeString(value.substring(1, value.length() - 1));
+            }
+
+            // Handle single-quoted strings
+            if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
+                // Single-quoted strings don't process escapes, except '' for '
+                return value.substring(1, value.length() - 1).replace("''", "'");
+            }
+
+            return value;
+        }
+
+        /**
+         * Unescape a double-quoted YAML string.
+         *
+         * @param str String content without surrounding quotes
+         * @return Unescaped string
+         */
+        private static String unescapeString(String str) {
+            if (str == null || str.isEmpty()) {
+                return str;
+            }
+
+            StringBuilder result = new StringBuilder();
+            boolean escape = false;
+
+            for (int i = 0; i < str.length(); i++) {
+                char c = str.charAt(i);
+
+                if (escape) {
+                    switch (c) {
+                        case 'n':
+                            result.append('\n');
+                            break;
+                        case 't':
+                            result.append('\t');
+                            break;
+                        case 'r':
+                            result.append('\r');
+                            break;
+                        case '\\':
+                            result.append('\\');
+                            break;
+                        case '"':
+                            result.append('"');
+                            break;
+                        default:
+                            result.append('\\').append(c);
+                    }
+                    escape = false;
+                } else if (c == '\\') {
+                    escape = true;
+                } else {
+                    result.append(c);
+                }
+            }
+
+            // Handle trailing backslash
+            if (escape) {
+                result.append('\\');
+            }
+
+            return result.toString();
+        }
+
+        /**
+         * Generate YAML string from a map of key-value pairs.
+         *
+         * @param map Map to serialize
+         * @return YAML string
+         */
+        static String generate(Map<String, String> map) {
+            if (map == null || map.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder sb = new StringBuilder();
+
+            for (Map.Entry<String, String> entry : map.entrySet()) {
+                String key = entry.getKey();
+                String value = entry.getValue();
+
+                sb.append(key).append(": ");
+
+                if (value == null || value.isEmpty()) {
+                    sb.append("");
+                } else if (needsQuoting(value)) {
+                    sb.append(quoteValue(value));
+                } else {
+                    sb.append(value);
+                }
+
+                sb.append("\n");
+            }
+
+            return sb.toString();
+        }
+
+        /**
+         * Check if a value needs to be quoted in YAML.
+         *
+         * @param value Value to check
+         * @return true if quoting is needed
+         */
+        private static boolean needsQuoting(String value) {
+            if (value.isEmpty()) {
+                return false;
+            }
+
+            // Quote if contains special characters
+            if (value.contains(":")
+                    || value.contains("#")
+                    || value.contains("\n")
+                    || value.contains("\r")
+                    || value.contains("\t")) {
+                return true;
+            }
+
+            // Quote if starts/ends with whitespace
+            if (Character.isWhitespace(value.charAt(0))
+                    || Character.isWhitespace(value.charAt(value.length() - 1))) {
+                return true;
+            }
+
+            // Quote if starts with special YAML characters
+            char first = value.charAt(0);
+            if (first == '"'
+                    || first == '\''
+                    || first == '['
+                    || first == ']'
+                    || first == '{'
+                    || first == '}'
+                    || first == '>'
+                    || first == '|'
+                    || first == '*'
+                    || first == '&'
+                    || first == '!'
+                    || first == '%'
+                    || first == '@'
+                    || first == '`') {
+                return true;
+            }
+
+            return false;
+        }
+
+        /**
+         * Quote a value for YAML output using double quotes.
+         *
+         * @param value Value to quote
+         * @return Quoted and escaped value
+         */
+        private static String quoteValue(String value) {
+            StringBuilder sb = new StringBuilder();
+            sb.append('"');
+
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                switch (c) {
+                    case '"':
+                        sb.append("\\\"");
+                        break;
+                    case '\\':
+                        sb.append("\\\\");
+                        break;
+                    case '\n':
+                        sb.append("\\n");
+                        break;
+                    case '\r':
+                        sb.append("\\r");
+                        break;
+                    case '\t':
+                        sb.append("\\t");
+                        break;
+                    default:
+                        sb.append(c);
+                }
+            }
+
+            sb.append('"');
+            return sb.toString();
+        }
+    }
+
+    /**
      * Result of parsing markdown with frontmatter.
      *
      * <p>Contains both the extracted metadata and the markdown content.
      */
     public static class ParsedMarkdown {
-        private final Map<String, Object> metadata;
+        private final Map<String, String> metadata;
         private final String content;
 
         /**
@@ -199,7 +415,7 @@ public class MarkdownSkillParser {
          * @param metadata YAML metadata (never null, can be empty)
          * @param content Markdown content (never null, can be empty)
          */
-        public ParsedMarkdown(Map<String, Object> metadata, String content) {
+        public ParsedMarkdown(Map<String, String> metadata, String content) {
             this.metadata =
                     metadata != null ? new LinkedHashMap<>(metadata) : new LinkedHashMap<>();
             this.content = content != null ? content : "";
@@ -210,7 +426,7 @@ public class MarkdownSkillParser {
          *
          * @return Metadata map (never null, can be empty)
          */
-        public Map<String, Object> getMetadata() {
+        public Map<String, String> getMetadata() {
             return new LinkedHashMap<>(metadata);
         }
 

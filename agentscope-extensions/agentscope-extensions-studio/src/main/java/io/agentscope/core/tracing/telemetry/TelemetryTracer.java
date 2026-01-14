@@ -56,7 +56,9 @@ import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -235,6 +237,7 @@ public class TelemetryTracer implements Tracer {
 
         private boolean enabled = true;
         private String endpoint;
+        private Map<String, String> headers = new HashMap<>();
         private io.opentelemetry.api.trace.Tracer tracer;
 
         public Builder enabled(boolean enabled) {
@@ -244,6 +247,29 @@ public class TelemetryTracer implements Tracer {
 
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
+            return this;
+        }
+
+        /**
+         * Adds a header to be included in OTLP HTTP requests.
+         *
+         * @param key   The header name
+         * @param value The header value
+         * @return This builder
+         */
+        public Builder addHeader(String key, String value) {
+            this.headers.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all headers to be included in OTLP HTTP requests.
+         *
+         * @param headers Map of header name to value
+         * @return This builder
+         */
+        public Builder headers(Map<String, String> headers) {
+            this.headers = new java.util.HashMap<>(headers);
             return this;
         }
 
@@ -261,14 +287,17 @@ public class TelemetryTracer implements Tracer {
                 return new TelemetryTracer(tracer);
             }
 
+            var exporterBuilder = OtlpHttpSpanExporter.builder().setEndpoint(endpoint);
+
+            // Add headers for authentication (e.g., Langfuse)
+            for (var entry : headers.entrySet()) {
+                exporterBuilder.addHeader(entry.getKey(), entry.getValue());
+            }
+
             TracerProvider tracerProvider =
                     SdkTracerProvider.builder()
                             .addSpanProcessor(
-                                    BatchSpanProcessor.builder(
-                                                    OtlpHttpSpanExporter.builder()
-                                                            .setEndpoint(endpoint)
-                                                            .build())
-                                            .build())
+                                    BatchSpanProcessor.builder(exporterBuilder.build()).build())
                             .setSampler(Sampler.alwaysOn())
                             .build();
 
