@@ -266,7 +266,7 @@ public class TelemetryTracer implements Tracer {
          * @param headers Map of header name to value
          * @return This builder
          */
-        public Builder headers(java.util.Map<String, String> headers) {
+        public Builder headers(Map<String, String> headers) {
             this.headers = new java.util.HashMap<>(headers);
             return this;
         }
