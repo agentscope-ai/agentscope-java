@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
  * ElasticsearchRAGExample - Demonstrates RAG capabilities using Elasticsearch as the vector store.
  *
  * <p>Prerequisites:
- * 1. An Elasticsearch instance running (e.g., via Docker: docker run -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.11.1)
+ * 1. An Elasticsearch instance running (e.g., via Docker: docker run -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.12.0)
  * 2. DashScope API Key
  */
 public class ElasticsearchRAGExample {

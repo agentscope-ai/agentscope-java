@@ -97,12 +97,14 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
     private final RestClient restClient;
     private final ElasticsearchTransport transport;
     private final ElasticsearchClient client;
+    private final boolean disableSslVerification;
 
     private volatile boolean closed = false;
 
     private ElasticsearchStore(Builder builder) throws VectorStoreException {
         this.indexName = builder.indexName;
         this.dimensions = builder.dimensions;
+        this.disableSslVerification = builder.disableSslVerification;
         try {
             // 1. Configure Low-level RestClient
             BasicCredentialsProvider credsProv = new BasicCredentialsProvider();
@@ -112,10 +114,15 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
                         new UsernamePasswordCredentials(builder.username, builder.password));
             }
 
-            SSLContext sslContext =
-                    SSLContextBuilder.create()
-                            .loadTrustMaterial(null, (chain, authType) -> true)
-                            .build();
+            final SSLContext sslContext;
+            if (this.disableSslVerification) {
+                sslContext =
+                        SSLContextBuilder.create()
+                                .loadTrustMaterial(null, (chain, authType) -> true)
+                                .build();
+            } else {
+                sslContext = SSLContext.getDefault();
+            }
 
             HttpHost host = HttpHost.create(builder.url);
 
@@ -131,8 +138,10 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
                                         if (builder.url != null
                                                 && builder.url.startsWith("https")) {
                                             httpClientBuilder.setSSLContext(sslContext);
-                                            httpClientBuilder.setSSLHostnameVerifier(
-                                                    NoopHostnameVerifier.INSTANCE);
+                                            if (builder.disableSslVerification) {
+                                                httpClientBuilder.setSSLHostnameVerifier(
+                                                        NoopHostnameVerifier.INSTANCE);
+                                            }
                                         }
                                         return httpClientBuilder;
                                     })
@@ -155,6 +164,12 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         }
     }
 
+    /**
+     * Adds a list of documents to the Elasticsearch index.
+     *
+     * @param documents the list of documents to add
+     * @return a Mono that completes when the operation is finished
+     */
     @Override
     public Mono<Void> add(List<Document> documents) {
         if (documents == null || documents.isEmpty()) {
@@ -197,6 +212,12 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         }
     }
 
+    /**
+     * Searches for documents in the Elasticsearch index matching the query embedding.
+     *
+     * @param searchDocumentDto the search criteria containing query embedding, limit, and score threshold
+     * @return a Mono containing the list of matching documents
+     */
     @Override
     public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
         double[] queryEmbedding = searchDocumentDto.getQueryEmbedding();
@@ -249,6 +270,12 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         return results;
     }
 
+    /**
+     * Deletes a document from the Elasticsearch index by its ID.
+     *
+     * @param id the ID of the document to delete
+     * @return a Mono containing true if the document was deleted, false if not found
+     */
     @Override
     public Mono<Boolean> delete(String id) {
         if (id == null || id.trim().isEmpty()) {
@@ -258,7 +285,6 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         return Mono.fromCallable(
                         () -> {
                             ensureNotClosed();
-                            // 直接执行，让异常自然抛出
                             return client.delete(d -> d.index(indexName).id(id));
                         })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -307,7 +333,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
 
             log.debug("Creating index '{}' with dimensions {}", indexName, dimensions);
 
-            // ===== keyword fields =====
+            // Define field mappings
             Property idProperty =
                     new Property.Builder().keyword(new KeywordProperty.Builder().build()).build();
 
@@ -447,39 +473,81 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
      * Builder for ElasticsearchStore.
      */
     public static class Builder {
-        private String url = "https://localhost:9200";
+        private String url = "http://localhost:9200";
         private String indexName;
         private int dimensions;
         private String username;
         private String password;
+        private boolean disableSslVerification = false;
 
         private Builder() {}
 
+        /**
+         * Sets the Elasticsearch connection URL.
+         * @param url the URL
+         * @return the builder
+         */
         public Builder url(String url) {
             this.url = url;
             return this;
         }
 
+        /**
+         * Sets the index name.
+         * @param indexName the index name
+         * @return the builder
+         */
         public Builder indexName(String indexName) {
             this.indexName = indexName;
             return this;
         }
 
+        /**
+         * Sets the vector dimensions.
+         * @param dimensions the number of dimensions
+         * @return the builder
+         */
         public Builder dimensions(int dimensions) {
             this.dimensions = dimensions;
             return this;
         }
 
+        /**
+         * Sets the username for authentication.
+         * @param username the username
+         * @return the builder
+         */
         public Builder username(String username) {
             this.username = username;
             return this;
         }
 
+        /**
+         * Sets the password for authentication.
+         * @param password the password
+         * @return the builder
+         */
         public Builder password(String password) {
             this.password = password;
             return this;
         }
 
+        /**
+         * Sets whether to disable SSL verification.
+         * <p><strong>Warning:</strong> Disabling SSL verification is insecure and should only be used for development.
+         * @param disableSslVerification true to disable verification
+         * @return the builder
+         */
+        public Builder disableSslVerification(boolean disableSslVerification) {
+            this.disableSslVerification = disableSslVerification;
+            return this;
+        }
+
+        /**
+         * Builds the ElasticsearchStore instance.
+         * @return the store instance
+         * @throws VectorStoreException if configuration is invalid
+         */
         public ElasticsearchStore build() throws VectorStoreException {
             if (url == null || url.trim().isEmpty()) {
                 throw new IllegalArgumentException("URL cannot be null or empty");

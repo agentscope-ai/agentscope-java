@@ -214,6 +214,7 @@ public class ElasticsearchStoreTest {
                             .dimensions(TEST_DIMENSIONS)
                             .username("admin")
                             .password("secret")
+                            .disableSslVerification(true)
                             .build();
 
             assertNotNull(httpsStore);
