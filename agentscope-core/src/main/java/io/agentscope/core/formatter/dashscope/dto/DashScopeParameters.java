@@ -94,6 +94,10 @@ public class DashScopeParameters {
     @JsonProperty("repetition_penalty")
     private Double repetitionPenalty;
 
+    /** The configuration for the llm response format. */
+    @JsonProperty("response_format")
+    DashScopeResponseFormat responseFormat;
+
     public DashScopeParameters() {}
 
     public String getResultFormat() {
@@ -224,6 +228,14 @@ public class DashScopeParameters {
         this.repetitionPenalty = repetitionPenalty;
     }
 
+    public DashScopeResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
+    public void setResponseFormat(DashScopeResponseFormat responseFormat) {
+        this.responseFormat = responseFormat;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -303,6 +315,11 @@ public class DashScopeParameters {
 
         public Builder repetitionPenalty(Double repetitionPenalty) {
             params.setRepetitionPenalty(repetitionPenalty);
+            return this;
+        }
+
+        public Builder responseFormat(DashScopeResponseFormat responseFormat) {
+            params.setResponseFormat(responseFormat);
             return this;
         }
 

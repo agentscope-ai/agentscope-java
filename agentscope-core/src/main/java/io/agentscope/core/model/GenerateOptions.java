@@ -16,6 +16,7 @@
 
 package io.agentscope.core.model;
 
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponseFormat;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -47,6 +48,7 @@ public class GenerateOptions {
     private final ToolChoice toolChoice;
     private final Integer topK;
     private final Long seed;
+    private final DashScopeResponseFormat responseFormat;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -73,6 +75,7 @@ public class GenerateOptions {
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
         this.seed = builder.seed;
+        this.responseFormat = builder.responseFormat;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -283,6 +286,15 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets the response format for DashScope models.
+     *
+     * @return the response format, or null if not set
+     */
+    public DashScopeResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -458,6 +470,7 @@ public class GenerateOptions {
         private ToolChoice toolChoice;
         private Integer topK;
         private Long seed;
+        private DashScopeResponseFormat responseFormat;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -677,6 +690,17 @@ public class GenerateOptions {
          */
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        /**
+         * Sets the response format for the model.
+         *
+         * @param responseFormat the response format
+         * @return this builder instance
+         */
+        public Builder responseFormat(DashScopeResponseFormat responseFormat) {
+            this.responseFormat = responseFormat;
             return this;
         }
 
