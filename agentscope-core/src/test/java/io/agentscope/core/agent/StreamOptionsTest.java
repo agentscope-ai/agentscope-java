@@ -197,4 +197,55 @@ class StreamOptionsTest {
         assertFalse(options.shouldIncludeReasoningEmission(true)); // chunk filtered
         assertFalse(options.shouldIncludeReasoningEmission(false)); // result filtered
     }
+
+    @Test
+    void testActingChunk_DefaultsTrue() {
+        StreamOptions options = StreamOptions.builder().eventTypes(EventType.TOOL_RESULT).build();
+
+        assertTrue(options.isIncludeActingChunk());
+    }
+
+    @Test
+    void testActingChunk_SetToFalse() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.TOOL_RESULT)
+                        .includeActingChunk(false)
+                        .build();
+
+        assertFalse(options.isIncludeActingChunk());
+    }
+
+    @Test
+    void testActingChunk_SetToTrue() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.TOOL_RESULT)
+                        .includeActingChunk(true)
+                        .build();
+
+        assertTrue(options.isIncludeActingChunk());
+    }
+
+    @Test
+    void testActingChunk_CombinedWithReasoningFlags() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.ALL)
+                        .includeReasoningChunk(false)
+                        .includeReasoningResult(true)
+                        .includeActingChunk(false)
+                        .build();
+
+        assertFalse(options.isIncludeReasoningChunk());
+        assertTrue(options.isIncludeReasoningResult());
+        assertFalse(options.isIncludeActingChunk());
+    }
+
+    @Test
+    void testDefaults_IncludesActingChunk() {
+        StreamOptions options = StreamOptions.defaults();
+
+        assertTrue(options.isIncludeActingChunk());
+    }
 }

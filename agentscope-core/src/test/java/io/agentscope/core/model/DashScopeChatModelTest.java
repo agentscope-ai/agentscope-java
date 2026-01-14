@@ -586,6 +586,108 @@ class DashScopeChatModelTest {
                 () -> invokeApplyThinkingMode(chatModel, request, options));
     }
 
+    // ========== Encryption Configuration Tests ==========
+
+    @Test
+    @DisplayName("Should create model with encryption enabled")
+    void testModelWithEncryption() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        try {
+            // Mock public key API response
+            String publicKeyResponse =
+                    """
+                    {
+                      "request_id": "test-request-id",
+                      "data": {
+                        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnojrB579xgPQN5f46SvoRAiQBPWBaPzWh7hp51fWI+OsQk7KqH0qMcw8i0eK5rfOvJIPujOQgnes1ph9/gKAst9NzXVIl9JJYUSPtzTvOabhp4yvS3KBf9g3xHYVjYgW33SOY74Ue/tgbCXn717rV6gXb4sVvq9XK/1BrDcGbEOQEZEgBTFkm/g3lpWLQtACwwqHffoA9eQtkkz15ZFKosAgbR8LedfIvxAl2zk15REzxXiRcFgc9/tLF0U1t2Sxt9FkQefxYwn6EZawTsRJvf4kqF3MaPdTcDbOp0iSNvCl2qzPSf/F+Oll2CUM1tFAEu81oa4l0WaDR3UtvqOtyQIDAQAB",
+                        "public_key_id": "1"
+                      }
+                    }
+                    """;
+
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody(publicKeyResponse)
+                            .setHeader("Content-Type", "application/json"));
+
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+
+            DashScopeChatModel encryptedModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(mockApiKey)
+                            .modelName("qwen-max")
+                            .enableEncrypt(true)
+                            .baseUrl(baseUrl)
+                            .httpTransport(OkHttpTransport.builder().build())
+                            .build();
+
+            assertNotNull(encryptedModel, "Encrypted model should be created");
+
+            // Verify that the public key API was called
+            RecordedRequest recorded = mockServer.takeRequest();
+            assertEquals(DashScopeHttpClient.PUBLIC_KEYS_ENDPOINT, recorded.getPath());
+            assertEquals("Bearer " + mockApiKey, recorded.getHeader("Authorization"));
+        } finally {
+            mockServer.shutdown();
+        }
+    }
+
+    @Test
+    @DisplayName("Should create model without encryption (default)")
+    void testModelWithoutEncryption() {
+        DashScopeChatModel normalModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        assertNotNull(normalModel, "Normal model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with encryption disabled explicitly")
+    void testModelWithEncryptionDisabled() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableEncrypt(false)
+                        .build();
+
+        assertNotNull(model, "Model with encryption disabled should be created");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when public key fetch fails")
+    void testModelWithEncryptionFetchFails() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        try {
+            // Mock error response from public key API
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(500)
+                            .setBody("Internal Server Error")
+                            .setHeader("Content-Type", "text/plain"));
+
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+
+            assertThrows(
+                    DashScopeHttpClient.DashScopeHttpException.class,
+                    () ->
+                            DashScopeChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("qwen-max")
+                                    .enableEncrypt(true)
+                                    .baseUrl(baseUrl)
+                                    .httpTransport(OkHttpTransport.builder().build())
+                                    .build());
+        } finally {
+            mockServer.shutdown();
+        }
+    }
+
     /**
      *  Use reflection to invoke applyThinkingMode
      *

@@ -23,13 +23,13 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.6'
+implementation 'io.agentscope:agentscope:1.0.7'
 ```
 
 ### Included Dependencies
@@ -53,6 +53,7 @@ When using other models or features, add the corresponding dependencies:
 | **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **Bailian RAG**           | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)          | `com.aliyun:bailian20231229`     |
 | **Qdrant RAG**            | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
+| **PgVector RAG**          | [PostgreSQL Driver](https://central.sonatype.com/artifact/org.postgresql/postgresql) + [pgvector](https://central.sonatype.com/artifact/com.pgvector/pgvector) | `org.postgresql:postgresql` + `com.pgvector:pgvector` |
 | **Dify RAG**              | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **RAGFlow RAG**           | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
 | **HayStack RAG**          | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
@@ -133,13 +134,13 @@ For fine-grained dependency control, use `agentscope-core` with extension module
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.6'
+implementation 'io.agentscope:agentscope-core:1.0.7'
 ```
 
 ### Extension Modules
@@ -157,7 +158,7 @@ implementation 'io.agentscope:agentscope-core:1.0.6'
 | Module | Feature | Maven Coordinates |
 |--------|---------|-------------------|
 | [agentscope-extensions-rag-bailian](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian) | Bailian RAG | `io.agentscope:agentscope-extensions-rag-bailian` |
-| [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Qdrant RAG | `io.agentscope:agentscope-extensions-rag-simple` |
+| [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Simple RAG (Qdrant, Milvus, PgVector, InMemory) | `io.agentscope:agentscope-extensions-rag-simple` |
 | [agentscope-extensions-rag-dify](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-dify) | Dify RAG | `io.agentscope:agentscope-extensions-rag-dify` |
 | [agentscope-extensions-rag-ragflow](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-ragflow) | RAGFlow RAG | `io.agentscope:agentscope-extensions-rag-ragflow` |
 | [agentscope-extensions-rag-haystack](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-haystack) | HayStack RAG | `io.agentscope:agentscope-extensions-rag-haystack` |
@@ -199,7 +200,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```
 
@@ -211,7 +212,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```
 
@@ -228,7 +229,7 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```
 
@@ -238,6 +239,6 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
 </dependency>
 ```

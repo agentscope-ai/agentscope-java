@@ -90,7 +90,7 @@ class StreamingHook implements Hook {
         } else if (event instanceof ActingChunkEvent) {
             ActingChunkEvent e = (ActingChunkEvent) event;
             // Intermediate tool chunk
-            if (options.shouldStream(EventType.TOOL_RESULT)) {
+            if (options.shouldStream(EventType.TOOL_RESULT) && options.isIncludeActingChunk()) {
                 Msg toolMsg = createToolMessage(e.getChunk());
                 emitEvent(EventType.TOOL_RESULT, toolMsg, false);
             }
