@@ -717,4 +717,195 @@ class AguiAgentAdapterTest {
 
         assertTrue(!hasThinkingStart, "Should NOT have TextMessageStart for empty thinking");
     }
+
+    @Test
+    void testRunWithThinkingBlockLastEvent() {
+        // Test the isLast() == true branch for ThinkingBlock
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Final thinking content").build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, true); // isLast = true
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have TextMessageStart and TextMessageEnd (not TextMessageContent)
+        AguiEvent.TextMessageStart thinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(thinkingStart, "Should have TextMessageStart for thinking");
+
+        AguiEvent.TextMessageEnd thinkingEnd =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                        .map(e -> (AguiEvent.TextMessageEnd) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(thinkingEnd, "Should have TextMessageEnd for thinking when isLast=true");
+
+        // Should NOT have TextMessageContent when isLast=true
+        boolean hasContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+
+        assertTrue(!hasContent, "Should NOT have TextMessageContent when isLast=true");
+    }
+
+    @Test
+    void testRunWithThinkingAndToolCallMixed() {
+        // Test thinking content mixed with tool call
+        Msg mixedMsg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need to use a tool to get the answer.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(mixedEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Weather?")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have thinking events
+        boolean hasThinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+
+        // Should have tool call events
+        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallStart);
+
+        assertTrue(hasThinkingStart, "Should have thinking message");
+        assertTrue(hasToolStart, "Should have tool call");
+    }
+
+    @Test
+    void testRunWithStreamingThinkingBlockLastEvent() {
+        // Test streaming with last event (isLast=true)
+        Msg thinkingChunk1 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("First thought").build())
+                        .build();
+
+        Msg thinkingChunk2 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Second thought").build())
+                        .build();
+
+        Event event1 = new Event(EventType.REASONING, thinkingChunk1, false);
+        Event event2 = new Event(EventType.REASONING, thinkingChunk2, true); // Last event
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have TextMessageContent for first chunk
+        long contentCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .count();
+        assertEquals(1, contentCount, "Should have 1 content event for first chunk");
+
+        // Should have TextMessageEnd for last event
+        boolean hasEnd =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                        .map(e -> (AguiEvent.TextMessageEnd) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+        assertTrue(hasEnd, "Should have TextMessageEnd for last event");
+    }
+
+    @Test
+    void testRunWithNullThinkingBlock() {
+        // ThinkingBlock with null thinking should be converted to empty string and skipped
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking(null).build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should NOT have any thinking message events for null/empty thinking
+        boolean hasThinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+
+        assertTrue(!hasThinkingStart, "Should NOT have TextMessageStart for null thinking");
+    }
 }
