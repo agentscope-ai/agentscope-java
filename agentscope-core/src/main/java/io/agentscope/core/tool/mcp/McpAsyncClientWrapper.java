@@ -66,11 +66,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
 
     /**
      * Updates the cached tools map with new tools from the server. This method is called when the
-     * server sends a tools/list_changed notification.
+     * server sends a tools/list_changed notification. This method is thread-safe and can be
+     * called concurrently from notification handlers.
      *
      * @param tools the new list of tools from the server (empty list clears cache)
      */
-    void updateCachedTools(List<McpSchema.Tool> tools) {
+    synchronized void updateCachedTools(List<McpSchema.Tool> tools) {
         if (tools != null) {
             // Build new map first, then atomically replace
             Map<String, McpSchema.Tool> newTools =
