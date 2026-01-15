@@ -187,15 +187,50 @@
             word-break: break-word;
         }
 
-        .audio-indicator {
+        .audio-controls {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.75rem;
             margin-top: 0.75rem;
             padding-top: 0.75rem;
             border-top: 1px solid var(--border-color);
+        }
+
+        .play-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--accent-cyan);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .play-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-cyan);
+            transform: scale(1.1);
+        }
+
+        .play-btn.playing {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-color: var(--accent-cyan);
+        }
+
+        .audio-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             font-size: 0.85rem;
             color: var(--text-secondary);
+            flex: 1;
         }
 
         .audio-bars {
@@ -393,16 +428,34 @@
     </div>
 
     <script>
-        // Audio playback queue
-        const audioQueue = [];
-        let isPlaying = false;
+        // Global audio context
         let audioContext = null;
-        let currentMessageDiv = null;
+        let currentPlayingMessage = null; // Track which message is currently playing
 
         // Initialize AudioContext on first user interaction
         function initAudio() {
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            }
+        }
+
+        // Stop all playing audio
+        function stopAllAudio() {
+            if (currentPlayingMessage) {
+                const audioPlayer = currentPlayingMessage.audioPlayer;
+                if (audioPlayer) {
+                    audioPlayer.sources.forEach(source => {
+                        try {
+                            source.stop();
+                        } catch (e) {
+                            // Source may already be stopped
+                        }
+                    });
+                    audioPlayer.sources = [];
+                    audioPlayer.isPlaying = false;
+                    updateAudioUI(currentPlayingMessage.messageDiv, false);
+                }
+                currentPlayingMessage = null;
             }
         }
 
@@ -413,6 +466,9 @@
             if (!message) return;
 
             initAudio();
+            
+            // Stop any currently playing audio (new message arrives)
+            stopAllAudio();
             
             // Clear input
             input.value = '';
@@ -432,8 +488,16 @@
             sendBtn.disabled = true;
 
             // Create assistant message container
-            currentMessageDiv = addMessage('', 'assistant', true);
-            let fullText = '';
+            const messageDiv = addMessage('', 'assistant', true);
+            const audioPlayer = createAudioPlayer(messageDiv);
+            
+            // Store reference for auto-play
+            currentPlayingMessage = { messageDiv, audioPlayer };
+
+            // Store accumulated text for this message to avoid duplicates
+            if (!messageDiv.accumulatedText) {
+                messageDiv.accumulatedText = '';
+            }
 
             try {
                 const response = await fetch('/api/chat', {
@@ -458,20 +522,18 @@
                         if (line.startsWith('data:')) {
                             try {
                                 const data = JSON.parse(line.slice(5));
-                                handleSSEData(data, currentMessageDiv, (text) => {
-                                    fullText = text;
+                                handleSSEData(data, messageDiv, audioPlayer, (text) => {
+                                    currentText = text;
                                 });
                             } catch (e) {
                                 // Ignore parse errors
                             }
-                        } else if (line.startsWith('event:')) {
-                            // Event type, handled in data
                         }
                     }
                 }
             } catch (error) {
                 console.error('Error:', error);
-                updateMessageText(currentMessageDiv, '抱歉，发生了错误: ' + error.message);
+                updateMessageText(messageDiv, '抱歉，发生了错误: ' + error.message);
             } finally {
                 document.getElementById('typing-indicator').style.display = 'none';
                 sendBtn.disabled = false;
@@ -479,27 +541,242 @@
         }
 
         // Handle SSE data
-        function handleSSEData(data, messageDiv, updateText) {
+        function handleSSEData(data, messageDiv, audioPlayer, updateText) {
             if (data.text !== undefined) {
-                // Text event
+                // Text event - handle incremental text accumulation
                 const textSpan = messageDiv.querySelector('.message-text');
                 if (textSpan) {
-                    textSpan.textContent += data.text;
-                    updateText(textSpan.textContent);
-                    scrollToBottom();
+                    const receivedText = data.text;
+                    const isLast = data.isLast === true;
+                    
+                    // Initialize accumulated text if not exists
+                    if (messageDiv.accumulatedText === undefined) {
+                        messageDiv.accumulatedText = '';
+                    }
+                    
+                    if (isLast) {
+                        // Final event: use received text directly (complete text)
+                        if (receivedText !== messageDiv.accumulatedText) {
+                            messageDiv.accumulatedText = receivedText;
+                            textSpan.textContent = messageDiv.accumulatedText;
+                            updateText(messageDiv.accumulatedText);
+                            scrollToBottom();
+                        }
+                    } else {
+                        // Incremental event: in incremental mode, backend sends delta text
+                        // Check if receivedText is already in accumulated to avoid duplicates
+                        const currentText = messageDiv.accumulatedText;
+                        
+                        if (receivedText.length > currentText.length && 
+                            receivedText.startsWith(currentText)) {
+                            // Received text is accumulated (contains all previous + new)
+                            messageDiv.accumulatedText = receivedText;
+                        } else if (!currentText.endsWith(receivedText) && 
+                                   !currentText.includes(receivedText)) {
+                            // Received text is new delta, append it
+                            messageDiv.accumulatedText += receivedText;
+                        } else if (currentText.length === 0 && receivedText) {
+                            // First chunk, use it directly
+                            messageDiv.accumulatedText = receivedText;
+                        }
+                        
+                        // Update display if changed
+                        if (textSpan.textContent !== messageDiv.accumulatedText) {
+                            textSpan.textContent = messageDiv.accumulatedText;
+                            updateText(messageDiv.accumulatedText);
+                            scrollToBottom();
+                        }
+                    }
                 }
             } else if (data.audio !== undefined) {
-                // Audio event - decode and queue
+                // Audio event - add to this message's audio queue
                 const audioData = base64ToArrayBuffer(data.audio);
-                queueAudio(audioData, messageDiv);
+                addAudioChunk(audioPlayer, audioData, messageDiv);
             } else if (data.status === 'completed') {
-                // Mark audio as stopped after playback
+                // Mark audio as ready after a delay
                 setTimeout(() => {
                     const audioBars = messageDiv.querySelector('.audio-bars');
-                    if (audioBars) {
+                    if (audioBars && !audioPlayer.isPlaying) {
                         audioBars.classList.add('stopped');
                     }
                 }, 1000);
+            }
+        }
+
+        // Create audio player for a message
+        function createAudioPlayer(messageDiv) {
+            const audioPlayer = {
+                chunks: [], // Queue of audio chunks
+                sources: [], // Active audio sources
+                isPlaying: false,
+                currentSource: null
+            };
+
+            const playBtn = messageDiv.querySelector('.play-btn');
+            if (playBtn) {
+                playBtn.onclick = () => {
+                    if (audioPlayer.isPlaying) {
+                        stopAudio(audioPlayer, messageDiv);
+                    } else {
+                        // Stop other messages before playing this one
+                        stopAllAudio();
+                        playAudio(audioPlayer, messageDiv);
+                    }
+                };
+            }
+
+            return audioPlayer;
+        }
+
+        // Add audio chunk to player
+        function addAudioChunk(audioPlayer, audioData, messageDiv) {
+            audioPlayer.chunks.push(audioData);
+            
+            // Auto-play if this is the current message being generated
+            if (currentPlayingMessage && 
+                currentPlayingMessage.messageDiv === messageDiv) {
+                if (!audioPlayer.isPlaying) {
+                    playAudio(audioPlayer, messageDiv);
+                }
+            }
+        }
+
+        // Play audio from queue
+        async function playAudio(audioPlayer, messageDiv) {
+            if (audioPlayer.isPlaying || audioPlayer.chunks.length === 0) {
+                return;
+            }
+
+            audioPlayer.isPlaying = true;
+            updateAudioUI(messageDiv, true);
+            currentPlayingMessage = { messageDiv, audioPlayer };
+
+            // Play all chunks in sequence
+            while (audioPlayer.chunks.length > 0 && audioPlayer.isPlaying) {
+                const chunk = audioPlayer.chunks.shift();
+                await playAudioChunk(chunk, audioPlayer);
+            }
+
+            if (audioPlayer.isPlaying) {
+                audioPlayer.isPlaying = false;
+                updateAudioUI(messageDiv, false);
+                if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                    currentPlayingMessage = null;
+                }
+            }
+        }
+
+        // Play a single audio chunk
+        async function playAudioChunk(audioData, audioPlayer) {
+            return new Promise((resolve, reject) => {
+                if (!audioPlayer.isPlaying) {
+                    resolve();
+                    return;
+                }
+
+                try {
+                    // Try to decode as WAV first
+                    audioContext.decodeAudioData(audioData.slice(0))
+                        .then(audioBuffer => {
+                            const source = audioContext.createBufferSource();
+                            source.buffer = audioBuffer;
+                            source.connect(audioContext.destination);
+                            audioPlayer.sources.push(source);
+                            
+                            source.onended = () => {
+                                const index = audioPlayer.sources.indexOf(source);
+                                if (index > -1) {
+                                    audioPlayer.sources.splice(index, 1);
+                                }
+                                resolve();
+                            };
+                            
+                            source.start();
+                        })
+                        .catch(() => {
+                            // Fallback to raw PCM
+                            playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                        });
+                } catch (e) {
+                    // Fallback to raw PCM
+                    playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                }
+            });
+        }
+
+        // Play raw PCM data
+        async function playRawPCM(data, audioPlayer) {
+            return new Promise((resolve, reject) => {
+                if (!audioPlayer.isPlaying) {
+                    resolve();
+                    return;
+                }
+
+                try {
+                    const pcmData = new Int16Array(data);
+                    const floatData = new Float32Array(pcmData.length);
+                    for (let i = 0; i < pcmData.length; i++) {
+                        floatData[i] = pcmData[i] / 32768.0;
+                    }
+                    
+                    const audioBuffer = audioContext.createBuffer(1, floatData.length, 24000);
+                    audioBuffer.getChannelData(0).set(floatData);
+                    
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(audioContext.destination);
+                    audioPlayer.sources.push(source);
+                    
+                    source.onended = () => {
+                        const index = audioPlayer.sources.indexOf(source);
+                        if (index > -1) {
+                            audioPlayer.sources.splice(index, 1);
+                        }
+                        resolve();
+                    };
+                    
+                    source.start();
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        // Stop audio playback
+        function stopAudio(audioPlayer, messageDiv) {
+            audioPlayer.isPlaying = false;
+            audioPlayer.sources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            audioPlayer.sources = [];
+            updateAudioUI(messageDiv, false);
+            
+            if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                currentPlayingMessage = null;
+            }
+        }
+
+        // Update audio UI
+        function updateAudioUI(messageDiv, isPlaying) {
+            const playBtn = messageDiv.querySelector('.play-btn');
+            const audioBars = messageDiv.querySelector('.audio-bars');
+            const statusText = messageDiv.querySelector('.audio-status-text');
+            
+            if (playBtn) {
+                playBtn.textContent = isPlaying ? '⏸' : '▶';
+                playBtn.classList.toggle('playing', isPlaying);
+            }
+            
+            if (audioBars) {
+                audioBars.classList.toggle('stopped', !isPlaying);
+            }
+            
+            if (statusText) {
+                statusText.textContent = isPlaying ? '正在朗读...' : '点击播放';
             }
         }
 
@@ -512,17 +789,20 @@
             
             const avatar = role === 'user' ? '👤' : '🤖';
             
-            let audioIndicator = '';
+            let audioControls = '';
             if (withAudio && role === 'assistant') {
-                audioIndicator = `
-                    <div class="audio-indicator">
-                        <div class="audio-bars">
-                            <span class="audio-bar"></span>
-                            <span class="audio-bar"></span>
-                            <span class="audio-bar"></span>
-                            <span class="audio-bar"></span>
+                audioControls = `
+                    <div class="audio-controls">
+                        <button class="play-btn">▶</button>
+                        <div class="audio-status">
+                            <div class="audio-bars stopped">
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                            </div>
+                            <span class="audio-status-text">点击播放</span>
                         </div>
-                        <span>正在朗读...</span>
                     </div>
                 `;
             }
@@ -531,7 +811,7 @@
                 <div class="avatar">${avatar}</div>
                 <div class="message-content">
                     <div class="message-text">${text}</div>
-                    ${audioIndicator}
+                    ${audioControls}
                 </div>
             `;
             
@@ -559,67 +839,6 @@
             return bytes.buffer;
         }
 
-        // Queue audio for playback
-        function queueAudio(audioData, messageDiv) {
-            audioQueue.push({ data: audioData, messageDiv });
-            if (!isPlaying) {
-                playNextAudio();
-            }
-        }
-
-        // Play next audio in queue
-        async function playNextAudio() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                return;
-            }
-
-            isPlaying = true;
-            const { data, messageDiv } = audioQueue.shift();
-
-            try {
-                // For WAV format, we need to decode the audio
-                const audioBuffer = await audioContext.decodeAudioData(data.slice(0));
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                source.onended = () => {
-                    playNextAudio();
-                };
-                source.start();
-            } catch (e) {
-                console.error('Audio decode error:', e);
-                // Try playing raw PCM
-                try {
-                    await playRawPCM(data);
-                } catch (e2) {
-                    console.error('Raw PCM error:', e2);
-                }
-                playNextAudio();
-            }
-        }
-
-        // Play raw PCM data
-        async function playRawPCM(data) {
-            const pcmData = new Int16Array(data);
-            const floatData = new Float32Array(pcmData.length);
-            for (let i = 0; i < pcmData.length; i++) {
-                floatData[i] = pcmData[i] / 32768.0;
-            }
-            
-            const audioBuffer = audioContext.createBuffer(1, floatData.length, 24000);
-            audioBuffer.getChannelData(0).set(floatData);
-            
-            const source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
-            
-            return new Promise((resolve) => {
-                source.onended = resolve;
-                source.start();
-            });
-        }
-
         // Handle Enter key
         function handleKeyDown(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -643,4 +862,5 @@
     </script>
 </body>
 </html>
+
 

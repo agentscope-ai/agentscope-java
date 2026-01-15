@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Hook for real-time Text-to-Speech synthesis during agent execution.
@@ -79,7 +80,8 @@ public class TTSHook implements Hook {
     private final boolean realtimeMode;
     private final Consumer<AudioBlock> audioCallback;
 
-    // Reactive audio stream for external consumers
+    // Reactive audio stream for external consumers (e.g., SSE/WebSocket to frontend)
+    // This sink is NOT interrupted when new reasoning starts - frontend controls playback
     private final Sinks.Many<AudioBlock> audioSink =
             Sinks.many().multicast().onBackpressureBuffer();
 
@@ -126,7 +128,10 @@ public class TTSHook implements Hook {
      * Handle real-time mode: synthesize on each chunk.
      */
     private <T extends HookEvent> Mono<T> handleRealtimeMode(T event) {
-        if (event instanceof ReasoningChunkEvent) {
+        if (event instanceof PreReasoningEvent) {
+            // New reasoning is starting - interrupt current playback if any
+            interruptCurrentPlayback();
+        } else if (event instanceof ReasoningChunkEvent) {
             ReasoningChunkEvent e = (ReasoningChunkEvent) event;
             Msg incrementalChunk = e.getIncrementalChunk();
 
@@ -134,20 +139,29 @@ public class TTSHook implements Hook {
                 String text = incrementalChunk.getTextContent();
                 if (text != null && !text.isEmpty()) {
                     if (!sessionStarted) {
+                        // New session starting - interrupt any ongoing playback first
+                        if (audioPlayer != null && playerStarted) {
+                            audioPlayer.interrupt();
+                        }
+
                         ttsModel.startSession();
                         sessionStarted = true;
                         ensurePlayerStarted();
+
+                        // Subscribe to audio stream ONCE at session start
+                        // Audio arrives asynchronously via WebSocket callback
+                        ttsModel.getAudioStream().doOnNext(this::emitAudio).subscribe();
                     }
 
-                    ttsModel.push(text).doOnNext(this::emitAudio).subscribe();
+                    // Push text - audio delivered via getAudioStream subscription
+                    ttsModel.push(text);
                 }
             }
         } else if (event instanceof PostReasoningEvent) {
             if (sessionStarted) {
-                ttsModel.finish()
-                        .doOnNext(this::emitAudio)
-                        .doOnComplete(this::drainPlayer)
-                        .blockLast();
+                // finish() commits pending text and closes session
+                // Audio continues to arrive via getAudioStream subscription
+                ttsModel.finish().doOnComplete(this::drainPlayerAsync).blockLast();
                 sessionStarted = false;
             }
         }
@@ -159,7 +173,14 @@ public class TTSHook implements Hook {
      * Handle batch mode: wait for complete response then synthesize.
      */
     private <T extends HookEvent> Mono<T> handleBatchMode(T event) {
-        if (event instanceof PostReasoningEvent) {
+        if (event instanceof PreReasoningEvent) {
+            // New reasoning is starting - interrupt current playback if any
+            // (In batch mode, this handles cases where audio is still playing from previous
+            // response)
+            if (audioPlayer != null && playerStarted) {
+                audioPlayer.interrupt();
+            }
+        } else if (event instanceof PostReasoningEvent) {
             PostReasoningEvent e = (PostReasoningEvent) event;
             Msg msg = e.getReasoningMessage();
 
@@ -179,9 +200,17 @@ public class TTSHook implements Hook {
      */
     private void emitAudio(AudioBlock audio) {
         // 1. Emit to reactive stream (for SSE/WebSocket consumers)
+        // Note: FAIL_ZERO_SUBSCRIBER is normal when no external subscribers
+        // (e.g., when only using audioPlayer for local playback)
         Sinks.EmitResult result = audioSink.tryEmitNext(audio);
         if (result.isFailure()) {
-            log.warn("Failed to emit audio to sink: {}", result);
+            if (result == Sinks.EmitResult.FAIL_ZERO_SUBSCRIBER) {
+                // Normal case when no external subscribers (local playback only)
+                log.debug(
+                        "No subscribers for audio stream (normal when using local playback only)");
+            } else {
+                log.warn("Failed to emit audio to sink: {}", result);
+            }
         }
 
         // 2. Call callback if provided
@@ -206,11 +235,55 @@ public class TTSHook implements Hook {
     }
 
     /**
-     * Drain the audio player.
+     * Interrupts current playback when a new reasoning starts.
+     *
+     * <p>This method:
+     * <ul>
+     *   <li>Interrupts local AudioPlayer - clears queue and stops current playback
+     *       (even if TTS session has already ended, AudioPlayer may still be playing)</li>
+     *   <li>Closes current TTS session if active - stops receiving new audio from WebSocket</li>
+     *   <li>Does NOT interrupt audioSink - frontend stream continues, allowing frontend to
+     *       control playback independently</li>
+     * </ul>
+     *
+     * <p>Note: The audioSink (for frontend/SSE consumers) is not interrupted because
+     * frontend applications can control audio playback themselves. Only local playback
+     * is interrupted.
      */
-    private void drainPlayer() {
+    private void interruptCurrentPlayback() {
+        // Always interrupt AudioPlayer if it's started, even if TTS session has ended
+        // This handles the case where AudioPlayer is still playing audio from previous response
+        if (audioPlayer != null && playerStarted) {
+            audioPlayer.interrupt();
+            log.debug("Interrupted AudioPlayer (cleared queue, ready for new audio)");
+        }
+
+        // Close TTS session only if it's still active
+        if (sessionStarted) {
+            // Close current TTS session (stops receiving new audio from WebSocket)
+            if (ttsModel != null) {
+                ttsModel.close();
+            }
+            sessionStarted = false;
+            log.debug("Closed TTS session for new reasoning");
+        }
+
+        // Note: audioSink is NOT interrupted - it continues to send audio to frontend
+        // Frontend can control playback independently (pause, stop, etc.)
+    }
+
+    /**
+     * Drain the audio player asynchronously.
+     *
+     * <p>This ensures audio plays completely without blocking the caller.
+     * The drain operation runs in a separate thread, allowing the agent
+     * to return immediately after synthesis completes.
+     */
+    private void drainPlayerAsync() {
         if (audioPlayer != null) {
-            audioPlayer.drain();
+            Mono.fromRunnable(() -> audioPlayer.drain())
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .subscribe();
         }
     }
 
@@ -228,7 +301,7 @@ public class TTSHook implements Hook {
 
         ttsModel.synthesizeStream(text)
                 .doOnNext(this::emitAudio)
-                .doOnComplete(this::drainPlayer)
+                .doOnComplete(this::drainPlayerAsync)
                 .blockLast();
     }
 
@@ -236,6 +309,11 @@ public class TTSHook implements Hook {
      * Stop the audio player and clean up resources.
      */
     public void stop() {
+        // Close TTS WebSocket connection
+        if (ttsModel != null) {
+            ttsModel.close();
+        }
+
         if (audioPlayer != null && playerStarted) {
             audioPlayer.stop();
             playerStarted = false;
@@ -249,6 +327,8 @@ public class TTSHook implements Hook {
 
     /**
      * Creates a new builder for TTSHook.
+     *
+     * @return a new Builder instance
      */
     public static Builder builder() {
         return new Builder();
@@ -278,10 +358,15 @@ public class TTSHook implements Hook {
         /**
          * Sets the audio player for local playback. (Optional)
          *
-         * <p>If not set, audio will only be available via audioCallback or getAudioStream().
-         * This is suitable for server-side usage where audio should be returned to frontend.
+         * <p>If not set:
+         * <ul>
+         *   <li>If audioCallback is also not set: A default AudioPlayer will be created
+         *       automatically (24000 Hz sample rate, mono, 16-bit PCM) for local playback.</li>
+         *   <li>If audioCallback is set: Audio will only be available via audioCallback
+         *       or getAudioStream(), suitable for server-side usage.</li>
+         * </ul>
          *
-         * @param audioPlayer the audio player, or null for server mode
+         * @param audioPlayer the audio player, or null to use default or server mode
          * @return this builder
          */
         public Builder audioPlayer(AudioPlayer audioPlayer) {
@@ -341,6 +426,9 @@ public class TTSHook implements Hook {
         /**
          * Builds the TTSHook instance.
          *
+         * <p>If neither audioPlayer nor audioCallback is provided, a default AudioPlayer
+         * will be created automatically for local playback (24000 Hz sample rate).
+         *
          * @return configured TTSHook
          * @throws IllegalArgumentException if ttsModel is not set
          */
@@ -348,7 +436,20 @@ public class TTSHook implements Hook {
             if (ttsModel == null) {
                 throw new IllegalArgumentException("TTS model is required");
             }
-            // audioPlayer is now optional - server mode doesn't need it
+
+            // If neither audioPlayer nor audioCallback is set, create a default AudioPlayer
+            // for local playback (CLI/desktop mode)
+            if (audioPlayer == null && audioCallback == null) {
+                audioPlayer =
+                        AudioPlayer.builder()
+                                .sampleRate(24000) // Default sample rate for TTS models
+                                .sampleSizeInBits(16)
+                                .channels(1) // Mono
+                                .signed(true)
+                                .bigEndian(false) // Little-endian
+                                .build();
+            }
+
             return new TTSHook(this);
         }
     }

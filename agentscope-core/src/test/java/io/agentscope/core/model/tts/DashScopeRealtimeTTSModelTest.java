@@ -48,7 +48,7 @@ class DashScopeRealtimeTTSModelTest {
                     DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
 
             assertNotNull(model);
-            assertEquals("qwen3-tts-flash", model.getModelName());
+            assertEquals("qwen3-tts-flash-realtime", model.getModelName());
         }
 
         @Test
@@ -331,6 +331,160 @@ class DashScopeRealtimeTTSModelTest {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> DashScopeRealtimeTTSModel.builder().apiKey("").build());
+        }
+
+        @Test
+        @DisplayName("should set session mode")
+        void shouldSetSessionMode() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-key")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.COMMIT)
+                            .build();
+
+            assertNotNull(model);
+        }
+
+        @Test
+        @DisplayName("should set server commit mode by default")
+        void shouldSetServerCommitModeByDefault() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-key").build();
+
+            assertNotNull(model);
+        }
+
+        @Test
+        @DisplayName("should set language type")
+        void shouldSetLanguageType() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-key")
+                            .languageType("Chinese")
+                            .build();
+
+            assertNotNull(model);
+        }
+
+        @Test
+        @DisplayName("should set all new builder properties")
+        void shouldSetAllNewBuilderProperties() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-key")
+                            .modelName("qwen3-tts-flash-realtime")
+                            .voice("Cherry")
+                            .sampleRate(24000)
+                            .format("pcm")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.SERVER_COMMIT)
+                            .languageType("Auto")
+                            .build();
+
+            assertNotNull(model);
+            assertEquals("qwen3-tts-flash-realtime", model.getModelName());
+        }
+    }
+
+    @Nested
+    @DisplayName("SessionMode Enum Tests")
+    class SessionModeEnumTests {
+
+        @Test
+        @DisplayName("should have correct value for SERVER_COMMIT")
+        void shouldHaveCorrectValueForServerCommit() {
+            assertEquals(
+                    "server_commit",
+                    DashScopeRealtimeTTSModel.SessionMode.SERVER_COMMIT.getValue());
+        }
+
+        @Test
+        @DisplayName("should have correct value for COMMIT")
+        void shouldHaveCorrectValueForCommit() {
+            assertEquals("commit", DashScopeRealtimeTTSModel.SessionMode.COMMIT.getValue());
+        }
+    }
+
+    @Nested
+    @DisplayName("Close Tests")
+    class CloseTests {
+
+        @Test
+        @DisplayName("should handle close without session start")
+        void shouldHandleCloseWithoutSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw
+            model.close();
+        }
+
+        @Test
+        @DisplayName("should handle close after session start")
+        void shouldHandleCloseAfterSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+            // Should not throw
+            model.close();
+        }
+
+        @Test
+        @DisplayName("should handle double close")
+        void shouldHandleDoubleClose() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+            model.close();
+            // Second close should not throw
+            model.close();
+        }
+    }
+
+    @Nested
+    @DisplayName("Buffer Operation Tests")
+    class BufferOperationTests {
+
+        @Test
+        @DisplayName("should handle commitTextBuffer after session start")
+        void shouldHandleCommitTextBuffer() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.COMMIT)
+                            .build();
+
+            model.startSession();
+            model.push("test");
+            // Should not throw
+            model.commitTextBuffer();
+        }
+
+        @Test
+        @DisplayName("should handle clearTextBuffer after session start")
+        void shouldHandleClearTextBuffer() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            model.startSession();
+            model.push("test");
+            // Should not throw
+            model.clearTextBuffer();
+        }
+    }
+
+    @Nested
+    @DisplayName("Wait For Response Tests")
+    class WaitForResponseTests {
+
+        @Test
+        @DisplayName("should return true when no response pending")
+        void shouldReturnTrueWhenNoResponsePending() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.SECONDS));
         }
     }
 }

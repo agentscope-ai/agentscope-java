@@ -78,7 +78,10 @@ public class TTSExample {
         // Example 2: Use TTSModel independently without Agent
         standaloneTTSModel(apiKey);
 
-        // Example 3: Agent invokes TTS as a tool
+        // Example 3: Realtime TTS with push/finish pattern (WebSocket streaming)
+        standaloneRealtimeTTSDemo(apiKey);
+
+        // Example 4: Agent invokes TTS as a tool
         agentWithTTSTool(apiKey);
 
         System.out.println("All examples completed!");
@@ -102,14 +105,14 @@ public class TTSExample {
         System.out.println("Agent will speak while generating response...");
         System.out.println();
 
-        // 1. Create realtime TTS model
+        // 1. Create realtime TTS model (WebSocket-based, streaming input + output)
         DashScopeRealtimeTTSModel ttsModel =
                 DashScopeRealtimeTTSModel.builder()
                         .apiKey(apiKey)
-                        .modelName("qwen3-tts-flash")
+                        .modelName("qwen3-tts-flash-realtime") // WebSocket realtime model
                         .voice("Cherry")
                         .sampleRate(24000)
-                        .format("wav")
+                        .format("pcm")
                         .build();
 
         // 2. Create audio player for local playback
@@ -122,13 +125,8 @@ public class TTSExample {
                         .bigEndian(false)
                         .build();
 
-        // 3. Create TTSHook with realtime mode
-        TTSHook ttsHook =
-                TTSHook.builder()
-                        .ttsModel(ttsModel)
-                        .audioPlayer(player)
-                        .realtimeMode(true) // Enable "speak as you generate"
-                        .build();
+        // 3. Create TTSHook with realtime TTS model (WebSocket streaming)
+        TTSHook ttsHook = TTSHook.builder().ttsModel(ttsModel).audioPlayer(player).build();
 
         // 4. Create chat model
         DashScopeChatModel chatModel =
@@ -161,7 +159,7 @@ public class TTSExample {
 
         // 7. Clean up
         try {
-            Thread.sleep(1000); // Wait for audio to finish
+            Thread.sleep(3000); // Wait for audio to finish
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -243,10 +241,10 @@ public class TTSExample {
         DashScopeRealtimeTTSModel realtimeTts =
                 DashScopeRealtimeTTSModel.builder()
                         .apiKey(apiKey)
-                        .modelName("qwen3-tts-flash")
+                        .modelName("qwen3-tts-flash-realtime") // WebSocket realtime model
                         .voice("Cherry")
                         .sampleRate(24000)
-                        .format("wav")
+                        .format("pcm")
                         .build();
 
         AudioPlayer player =
@@ -258,7 +256,7 @@ public class TTSExample {
                         .bigEndian(false)
                         .build();
 
-        String longText = "这是一个流式语音合成演示，音频片段会分片到达。";
+        String longText = "这是一个语音合成流式返回的演示，音频片段会分片到达。";
         System.out.println("Text: " + longText);
         System.out.println("Playing streaming audio...");
 
@@ -292,7 +290,7 @@ public class TTSExample {
      * @param apiKey DashScope API key
      */
     private static void agentWithTTSTool(String apiKey) {
-        System.out.println("=== Example 3: Agent with TTS Tool ===");
+        System.out.println("=== Example 4: Agent with TTS Tool ===");
         System.out.println("Agent will invoke TTS tool when appropriate...");
         System.out.println();
 
@@ -353,6 +351,117 @@ public class TTSExample {
             }
         }
 
+        System.out.println();
+    }
+
+    // ========================================================================
+    // Example 4: Realtime TTS with Push/Finish Pattern
+    // ========================================================================
+
+    /**
+     * Demonstrates DashScopeRealtimeTTSModel with push/finish pattern.
+     *
+     * <p>This example shows how to use the WebSocket-based realtime TTS model
+     * with incremental text input. Key features:
+     * <ul>
+     *   <li>startSession() - Establish WebSocket connection</li>
+     *   <li>push(text) - Send text incrementally (context is maintained)</li>
+     *   <li>finish() - Signal end of input, get remaining audio</li>
+     *   <li>getAudioStream() - Subscribe to receive audio as it's generated</li>
+     * </ul>
+     *
+     * <p>This pattern is ideal for:
+     * <ul>
+     *   <li>Streaming LLM output to TTS in real-time</li>
+     *   <li>Building voice assistants with low latency</li>
+     *   <li>Scenarios where text arrives incrementally</li>
+     * </ul>
+     *
+     * @param apiKey DashScope API key
+     */
+    private static void standaloneRealtimeTTSDemo(String apiKey) {
+        System.out.println("=== Example 3: Realtime TTS with Push/Finish Pattern ===");
+        System.out.println("Using WebSocket streaming with incremental text input...");
+        System.out.println();
+
+        // 1. Create realtime TTS model with server_commit mode
+        // server_commit: Server automatically commits text for synthesis
+        // commit: Client must manually call commitTextBuffer()
+        DashScopeRealtimeTTSModel ttsModel =
+                DashScopeRealtimeTTSModel.builder()
+                        .apiKey(apiKey)
+                        .modelName("qwen3-tts-flash-realtime")
+                        .voice("Cherry")
+                        .sampleRate(24000)
+                        .format("pcm")
+                        .mode(DashScopeRealtimeTTSModel.SessionMode.SERVER_COMMIT)
+                        .languageType("Auto")
+                        .build();
+
+        // 2. Create audio player
+        AudioPlayer player =
+                AudioPlayer.builder()
+                        .sampleRate(24000)
+                        .sampleSizeInBits(16)
+                        .channels(1)
+                        .signed(true)
+                        .bigEndian(false)
+                        .build();
+
+        // 3. Start player
+        player.start();
+
+        // 4. Start TTS session (establishes WebSocket connection)
+        System.out.println("Starting TTS session...");
+        ttsModel.startSession();
+
+        // 5. Subscribe to audio stream BEFORE pushing text
+        // Audio arrives asynchronously via WebSocket callback
+        System.out.println("Subscribing to audio stream...");
+        ttsModel.getAudioStream()
+                .doOnNext(
+                        audio -> {
+                            player.play(audio);
+                        })
+                .doOnComplete(() -> System.out.println("Audio stream completed."))
+                .subscribe();
+
+        // 6. Push text incrementally (simulating LLM streaming output)
+        String[] textChunks = {"你好，", "我是", "你的", "语音", "助手，", "很高兴", "为你", "服务！"};
+
+        System.out.println("Pushing text chunks: ");
+        for (String chunk : textChunks) {
+            System.out.print(chunk);
+            ttsModel.push(chunk);
+
+            // Simulate delay between chunks (like LLM streaming)
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        System.out.println();
+
+        // 7. Finish session and wait for all audio to complete
+        System.out.println("Finishing session, waiting for audio...");
+        ttsModel.finish().blockLast();
+
+        // 8. Drain player to ensure all audio is played
+        player.drain();
+
+        // 9. Wait a bit for audio playback to complete
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // 10. Clean up
+        player.stop();
+        ttsModel.close();
+
+        System.out.println("Push/Finish pattern example completed.");
         System.out.println();
     }
 }

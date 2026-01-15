@@ -73,10 +73,10 @@ public class ChatController {
         this.ttsModel =
                 DashScopeRealtimeTTSModel.builder()
                         .apiKey(apiKey)
-                        .modelName("qwen3-tts-flash")
+                        .modelName("qwen3-tts-flash-realtime") // WebSocket realtime model
                         .voice("Cherry")
                         .sampleRate(24000)
-                        .format("wav")
+                        .format("pcm")
                         .build();
     }
 
@@ -117,7 +117,6 @@ public class ChatController {
         TTSHook ttsHook =
                 TTSHook.builder()
                         .ttsModel(ttsModel)
-                        .realtimeMode(true)
                         .audioCallback(
                                 audio -> {
                                     if (audio.getSource() instanceof Base64Source src) {

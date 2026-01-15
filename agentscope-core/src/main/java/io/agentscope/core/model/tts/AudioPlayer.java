@@ -160,6 +160,27 @@ public class AudioPlayer {
     }
 
     /**
+     * Interrupts current playback and clears the queue, but keeps the audio line open.
+     *
+     * <p>This is useful when you want to immediately stop current playback and start
+     * playing new audio without closing and reopening the audio line. Unlike {@link #stop()},
+     * this method keeps the audio line open so new audio can be played immediately.
+     */
+    public void interrupt() {
+        // Clear the queue immediately
+        audioQueue.clear();
+
+        // Stop and flush the current line
+        if (line != null) {
+            line.stop();
+            line.flush();
+            line.start(); // Restart to accept new audio
+        }
+
+        log.debug("AudioPlayer interrupted (queue cleared, line kept open)");
+    }
+
+    /**
      * Stops the audio player and closes the audio line.
      */
     public void stop() {

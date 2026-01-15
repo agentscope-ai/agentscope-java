@@ -64,8 +64,8 @@ class TTSHookTest {
     class BuilderTests {
 
         @Test
-        @DisplayName("should throw when TTS model is missing")
-        void shouldThrowWhenTtsModelMissing() {
+        @DisplayName("should throw when no TTS model is set")
+        void shouldThrowWhenNoTtsModelSet() {
             assertThrows(IllegalArgumentException.class, () -> TTSHook.builder().build());
         }
 
@@ -125,6 +125,7 @@ class TTSHookTest {
                             .build();
 
             when(mockTtsModel.push(any())).thenReturn(Flux.just(mockAudio));
+            when(mockTtsModel.getAudioStream()).thenReturn(Flux.empty());
 
             TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
 
@@ -262,6 +263,16 @@ class TTSHookTest {
 
             verify(mockPlayer, never()).stop();
         }
+
+        @Test
+        @DisplayName("should close TTS model on stop")
+        void shouldCloseTtsModelOnStop() {
+            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).build();
+
+            hook.stop();
+
+            verify(mockTtsModel).close();
+        }
     }
 
     @Nested
@@ -282,6 +293,7 @@ class TTSHookTest {
 
             when(mockTtsModel.push(any())).thenReturn(Flux.just(mockAudio));
             when(mockTtsModel.finish()).thenReturn(Flux.just(mockAudio));
+            when(mockTtsModel.getAudioStream()).thenReturn(Flux.empty());
 
             TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
 
@@ -407,9 +419,9 @@ class TTSHookTest {
             TTSHook hook =
                     TTSHook.builder()
                             .ttsModel(mockTtsModel)
+                            .realtimeMode(false)
                             .audioPlayer(mockPlayer)
                             .autoStartPlayer(false) // Disable auto-start
-                            .realtimeMode(false)
                             .build();
 
             Msg response =
@@ -422,7 +434,7 @@ class TTSHookTest {
                     new PostReasoningEvent(mockAgent, "test-model", mockGenerateOptions, response);
             hook.onEvent(event).block();
 
-            verify(mockPlayer).play(mockAudio);
+            verify(mockPlayer).play(any(AudioBlock.class));
         }
     }
 
