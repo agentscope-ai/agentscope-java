@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -426,6 +427,52 @@ class McpAsyncClientWrapperTest {
 
         assertFalse(wrapper.isInitialized());
         assertTrue(wrapper.cachedTools.isEmpty());
+    }
+
+    // ==================== Null Client Error Path Tests ====================
+
+    @Test
+    void testInitialize_WhenClientIsNull() {
+        // Create wrapper with null client
+        McpAsyncClientWrapper nullWrapper = new McpAsyncClientWrapper("null-client", null);
+
+        // Attempt to initialize should fail with "not available" error
+        Exception exception =
+                assertThrows(IllegalStateException.class, () -> nullWrapper.initialize().block());
+
+        assertTrue(exception.getMessage().contains("not available"));
+    }
+
+    @Test
+    void testListTools_WhenClientIsNullAfterSet() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        // Set client to null via reflection
+        invokeSetClient(null);
+
+        // Attempt to list tools should fail with "not available" error
+        Exception exception =
+                assertThrows(IllegalStateException.class, () -> wrapper.listTools().block());
+
+        assertTrue(exception.getMessage().contains("not available"));
+    }
+
+    @Test
+    void testCallTool_WhenClientIsNullAfterSet() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        // Set client to null via reflection
+        invokeSetClient(null);
+
+        // Attempt to call tool should fail with "not available" error
+        Exception exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> wrapper.callTool("test-tool", Map.of()).block());
+
+        assertTrue(exception.getMessage().contains("not available"));
     }
 
     // ==================== Helper Methods ====================

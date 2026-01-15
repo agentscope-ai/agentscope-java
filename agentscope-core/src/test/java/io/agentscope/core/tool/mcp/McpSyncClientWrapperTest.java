@@ -543,6 +543,52 @@ class McpSyncClientWrapperTest {
         assertTrue(wrapper.cachedTools.isEmpty());
     }
 
+    // ==================== Null Client Error Path Tests ====================
+
+    @Test
+    void testInitialize_WhenClientIsNull() {
+        // Create wrapper with null client
+        McpSyncClientWrapper nullWrapper = new McpSyncClientWrapper("null-client", null);
+
+        // Attempt to initialize should fail with "not available" error
+        Exception exception =
+                assertThrows(IllegalStateException.class, () -> nullWrapper.initialize().block());
+
+        assertTrue(exception.getMessage().contains("not available"));
+    }
+
+    @Test
+    void testListTools_WhenClientIsNullAfterSet() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        // Set client to null via reflection
+        invokeSetClient(null);
+
+        // Attempt to list tools should fail with "not available" error
+        Exception exception =
+                assertThrows(IllegalStateException.class, () -> wrapper.listTools().block());
+
+        assertTrue(exception.getMessage().contains("not available"));
+    }
+
+    @Test
+    void testCallTool_WhenClientIsNullAfterSet() {
+        setupSuccessfulInitialization();
+        wrapper.initialize().block();
+
+        // Set client to null via reflection
+        invokeSetClient(null);
+
+        // Attempt to call tool should fail with "not available" error
+        Exception exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> wrapper.callTool("test-tool", Map.of()).block());
+
+        assertTrue(exception.getMessage().contains("not available"));
+    }
+
     // ==================== Helper Methods ====================
 
     /**
