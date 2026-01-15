@@ -20,6 +20,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -71,9 +72,11 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     void updateCachedTools(List<McpSchema.Tool> tools) {
         if (tools != null) {
-            // Clear and rebuild cache
+            // Build new map first, then atomically replace
+            Map<String, McpSchema.Tool> newTools =
+                    tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
             cachedTools.clear();
-            tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+            cachedTools.putAll(newTools);
             logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
         }
     }
@@ -94,8 +97,7 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
 
         McpAsyncClient client = clientRef.get();
         if (client == null) {
-            return Mono.error(
-                    new IllegalStateException("McpAsyncClient not set. Call setClient() first."));
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         logger.info("Initializing MCP async client: {}", name);
