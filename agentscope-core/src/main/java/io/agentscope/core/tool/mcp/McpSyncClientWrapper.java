@@ -73,7 +73,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      *
      * @param tools the new list of tools from the server (empty list clears cache)
      */
-    void updateCachedTools(List<McpSchema.Tool> tools) {
+    synchronized void updateCachedTools(List<McpSchema.Tool> tools) {
         if (tools != null) {
             // Build new map first, then atomically replace
             Map<String, McpSchema.Tool> newTools =
