@@ -122,10 +122,11 @@ public class JdkHttpTransport implements HttpTransport {
                         null, new TrustManager[] {new TrustAllManager()}, new SecureRandom());
                 builder.sslContext(sslContext);
                 log.error(
-                        "SSL certificate verification has been disabled for this WebSocket client. "
-                                + "This configuration must only be used for local development or testing with "
-                                + "self-signed certificates. Do not disable SSL verification in production "
-                                + "environments, as it exposes connections to man-in-the-middle attacks.");
+                        "SSL certificate verification has been disabled for this WebSocket client."
+                            + " This configuration must only be used for local development or"
+                            + " testing with self-signed certificates. Do not disable SSL"
+                            + " verification in production environments, as it exposes connections"
+                            + " to man-in-the-middle attacks.");
             } catch (NoSuchAlgorithmException | KeyManagementException e) {
                 throw new HttpTransportException("Failed to create insecure SSL context", e);
             }

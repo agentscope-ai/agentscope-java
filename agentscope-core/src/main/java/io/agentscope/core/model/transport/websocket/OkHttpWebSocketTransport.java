@@ -132,10 +132,10 @@ public class OkHttpWebSocketTransport implements WebSocketTransport {
         // Configure SSL (optionally ignore certificate verification)
         if (config.isIgnoreSsl()) {
             log.error(
-                    "SSL certificate verification has been disabled for this WebSocket client. "
-                            + "This configuration must only be used for local development or testing with "
-                            + "self-signed certificates. Do not disable SSL verification in production "
-                            + "environments, as it exposes connections to man-in-the-middle attacks.");
+                    "SSL certificate verification has been disabled for this WebSocket client. This"
+                        + " configuration must only be used for local development or testing with"
+                        + " self-signed certificates. Do not disable SSL verification in production"
+                        + " environments, as it exposes connections to man-in-the-middle attacks.");
             try {
                 SSLContext sslContext = SSLContext.getInstance("TLS");
                 X509TrustManager trustManager = createTrustAllTrustManager();
