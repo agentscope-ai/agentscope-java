@@ -172,6 +172,37 @@ class AudioPlayerTest {
     }
 
     @Nested
+    @DisplayName("Interrupt Tests")
+    class InterruptTests {
+
+        @Test
+        @DisplayName("should interrupt without error when not started")
+        void shouldInterruptWithoutErrorWhenNotStarted() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            // Should not throw - interrupt() can be called even when not started
+            player.interrupt();
+        }
+
+        @Test
+        @DisplayName("should interrupt when started")
+        void shouldInterruptWhenStarted() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            try {
+                player.start();
+                // If started successfully, interrupt should work
+                player.interrupt();
+                player.stop();
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+                // In this case, interrupt() should still not throw
+                player.interrupt();
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("Stop Tests")
     class StopTests {
 
