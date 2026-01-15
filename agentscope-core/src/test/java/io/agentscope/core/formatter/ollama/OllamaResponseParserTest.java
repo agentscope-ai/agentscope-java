@@ -301,7 +301,7 @@ class OllamaResponseParserTest {
         assertEquals("getTime", toolBlock.getName());
         assertTrue(toolBlock.getInput().isEmpty(), "Input should be empty map");
 
-        // This assertion will fail with the bug - getContent() returns null instead of "{}"
+        // Verify that getContent() returns "{}" (not null) for no-parameter tools
         assertNotNull(
                 toolBlock.getContent(),
                 "ToolUseBlock content should not be null for validation in ToolExecutor");
