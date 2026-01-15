@@ -127,7 +127,13 @@ class TTSHookTest {
             when(mockTtsModel.push(any())).thenReturn(Flux.just(mockAudio));
             when(mockTtsModel.getAudioStream()).thenReturn(Flux.empty());
 
-            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
+            // Use audioCallback to avoid creating AudioPlayer in CI environment
+            TTSHook hook =
+                    TTSHook.builder()
+                            .ttsModel(mockTtsModel)
+                            .realtimeMode(true)
+                            .audioCallback(audio -> {}) // Avoid AudioPlayer creation
+                            .build();
 
             Msg chunk =
                     Msg.builder()
@@ -183,7 +189,13 @@ class TTSHookTest {
 
             when(mockTtsModel.synthesizeStream(any())).thenReturn(Flux.just(mockAudio));
 
-            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(false).build();
+            // Use audioCallback to avoid creating AudioPlayer in CI environment
+            TTSHook hook =
+                    TTSHook.builder()
+                            .ttsModel(mockTtsModel)
+                            .realtimeMode(false)
+                            .audioCallback(audio -> {}) // Avoid AudioPlayer creation
+                            .build();
 
             Msg response =
                     Msg.builder()
@@ -295,7 +307,13 @@ class TTSHookTest {
             when(mockTtsModel.finish()).thenReturn(Flux.just(mockAudio));
             when(mockTtsModel.getAudioStream()).thenReturn(Flux.empty());
 
-            TTSHook hook = TTSHook.builder().ttsModel(mockTtsModel).realtimeMode(true).build();
+            // Use audioCallback to avoid creating AudioPlayer in CI environment
+            TTSHook hook =
+                    TTSHook.builder()
+                            .ttsModel(mockTtsModel)
+                            .realtimeMode(true)
+                            .audioCallback(audio -> {}) // Avoid AudioPlayer creation
+                            .build();
 
             // First send a chunk to start session
             Msg chunk =
