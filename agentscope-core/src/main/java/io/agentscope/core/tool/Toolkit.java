@@ -24,7 +24,6 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
-import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
@@ -108,6 +107,7 @@ public class Toolkit {
         if (config != null && config.hasCustomExecutor()) {
             this.executor =
                     new ToolExecutor(
+                            this,
                             toolRegistry,
                             groupManager,
                             this.config,
@@ -115,7 +115,7 @@ public class Toolkit {
                             config.getExecutorService());
         } else {
             this.executor =
-                    new ToolExecutor(toolRegistry, groupManager, this.config, methodInvoker);
+                    new ToolExecutor(this, toolRegistry, groupManager, this.config, methodInvoker);
         }
     }
 
@@ -474,7 +474,7 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return TracerRegistry.get().callTool(this, param, () -> executor.execute(param));
+        return executor.execute(param);
     }
 
     /**
