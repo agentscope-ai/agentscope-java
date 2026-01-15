@@ -19,17 +19,16 @@ import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * Wrapper for asynchronous MCP clients using Project Reactor.
- * This implementation delegates to {@link McpAsyncClient} and provides
- * reactive operations that return Mono types.
+ * Wrapper for asynchronous MCP clients using Project Reactor. This implementation delegates to
+ * {@link McpAsyncClient} and provides reactive operations that return Mono types.
  *
- * <p>Example usage:
- * <pre>{@code
+ * <p>Example usage: <pre>{@code
  * McpAsyncClient client = ... // created via McpClient.async()
  * McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper("my-mcp", client);
  * wrapper.initialize()
@@ -41,7 +40,7 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
 
     private static final Logger logger = LoggerFactory.getLogger(McpAsyncClientWrapper.class);
 
-    private final McpAsyncClient client;
+    private final AtomicReference<McpAsyncClient> clientRef;
 
     /**
      * Constructs a new asynchronous MCP client wrapper.
@@ -51,7 +50,32 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     public McpAsyncClientWrapper(String name, McpAsyncClient client) {
         super(name);
-        this.client = client;
+        this.clientRef = new AtomicReference<>(client);
+    }
+
+    /**
+     * Sets the underlying MCP async client. This is called by McpClientBuilder after the client
+     * is created with notification handlers.
+     *
+     * @param client the MCP async client
+     */
+    void setClient(McpAsyncClient client) {
+        this.clientRef.set(client);
+    }
+
+    /**
+     * Updates the cached tools map with new tools from the server. This method is called when the
+     * server sends a tools/list_changed notification.
+     *
+     * @param tools the new list of tools from the server (empty list clears cache)
+     */
+    void updateCachedTools(List<McpSchema.Tool> tools) {
+        if (tools != null) {
+            // Clear and rebuild cache
+            cachedTools.clear();
+            tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+            logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
+        }
     }
 
     /**
@@ -66,6 +90,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     public Mono<Void> initialize() {
         if (initialized) {
             return Mono.empty();
+        }
+
+        McpAsyncClient client = clientRef.get();
+        if (client == null) {
+            return Mono.error(
+                    new IllegalStateException("McpAsyncClient not set. Call setClient() first."));
         }
 
         logger.info("Initializing MCP async client: {}", name);
@@ -99,13 +129,17 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      * initialized before calling this method.
      *
      * @return a Mono emitting the list of available tools
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
+        }
+
+        McpAsyncClient client = clientRef.get();
+        if (client == null) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         return client.listTools().map(McpSchema.ListToolsResult::tools);
@@ -120,13 +154,17 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      * @param toolName the name of the tool to call
      * @param arguments the arguments to pass to the tool
      * @return a Mono emitting the tool call result (may contain error information)
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
+        }
+
+        McpAsyncClient client = clientRef.get();
+        if (client == null) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         logger.debug("Calling MCP tool '{}' on client '{}'", toolName, name);
@@ -161,16 +199,17 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        if (client != null) {
+        McpAsyncClient toClose = clientRef.getAndSet(null);
+        if (toClose != null) {
             logger.info("Closing MCP async client: {}", name);
             try {
-                client.closeGracefully()
+                toClose.closeGracefully()
                         .doOnSuccess(v -> logger.debug("MCP client '{}' closed", name))
                         .doOnError(e -> logger.error("Error closing MCP client '{}'", name, e))
                         .block();
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
-                client.close();
+                toClose.close();
             }
         }
         initialized = false;
