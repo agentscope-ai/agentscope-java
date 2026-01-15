@@ -25,6 +25,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
@@ -154,6 +155,39 @@ public class AguiAgentAdapter {
                                     new AguiEvent.TextMessageEnd(
                                             state.threadId, state.runId, messageId));
                             state.endMessage(messageId);
+                        }
+                    }
+                } else if (block instanceof ThinkingBlock thinkingBlock) {
+                    // Handle thinking blocks - convert to text messages with special messageId
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        String thinkingMessageId = msg.getId() + "-thinking";
+
+                        // Start message if not started
+                        if (!state.hasStartedMessage(thinkingMessageId)) {
+                            events.add(
+                                    new AguiEvent.TextMessageStart(
+                                            state.threadId,
+                                            state.runId,
+                                            thinkingMessageId,
+                                            "assistant"));
+                            state.startMessage(thinkingMessageId);
+                        }
+
+                        if (!event.isLast()) {
+                            // In incremental mode, thinking is already the delta
+                            events.add(
+                                    new AguiEvent.TextMessageContent(
+                                            state.threadId,
+                                            state.runId,
+                                            thinkingMessageId,
+                                            thinking));
+                        } else {
+                            // End message if this is the last event
+                            events.add(
+                                    new AguiEvent.TextMessageEnd(
+                                            state.threadId, state.runId, thinkingMessageId));
+                            state.endMessage(thinkingMessageId);
                         }
                     }
                 } else if (block instanceof ToolUseBlock toolUse) {

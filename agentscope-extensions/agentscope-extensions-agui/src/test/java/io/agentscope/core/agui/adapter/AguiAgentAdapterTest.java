@@ -34,6 +34,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
@@ -507,5 +508,213 @@ class AguiAgentAdapterTest {
                 .expectNextMatches(e -> e instanceof AguiEvent.TextMessageEnd)
                 .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
                 .verifyComplete();
+    }
+
+    @Test
+    void testRunWithThinkingBlockEvent() {
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Let me think about this problem step by step...")
+                                        .build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Find thinking message events
+        AguiEvent.TextMessageStart thinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(thinkingStart, "Should have TextMessageStart for thinking");
+        assertEquals("msg-r1-thinking", thinkingStart.messageId());
+        assertEquals("assistant", thinkingStart.role());
+
+        AguiEvent.TextMessageContent thinkingContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(thinkingContent, "Should have TextMessageContent for thinking");
+        assertTrue(
+                thinkingContent.delta().contains("think about this problem"),
+                "Should contain thinking content");
+    }
+
+    @Test
+    void testRunWithStreamingThinkingBlockEvents() {
+        // Simulate streaming thinking: multiple events with same message ID
+        Msg thinkingChunk1 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("First thought").build())
+                        .build();
+
+        Msg thinkingChunk2 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Second thought").build())
+                        .build();
+
+        Event event1 = new Event(EventType.REASONING, thinkingChunk1, false);
+        Event event2 = new Event(EventType.REASONING, thinkingChunk2, false);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Count TextMessageContent events for thinking - should have 2 (one for each chunk)
+        long thinkingContentCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .count();
+        assertEquals(
+                2, thinkingContentCount, "Should have 2 content events for streaming thinking");
+
+        // Should only have 1 TextMessageStart for thinking (same message ID)
+        long thinkingStartCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .filter(e -> e.messageId().endsWith("-thinking"))
+                        .count();
+        assertEquals(
+                1,
+                thinkingStartCount,
+                "Should have only 1 start event for same thinking message ID");
+    }
+
+    @Test
+    void testRunWithThinkingAndTextMixedContent() {
+        // Message with both thinking and text
+        Msg mixedMsg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need to analyze this carefully.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Based on my analysis, here's the answer.")
+                                                .build()))
+                        .build();
+
+        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(mixedEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Question?")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have thinking message events
+        boolean hasThinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+        boolean hasThinkingContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+
+        // Should have regular text message events
+        boolean hasTextStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .anyMatch(e -> !e.messageId().endsWith("-thinking"));
+        boolean hasTextContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .anyMatch(e -> !e.messageId().endsWith("-thinking"));
+
+        assertTrue(hasThinkingStart, "Should have TextMessageStart for thinking");
+        assertTrue(hasThinkingContent, "Should have TextMessageContent for thinking");
+        assertTrue(hasTextStart, "Should have TextMessageStart for text");
+        assertTrue(hasTextContent, "Should have TextMessageContent for text");
+    }
+
+    @Test
+    void testRunWithEmptyThinkingBlock() {
+        // Empty thinking block should be skipped
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("").build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should NOT have any thinking message events for empty thinking
+        boolean hasThinkingStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageStart)
+                        .map(e -> (AguiEvent.TextMessageStart) e)
+                        .anyMatch(e -> e.messageId().endsWith("-thinking"));
+
+        assertTrue(!hasThinkingStart, "Should NOT have TextMessageStart for empty thinking");
     }
 }

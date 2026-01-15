@@ -87,7 +87,7 @@ public class AgentConfiguration {
                 .model(
                         DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(
                                         true)
-                                .enableThinking(false)
+                                .enableThinking(true)
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .toolkit(toolkit)
