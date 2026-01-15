@@ -108,6 +108,7 @@ public class Toolkit {
         if (config != null && config.hasCustomExecutor()) {
             this.executor =
                     new ToolExecutor(
+                            this,
                             toolRegistry,
                             groupManager,
                             this.config,
@@ -115,7 +116,7 @@ public class Toolkit {
                             config.getExecutorService());
         } else {
             this.executor =
-                    new ToolExecutor(toolRegistry, groupManager, this.config, methodInvoker);
+                    new ToolExecutor(this, toolRegistry, groupManager, this.config, methodInvoker);
         }
     }
 
@@ -474,7 +475,7 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return TracerRegistry.get().callTool(this, param, () -> executor.execute(param));
+        return executor.execute(param);
     }
 
     /**
