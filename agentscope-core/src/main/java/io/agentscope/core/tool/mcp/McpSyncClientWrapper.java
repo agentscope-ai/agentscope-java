@@ -20,6 +20,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -56,6 +57,34 @@ public class McpSyncClientWrapper extends McpClientWrapper {
     }
 
     /**
+     * Sets the underlying MCP sync client. This is called by McpClientBuilder after the client is
+     * created with notification handlers.
+     *
+     * @param client the MCP sync client
+     */
+    void setClient(McpSyncClient client) {
+        this.clientRef.set(client);
+    }
+
+    /**
+     * Updates the cached tools map with new tools from the server. This method is called when the
+     * server sends a tools/list_changed notification. This method is thread-safe and can be
+     * called concurrently from notification handlers.
+     *
+     * @param tools the new list of tools from the server (empty list clears cache)
+     */
+    void updateCachedTools(List<McpSchema.Tool> tools) {
+        if (tools != null) {
+            // Build new map first, then atomically replace
+            Map<String, McpSchema.Tool> newTools =
+                    tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
+            cachedTools.clear();
+            cachedTools.putAll(newTools);
+            logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
+        }
+    }
+
+    /**
      * Initializes the sync MCP client connection and caches available tools.
      *
      * <p>This method wraps the blocking synchronous client operations in a reactive Mono that runs
@@ -75,7 +104,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                             McpSyncClient client = clientRef.get();
                             if (client == null) {
                                 throw new IllegalStateException(
-                                        "McpSyncClient not set. Call setClient() first.");
+                                        "MCP client '" + name + "' not available");
                             }
 
                             logger.info("Initializing MCP sync client: {}", name);

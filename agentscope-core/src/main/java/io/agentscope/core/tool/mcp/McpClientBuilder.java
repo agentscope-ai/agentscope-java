@@ -386,6 +386,10 @@ public class McpClientBuilder {
     /**
      * Builds a synchronous MCP client wrapper (blocking operations).
      *
+     * <p>This method uses a two-phase build pattern to support notification handlers. The wrapper
+     * is created first, then the MCP client is built with notification consumers that can
+     * reference the wrapper.
+     *
      * @return synchronous client wrapper
      */
     public McpClientWrapper buildSync() {
@@ -402,15 +406,59 @@ public class McpClientBuilder {
         McpSchema.ClientCapabilities clientCapabilities =
                 McpSchema.ClientCapabilities.builder().build();
 
+        // ========== Phase 1: Create wrapper (client is temporarily null) ==========
+        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, null);
+
+        // ========== Phase 2: Build client (can reference wrapper) ==========
         McpSyncClient mcpClient =
                 McpClient.sync(transport)
                         .requestTimeout(requestTimeout)
                         .initializationTimeout(initializationTimeout)
                         .clientInfo(clientInfo)
                         .capabilities(clientCapabilities)
+                        // ----- Log notification Consumer -----
+                        .loggingConsumer(
+                                notification -> {
+                                    // Parse notification content
+                                    String level =
+                                            notification.level() != null
+                                                    ? notification.level().toString()
+                                                    : "info";
+                                    String loggerName =
+                                            notification.logger() != null
+                                                    ? notification.logger()
+                                                    : "mcp";
+                                    String data =
+                                            notification.data() != null ? notification.data() : "";
+
+                                    // Log to SLF4J by level
+                                    switch (level.toLowerCase()) {
+                                        case "error" ->
+                                                logger.error(
+                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
+                                        case "warning" ->
+                                                logger.warn(
+                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
+                                        case "debug" ->
+                                                logger.debug(
+                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
+                                        default ->
+                                                logger.info(
+                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
+                                    }
+                                })
+
+                        // ----- Tools change notification Consumer -----
+                        .toolsChangeConsumer(
+                                tools -> {
+                                    // Call wrapper method to update cache
+                                    wrapper.updateCachedTools(tools);
+                                })
                         .build();
 
-        return new McpSyncClientWrapper(name, mcpClient);
+        // ========== Phase 3: Link MCP client to wrapper ==========
+        wrapper.setClient(mcpClient);
+        return wrapper;
     }
 
     // ==================== Internal Transport Configuration Classes ====================
