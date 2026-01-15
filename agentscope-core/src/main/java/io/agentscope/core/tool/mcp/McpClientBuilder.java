@@ -36,6 +36,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -76,6 +78,7 @@ public class McpClientBuilder {
 
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(120);
     private static final Duration DEFAULT_INIT_TIMEOUT = Duration.ofSeconds(30);
+    private static final Logger logger = LoggerFactory.getLogger(McpClientBuilder.class);
 
     private final String name;
     private TransportConfig transportConfig;
@@ -233,6 +236,10 @@ public class McpClientBuilder {
     /**
      * Builds an asynchronous MCP client wrapper.
      *
+     * <p>This method uses a two-phase build pattern to support notification handlers.
+     * The wrapper is created first, then the MCP client is built with notification consumers
+     * that can reference the wrapper.
+     *
      * @return Mono emitting the async client wrapper
      */
     public Mono<McpClientWrapper> buildAsync() {
@@ -253,15 +260,76 @@ public class McpClientBuilder {
                     McpSchema.ClientCapabilities clientCapabilities =
                             McpSchema.ClientCapabilities.builder().build();
 
+                    // ========== Phase 1: Create wrapper (client is temporarily null) ==========
+                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, null);
+
+                    // ========== Phase 2: Build client (can reference wrapper) ==========
                     McpAsyncClient mcpClient =
                             McpClient.async(transport)
                                     .requestTimeout(requestTimeout)
                                     .initializationTimeout(initializationTimeout)
                                     .clientInfo(clientInfo)
                                     .capabilities(clientCapabilities)
+
+                                    // ----- Log notification Consumer -----
+                                    .loggingConsumer(
+                                            notification -> {
+                                                // Parse notification content
+                                                String level =
+                                                        notification.level() != null
+                                                                ? notification.level().toString()
+                                                                : "info";
+                                                String loggerName =
+                                                        notification.logger() != null
+                                                                ? notification.logger()
+                                                                : "mcp";
+                                                String data =
+                                                        notification.data() != null
+                                                                ? notification.data()
+                                                                : "";
+
+                                                // Log to SLF4J by level
+                                                switch (level.toLowerCase()) {
+                                                    case "error" ->
+                                                            logger.error(
+                                                                    "[MCP-{}] [{}] {}",
+                                                                    name,
+                                                                    loggerName,
+                                                                    data);
+                                                    case "warning" ->
+                                                            logger.warn(
+                                                                    "[MCP-{}] [{}] {}",
+                                                                    name,
+                                                                    loggerName,
+                                                                    data);
+                                                    case "debug" ->
+                                                            logger.debug(
+                                                                    "[MCP-{}] [{}] {}",
+                                                                    name,
+                                                                    loggerName,
+                                                                    data);
+                                                    default ->
+                                                            logger.info(
+                                                                    "[MCP-{}] [{}] {}",
+                                                                    name,
+                                                                    loggerName,
+                                                                    data);
+                                                }
+                                                return Mono.empty();
+                                            })
+
+                                    // ----- Tools change notification Consumer -----
+                                    .toolsChangeConsumer(
+                                            tools -> {
+                                                // Call wrapper method to update cache
+                                                wrapper.updateCachedTools(tools);
+                                                return Mono.empty();
+                                            })
                                     .build();
 
-                    return new McpAsyncClientWrapper(name, mcpClient);
+                    // ========== Phase 3: Link MCP client to wrapper ==========
+                    wrapper.setClient(mcpClient);
+                    return wrapper;
                 });
     }
 

@@ -19,18 +19,18 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Wrapper for synchronous MCP clients that converts blocking calls to reactive Mono types.
- * This implementation delegates to {@link McpSyncClient} and wraps blocking operations
- * in Reactor's boundedElastic scheduler to avoid blocking the event loop.
+ * Wrapper for synchronous MCP clients that converts blocking calls to reactive Mono types. This
+ * implementation delegates to {@link McpSyncClient} and wraps blocking operations in Reactor's
+ * boundedElastic scheduler to avoid blocking the event loop.
  *
- * <p>Example usage:
- * <pre>{@code
+ * <p>Example usage: <pre>{@code
  * McpSyncClient client = ... // created via McpClient.sync()
  * McpSyncClientWrapper wrapper = new McpSyncClientWrapper("my-mcp", client);
  * wrapper.initialize()
@@ -42,7 +42,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
 
     private static final Logger logger = LoggerFactory.getLogger(McpSyncClientWrapper.class);
 
-    private final McpSyncClient client;
+    private final AtomicReference<McpSyncClient> clientRef;
 
     /**
      * Constructs a new synchronous MCP client wrapper.
@@ -52,7 +52,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     public McpSyncClientWrapper(String name, McpSyncClient client) {
         super(name);
-        this.client = client;
+        this.clientRef = new AtomicReference<>(client);
     }
 
     /**
@@ -70,10 +70,16 @@ public class McpSyncClientWrapper extends McpClientWrapper {
             return Mono.empty();
         }
 
-        logger.info("Initializing MCP sync client: {}", name);
-
         return Mono.fromCallable(
                         () -> {
+                            McpSyncClient client = clientRef.get();
+                            if (client == null) {
+                                throw new IllegalStateException(
+                                        "McpSyncClient not set. Call setClient() first.");
+                            }
+
+                            logger.info("Initializing MCP sync client: {}", name);
+
                             // Initialize the client (blocking)
                             McpSchema.InitializeResult result = client.initialize();
                             logger.debug(
@@ -105,13 +111,17 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      * must be initialized before calling this method.
      *
      * @return a Mono emitting the list of available tools
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
+        }
+
+        McpSyncClient client = clientRef.get();
+        if (client == null) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         return Mono.fromCallable(() -> client.listTools().tools())
@@ -127,13 +137,17 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      * @param toolName the name of the tool to call
      * @param arguments the arguments to pass to the tool
      * @return a Mono emitting the tool call result (may contain error information)
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
+        }
+
+        McpSyncClient client = clientRef.get();
+        if (client == null) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         logger.debug("Calling MCP tool '{}' on client '{}'", toolName, name);
@@ -172,14 +186,15 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        if (client != null) {
+        McpSyncClient toClose = clientRef.getAndSet(null);
+        if (toClose != null) {
             logger.info("Closing MCP sync client: {}", name);
             try {
-                client.closeGracefully();
+                toClose.closeGracefully();
                 logger.debug("MCP client '{}' closed", name);
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
-                client.close();
+                toClose.close();
             }
         }
         initialized = false;
