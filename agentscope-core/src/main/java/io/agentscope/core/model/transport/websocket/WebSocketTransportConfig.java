@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,43 +13,57 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.model.transport;
+package io.agentscope.core.model.transport.websocket;
 
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.time.Duration;
 
 /**
- * Configuration for HTTP transport layer.
+ * Configuration for WebSocket clients.
  *
- * <p>This class holds configuration options for HTTP client behavior such as
- * timeouts, connection pool settings, and retry policies.
+ * <p>This class holds configuration options for WebSocket client behavior such as
+ * timeouts, heartbeat intervals, proxy settings, and SSL options.
+ *
+ * <p>Usage example:
+ *
+ * <pre>{@code
+ * WebSocketTransportConfig config = WebSocketTransportConfig.builder()
+ *     .connectTimeout(Duration.ofSeconds(30))
+ *     .pingInterval(Duration.ofSeconds(30))
+ *     .proxy(ProxyConfig.http("proxy.example.com", 8080))
+ *     .build();
+ *
+ * WebSocketTransport client = OkHttpWebSocketTransport.create(config);
+ * }</pre>
  */
-public class HttpTransportConfig {
+public class WebSocketTransportConfig {
 
     /** Default connect timeout: 30 seconds. */
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
-    /** Default read timeout: 5 minutes (for long-running model calls). */
-    public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofMinutes(5);
+    /** Default read timeout: 0 (no timeout for WebSocket). */
+    public static final Duration DEFAULT_READ_TIMEOUT = Duration.ZERO;
 
     /** Default write timeout: 30 seconds. */
     public static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
 
+    /** Default ping interval: 30 seconds. */
+    public static final Duration DEFAULT_PING_INTERVAL = Duration.ofSeconds(30);
+
     private final Duration connectTimeout;
     private final Duration readTimeout;
     private final Duration writeTimeout;
-    private final int maxIdleConnections;
-    private final Duration keepAliveDuration;
-    private final boolean ignoreSsl;
+    private final Duration pingInterval;
     private final ProxyConfig proxyConfig;
+    private final boolean ignoreSsl;
 
-    private HttpTransportConfig(Builder builder) {
+    private WebSocketTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
         this.readTimeout = builder.readTimeout;
         this.writeTimeout = builder.writeTimeout;
-        this.maxIdleConnections = builder.maxIdleConnections;
-        this.keepAliveDuration = builder.keepAliveDuration;
-        this.ignoreSsl = builder.ignoreSsl;
+        this.pingInterval = builder.pingInterval;
         this.proxyConfig = builder.proxyConfig;
+        this.ignoreSsl = builder.ignoreSsl;
     }
 
     /**
@@ -80,21 +94,21 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the maximum number of idle connections in the pool.
+     * Get the ping interval for heartbeat (OkHttp only).
      *
-     * @return the max idle connections
+     * @return the ping interval duration
      */
-    public int getMaxIdleConnections() {
-        return maxIdleConnections;
+    public Duration getPingInterval() {
+        return pingInterval;
     }
 
     /**
-     * Get the keep-alive duration for idle connections.
+     * Get the proxy configuration.
      *
-     * @return the keep-alive duration
+     * @return the proxy configuration, or null if no proxy is configured
      */
-    public Duration getKeepAliveDuration() {
-        return keepAliveDuration;
+    public ProxyConfig getProxyConfig() {
+        return proxyConfig;
     }
 
     /**
@@ -111,16 +125,7 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the proxy configuration.
-     *
-     * @return the proxy configuration, or null if no proxy is configured
-     */
-    public ProxyConfig getProxyConfig() {
-        return proxyConfig;
-    }
-
-    /**
-     * Create a new builder for HttpTransportConfig.
+     * Create a new builder for WebSocketTransportConfig.
      *
      * @return a new Builder instance
      */
@@ -131,23 +136,22 @@ public class HttpTransportConfig {
     /**
      * Create a default configuration.
      *
-     * @return a default HttpTransportConfig instance
+     * @return a default WebSocketTransportConfig instance
      */
-    public static HttpTransportConfig defaults() {
+    public static WebSocketTransportConfig defaults() {
         return builder().build();
     }
 
     /**
-     * Builder for HttpTransportConfig.
+     * Builder for WebSocketTransportConfig.
      */
     public static class Builder {
         private Duration connectTimeout = DEFAULT_CONNECT_TIMEOUT;
         private Duration readTimeout = DEFAULT_READ_TIMEOUT;
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
-        private int maxIdleConnections = 5;
-        private Duration keepAliveDuration = Duration.ofMinutes(5);
-        private boolean ignoreSsl = false;
+        private Duration pingInterval = DEFAULT_PING_INTERVAL;
         private ProxyConfig proxyConfig = null;
+        private boolean ignoreSsl = false;
 
         /**
          * Set the connect timeout.
@@ -183,24 +187,26 @@ public class HttpTransportConfig {
         }
 
         /**
-         * Set the maximum number of idle connections in the pool.
+         * Set the ping interval for heartbeat (OkHttp only).
          *
-         * @param maxIdleConnections the max idle connections
+         * @param pingInterval the ping interval duration
          * @return this builder
          */
-        public Builder maxIdleConnections(int maxIdleConnections) {
-            this.maxIdleConnections = maxIdleConnections;
+        public Builder pingInterval(Duration pingInterval) {
+            this.pingInterval = pingInterval;
             return this;
         }
 
         /**
-         * Set the keep-alive duration for idle connections.
+         * Set the proxy configuration.
          *
-         * @param keepAliveDuration the keep-alive duration
+         * <p>Supports HTTP and SOCKS proxies. See {@link ProxyConfig} for details.
+         *
+         * @param proxyConfig the proxy configuration
          * @return this builder
          */
-        public Builder keepAliveDuration(Duration keepAliveDuration) {
-            this.keepAliveDuration = keepAliveDuration;
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
             return this;
         }
 
@@ -220,25 +226,12 @@ public class HttpTransportConfig {
         }
 
         /**
-         * Set the proxy configuration.
+         * Build the WebSocketTransportConfig.
          *
-         * <p>Supports HTTP and SOCKS proxies. See {@link ProxyConfig} for details.
-         *
-         * @param proxyConfig the proxy configuration
-         * @return this builder
+         * @return a new WebSocketTransportConfig instance
          */
-        public Builder proxy(ProxyConfig proxyConfig) {
-            this.proxyConfig = proxyConfig;
-            return this;
-        }
-
-        /**
-         * Build the HttpTransportConfig.
-         *
-         * @return a new HttpTransportConfig instance
-         */
-        public HttpTransportConfig build() {
-            return new HttpTransportConfig(this);
+        public WebSocketTransportConfig build() {
+            return new WebSocketTransportConfig(this);
         }
     }
 }
