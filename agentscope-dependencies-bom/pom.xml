@@ -99,7 +99,7 @@
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.2</spring.version>
+        <spring.version>7.0.3</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
