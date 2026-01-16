@@ -21,14 +21,11 @@ import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -52,10 +49,10 @@ public class GeminiMultiAgentFormatter
                     + "The content between <history></history> tags contains your conversation"
                     + " history\n";
 
-    private final GeminiMessageConverter messageConverter;
+    private final GeminiMessageConverter systemMessageConverter;
+    private final GeminiMultiAgentMessageConverter multiAgentMessageConverter;
     private final GeminiResponseParser responseParser;
     private final GeminiToolsHelper toolsHelper;
-    private final GeminiConversationMerger conversationMerger;
     private final GeminiChatFormatter chatFormatter;
 
     /**
@@ -71,10 +68,11 @@ public class GeminiMultiAgentFormatter
      * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public GeminiMultiAgentFormatter(String conversationHistoryPrompt) {
-        this.messageConverter = new GeminiMessageConverter();
+        this.systemMessageConverter = new GeminiMessageConverter();
+        this.multiAgentMessageConverter =
+                new GeminiMultiAgentMessageConverter(conversationHistoryPrompt);
         this.responseParser = new GeminiResponseParser();
         this.toolsHelper = new GeminiToolsHelper();
-        this.conversationMerger = new GeminiConversationMerger(conversationHistoryPrompt);
         this.chatFormatter = new GeminiChatFormatter();
     }
 
@@ -85,7 +83,7 @@ public class GeminiMultiAgentFormatter
         }
 
         int startIndex = computeStartIndex(msgs);
-        return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
+        return multiAgentMessageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
     }
 
     @Override
@@ -144,75 +142,7 @@ public class GeminiMultiAgentFormatter
             return null;
         }
 
-        List<GeminiContent> converted = messageConverter.convertMessages(List.of(first));
+        List<GeminiContent> converted = systemMessageConverter.convertMessages(List.of(first));
         return converted.isEmpty() ? null : converted.get(0);
-    }
-
-    /**
-     * Group messages sequentially into agent_message and tool_sequence groups.
-     *
-     * @param msgs Messages to group (excluding system message)
-     * @return List of MessageGroup objects in order
-     */
-    private List<MessageGroup> groupMessagesSequentially(List<Msg> msgs) {
-        List<MessageGroup> result = new ArrayList<>();
-        if (msgs.isEmpty()) {
-            return result;
-        }
-
-        GroupType currentType = null;
-        List<Msg> currentGroup = new ArrayList<>();
-
-        for (Msg msg : msgs) {
-            boolean isToolRelated =
-                    msg.getRole() == MsgRole.TOOL
-                            || msg.hasContentBlocks(ToolUseBlock.class)
-                            || msg.hasContentBlocks(ToolResultBlock.class);
-
-            GroupType msgType = isToolRelated ? GroupType.TOOL_SEQUENCE : GroupType.AGENT_MESSAGE;
-
-            if (currentType == null) {
-                // First message
-                currentType = msgType;
-                currentGroup.add(msg);
-            } else if (currentType == msgType) {
-                // Same type, add to current group
-                currentGroup.add(msg);
-            } else {
-                // Different type, yield current group and start new one
-                result.add(new MessageGroup(currentType, new ArrayList<>(currentGroup)));
-                currentGroup.clear();
-                currentGroup.add(msg);
-                currentType = msgType;
-            }
-        }
-
-        // Add the last group
-        if (!currentGroup.isEmpty()) {
-            result.add(new MessageGroup(currentType, currentGroup));
-        }
-
-        return result;
-    }
-
-    // ========== Inner Classes ==========
-
-    /** Type of message group. */
-    private enum GroupType {
-        /** Regular agent conversation messages */
-        AGENT_MESSAGE,
-        /** Tool call and tool result sequence */
-        TOOL_SEQUENCE
-    }
-
-    /** Container for a group of messages. */
-    private static class MessageGroup {
-        final GroupType type;
-        final List<Msg> messages;
-
-        MessageGroup(GroupType type, List<Msg> messages) {
-            this.type = type;
-            this.messages = messages;
-        }
     }
 }

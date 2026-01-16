@@ -26,7 +26,6 @@ import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

@@ -191,20 +191,6 @@ public class GeminiMessageConverter {
         return result;
     }
 
-    private boolean isSystemInstruction(Msg msg) {
-        if (msg.getRole() != MsgRole.SYSTEM || msg.getContent() == null) {
-            return false;
-        }
-
-        // Treat as system instruction only if all blocks are TextBlock instances.
-        for (ContentBlock block : msg.getContent()) {
-            if (!(block instanceof TextBlock)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * Convert MsgRole to Gemini API role string.
      *
@@ -224,7 +210,7 @@ public class GeminiMessageConverter {
      * @param output List of content blocks from tool result
      * @return String representation of the output
      */
-    private String convertToolResultToString(List<ContentBlock> output) {
+    String convertToolResultToString(List<ContentBlock> output) {
         if (output == null || output.isEmpty()) {
             return "";
         }
