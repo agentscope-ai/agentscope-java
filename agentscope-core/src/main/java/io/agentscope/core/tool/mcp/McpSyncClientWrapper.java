@@ -78,8 +78,7 @@ public class McpSyncClientWrapper extends McpClientWrapper {
         if (tools != null) {
             // Build new map first, then atomically replace via volatile assignment
             Map<String, McpSchema.Tool> newTools =
-                    tools.stream()
-                            .collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
+                    tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
             cachedTools = new ConcurrentHashMap<>(newTools);
             logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
         }
@@ -126,11 +125,9 @@ public class McpSyncClientWrapper extends McpClientWrapper {
 
                             // Cache all tools - build new map then atomically replace
                             Map<String, McpSchema.Tool> newTools =
-                                    toolsResult.tools()
-                                            .stream()
+                                    toolsResult.tools().stream()
                                             .collect(
-                                                    Collectors.toMap(
-                                                            McpSchema.Tool::name, t -> t));
+                                                    Collectors.toMap(McpSchema.Tool::name, t -> t));
                             cachedTools = new ConcurrentHashMap<>(newTools);
 
                             initialized = true;
