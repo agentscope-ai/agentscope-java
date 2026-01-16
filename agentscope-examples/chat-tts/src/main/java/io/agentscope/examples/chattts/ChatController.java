@@ -53,7 +53,7 @@ import reactor.core.scheduler.Schedulers;
 public class ChatController {
 
     private final DashScopeChatModel chatModel;
-    private final DashScopeRealtimeTTSModel ttsModel;
+    private final String apiKey;
 
     /**
      * Creates a new ChatController.
@@ -68,16 +68,8 @@ public class ChatController {
             throw new IllegalStateException("DASHSCOPE_API_KEY environment variable is required");
         }
 
+        this.apiKey = apiKey;
         this.chatModel = DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").build();
-
-        this.ttsModel =
-                DashScopeRealtimeTTSModel.builder()
-                        .apiKey(apiKey)
-                        .modelName("qwen3-tts-flash-realtime") // WebSocket realtime model
-                        .voice("Cherry")
-                        .sampleRate(24000)
-                        .format("pcm")
-                        .build();
     }
 
     /**
@@ -113,10 +105,21 @@ public class ChatController {
         Sinks.Many<ServerSentEvent<Map<String, Object>>> sink =
                 Sinks.many().multicast().onBackpressureBuffer();
 
+        // Create a new TTS model instance for this request
+        // Each request needs its own WebSocket session to avoid audio mixing
+        DashScopeRealtimeTTSModel requestTtsModel =
+                DashScopeRealtimeTTSModel.builder()
+                        .apiKey(apiKey)
+                        .modelName("qwen3-tts-flash-realtime") // WebSocket realtime model
+                        .voice("Cherry")
+                        .sampleRate(24000)
+                        .format("pcm")
+                        .build();
+
         // Create TTSHook that sends audio to frontend via SSE
         TTSHook ttsHook =
                 TTSHook.builder()
-                        .ttsModel(ttsModel)
+                        .ttsModel(requestTtsModel)
                         .audioCallback(
                                 audio -> {
                                     if (audio.getSource() instanceof Base64Source src) {
@@ -173,7 +176,10 @@ public class ChatController {
                         })
                 .doOnComplete(
                         () -> {
+                            // Stop TTS hook and close WebSocket session for this request
                             ttsHook.stop();
+                            requestTtsModel.close();
+
                             sink.tryEmitNext(
                                     ServerSentEvent.<Map<String, Object>>builder()
                                             .event("done")
@@ -183,6 +189,10 @@ public class ChatController {
                         })
                 .doOnError(
                         e -> {
+                            // Stop TTS hook and close WebSocket session on error
+                            ttsHook.stop();
+                            requestTtsModel.close();
+
                             sink.tryEmitNext(
                                     ServerSentEvent.<Map<String, Object>>builder()
                                             .event("error")
@@ -192,6 +202,14 @@ public class ChatController {
                         })
                 .subscribe();
 
-        return sink.asFlux();
+        // Return flux with cleanup on cancel (when client disconnects)
+        return sink.asFlux()
+                .doOnCancel(
+                        () -> {
+                            // Clean up when client disconnects or request is cancelled
+                            ttsHook.stop();
+                            requestTtsModel.close();
+                            sink.tryEmitComplete();
+                        });
     }
 }

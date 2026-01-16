@@ -431,6 +431,7 @@
         // Global audio context
         let audioContext = null;
         let currentPlayingMessage = null; // Track which message is currently playing
+        const allAudioPlayers = new Map(); // Track all audio players by messageDiv
 
         // Initialize AudioContext on first user interaction
         function initAudio() {
@@ -439,24 +440,42 @@
             }
         }
 
-        // Stop all playing audio
+        // Stop all playing audio from all messages
         function stopAllAudio() {
+            // Stop current playing message
             if (currentPlayingMessage) {
                 const audioPlayer = currentPlayingMessage.audioPlayer;
                 if (audioPlayer) {
-                    audioPlayer.sources.forEach(source => {
-                        try {
-                            source.stop();
-                        } catch (e) {
-                            // Source may already be stopped
-                        }
-                    });
-                    audioPlayer.sources = [];
-                    audioPlayer.isPlaying = false;
+                    stopAudioPlayer(audioPlayer);
                     updateAudioUI(currentPlayingMessage.messageDiv, false);
                 }
                 currentPlayingMessage = null;
             }
+            
+            // Stop all other audio players
+            allAudioPlayers.forEach((audioPlayer, messageDiv) => {
+                if (audioPlayer.isPlaying) {
+                    stopAudioPlayer(audioPlayer);
+                    updateAudioUI(messageDiv, false);
+                }
+            });
+        }
+        
+        // Stop a specific audio player (internal helper)
+        function stopAudioPlayer(audioPlayer) {
+            audioPlayer.isPlaying = false;
+            // Stop all active audio sources
+            audioPlayer.sources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            audioPlayer.sources = [];
+            // Don't clear chunks - preserve them for replay
+            // Reset playback index to start from beginning next time
+            audioPlayer.currentIndex = 0;
         }
 
         // Send message
@@ -606,11 +625,15 @@
         // Create audio player for a message
         function createAudioPlayer(messageDiv) {
             const audioPlayer = {
-                chunks: [], // Queue of audio chunks
+                chunks: [], // Queue of audio chunks (preserved for replay)
                 sources: [], // Active audio sources
                 isPlaying: false,
-                currentSource: null
+                currentSource: null,
+                currentIndex: 0 // Current playback position in chunks array
             };
+            
+            // Register this audio player
+            allAudioPlayers.set(messageDiv, audioPlayer);
 
             const playBtn = messageDiv.querySelector('.play-btn');
             if (playBtn) {
@@ -620,6 +643,10 @@
                     } else {
                         // Stop other messages before playing this one
                         stopAllAudio();
+                        // Reset to beginning if all chunks have been played
+                        if (audioPlayer.currentIndex >= audioPlayer.chunks.length) {
+                            audioPlayer.currentIndex = 0;
+                        }
                         playAudio(audioPlayer, messageDiv);
                     }
                 };
@@ -630,14 +657,20 @@
 
         // Add audio chunk to player
         function addAudioChunk(audioPlayer, audioData, messageDiv) {
+            // Don't add chunks if this message is no longer the current one
+            // (user may have sent a new message)
+            if (currentPlayingMessage && 
+                currentPlayingMessage.messageDiv !== messageDiv) {
+                return; // Ignore chunks for old messages
+            }
+            
             audioPlayer.chunks.push(audioData);
             
             // Auto-play if this is the current message being generated
             if (currentPlayingMessage && 
-                currentPlayingMessage.messageDiv === messageDiv) {
-                if (!audioPlayer.isPlaying) {
-                    playAudio(audioPlayer, messageDiv);
-                }
+                currentPlayingMessage.messageDiv === messageDiv &&
+                !audioPlayer.isPlaying) {
+                playAudio(audioPlayer, messageDiv);
             }
         }
 
@@ -651,15 +684,35 @@
             updateAudioUI(messageDiv, true);
             currentPlayingMessage = { messageDiv, audioPlayer };
 
-            // Play all chunks in sequence
-            while (audioPlayer.chunks.length > 0 && audioPlayer.isPlaying) {
-                const chunk = audioPlayer.chunks.shift();
+            // Play chunks from current index to end
+            while (audioPlayer.currentIndex < audioPlayer.chunks.length && audioPlayer.isPlaying) {
+                // Check again before processing each chunk
+                if (!audioPlayer.isPlaying) {
+                    break;
+                }
+                
+                const chunk = audioPlayer.chunks[audioPlayer.currentIndex];
+                audioPlayer.currentIndex++;
                 await playAudioChunk(chunk, audioPlayer);
+                
+                // Check again after playing chunk (might have been stopped)
+                if (!audioPlayer.isPlaying) {
+                    break;
+                }
             }
 
+            // Clean up if playback completed or was stopped
             if (audioPlayer.isPlaying) {
+                // Playback completed naturally - reset index for next replay
                 audioPlayer.isPlaying = false;
+                audioPlayer.currentIndex = 0;
                 updateAudioUI(messageDiv, false);
+                if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                    currentPlayingMessage = null;
+                }
+            } else {
+                // Playback was stopped - keep currentIndex for resume
+                // UI already updated in stopAudio
                 if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
                     currentPlayingMessage = null;
                 }
@@ -669,6 +722,7 @@
         // Play a single audio chunk
         async function playAudioChunk(audioData, audioPlayer) {
             return new Promise((resolve, reject) => {
+                // Check if playback was stopped before starting
                 if (!audioPlayer.isPlaying) {
                     resolve();
                     return;
@@ -678,6 +732,12 @@
                     // Try to decode as WAV first
                     audioContext.decodeAudioData(audioData.slice(0))
                         .then(audioBuffer => {
+                            // Check again after decoding (playback might have been stopped)
+                            if (!audioPlayer.isPlaying) {
+                                resolve();
+                                return;
+                            }
+                            
                             const source = audioContext.createBufferSource();
                             source.buffer = audioBuffer;
                             source.connect(audioContext.destination);
@@ -691,15 +751,28 @@
                                 resolve();
                             };
                             
-                            source.start();
+                            // Check one more time before starting
+                            if (audioPlayer.isPlaying) {
+                                source.start();
+                            } else {
+                                resolve();
+                            }
                         })
                         .catch(() => {
                             // Fallback to raw PCM
-                            playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                            if (audioPlayer.isPlaying) {
+                                playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                            } else {
+                                resolve();
+                            }
                         });
                 } catch (e) {
                     // Fallback to raw PCM
-                    playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                    if (audioPlayer.isPlaying) {
+                        playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                    } else {
+                        resolve();
+                    }
                 }
             });
         }
@@ -707,6 +780,7 @@
         // Play raw PCM data
         async function playRawPCM(data, audioPlayer) {
             return new Promise((resolve, reject) => {
+                // Check if playback was stopped before starting
                 if (!audioPlayer.isPlaying) {
                     resolve();
                     return;
@@ -722,6 +796,12 @@
                     const audioBuffer = audioContext.createBuffer(1, floatData.length, 24000);
                     audioBuffer.getChannelData(0).set(floatData);
                     
+                    // Check again after creating buffer (playback might have been stopped)
+                    if (!audioPlayer.isPlaying) {
+                        resolve();
+                        return;
+                    }
+                    
                     const source = audioContext.createBufferSource();
                     source.buffer = audioBuffer;
                     source.connect(audioContext.destination);
@@ -735,7 +815,12 @@
                         resolve();
                     };
                     
-                    source.start();
+                    // Check one more time before starting
+                    if (audioPlayer.isPlaying) {
+                        source.start();
+                    } else {
+                        resolve();
+                    }
                 } catch (e) {
                     reject(e);
                 }
@@ -744,15 +829,9 @@
 
         // Stop audio playback
         function stopAudio(audioPlayer, messageDiv) {
-            audioPlayer.isPlaying = false;
-            audioPlayer.sources.forEach(source => {
-                try {
-                    source.stop();
-                } catch (e) {
-                    // Source may already be stopped
-                }
-            });
-            audioPlayer.sources = [];
+            stopAudioPlayer(audioPlayer);
+            // Note: currentIndex is reset to 0 in stopAudioPlayer for restart from beginning
+            // If you want resume capability, don't reset currentIndex here
             updateAudioUI(messageDiv, false);
             
             if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
