@@ -220,6 +220,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Kotlin -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Higress Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
