@@ -653,11 +653,13 @@ class AguiAgentAdapterTest {
                 reasoningMessageContentCount,
                 "Should have 2 reasoning message content events for streaming");
 
-        // Should only have 1 ReasoningStart (same reasoning ID)
-        long reasoningStartCount =
-                events.stream().filter(e -> e instanceof AguiEvent.ReasoningStart).count();
+        // Should only have 1 ReasoningMessageStart (same message ID)
+        long reasoningMessageStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
         assertEquals(
-                1, reasoningStartCount, "Should have only 1 start event for same reasoning ID");
+                1,
+                reasoningMessageStartCount,
+                "Should have only 1 start event for same reasoning message ID");
     }
 
     @Test
