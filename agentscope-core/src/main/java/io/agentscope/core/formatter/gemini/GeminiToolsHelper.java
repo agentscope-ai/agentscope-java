@@ -23,6 +23,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -188,7 +189,7 @@ public class GeminiToolsHelper {
         }
 
         // Create a new map to avoid modifying the original
-        Map<String, Object> cleaned = new java.util.HashMap<>(schema);
+        Map<String, Object> cleaned = new HashMap<>(schema);
 
         // Remove unsupported/unnecessary fields
         cleaned.remove("id");
@@ -200,7 +201,7 @@ public class GeminiToolsHelper {
         // Recursively clean nested properties
         if (cleaned.containsKey("properties") && cleaned.get("properties") instanceof Map) {
             Map<String, Object> properties = (Map<String, Object>) cleaned.get("properties");
-            Map<String, Object> cleanedProperties = new java.util.HashMap<>();
+            Map<String, Object> cleanedProperties = new HashMap<>();
             for (Map.Entry<String, Object> entry : properties.entrySet()) {
                 if (entry.getValue() instanceof Map) {
                     cleanedProperties.put(
@@ -236,7 +237,7 @@ public class GeminiToolsHelper {
             if (propertiesObj instanceof Map) {
                 Map<String, Object> properties = (Map<String, Object>) propertiesObj;
                 if (!properties.isEmpty()) {
-                    List<String> allProperties = new java.util.ArrayList<>(properties.keySet());
+                    List<String> allProperties = new ArrayList<>(properties.keySet());
                     cleaned.put("required", allProperties);
                     log.debug("Gemini: Added all properties as required fields: {}", allProperties);
                 }

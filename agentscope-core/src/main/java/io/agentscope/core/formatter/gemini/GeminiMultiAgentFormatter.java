@@ -80,75 +80,12 @@ public class GeminiMultiAgentFormatter
 
     @Override
     protected List<GeminiContent> doFormat(List<Msg> msgs) {
-        if (msgs == null) {
-            return new ArrayList<>();
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
         }
-        List<GeminiContent> result = new ArrayList<>();
+
         int startIndex = computeStartIndex(msgs);
-
-        // Gemini API requires contents to start with "user" role
-        // If first remaining message is ASSISTANT (from another agent), convert it to USER
-        // EXCEPTION: If the message is a tool call (which uses ASSISTANT role), we must preserve it
-        // as is (it will be converted to MODEL role by converter later), because tool calls must
-        // come from MODEL.
-        if (startIndex < msgs.size() && msgs.get(startIndex).getRole() == MsgRole.ASSISTANT) {
-            Msg firstMsg = msgs.get(startIndex);
-
-            boolean isToolRelated = firstMsg.hasContentBlocks(ToolUseBlock.class);
-
-            if (!isToolRelated) {
-                // Convert ASSISTANT message to USER role for multi-agent compatibility
-                GeminiContent userContent = new GeminiContent();
-                userContent.setRole("user");
-                userContent.setParts(
-                        messageConverter.convertMessages(List.of(firstMsg)).get(0).getParts());
-                result.add(userContent);
-                startIndex++;
-            }
-        }
-
-        // Optimization: If only one message remains and it's not a tool result/use,
-        // format it directly to avoid unnecessary <history> wrapping.
-        // This fixes structured output issues where simple prompts were being wrapped
-        // in history tags.
-        if (msgs.size() - startIndex == 1) {
-            Msg singleMsg = msgs.get(startIndex);
-            boolean isToolRelated =
-                    singleMsg.getRole() == MsgRole.TOOL
-                            || singleMsg.hasContentBlocks(ToolUseBlock.class)
-                            || singleMsg.hasContentBlocks(ToolResultBlock.class);
-
-            if (!isToolRelated) {
-                result.addAll(messageConverter.convertMessages(List.of(singleMsg)));
-                return result;
-            }
-        }
-
-        // Group remaining messages and process each group
-        List<MessageGroup> groups =
-                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
-        boolean isFirstAgentMessage = true;
-
-        for (MessageGroup group : groups) {
-            if (group.type == GroupType.AGENT_MESSAGE) {
-                // Format agent messages with conversation history
-                String historyPrompt =
-                        isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
-                result.add(
-                        conversationMerger.mergeToContent(
-                                group.messages,
-                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                                this::convertToolResultToString,
-                                historyPrompt));
-                isFirstAgentMessage = false;
-
-            } else if (group.type == GroupType.TOOL_SEQUENCE) {
-                // Format tool sequence directly using message converter
-                result.addAll(messageConverter.convertMessages(group.messages));
-            }
-        }
-
-        return result;
+        return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
     }
 
     @Override

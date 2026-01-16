@@ -185,23 +185,6 @@ public class GeminiResponseParser {
      * @param blocks List to add parsed ContentBlocks to
      */
     protected void parsePartsToBlocks(List<GeminiPart> parts, List<ContentBlock> blocks) {
-        // Debug: Log the parts received from Gemini
-        if (log.isDebugEnabled()) {
-            try {
-                log.debug("=== Parsing {} parts from Gemini response", parts.size());
-                for (int i = 0; i < parts.size(); i++) {
-                    GeminiPart part = parts.get(i);
-                    log.debug(
-                            "=== Part {}: text={}, functionCall={}, thought={}",
-                            i,
-                            part.getText() != null ? "present" : "null",
-                            part.getFunctionCall() != null ? "present" : "null",
-                            part.getThought());
-                }
-            } catch (Exception e) {
-                // Ignore logging errors
-            }
-        }
 
         for (GeminiPart part : parts) {
             boolean processedAsThought = false;

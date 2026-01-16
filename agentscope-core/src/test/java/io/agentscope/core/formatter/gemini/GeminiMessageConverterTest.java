@@ -311,8 +311,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should handle tool result with Base64 image")
     void testToolResultWithBase64Image() {
-        String base64Data =
-                java.util.Base64.getEncoder().encodeToString("fake image data".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image data".getBytes());
 
         ImageBlock imageBlock =
                 ImageBlock.builder()
