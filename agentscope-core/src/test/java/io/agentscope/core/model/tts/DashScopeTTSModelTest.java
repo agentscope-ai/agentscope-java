@@ -223,4 +223,211 @@ class DashScopeTTSModelTest {
             assertThrows(IllegalStateException.class, response::toAudioBlock);
         }
     }
+
+    @Nested
+    @DisplayName("Error Handling Tests")
+    class ErrorHandlingTests {
+
+        @Test
+        @DisplayName("should handle HTTP error response")
+        void shouldHandleHttpErrorResponse() throws Exception {
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(false);
+            when(mockResponse.getStatusCode()).thenReturn(400);
+            when(mockResponse.getBody()).thenReturn("Bad Request");
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            assertThrows(TTSException.class, () -> model.synthesize("test", null).block());
+        }
+
+        @Test
+        @DisplayName("should handle API error in response")
+        void shouldHandleApiErrorInResponse() throws Exception {
+            String responseJson =
+                    """
+                    {
+                        "code": "InvalidParameter",
+                        "message": "Invalid text parameter"
+                    }
+                    """;
+
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn(responseJson);
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            assertThrows(TTSException.class, () -> model.synthesize("test", null).block());
+        }
+
+        @Test
+        @DisplayName("should handle response with no output")
+        void shouldHandleResponseWithNoOutput() throws Exception {
+            String responseJson = "{\"request_id\": \"test-id\"}";
+
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn(responseJson);
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            TTSResponse response = model.synthesize("test", null).block();
+            assertNotNull(response);
+        }
+
+        @Test
+        @DisplayName("should handle response with empty audio URL")
+        void shouldHandleResponseWithEmptyAudioUrl() throws Exception {
+            String responseJson =
+                    """
+                    {
+                        "request_id": "test-id",
+                        "output": {
+                            "audio": {
+                                "url": ""
+                            }
+                        }
+                    }
+                    """;
+
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn(responseJson);
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            TTSResponse response = model.synthesize("test", null).block();
+            assertNotNull(response);
+        }
+
+        @Test
+        @DisplayName("should handle response with null audio data")
+        void shouldHandleResponseWithNullAudioData() throws Exception {
+            String responseJson =
+                    """
+                    {
+                        "request_id": "test-id",
+                        "output": {
+                            "audio": {
+                                "data": null
+                            }
+                        }
+                    }
+                    """;
+
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn(responseJson);
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            TTSResponse response = model.synthesize("test", null).block();
+            assertNotNull(response);
+        }
+
+        @Test
+        @DisplayName("should handle response with empty audio data")
+        void shouldHandleResponseWithEmptyAudioData() throws Exception {
+            String responseJson =
+                    """
+                    {
+                        "request_id": "test-id",
+                        "output": {
+                            "audio": {
+                                "data": ""
+                            }
+                        }
+                    }
+                    """;
+
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn(responseJson);
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            TTSResponse response = model.synthesize("test", null).block();
+            assertNotNull(response);
+        }
+
+        @Test
+        @DisplayName("should handle JSON parsing error")
+        void shouldHandleJsonParsingError() throws Exception {
+            HttpResponse mockResponse = mock(HttpResponse.class);
+            when(mockResponse.isSuccessful()).thenReturn(true);
+            when(mockResponse.getBody()).thenReturn("invalid json");
+            when(mockTransport.execute(any(HttpRequest.class))).thenReturn(mockResponse);
+
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            assertThrows(TTSException.class, () -> model.synthesize("test", null).block());
+        }
+    }
+
+    @Nested
+    @DisplayName("Builder Tests Extended")
+    class BuilderTestsExtended {
+
+        @Test
+        @DisplayName("should build with custom base URL")
+        void shouldBuildWithCustomBaseUrl() {
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .baseUrl("https://custom.example.com")
+                            .httpTransport(mockTransport)
+                            .build();
+
+            assertNotNull(model);
+        }
+
+        @Test
+        @DisplayName("should build with default options")
+        void shouldBuildWithDefaultOptions() {
+            TTSOptions options = TTSOptions.builder().language("Chinese").build();
+            DashScopeTTSModel model =
+                    DashScopeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .defaultOptions(options)
+                            .httpTransport(mockTransport)
+                            .build();
+
+            assertNotNull(model);
+        }
+    }
 }

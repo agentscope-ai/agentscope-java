@@ -326,4 +326,76 @@ class AudioPlayerTest {
             assertNotNull(player);
         }
     }
+
+    @Nested
+    @DisplayName("Drain Tests Extended")
+    class DrainTestsExtended {
+
+        @Test
+        @DisplayName("should handle drain when started")
+        void shouldHandleDrainWhenStarted() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            try {
+                player.start();
+                // drain() should work when started
+                player.drain();
+                player.stop();
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+                // drain() should still work
+                player.drain();
+            }
+        }
+
+        @Test
+        @DisplayName("should handle drain when line is null")
+        void shouldHandleDrainWhenLineIsNull() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            // drain() should not throw when line is null
+            player.drain();
+        }
+    }
+
+    @Nested
+    @DisplayName("Play Tests Extended")
+    class PlayTestsExtended {
+
+        @Test
+        @DisplayName("should handle play when started")
+        void shouldHandlePlayWhenStarted() {
+            AudioPlayer player = AudioPlayer.builder().build();
+
+            try {
+                player.start();
+                byte[] audioData = new byte[] {1, 2, 3, 4};
+                player.play(audioData);
+                player.stop();
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+            }
+        }
+
+        @Test
+        @DisplayName("should handle play with valid base64 audio block")
+        void shouldHandlePlayWithValidBase64AudioBlock() {
+            AudioPlayer player = AudioPlayer.builder().build();
+            String base64Data = Base64.getEncoder().encodeToString("test audio".getBytes());
+            AudioBlock audioBlock =
+                    AudioBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType("audio/wav")
+                                            .data(base64Data)
+                                            .build())
+                            .build();
+
+            try {
+                player.play(audioBlock);
+            } catch (TTSException e) {
+                // Expected in CI environment without audio hardware
+            }
+        }
+    }
 }

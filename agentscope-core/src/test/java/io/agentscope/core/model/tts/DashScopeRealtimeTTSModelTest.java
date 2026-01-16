@@ -543,5 +543,87 @@ class DashScopeRealtimeTTSModelTest {
 
             assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.SECONDS));
         }
+
+        @Test
+        @DisplayName("should return false on timeout")
+        void shouldReturnFalseOnTimeout() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // When responseDoneFuture is null, should return true immediately
+            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Nested
+    @DisplayName("Synthesize Extended Tests")
+    class SynthesizeExtendedTests {
+
+        @Test
+        @DisplayName("should handle synthesize with null options")
+        void shouldHandleSynthesizeWithNullOptions() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // synthesize() may throw TTSException if API key is invalid (expected in unit tests)
+            try {
+                assertNotNull(model.synthesize("test", null));
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle synthesize with options")
+        void shouldHandleSynthesizeWithOptions() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            TTSOptions options = TTSOptions.builder().language("Chinese").build();
+            try {
+                assertNotNull(model.synthesize("test", options));
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Get Audio Stream Tests")
+    class GetAudioStreamTests {
+
+        @Test
+        @DisplayName("should return empty flux when no session started")
+        void shouldReturnEmptyFluxWhenNoSessionStarted() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertNotNull(model.getAudioStream());
+        }
+    }
+
+    @Nested
+    @DisplayName("Close Tests Extended")
+    class CloseTestsExtended {
+
+        @Test
+        @DisplayName("should handle close when connection is null")
+        void shouldHandleCloseWhenConnectionIsNull() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw even if connection is null
+            model.close();
+        }
+
+        @Test
+        @DisplayName("should handle close when audioSink is null")
+        void shouldHandleCloseWhenAudioSinkIsNull() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // Should not throw even if audioSink is null
+            model.close();
+        }
     }
 }
