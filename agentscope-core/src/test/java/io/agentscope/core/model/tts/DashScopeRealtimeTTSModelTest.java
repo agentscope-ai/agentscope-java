@@ -626,4 +626,285 @@ class DashScopeRealtimeTTSModelTest {
             model.close();
         }
     }
+
+    @Nested
+    @DisplayName("SynthesizeStream Tests Extended")
+    class SynthesizeStreamTestsExtended {
+
+        @Test
+        @DisplayName("should return flux for synthesizeStream")
+        void shouldReturnFluxForSynthesizeStream() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // synthesizeStream() returns a Flux, but may fail due to invalid API key
+            // This test verifies the method can be called
+            assertNotNull(model.synthesizeStream("test"));
+        }
+
+        @Test
+        @DisplayName("should handle synthesizeStream with long text")
+        void shouldHandleSynthesizeStreamWithLongText() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            String longText = "This is a long text. ".repeat(100);
+            try {
+                assertNotNull(model.synthesizeStream(longText));
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle synthesizeStream with special characters")
+        void shouldHandleSynthesizeStreamWithSpecialCharacters() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            String specialText = "Hello! 你好？测试，test。";
+            try {
+                assertNotNull(model.synthesizeStream(specialText));
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle synthesizeStream in commit mode")
+        void shouldHandleSynthesizeStreamInCommitMode() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.COMMIT)
+                            .build();
+
+            try {
+                assertNotNull(model.synthesizeStream("test"));
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Start Message Receiver Tests")
+    class StartMessageReceiverTests {
+
+        @Test
+        @DisplayName("should handle startMessageReceiver when connection is null")
+        void shouldHandleStartMessageReceiverWhenConnectionIsNull() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // startSession() creates connection, but if connection is null,
+            // startMessageReceiver() should handle it gracefully
+            // This is tested indirectly through startSession()
+            try {
+                model.startSession();
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Append Text Tests")
+    class AppendTextTests {
+
+        @Test
+        @DisplayName("should handle appendText after session start")
+        void shouldHandleAppendTextAfterSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            try {
+                model.startSession();
+                // push() calls appendText() internally
+                model.push("test");
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Update Session Tests")
+    class UpdateSessionTests {
+
+        @Test
+        @DisplayName("should update session after start")
+        void shouldUpdateSessionAfterStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .voice("Cherry")
+                            .sampleRate(24000)
+                            .build();
+
+            try {
+                // startSession() calls updateSession() internally
+                model.startSession();
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should update session with custom settings")
+        void shouldUpdateSessionWithCustomSettings() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .voice("Serena")
+                            .sampleRate(48000)
+                            .format("mp3")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.COMMIT)
+                            .languageType("Chinese")
+                            .build();
+
+            try {
+                model.startSession();
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Send Event Tests")
+    class SendEventTests {
+
+        @Test
+        @DisplayName("should handle sendEvent after session start")
+        void shouldHandleSendEventAfterSessionStart() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            try {
+                model.startSession();
+                // push() calls sendEvent() internally
+                model.push("test");
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle sendEvent for commitTextBuffer")
+        void shouldHandleSendEventForCommitTextBuffer() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .mode(DashScopeRealtimeTTSModel.SessionMode.COMMIT)
+                            .build();
+
+            try {
+                model.startSession();
+                model.push("test");
+                // commitTextBuffer() calls sendEvent() internally
+                model.commitTextBuffer();
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle sendEvent for clearTextBuffer")
+        void shouldHandleSendEventForClearTextBuffer() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            try {
+                model.startSession();
+                model.push("test");
+                // clearTextBuffer() calls sendEvent() internally
+                model.clearTextBuffer();
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Finish Tests Extended")
+    class FinishTestsExtended {
+
+        @Test
+        @DisplayName("should handle finish after push")
+        void shouldHandleFinishAfterPush() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            try {
+                model.startSession();
+                model.push("test");
+                var result = model.finish();
+                assertNotNull(result);
+            } catch (TTSException e) {
+                // Expected in unit tests with invalid API key
+            }
+        }
+
+        @Test
+        @DisplayName("should handle finish returns flux")
+        void shouldHandleFinishReturnsFlux() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // finish() should return Flux even without session
+            assertNotNull(model.finish());
+        }
+    }
+
+    @Nested
+    @DisplayName("Wait For Response Tests Extended")
+    class WaitForResponseTestsExtended {
+
+        @Test
+        @DisplayName("should handle waitForResponseDone with very short timeout")
+        void shouldHandleWaitForResponseDoneWithVeryShortTimeout() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // With null responseDoneFuture, should return true immediately
+            assertTrue(model.waitForResponseDone(1, java.util.concurrent.TimeUnit.MILLISECONDS));
+        }
+
+        @Test
+        @DisplayName("should handle waitForResponseDone with zero timeout")
+        void shouldHandleWaitForResponseDoneWithZeroTimeout() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            // With null responseDoneFuture, should return true immediately
+            assertTrue(model.waitForResponseDone(0, java.util.concurrent.TimeUnit.MILLISECONDS));
+        }
+    }
+
+    @Nested
+    @DisplayName("Get Model Name Tests")
+    class GetModelNameTests {
+
+        @Test
+        @DisplayName("should return default model name")
+        void shouldReturnDefaultModelName() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder().apiKey("test-api-key").build();
+
+            assertEquals("qwen3-tts-flash-realtime", model.getModelName());
+        }
+
+        @Test
+        @DisplayName("should return custom model name")
+        void shouldReturnCustomModelName() {
+            DashScopeRealtimeTTSModel model =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey("test-api-key")
+                            .modelName("custom-model")
+                            .build();
+
+            assertEquals("custom-model", model.getModelName());
+        }
+    }
 }

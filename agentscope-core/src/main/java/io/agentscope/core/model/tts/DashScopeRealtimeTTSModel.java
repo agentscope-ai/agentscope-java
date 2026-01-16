@@ -15,16 +15,18 @@
  */
 package io.agentscope.core.model.tts;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.model.transport.WebSocketTransport;
 import io.agentscope.core.model.transport.websocket.JdkWebSocketTransport;
 import io.agentscope.core.model.transport.websocket.WebSocketConnection;
 import io.agentscope.core.model.transport.websocket.WebSocketRequest;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.Base64;
@@ -89,7 +91,24 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
     /** WebSocket URL for DashScope realtime TTS API. */
     private static final String WEBSOCKET_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    /**
+     * Gets the ObjectMapper from JsonUtils.
+     *
+     * <p>This method provides access to the underlying ObjectMapper for operations
+     * that require JsonNode (not covered by JsonCodec interface), such as parsing
+     * incoming WebSocket messages.
+     *
+     * @return the ObjectMapper instance
+     */
+    private static ObjectMapper getObjectMapper() {
+        JsonCodec codec = JsonUtils.getJsonCodec();
+        if (codec instanceof JacksonJsonCodec) {
+            return ((JacksonJsonCodec) codec).getObjectMapper();
+        }
+        // Fallback to creating a new ObjectMapper if JsonCodec is not Jackson-based
+        // This should rarely happen as JsonUtils defaults to JacksonJsonCodec
+        return new ObjectMapper();
+    }
 
     private final String apiKey;
     private final String modelName;
@@ -233,7 +252,7 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      */
     private void processMessage(String message) {
         try {
-            JsonNode event = objectMapper.readTree(message);
+            JsonNode event = getObjectMapper().readTree(message);
             String eventType = event.has("type") ? event.get("type").asText() : "unknown";
 
             if (!"response.audio.delta".equals(eventType)) {
@@ -337,17 +356,17 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      * Updates the session configuration.
      */
     private void updateSession() {
-        ObjectNode sessionConfig = objectMapper.createObjectNode();
-        sessionConfig.put("mode", mode.getValue());
-        sessionConfig.put("voice", voice);
-        sessionConfig.put("language_type", languageType);
-        sessionConfig.put("response_format", format);
-        sessionConfig.put("sample_rate", sampleRate);
+        SessionConfig sessionConfig =
+                SessionConfig.builder()
+                        .mode(mode.getValue())
+                        .voice(voice)
+                        .languageType(languageType)
+                        .responseFormat(format)
+                        .sampleRate(sampleRate)
+                        .build();
 
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("type", "session.update");
-        event.put("event_id", generateEventId());
-        event.set("session", sessionConfig);
+        TTSEvent.SessionUpdateEvent event =
+                new TTSEvent.SessionUpdateEvent(generateEventId(), sessionConfig);
 
         sendEvent(event);
         log.debug("Session update sent: {}", sessionConfig);
@@ -363,18 +382,15 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
     /**
      * Sends an event to the WebSocket.
      */
-    private void sendEvent(ObjectNode event) {
+    private void sendEvent(TTSEvent event) {
         if (connection == null || !connection.isOpen()) {
             throw new TTSException("WebSocket not connected");
         }
         try {
-            String json = objectMapper.writeValueAsString(event);
-            log.debug(
-                    "Sending event: type={}, event_id={}",
-                    event.get("type"),
-                    event.get("event_id"));
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            log.debug("Sending event: type={}, event_id={}", event.getType(), event.getEventId());
             connection.send(json).subscribe();
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             throw new TTSException("Failed to serialize event", e);
         }
     }
@@ -416,10 +432,7 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      * @param text the text to append
      */
     private void appendText(String text) {
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("type", "input_text_buffer.append");
-        event.put("event_id", generateEventId());
-        event.put("text", text);
+        TTSEvent.AppendTextEvent event = new TTSEvent.AppendTextEvent(generateEventId(), text);
         sendEvent(event);
     }
 
@@ -430,9 +443,7 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      * In {@link SessionMode#SERVER_COMMIT} mode, the server commits automatically.
      */
     public void commitTextBuffer() {
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("type", "input_text_buffer.commit");
-        event.put("event_id", generateEventId());
+        TTSEvent.CommitEvent event = new TTSEvent.CommitEvent(generateEventId());
         sendEvent(event);
         log.debug("Text buffer committed");
     }
@@ -441,9 +452,7 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      * Clears the text buffer.
      */
     public void clearTextBuffer() {
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("type", "input_text_buffer.clear");
-        event.put("event_id", generateEventId());
+        TTSEvent.ClearEvent event = new TTSEvent.ClearEvent(generateEventId());
         sendEvent(event);
         log.debug("Text buffer cleared");
     }
@@ -463,9 +472,7 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
         }
 
         // Send session finish event
-        ObjectNode event = objectMapper.createObjectNode();
-        event.put("type", "session.finish");
-        event.put("event_id", generateEventId());
+        TTSEvent.FinishEvent event = new TTSEvent.FinishEvent(generateEventId());
         sendEvent(event);
 
         sessionActive.set(false);
@@ -553,215 +560,15 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                         conn -> {
                             connectionRef.set(conn);
 
-                            // Process incoming messages
+                            // Setup message receiver
+                            StreamEventProcessor eventProcessor =
+                                    new StreamEventProcessor(conn, streamSink, text);
                             Mono<Void> receiver =
-                                    conn.receive()
-                                            .doOnNext(
-                                                    message -> {
-                                                        try {
-                                                            JsonNode event =
-                                                                    objectMapper.readTree(message);
-                                                            String eventType =
-                                                                    event.has("type")
-                                                                            ? event.get("type")
-                                                                                    .asText()
-                                                                            : "unknown";
-
-                                                            if (!"response.audio.delta"
-                                                                    .equals(eventType)) {
-                                                                log.debug(
-                                                                        "Received event: {}",
-                                                                        eventType);
-                                                            }
-
-                                                            switch (eventType) {
-                                                                case "error":
-                                                                    String errMsg =
-                                                                            event.has("error")
-                                                                                    ? event.get(
-                                                                                                    "error")
-                                                                                            .toString()
-                                                                                    : "Unknown"
-                                                                                          + " error";
-                                                                    log.error(
-                                                                            "TTS API error: {}",
-                                                                            errMsg);
-                                                                    streamSink.tryEmitError(
-                                                                            new TTSException(
-                                                                                    "TTS API error:"
-                                                                                            + " "
-                                                                                            + errMsg));
-                                                                    break;
-
-                                                                case "session.created":
-                                                                    log.debug(
-                                                                            "Session created: {}",
-                                                                            event.path("session")
-                                                                                    .path("id")
-                                                                                    .asText());
-                                                                    break;
-
-                                                                case "session.updated":
-                                                                    log.debug(
-                                                                            "Session updated,"
-                                                                                + " sending text");
-                                                                    // Send the text after
-                                                                    // session is configured
-                                                                    ObjectNode appendEvent =
-                                                                            objectMapper
-                                                                                    .createObjectNode();
-                                                                    appendEvent.put(
-                                                                            "type",
-                                                                            "input_text_buffer.append");
-                                                                    appendEvent.put(
-                                                                            "event_id",
-                                                                            generateEventId());
-                                                                    appendEvent.put("text", text);
-                                                                    conn.send(
-                                                                                    objectMapper
-                                                                                            .writeValueAsString(
-                                                                                                    appendEvent))
-                                                                            .subscribe();
-
-                                                                    // For commit mode, need to
-                                                                    // manually commit
-                                                                    if (mode
-                                                                            == SessionMode.COMMIT) {
-                                                                        ObjectNode commitEvent =
-                                                                                objectMapper
-                                                                                        .createObjectNode();
-                                                                        commitEvent.put(
-                                                                                "type",
-                                                                                "input_text_buffer.commit");
-                                                                        commitEvent.put(
-                                                                                "event_id",
-                                                                                generateEventId());
-                                                                        conn.send(
-                                                                                        objectMapper
-                                                                                                .writeValueAsString(
-                                                                                                        commitEvent))
-                                                                                .subscribe();
-                                                                    }
-
-                                                                    // Send session finish to signal
-                                                                    // end of input
-                                                                    ObjectNode finishEvent =
-                                                                            objectMapper
-                                                                                    .createObjectNode();
-                                                                    finishEvent.put(
-                                                                            "type",
-                                                                            "session.finish");
-                                                                    finishEvent.put(
-                                                                            "event_id",
-                                                                            generateEventId());
-                                                                    conn.send(
-                                                                                    objectMapper
-                                                                                            .writeValueAsString(
-                                                                                                    finishEvent))
-                                                                            .subscribe();
-                                                                    break;
-
-                                                                case "response.audio.delta":
-                                                                    if (event.has("delta")
-                                                                            && !event.get("delta")
-                                                                                    .isNull()) {
-                                                                        String base64Audio =
-                                                                                event.get("delta")
-                                                                                        .asText();
-                                                                        if (base64Audio != null
-                                                                                && !base64Audio
-                                                                                        .isEmpty()) {
-                                                                            AudioBlock audioBlock =
-                                                                                    AudioBlock
-                                                                                            .builder()
-                                                                                            .source(
-                                                                                                    Base64Source
-                                                                                                            .builder()
-                                                                                                            .mediaType(
-                                                                                                                    "audio/"
-                                                                                                                            + format)
-                                                                                                            .data(
-                                                                                                                    base64Audio)
-                                                                                                            .build())
-                                                                                            .build();
-                                                                            Sinks.EmitResult
-                                                                                    result =
-                                                                                            streamSink
-                                                                                                    .tryEmitNext(
-                                                                                                            audioBlock);
-                                                                            if (result
-                                                                                    .isFailure()) {
-                                                                                log.debug(
-                                                                                        "Failed to"
-                                                                                            + " emit"
-                                                                                            + " audio"
-                                                                                            + " (sink"
-                                                                                            + " may be"
-                                                                                            + " cancelled):"
-                                                                                            + " {}",
-                                                                                        result);
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    break;
-
-                                                                case "response.audio.done":
-                                                                    log.debug(
-                                                                            "Audio generation"
-                                                                                    + " completed");
-                                                                    break;
-
-                                                                case "response.done":
-                                                                    log.debug("Response completed");
-                                                                    break;
-
-                                                                case "session.finished":
-                                                                    log.debug(
-                                                                            "Session finished,"
-                                                                                    + " completing"
-                                                                                    + " stream");
-                                                                    streamSink.tryEmitComplete();
-                                                                    conn.close().subscribe();
-                                                                    break;
-                                                            }
-                                                        } catch (Exception e) {
-                                                            log.error(
-                                                                    "Error processing message: {}",
-                                                                    e.getMessage());
-                                                            streamSink.tryEmitError(
-                                                                    new TTSException(
-                                                                            "Error processing"
-                                                                                    + " message: "
-                                                                                    + e
-                                                                                            .getMessage(),
-                                                                            e));
-                                                        }
-                                                    })
-                                            .then();
-
+                                    conn.receive().doOnNext(eventProcessor::processMessage).then();
                             receiver.subscribe();
 
                             // Send session update
-                            ObjectNode sessionConfig = objectMapper.createObjectNode();
-                            sessionConfig.put("mode", mode.getValue());
-                            sessionConfig.put("voice", voice);
-                            sessionConfig.put("language_type", languageType);
-                            sessionConfig.put("response_format", format);
-                            sessionConfig.put("sample_rate", sampleRate);
-
-                            ObjectNode sessionEvent = objectMapper.createObjectNode();
-                            sessionEvent.put("type", "session.update");
-                            sessionEvent.put("event_id", generateEventId());
-                            sessionEvent.set("session", sessionConfig);
-
-                            try {
-                                conn.send(objectMapper.writeValueAsString(sessionEvent))
-                                        .subscribe();
-                            } catch (JsonProcessingException e) {
-                                log.error("Failed to send session update: {}", e.getMessage());
-                                streamSink.tryEmitError(
-                                        new TTSException("Failed to send session update", e));
-                            }
+                            sendStreamSessionUpdate(conn, streamSink);
 
                             return streamSink.asFlux();
                         })
@@ -774,6 +581,176 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                             }
                         })
                 .doOnTerminate(() -> log.debug("Stream terminated"));
+    }
+
+    /**
+     * Sends session update event for streaming synthesis.
+     *
+     * @param conn the WebSocket connection
+     * @param streamSink the sink for emitting errors
+     */
+    private void sendStreamSessionUpdate(
+            WebSocketConnection<String> conn, Sinks.Many<AudioBlock> streamSink) {
+        SessionConfig sessionConfig =
+                SessionConfig.builder()
+                        .mode(mode.getValue())
+                        .voice(voice)
+                        .languageType(languageType)
+                        .responseFormat(format)
+                        .sampleRate(sampleRate)
+                        .build();
+
+        TTSEvent.SessionUpdateEvent event =
+                new TTSEvent.SessionUpdateEvent(generateEventId(), sessionConfig);
+
+        try {
+            conn.send(JsonUtils.getJsonCodec().toJson(event)).subscribe();
+        } catch (JsonException e) {
+            log.error("Failed to send session update: {}", e.getMessage());
+            streamSink.tryEmitError(new TTSException("Failed to send session update", e));
+        }
+    }
+
+    /**
+     * Sends an event to the WebSocket connection.
+     *
+     * @param conn the WebSocket connection
+     * @param event the event to send
+     */
+    private void sendStreamEvent(WebSocketConnection<String> conn, TTSEvent event) {
+        conn.send(JsonUtils.getJsonCodec().toJson(event)).subscribe();
+    }
+
+    /**
+     * Event processor for streaming synthesis WebSocket messages.
+     */
+    private class StreamEventProcessor {
+        private final WebSocketConnection<String> connection;
+        private final Sinks.Many<AudioBlock> sink;
+        private final String textToSynthesize;
+
+        StreamEventProcessor(
+                WebSocketConnection<String> connection,
+                Sinks.Many<AudioBlock> sink,
+                String textToSynthesize) {
+            this.connection = connection;
+            this.sink = sink;
+            this.textToSynthesize = textToSynthesize;
+        }
+
+        /**
+         * Processes a WebSocket message event.
+         *
+         * @param message the JSON message from server
+         */
+        void processMessage(String message) {
+            try {
+                JsonNode event = getObjectMapper().readTree(message);
+                String eventType = event.has("type") ? event.get("type").asText() : "unknown";
+
+                if (!"response.audio.delta".equals(eventType)) {
+                    log.debug("Received event: {}", eventType);
+                }
+
+                switch (eventType) {
+                    case "error":
+                        handleError(event);
+                        break;
+                    case "session.created":
+                        handleSessionCreated(event);
+                        break;
+                    case "session.updated":
+                        handleSessionUpdated();
+                        break;
+                    case "response.audio.delta":
+                        handleAudioDelta(event);
+                        break;
+                    case "response.audio.done":
+                        log.debug("Audio generation completed");
+                        break;
+                    case "response.done":
+                        log.debug("Response completed");
+                        break;
+                    case "session.finished":
+                        handleSessionFinished();
+                        break;
+                    default:
+                        log.debug("Unhandled event type: {}", eventType);
+                        break;
+                }
+            } catch (Exception e) {
+                log.error("Error processing message: {}", e.getMessage());
+                sink.tryEmitError(
+                        new TTSException("Error processing message: " + e.getMessage(), e));
+            }
+        }
+
+        private void handleError(JsonNode event) {
+            String errMsg = event.has("error") ? event.get("error").toString() : "Unknown error";
+            log.error("TTS API error: {}", errMsg);
+            sink.tryEmitError(new TTSException("TTS API error: " + errMsg));
+        }
+
+        private void handleSessionCreated(JsonNode event) {
+            String sessionId = event.path("session").path("id").asText();
+            log.debug("Session created: {}", sessionId);
+        }
+
+        private void handleSessionUpdated() {
+            log.debug("Session updated, sending text");
+            sendAppendTextEvent();
+            if (mode == SessionMode.COMMIT) {
+                sendCommitEvent();
+            }
+            sendFinishEvent();
+        }
+
+        private void sendAppendTextEvent() {
+            TTSEvent.AppendTextEvent event =
+                    new TTSEvent.AppendTextEvent(generateEventId(), textToSynthesize);
+            sendStreamEvent(connection, event);
+        }
+
+        private void sendCommitEvent() {
+            TTSEvent.CommitEvent event = new TTSEvent.CommitEvent(generateEventId());
+            sendStreamEvent(connection, event);
+        }
+
+        private void sendFinishEvent() {
+            TTSEvent.FinishEvent event = new TTSEvent.FinishEvent(generateEventId());
+            sendStreamEvent(connection, event);
+        }
+
+        private void handleAudioDelta(JsonNode event) {
+            if (!event.has("delta") || event.get("delta").isNull()) {
+                return;
+            }
+
+            String base64Audio = event.get("delta").asText();
+            if (base64Audio == null || base64Audio.isEmpty()) {
+                return;
+            }
+
+            AudioBlock audioBlock =
+                    AudioBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType("audio/" + format)
+                                            .data(base64Audio)
+                                            .build())
+                            .build();
+
+            Sinks.EmitResult result = sink.tryEmitNext(audioBlock);
+            if (result.isFailure()) {
+                log.debug("Failed to emit audio (sink may be cancelled): {}", result);
+            }
+        }
+
+        private void handleSessionFinished() {
+            log.debug("Session finished, completing stream");
+            sink.tryEmitComplete();
+            connection.close().subscribe();
+        }
     }
 
     /**

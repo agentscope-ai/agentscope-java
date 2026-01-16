@@ -16,16 +16,18 @@
 package io.agentscope.core.model.tts;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.Version;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.util.JacksonJsonCodec;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
@@ -76,7 +78,6 @@ public class DashScopeTTSModel implements TTSModel {
     private final TTSOptions defaultOptions;
     private final String baseUrl;
     private final HttpTransport transport;
-    private final ObjectMapper objectMapper;
 
     private DashScopeTTSModel(Builder builder) {
         this.apiKey = builder.apiKey;
@@ -86,14 +87,25 @@ public class DashScopeTTSModel implements TTSModel {
         this.baseUrl = builder.baseUrl != null ? builder.baseUrl : DEFAULT_BASE_URL;
         this.transport =
                 builder.transport != null ? builder.transport : HttpTransportFactory.getDefault();
-        this.objectMapper = createObjectMapper();
     }
 
-    private ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
+    /**
+     * Gets the ObjectMapper from JsonUtils.
+     *
+     * <p>This method provides access to the underlying ObjectMapper for operations
+     * that require JsonNode (not covered by JsonCodec interface), such as parsing
+     * incoming API responses.
+     *
+     * @return the ObjectMapper instance
+     */
+    private static ObjectMapper getObjectMapper() {
+        JsonCodec codec = JsonUtils.getJsonCodec();
+        if (codec instanceof JacksonJsonCodec) {
+            return ((JacksonJsonCodec) codec).getObjectMapper();
+        }
+        // Fallback to creating a new ObjectMapper if JsonCodec is not Jackson-based
+        // This should rarely happen as JsonUtils defaults to JacksonJsonCodec
+        return new ObjectMapper();
     }
 
     /**
@@ -162,7 +174,7 @@ public class DashScopeTTSModel implements TTSModel {
 
             return parseResponse(response);
 
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             log.error("Failed to build TTS request: {}", e.getMessage());
             throw new TTSException("Failed to build TTS request", e);
         } catch (HttpTransportException e) {
@@ -193,46 +205,50 @@ public class DashScopeTTSModel implements TTSModel {
      * }
      * }</pre>
      */
-    private String buildRequestBody(String text, String voiceName, TTSOptions options)
-            throws JsonProcessingException {
-        Map<String, Object> requestMap = new HashMap<>();
-        requestMap.put("model", modelName);
-
-        // Input - contains text, voice, and language_type
-        Map<String, Object> input = new HashMap<>();
-        input.put("text", text);
+    private String buildRequestBody(String text, String voiceName, TTSOptions options) {
+        DashScopeTTSRequest.TTSInput.Builder inputBuilder =
+                DashScopeTTSRequest.TTSInput.builder().text(text);
         if (voiceName != null) {
-            input.put("voice", voiceName);
+            inputBuilder.voice(voiceName);
         }
         if (options != null && options.getLanguage() != null) {
-            input.put("language_type", options.getLanguage());
+            inputBuilder.languageType(options.getLanguage());
         }
-        requestMap.put("input", input);
 
-        // Parameters - contains audio format settings
-        Map<String, Object> parameters = new HashMap<>();
+        DashScopeTTSRequest.Builder requestBuilder =
+                DashScopeTTSRequest.builder().model(modelName).input(inputBuilder.build());
+
         if (options != null) {
+            DashScopeTTSRequest.TTSParameters.Builder paramsBuilder =
+                    DashScopeTTSRequest.TTSParameters.builder();
             if (options.getSampleRate() != null) {
-                parameters.put("sample_rate", options.getSampleRate());
+                paramsBuilder.sampleRate(options.getSampleRate());
             }
             if (options.getFormat() != null) {
-                parameters.put("format", options.getFormat());
+                paramsBuilder.format(options.getFormat());
             }
             if (options.getSpeed() != null) {
-                parameters.put("rate", options.getSpeed());
+                paramsBuilder.rate(options.getSpeed().doubleValue());
             }
             if (options.getVolume() != null) {
-                parameters.put("volume", options.getVolume());
+                paramsBuilder.volume(options.getVolume().intValue());
             }
             if (options.getPitch() != null) {
-                parameters.put("pitch", options.getPitch());
+                paramsBuilder.pitch(options.getPitch().doubleValue());
+            }
+            DashScopeTTSRequest.TTSParameters params = paramsBuilder.build();
+            // Only add parameters if at least one is set
+            if (params.getSampleRate() != null
+                    || params.getFormat() != null
+                    || params.getRate() != null
+                    || params.getVolume() != null
+                    || params.getPitch() != null) {
+                requestBuilder.parameters(params);
             }
         }
-        if (!parameters.isEmpty()) {
-            requestMap.put("parameters", parameters);
-        }
 
-        return objectMapper.writeValueAsString(requestMap);
+        DashScopeTTSRequest request = requestBuilder.build();
+        return JsonUtils.getJsonCodec().toJson(request);
     }
 
     /**
@@ -273,7 +289,7 @@ public class DashScopeTTSModel implements TTSModel {
         log.debug("DashScope TTS raw response: {}", responseBody);
 
         try {
-            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode root = getObjectMapper().readTree(responseBody);
 
             // Check for errors
             if (root.has("code") && !root.get("code").isNull()) {

@@ -1,6 +1,6 @@
 # Text-to-Speech (TTS) 语音合成
 
-AgentScope Java 提供了完整的 TTS 能力支持，让 Agent 不仅能"思考和回复"，还能"开口说话"。
+AgentScope Java 提供了完整的 TTS 能力支持，让 Agent 不仅能思考和回复，还能语音播放。
 
 ## 为什么需要 TTS？
 
@@ -44,8 +44,6 @@ AgentScope 提供三种使用 TTS 的方式：
 ReactAgent 推荐用这个方式，支持 ReactAgent 在回复时自动朗读。
 
 ### 本地播放模式（CLI/桌面应用）
-
-使用 WebSocket 实时流式合成，支持"边生成边播放"，延迟最低：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -127,7 +125,7 @@ return sink.asFlux();
 
 ---
 
-## 方式二：TTSModel（独立调用）
+## 方式二：直接调用 TTSModel 和 RealtimeTTSModel
 
 不依赖 Agent，直接调用 TTS 模型进行语音合成。
 

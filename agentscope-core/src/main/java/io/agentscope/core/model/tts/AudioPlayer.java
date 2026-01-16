@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
  * player.start();
  *
  * // Play audio chunks as they arrive
- * ttsModel.push("你好").subscribe(player::play);
+ * ttsModel.push("hello").subscribe(player::play);
  *
  * player.stop();
  * }</pre>

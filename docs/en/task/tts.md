@@ -1,51 +1,51 @@
 # Text-to-Speech (TTS)
 
-AgentScope Java provides comprehensive TTS capabilities, enabling Agents to not only "think and respond" but also "speak aloud."
+AgentScope Java provides comprehensive TTS capabilities, enabling Agents not only to "think and respond" but also to "speak".
 
 ## Why TTS?
 
-Traditional Agent interactions are purely text-based: users input text, and Agents return text. However, in many scenarios, voice is a more natural way to interact:
+Traditional Agent interactions are text-only: users input text, and Agents return text. However, in many scenarios, voice is a more natural interaction method:
 
-- **Customer Service**: Phone/voice customer service scenarios
+- **Intelligent Customer Service**: Phone/voice customer service scenarios
 - **Smart Assistants**: In-car assistants, smart speakers
 - **Accessibility**: Providing voice output for visually impaired users
-- **Real-time Conversations**: Speaking while generating, reducing wait time
+- **Real-time Conversation**: Generate and speak simultaneously, reducing waiting time
 
 ---
 
-## Realtime vs Non-realtime Mode Comparison
+## Real-time vs Non-real-time Mode Comparison
 
 AgentScope provides two TTS modes for different scenarios:
 
-| Dimension | Non-realtime Mode (Batch) | Realtime Mode (Streaming) |
-|-----------|---------------------------|---------------------------|
-| **Interaction Logic** | Send complete text first, wait for server to process entire audio before returning. | Stream and synthesize simultaneously. Send text chunks, server returns audio chunks in real-time. |
-| **Time to First Byte (TTFB)** | Usually takes several seconds (depending on text length), as the model needs to calculate the entire audio. | Usually in milliseconds, users feel almost instant speech. |
+| Dimension | Non-real-time Mode (Batch) | Real-time Mode (Streaming) |
+|-----------|---------------------------|----------------------------|
+| **Interaction Logic** | Send complete text first, wait for server to process entire audio before returning. | Send and synthesize simultaneously. Send text chunks, server returns audio chunks in real-time. |
+| **Time to First Byte (TTFB)** | Usually takes several seconds (depending on text length), as the model needs to compute the entire audio. | Usually in milliseconds, users feel almost instant speech. |
 | **Communication Protocol** | REST (HTTPS) | WebSocket |
-| **Audio Continuity** | Perfect. Model can globally optimize stress, intonation, and emotion for the entire speech. | Good. Although synthesized in chunks, the model maintains context window to preserve naturalness. |
+| **Audio Continuity** | Perfect. The model can globally optimize stress, intonation, and emotion for the entire speech. | Good. Although synthesized in chunks, the model maintains a context window to preserve naturalness. |
 | **Use Cases** | Podcasts, audiobooks, short video dubbing (quality priority). | AI assistants, real-time translation, conversations requiring "speak while generating". |
 | **Corresponding Model** | `qwen3-tts-flash` | `qwen3-tts-flash-realtime` |
 | **Corresponding Class** | `DashScopeTTSModel` | `DashScopeRealtimeTTSModel` |
 
-## Usage Patterns
+## Usage Methods
 
 AgentScope provides three ways to use TTS:
 
-| Pattern | Use Case | Features |
-|---------|----------|----------|
-| **TTSHook** | Auto-speak all Agent responses | Just add TTSHook to enable speak-while-generating |
+| Method | Use Case | Features |
+|--------|----------|----------|
+| **TTSHook** | Automatic speech for all Agent responses | Simply add TTSHook to enable speak-while-generating |
 | **TTSModel** | Standalone speech synthesis | Can be used flexibly without depending on Agent |
-| **DashScopeMultiModalTool** | Agent invokes TTS via tool | Agent decides when to convert text to speech |
+| **DashScopeMultiModalTool** | Agent calls TTS via tool | Agent decides when to convert text to speech |
 
 ---
 
-## Pattern 1: TTSHook (Agent Auto-Speak)
+## Method 1: TTSHook (Automatic Agent Speech)
 
-Recommended for ReActAgent, supports ReActAgent automatically speaking when responding.
+Recommended for ReActAgent, supports automatic speech during ReActAgent responses.
 
-### Local Playback Mode (CLI/Desktop Applications)
+### Local Playback Mode (CLI/Desktop Application)
 
-Uses WebSocket realtime streaming synthesis, supports "speak while generating" with lowest latency:
+Uses WebSocket real-time streaming synthesis, supports "speak while generating" with lowest latency:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -55,10 +55,10 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.tts.AudioPlayer;
 import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
 
-// 1. Create realtime TTS model (WebSocket streaming)
+// 1. Create real-time TTS model (WebSocket streaming)
 DashScopeRealtimeTTSModel ttsModel = DashScopeRealtimeTTSModel.builder()
     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-    .modelName("qwen3-tts-flash-realtime")  // WebSocket realtime model
+    .modelName("qwen3-tts-flash-realtime")  // WebSocket real-time model
     .voice("Cherry")
     .mode(DashScopeRealtimeTTSModel.SessionMode.SERVER_COMMIT)  // Server auto-commit
     .build();
@@ -71,13 +71,13 @@ TTSHook ttsHook = TTSHook.builder()
 // 3. Create Agent with TTS
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
-    .sysPrompt("You are a friendly assistant")
+    .sysPrompt("你是一个友好的助手")
     .model(chatModel)
     .hook(ttsHook)  // Add TTS Hook
     .build();
 
 // 4. Chat with Agent - Agent will speak while generating response
-Msg response = agent.call(Msg.user("Hello, how's the weather today?")).block();
+Msg response = agent.call(Msg.user("你好，今天天气怎么样？")).block();
 ```
 
 ### Server Mode (Web/SSE)
@@ -115,7 +115,7 @@ TTSHook ttsHook = TTSHook.builder()
 // Or use reactive stream
 Flux<AudioBlock> audioStream = ttsHook.getAudioStream();
 audioStream.subscribe(audio -> {
-    // Process audio block, e.g., send to frontend
+    // Process audio blocks, e.g., send to frontend
     if (audio.getSource() instanceof Base64Source src) {
         sendToClient(src.getData());
     }
@@ -127,11 +127,11 @@ return sink.asFlux();
 
 ---
 
-## Pattern 2: TTSModel (Standalone Usage)
+## Method 2: TTSModel (Standalone Call)
 
-Use TTS model directly without depending on Agent.
+Independent of Agent, directly call TTS model for speech synthesis.
 
-### 2.1 Non-realtime Mode
+### 2.1 Non-real-time Mode
 
 Suitable for short text, returns complete audio at once:
 
@@ -154,22 +154,22 @@ TTSOptions options = TTSOptions.builder()
     .format("wav")
     .build();
 
-TTSResponse response = ttsModel.synthesize("Hello, welcome to speech synthesis!", options).block();
+TTSResponse response = ttsModel.synthesize("你好，欢迎使用语音合成功能！", options).block();
 
 // Get audio data
 byte[] audioData = response.getAudioData();
 AudioBlock audioBlock = response.toAudioBlock();
 ```
 
-### 2.2 Realtime Mode - Incremental Input (Push/Finish Pattern)
+### 2.2 Real-time Mode - Incremental Input (Push/Finish Mode)
 
-Suitable for LLM streaming output scenarios, synthesizing while receiving text:
+Suitable for LLM streaming output scenarios, synthesize while receiving text:
 
 ```java
 import io.agentscope.core.model.tts.AudioPlayer;
 import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
 
-// Create realtime TTS model
+// Create real-time TTS model
 DashScopeRealtimeTTSModel ttsModel = DashScopeRealtimeTTSModel.builder()
     .apiKey(apiKey)
     .modelName("qwen3-tts-flash-realtime")
@@ -191,10 +191,10 @@ ttsModel.getAudioStream()
     .doOnNext(audio -> player.play(audio))
     .subscribe();
 
-// 3. Push text incrementally (simulating LLM streaming output)
-ttsModel.push("Hello, ");
-ttsModel.push("I am your ");
-ttsModel.push("smart assistant.");
+// 3. Incrementally push text (simulate LLM streaming output)
+ttsModel.push("你好，");
+ttsModel.push("我是你的");
+ttsModel.push("智能助手。");
 
 // 4. End session, wait for all audio to complete
 ttsModel.finish().blockLast();
@@ -203,18 +203,18 @@ ttsModel.finish().blockLast();
 ttsModel.close();
 ```
 
-#### SessionMode Explanation
+#### SessionMode Description
 
 | Mode | Description |
 |------|-------------|
-| `SERVER_COMMIT` | Server automatically commits text buffer for synthesis (recommended) |
-| `COMMIT` | Client must manually call `commitTextBuffer()` to commit |
+| `SERVER_COMMIT` | Server automatically commits text for synthesis (recommended) |
+| `COMMIT` | Client needs to manually call `commitTextBuffer()` to commit |
 
 ---
 
-## Pattern 3: DashScopeMultiModalTool (As Agent Tool)
+## Method 3: DashScopeMultiModalTool (As Agent Tool)
 
-Agent invokes TTS via tool, Agent decides when to convert text to speech:
+Agent calls TTS via tool, Agent decides when to convert text to speech:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -227,22 +227,22 @@ DashScopeMultiModalTool multiModalTool = new DashScopeMultiModalTool(apiKey);
 // 2. Create Agent, register tool
 ReActAgent agent = ReActAgent.builder()
     .name("MultiModalAssistant")
-    .sysPrompt("You are a multimodal assistant. When user asks to read aloud, use dashscope_text_to_audio tool.")
+    .sysPrompt("你是一个多模态助手。当用户要求朗读时，使用 dashscope_text_to_audio 工具。")
     .model(chatModel)
     .tools(multiModalTool)
     .build();
 
 // 3. Agent can actively call TTS tool
-Msg response = agent.call(Msg.user("Please say 'Welcome' in audio")).block();
+Msg response = agent.call(Msg.user("请用语音说一句'欢迎光临'")).block();
 ```
 
 ---
 
 ## Core Components
 
-### 1. DashScopeRealtimeTTSModel (Realtime Mode)
+### 1. DashScopeRealtimeTTSModel (Real-time Mode)
 
-WebSocket realtime streaming synthesis model:
+WebSocket real-time streaming synthesis model:
 
 ```java
 DashScopeRealtimeTTSModel ttsModel = DashScopeRealtimeTTSModel.builder()
@@ -261,13 +261,13 @@ DashScopeRealtimeTTSModel ttsModel = DashScopeRealtimeTTSModel.builder()
 | Method | Description |
 |--------|-------------|
 | `startSession()` | Establish WebSocket connection |
-| `push(text)` | Push text incrementally |
+| `push(text)` | Incrementally push text |
 | `finish()` | End input, get remaining audio |
 | `getAudioStream()` | Get audio stream (asynchronous reception) |
 | `synthesizeStream(text)` | One-time streaming synthesis |
 | `close()` | Close connection |
 
-### 2. DashScopeTTSModel (Non-realtime Mode)
+### 2. DashScopeTTSModel (Non-real-time Mode)
 
 Standard HTTP mode TTS model:
 
@@ -281,14 +281,14 @@ DashScopeTTSModel ttsModel = DashScopeTTSModel.builder()
 
 ### 3. TTSHook
 
-Used to integrate TTS capability into Agent:
+Used to integrate TTS capabilities into Agent:
 
 ```java
 TTSHook ttsHook = TTSHook.builder()
     .ttsModel(ttsModel)           // TTS model (required)
     .audioPlayer(audioPlayer)     // Local player (optional)
     .audioCallback(callback)      // Audio callback (optional, for server mode)
-    .realtimeMode(true)           // Realtime mode (default true)
+    .realtimeMode(true)           // Real-time mode (default true)
     .autoStartPlayer(true)        // Auto-start player (default true)
     .build();
 ```
@@ -312,18 +312,18 @@ AudioPlayer player = AudioPlayer.builder()
 ## Supported Models
 
 | Model Name | Type | Protocol | Features |
-|------------|------|----------|----------|
-| `qwen3-tts-flash` | Non-realtime | HTTP | One-time input, streaming output, fast |
-| `qwen3-tts-flash-realtime` | Realtime | WebSocket | Streaming I/O, lowest latency |
-| `qwen3-tts-vd-realtime` | Realtime | WebSocket | Supports voice design (create voice via text description) |
-| `qwen3-tts-vc-realtime` | Realtime | WebSocket | Supports voice cloning (based on audio samples) |
+|------------|------|-----------|----------|
+| `qwen3-tts-flash` | Non-real-time | HTTP | One-time input, streaming output, fast |
+| `qwen3-tts-flash-realtime` | Real-time | WebSocket | Streaming input + output, lowest latency |
+| `qwen3-tts-vd-realtime` | Real-time | WebSocket | Supports voice design (create voice via text description) |
+| `qwen3-tts-vc-realtime` | Real-time | WebSocket | Supports voice cloning (based on audio samples) |
 
 ---
 
 ## Complete Examples
 
-- Quick start: `agentscope-examples/quickstart/TTSExample.java`
-- Complete example: `agentscope-examples/chat-tts` module, includes frontend and backend interaction
+- Quick Start: `agentscope-examples/quickstart/TTSExample.java`
+- Complete Example: `agentscope-examples/chat-tts` module, includes frontend and backend interaction
 
 ---
 
@@ -353,8 +353,8 @@ AudioPlayer player = AudioPlayer.builder()
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| ttsModel | TTSModel/RealtimeTTSModel | - | TTS model (required) |
+| ttsModel | DashScopeRealtimeTTSModel | - | TTS model (required) |
 | audioPlayer | AudioPlayer | null | Local player (optional) |
 | audioCallback | Consumer<AudioBlock> | null | Audio callback (optional) |
-| realtimeMode | boolean | true | Whether to enable realtime mode |
+| realtimeMode | boolean | true | Whether to enable real-time mode |
 | autoStartPlayer | boolean | true | Whether to auto-start player |

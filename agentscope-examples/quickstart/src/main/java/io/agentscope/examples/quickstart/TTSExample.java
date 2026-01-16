@@ -159,7 +159,7 @@ public class TTSExample {
 
         // 7. Clean up
         try {
-            Thread.sleep(3000); // Wait for audio to finish
+            Thread.sleep(4000); // Wait for audio to finish
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
