@@ -15,6 +15,15 @@
  */
 package io.agentscope.core.agui.adapter;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -27,22 +36,12 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for AguiAgentAdapter.
@@ -519,9 +518,7 @@ class AguiAgentAdapterTest {
                 Msg.builder()
                         .id(msgId)
                         .role(MsgRole.ASSISTANT)
-                        .content(
-                                List.of(
-                                        TextBlock.builder().text("first part").build()))
+                        .content(List.of(TextBlock.builder().text("first part").build()))
                         .build();
 
         Msg toolCall1 =
@@ -539,9 +536,7 @@ class AguiAgentAdapterTest {
                 Msg.builder()
                         .id(msgId)
                         .role(MsgRole.ASSISTANT)
-                        .content(
-                                List.of(
-                                        TextBlock.builder().text("last part").build()))
+                        .content(List.of(TextBlock.builder().text("last part").build()))
                         .build();
 
         Event firstEvent = new Event(EventType.REASONING, firstMsg, false);
@@ -565,10 +560,11 @@ class AguiAgentAdapterTest {
         long textEndCount =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.TextMessageEnd)
-                        .filter(e -> {
-                            AguiEvent.TextMessageEnd end = (AguiEvent.TextMessageEnd) e;
-                            return msgId.equals(end.messageId());
-                        })
+                        .filter(
+                                e -> {
+                                    AguiEvent.TextMessageEnd end = (AguiEvent.TextMessageEnd) e;
+                                    return msgId.equals(end.messageId());
+                                })
                         .count();
         assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
     }
