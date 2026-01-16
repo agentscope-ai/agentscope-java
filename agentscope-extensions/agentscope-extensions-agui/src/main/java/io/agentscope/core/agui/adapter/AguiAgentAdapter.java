@@ -150,10 +150,12 @@ public class AguiAgentAdapter {
                                             state.threadId, state.runId, messageId, text));
                         } else {
                             // End message if this is the last event
-                            events.add(
-                                    new AguiEvent.TextMessageEnd(
-                                            state.threadId, state.runId, messageId));
-                            state.endMessage(messageId);
+                            if (!state.hasEndedMessage(messageId)) {
+                                events.add(
+                                        new AguiEvent.TextMessageEnd(
+                                                state.threadId, state.runId, messageId));
+                                state.endMessage(messageId);
+                            }
                         }
                     }
                 } else if (block instanceof ToolUseBlock toolUse) {

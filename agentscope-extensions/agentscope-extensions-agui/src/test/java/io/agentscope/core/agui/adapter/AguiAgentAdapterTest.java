@@ -15,15 +15,6 @@
  */
 package io.agentscope.core.agui.adapter;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -36,12 +27,22 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for AguiAgentAdapter.
@@ -507,5 +508,68 @@ class AguiAgentAdapterTest {
                 .expectNextMatches(e -> e instanceof AguiEvent.TextMessageEnd)
                 .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
                 .verifyComplete();
+    }
+
+    @Test
+    void testTextMessageEndNotDuplicatedWhenLastEventAfterToolCall() {
+        // Test that when a text message is interrupted by a tool call and then the last event
+        // contains text blocks with the same message ID, only one TextMessageEnd is emitted
+        String msgId = "msg-text";
+        Msg firstMsg =
+                Msg.builder()
+                        .id(msgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("first part").build()))
+                        .build();
+
+        Msg toolCall1 =
+                Msg.builder()
+                        .id("msg-tc")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("tool")
+                                        .input(Map.of())
+                                        .build())
+                        .build();
+        Msg lastMsg =
+                Msg.builder()
+                        .id(msgId)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("last part").build()))
+                        .build();
+
+        Event firstEvent = new Event(EventType.REASONING, firstMsg, false);
+        Event toolCallEvent = new Event(EventType.REASONING, toolCall1, false);
+        Event lastEvent = new Event(EventType.REASONING, lastMsg, true);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(firstEvent, toolCallEvent, lastEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have exactly one TextMessageEnd for the same message ID
+        long textEndCount =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageEnd)
+                        .filter(e -> {
+                            AguiEvent.TextMessageEnd end = (AguiEvent.TextMessageEnd) e;
+                            return msgId.equals(end.messageId());
+                        })
+                        .count();
+        assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
     }
 }
