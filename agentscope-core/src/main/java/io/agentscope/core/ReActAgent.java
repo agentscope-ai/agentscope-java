@@ -657,7 +657,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         (ctx, chunk) -> {
                             List<Msg> streamedMessages = ctx.processChunk(chunk);
                             for (Msg streamedMessage : streamedMessages) {
-                                notifySummaryChunk(streamedMessage, ctx, generateOptions).subscribe();
+                                notifySummaryChunk(streamedMessage, ctx, generateOptions)
+                                        .subscribe();
                             }
                             return ctx;
                         })
