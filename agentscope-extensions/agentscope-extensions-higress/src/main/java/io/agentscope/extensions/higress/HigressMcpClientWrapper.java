@@ -20,6 +20,8 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -185,8 +187,13 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                             })
                     .doOnNext(
                             tools -> {
-                                // Cache tools locally
-                                tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+                                // Cache tools locally - build new map then atomically replace
+                                Map<String, McpSchema.Tool> newTools =
+                                        tools.stream()
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                McpSchema.Tool::name, t -> t));
+                                cachedTools = new ConcurrentHashMap<>(newTools);
                             });
         } else {
             // Return all tools from delegate
@@ -194,8 +201,13 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                     .listTools()
                     .doOnNext(
                             tools -> {
-                                // Cache tools locally
-                                tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+                                // Cache tools locally - build new map then atomically replace
+                                Map<String, McpSchema.Tool> newTools =
+                                        tools.stream()
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                McpSchema.Tool::name, t -> t));
+                                cachedTools = new ConcurrentHashMap<>(newTools);
                                 logger.debug(
                                         "Higress MCP client '{}' discovered {} tools",
                                         name,
@@ -305,7 +317,7 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
         }
 
         this.initialized = false;
-        this.cachedTools.clear();
+        this.cachedTools = new ConcurrentHashMap<>();
     }
 
     /**

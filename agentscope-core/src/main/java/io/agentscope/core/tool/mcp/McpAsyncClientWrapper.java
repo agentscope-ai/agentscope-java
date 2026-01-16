@@ -19,6 +19,7 @@ import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -71,13 +72,13 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      *
      * @param tools the new list of tools from the server (empty list clears cache)
      */
-    synchronized void updateCachedTools(List<McpSchema.Tool> tools) {
+    void updateCachedTools(List<McpSchema.Tool> tools) {
         if (tools != null) {
-            // Build new map first, then atomically replace
+            // Build new map first, then atomically replace via volatile assignment
             Map<String, McpSchema.Tool> newTools =
-                    tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
-            cachedTools.clear();
-            cachedTools.putAll(newTools);
+                    tools.stream()
+                            .collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
+            cachedTools = new ConcurrentHashMap<>(newTools);
             logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
         }
     }
@@ -117,8 +118,14 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                                     "MCP client '{}' discovered {} tools",
                                     name,
                                     result.tools().size());
-                            // Cache all tools
-                            result.tools().forEach(tool -> cachedTools.put(tool.name(), tool));
+                            // Cache all tools - build new map then atomically replace
+                            Map<String, McpSchema.Tool> newTools =
+                                    result.tools()
+                                            .stream()
+                                            .collect(
+                                                    Collectors.toMap(
+                                                            McpSchema.Tool::name, t -> t));
+                            cachedTools = new ConcurrentHashMap<>(newTools);
                         })
                 .doOnSuccess(v -> initialized = true)
                 .doOnError(e -> logger.error("Failed to initialize MCP client: {}", name, e))
@@ -216,6 +223,6 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
             }
         }
         initialized = false;
-        cachedTools.clear();
+        cachedTools = new ConcurrentHashMap<>();
     }
 }
