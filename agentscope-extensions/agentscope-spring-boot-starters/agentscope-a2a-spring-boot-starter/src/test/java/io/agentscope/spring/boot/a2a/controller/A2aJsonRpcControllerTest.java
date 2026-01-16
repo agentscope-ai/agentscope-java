@@ -29,12 +29,8 @@ import io.a2a.spec.SendStreamingMessageResponse;
 import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.Map;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -143,8 +139,8 @@ class A2aJsonRpcControllerTest {
             String responseBody = "{\"result\": \"success\"}";
 
             // Mock headers
-            Map<String, String> header = Map.of("Content-Type", "application/json",
-                    "Authorization", "Bearer token");
+            Map<String, String> header =
+                    Map.of("Content-Type", "application/json", "Authorization", "Bearer token");
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
