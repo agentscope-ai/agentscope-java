@@ -76,9 +76,7 @@ public class OllamaResponseParser {
                             argumentsJson = JsonUtils.getJsonCodec().toJson(input);
                         }
                         contentBlocks.add(
-                                new ToolUseBlock(
-                                        callId, fn.getName(), input, argumentsJson, null // metadata
-                                        ));
+                                new ToolUseBlock(callId, fn.getName(), input, argumentsJson, null));
                     }
                 }
             }
