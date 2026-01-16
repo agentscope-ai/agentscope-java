@@ -380,7 +380,7 @@ class McpClientBuilderTest {
     void testSseTransport_WithCompleteConfiguration() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token");
-        headers.put("X-Client-Version", "1.0.7-SNAPSHOT");
+        headers.put("X-Client-Version", "1.0.8-SNAPSHOT");
 
         McpClientBuilder builder =
                 McpClientBuilder.create("full-sse-client")
@@ -961,5 +961,228 @@ class McpClientBuilderTest {
         String url = "https://example.com/api/";
         String endpoint = invokeExtractEndpoint(url);
         assertEquals("/api/", endpoint);
+    }
+
+    // ==================== HTTP Client Customization Tests ====================
+
+    @Test
+    void testCustomizeSseClient_WithValidCustomizer() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("custom-sse-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    // Customize HTTP client (e.g., set HTTP/2, timeouts, etc.)
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("custom-sse-client", wrapper.getName());
+    }
+
+    @Test
+    void testCustomizeSseClient_MultipleCustomizations() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("multi-custom-sse")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                })
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    // Second customization should also be applied
+                                    clientBuilder.followRedirects(
+                                            java.net.http.HttpClient.Redirect.NORMAL);
+                                })
+                        .header("Authorization", "Bearer token")
+                        .queryParam("tenant", "test");
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeSseClient_OnStdioTransport_ShouldBeIgnored() {
+        // Customizing SSE client on stdio transport should not cause errors (just ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("stdio-client")
+                        .stdioTransport("python", "-m", "mcp_server_time")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeSseClient_OnStreamableHttpTransport_ShouldBeIgnored() {
+        // Customizing SSE client on streamable http transport should not cause errors (just
+        // ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-client")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeStreamableHttpClient_WithValidCustomizer() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("custom-http-client")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    // Customize HTTP client
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(15));
+                                });
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertEquals("custom-http-client", wrapper.getName());
+    }
+
+    @Test
+    void testCustomizeStreamableHttpClient_MultipleCustomizations() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("multi-custom-http")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                })
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder.followRedirects(
+                                            java.net.http.HttpClient.Redirect.ALWAYS);
+                                })
+                        .header("X-API-Key", "secret")
+                        .queryParam("version", "v1");
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeStreamableHttpClient_OnStdioTransport_ShouldBeIgnored() {
+        // Customizing streamable http client on stdio transport should not cause errors (just
+        // ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("stdio-client")
+                        .stdioTransport("python", "server.py")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeStreamableHttpClient_OnSseTransport_ShouldBeIgnored() {
+        // Customizing streamable http client on SSE transport should not cause errors (just
+        // ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("sse-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder.connectTimeout(Duration.ofSeconds(10));
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeSseClient_WithHttp2() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http2-sse-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2);
+                                });
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCustomizeStreamableHttpClient_WithHttp2() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http2-streamable-client")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2);
+                                });
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testCompleteConfiguration_WithClientCustomization() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", "Bearer token123");
+        headers.put("X-Client-Version", "1.0.7");
+
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("tenant", "acme");
+        queryParams.put("env", "production");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("fully-configured-client")
+                        .sseTransport("https://mcp.example.com/api/sse")
+                        .customizeSseClient(
+                                clientBuilder -> {
+                                    clientBuilder
+                                            .version(java.net.http.HttpClient.Version.HTTP_2)
+                                            .connectTimeout(Duration.ofSeconds(10))
+                                            .followRedirects(
+                                                    java.net.http.HttpClient.Redirect.NORMAL);
+                                })
+                        .headers(headers)
+                        .queryParams(queryParams)
+                        .timeout(Duration.ofSeconds(120))
+                        .initializationTimeout(Duration.ofSeconds(45));
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("fully-configured-client", wrapper.getName());
+    }
+
+    @Test
+    void testFluentApi_AllFeaturesCombined() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("all-features-client")
+                        .streamableHttpTransport("https://mcp.higress.ai/mcp/http?base=param")
+                        .customizeStreamableHttpClient(
+                                clientBuilder -> {
+                                    clientBuilder
+                                            .connectTimeout(Duration.ofSeconds(15))
+                                            .version(java.net.http.HttpClient.Version.HTTP_1_1);
+                                })
+                        .header("Authorization", "Bearer secret-token")
+                        .header("X-Request-ID", "req-12345")
+                        .queryParam("tenant", "my-tenant")
+                        .queryParam("version", "v2")
+                        .timeout(Duration.ofMinutes(3))
+                        .initializationTimeout(Duration.ofSeconds(60));
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertEquals("all-features-client", wrapper.getName());
+        assertFalse(wrapper.isInitialized());
     }
 }

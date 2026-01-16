@@ -84,7 +84,7 @@ public interface LongTermMemory {
      * @param msgs List of messages to record (null entries are filtered out)
      * @return A Mono that completes when recording is finished
      */
-    public abstract Mono<Void> record(List<Msg> msgs);
+    Mono<Void> record(List<Msg> msgs);
 
     /**
      * Retrieves relevant information from long-term memory based on the input message.
@@ -103,5 +103,5 @@ public interface LongTermMemory {
      * @param msg The message to use as a query for memory retrieval
      * @return A Mono emitting the retrieved memory text (may be empty)
      */
-    public abstract Mono<String> retrieve(Msg msg);
+    Mono<String> retrieve(Msg msg);
 }

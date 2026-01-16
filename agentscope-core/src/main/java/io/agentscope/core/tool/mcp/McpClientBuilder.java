@@ -28,6 +28,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -35,6 +36,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
@@ -137,6 +139,30 @@ public class McpClientBuilder {
     }
 
     /**
+     * Customizes the HTTP client for SSE transport (only applicable after calling sseTransport).
+     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts, SSL settings, etc.
+     *
+     * <p>Example usage for HTTP/2:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .sseTransport("https://example.com/sse")
+     *     .customizeSseClient(clientBuilder ->
+     *         clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
+     *     .buildAsync()
+     *     .block();
+     * }</pre>
+     *
+     * @param customizer consumer to customize the HttpClient.Builder
+     * @return this builder
+     */
+    public McpClientBuilder customizeSseClient(Consumer<HttpClient.Builder> customizer) {
+        if (transportConfig instanceof SseTransportConfig) {
+            ((SseTransportConfig) transportConfig).customizeHttpClient(customizer);
+        }
+        return this;
+    }
+
+    /**
      * Configures HTTP StreamableHTTP transport for stateless connections.
      *
      * @param url the server URL
@@ -144,6 +170,30 @@ public class McpClientBuilder {
      */
     public McpClientBuilder streamableHttpTransport(String url) {
         this.transportConfig = new StreamableHttpTransportConfig(url);
+        return this;
+    }
+
+    /**
+     * Customizes the HTTP client for StreamableHTTP transport (only applicable after calling streamableHttpTransport).
+     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts, SSL settings, etc.
+     *
+     * <p>Example usage for HTTP/2:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .streamableHttpTransport("https://example.com/http")
+     *     .customizeStreamableHttpClient(clientBuilder ->
+     *         clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
+     *     .buildAsync()
+     *     .block();
+     * }</pre>
+     *
+     * @param customizer consumer to customize the HttpClient.Builder
+     * @return this builder
+     */
+    public McpClientBuilder customizeStreamableHttpClient(Consumer<HttpClient.Builder> customizer) {
+        if (transportConfig instanceof StreamableHttpTransportConfig) {
+            ((StreamableHttpTransportConfig) transportConfig).customizeHttpClient(customizer);
+        }
         return this;
     }
 
@@ -248,7 +298,7 @@ public class McpClientBuilder {
                             new McpSchema.Implementation(
                                     "agentscope-java",
                                     "AgentScope Java Framework",
-                                    "1.0.7-SNAPSHOT");
+                                    "1.0.8-SNAPSHOT");
 
                     McpSchema.ClientCapabilities clientCapabilities =
                             McpSchema.ClientCapabilities.builder().build();
@@ -279,7 +329,7 @@ public class McpClientBuilder {
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", "1.0.7-SNAPSHOT");
+                        "agentscope-java", "AgentScope Java Framework", "1.0.8-SNAPSHOT");
 
         McpSchema.ClientCapabilities clientCapabilities =
                 McpSchema.ClientCapabilities.builder().build();
@@ -434,6 +484,7 @@ public class McpClientBuilder {
 
     private static class SseTransportConfig extends HttpTransportConfig {
         private HttpClientSseClientTransport.Builder clientTransportBuilder = null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
 
         public SseTransportConfig(String url) {
             super(url);
@@ -444,11 +495,21 @@ public class McpClientBuilder {
             this.clientTransportBuilder = clientTransportBuilder;
         }
 
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
+            this.httpClientCustomizer = customizer;
+        }
+
         @Override
         public McpClientTransport createTransport() {
             if (clientTransportBuilder == null) {
                 clientTransportBuilder = HttpClientSseClientTransport.builder(url);
             }
+
+            // Apply HTTP client customization if provided
+            if (httpClientCustomizer != null) {
+                clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
             clientTransportBuilder.sseEndpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
@@ -464,6 +525,7 @@ public class McpClientBuilder {
 
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
         private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
 
         public StreamableHttpTransportConfig(String url) {
             super(url);
@@ -474,11 +536,21 @@ public class McpClientBuilder {
             this.clientTransportBuilder = clientTransportBuilder;
         }
 
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
+            this.httpClientCustomizer = customizer;
+        }
+
         @Override
         public McpClientTransport createTransport() {
             if (clientTransportBuilder == null) {
                 clientTransportBuilder = HttpClientStreamableHttpTransport.builder(url);
             }
+
+            // Apply HTTP client customization if provided
+            if (httpClientCustomizer != null) {
+                clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
             clientTransportBuilder.endpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
