@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.7-SNAPSHOT</revision>
+        <revision>1.0.8-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -74,9 +74,9 @@
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.34.0</google-genai.version>
+        <google-genai.version>1.35.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.5</dashscope-sdk-java.version>
-        <bailian.version>2.6.2</bailian.version>
+        <bailian.version>2.7.1</bailian.version>
         <openai-java.version>4.15.0</openai-java.version>
         <anthropic.version>2.11.1</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
@@ -84,6 +84,8 @@
         <qdrant.version>1.16.2</qdrant.version>
         <milvus.version>2.6.12</milvus.version>
         <elasticsearch.version>8.12.0</elasticsearch.version>
+        <postgresql.version>42.7.9</postgresql.version>
+        <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <tika.version>3.2.3</tika.version>
@@ -98,7 +100,7 @@
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.2</spring.version>
+        <spring.version>7.0.3</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
@@ -262,6 +264,20 @@
                 <groupId>io.milvus</groupId>
                 <artifactId>milvus-sdk-java</artifactId>
                 <version>${milvus.version}</version>
+            </dependency>
+
+            <!-- PostgreSQL JDBC Driver -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+
+            <!-- pgvector Java SDK for PostgreSQL vector extension -->
+            <dependency>
+                <groupId>com.pgvector</groupId>
+                <artifactId>pgvector</artifactId>
+                <version>${pgvector.version}</version>
             </dependency>
 
             <!-- Apache PDFBox for PDF document processing -->

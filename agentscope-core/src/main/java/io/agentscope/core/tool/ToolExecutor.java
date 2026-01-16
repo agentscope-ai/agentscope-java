@@ -19,6 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
 import java.util.HashMap;
@@ -56,6 +57,7 @@ class ToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
 
+    private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
@@ -67,22 +69,25 @@ class ToolExecutor {
      * Create a tool executor with Reactor Schedulers (recommended).
      */
     ToolExecutor(
+            Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
             ToolkitConfig config,
             ToolMethodInvoker methodInvoker) {
-        this(toolRegistry, groupManager, config, methodInvoker, null);
+        this(toolkit, toolRegistry, groupManager, config, methodInvoker, null);
     }
 
     /**
      * Create a tool executor with custom executor service.
      */
     ToolExecutor(
+            Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
             ToolkitConfig config,
             ToolMethodInvoker methodInvoker,
             ExecutorService executorService) {
+        this.toolkit = toolkit;
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;
         this.config = config;
@@ -107,7 +112,7 @@ class ToolExecutor {
      * @return Mono containing execution result
      */
     Mono<ToolResultBlock> execute(ToolCallParam param) {
-        return executeCore(param);
+        return TracerRegistry.get().callTool(this.toolkit, param, () -> executeCore(param));
     }
 
     /**

@@ -19,6 +19,11 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
@@ -29,6 +34,8 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -114,11 +121,47 @@ public class JdkHttpTransport implements HttpTransport {
                 sslContext.init(
                         null, new TrustManager[] {new TrustAllManager()}, new SecureRandom());
                 builder.sslContext(sslContext);
-                log.warn(
-                        "SSL certificate verification is disabled. "
-                                + "This should only be used for testing.");
+                log.error(
+                        "SSL certificate verification has been disabled for this WebSocket client."
+                            + " This configuration must only be used for local development or"
+                            + " testing with self-signed certificates. Do not disable SSL"
+                            + " verification in production environments, as it exposes connections"
+                            + " to man-in-the-middle attacks.");
             } catch (NoSuchAlgorithmException | KeyManagementException e) {
                 throw new HttpTransportException("Failed to create insecure SSL context", e);
+            }
+        }
+
+        // Configure proxy
+        if (config.getProxyConfig() != null) {
+            ProxyConfig proxyConfig = config.getProxyConfig();
+
+            if (proxyConfig.getNonProxyHosts() != null
+                    && !proxyConfig.getNonProxyHosts().isEmpty()) {
+                builder.proxy(new NonProxyHostsSelector(proxyConfig));
+            } else {
+                builder.proxy(
+                        ProxySelector.of(
+                                new InetSocketAddress(
+                                        proxyConfig.getHost(), proxyConfig.getPort())));
+            }
+
+            // Note: JDK HttpClient does not support SOCKS5 authentication directly.
+            // For HTTP proxy authentication, use Authenticator.
+            if (proxyConfig.hasAuthentication() && proxyConfig.getType() == ProxyType.HTTP) {
+                final String username = proxyConfig.getUsername();
+                final String password = proxyConfig.getPassword();
+                builder.authenticator(
+                        new java.net.Authenticator() {
+                            @Override
+                            protected PasswordAuthentication getPasswordAuthentication() {
+                                if (getRequestorType() == RequestorType.PROXY) {
+                                    return new PasswordAuthentication(
+                                            username, password.toCharArray());
+                                }
+                                return null;
+                            }
+                        });
             }
         }
 
@@ -422,6 +465,35 @@ public class JdkHttpTransport implements HttpTransport {
         @Override
         public X509Certificate[] getAcceptedIssuers() {
             return new X509Certificate[0];
+        }
+    }
+
+    /**
+     * ProxySelector that respects non-proxy hosts configuration.
+     */
+    private static class NonProxyHostsSelector extends ProxySelector {
+        private final ProxyConfig proxyConfig;
+        private final List<Proxy> proxyList;
+
+        NonProxyHostsSelector(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            this.proxyList = Collections.singletonList(proxyConfig.toJavaProxy());
+        }
+
+        @Override
+        public List<Proxy> select(URI uri) {
+            if (uri == null || uri.getHost() == null) {
+                return proxyList;
+            }
+            if (proxyConfig.shouldBypass(uri.getHost())) {
+                return Collections.singletonList(Proxy.NO_PROXY);
+            }
+            return proxyList;
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed: uri={}, address={}", uri, sa, ioe);
         }
     }
 }
