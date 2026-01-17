@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +129,9 @@ public class AguiAgentAdapter {
         EventType type = event.getType();
 
         if (type == EventType.REASONING) {
+            boolean hasToolUseBlock =
+                    msg.getContent().stream().anyMatch(block -> block instanceof ToolUseBlock);
+
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -171,6 +175,7 @@ public class AguiAgentAdapter {
                     if (toolCallId == null) {
                         toolCallId = UUID.randomUUID().toString();
                     }
+                    state.cacheToolUseBlock(toolUse);
 
                     if (!state.hasStartedToolCall(toolCallId)) {
                         events.add(
@@ -199,6 +204,34 @@ public class AguiAgentAdapter {
                 if (block instanceof ToolResultBlock toolResult) {
                     String toolCallId = toolResult.getId();
                     String result = extractToolResultText(toolResult);
+
+                    boolean hasStarted = state.hasStartedToolCall(toolCallId);
+                    if (!hasStarted) {
+                        ToolUseBlock toolUse = state.getToolUseBlock(toolCallId);
+                        if (toolUse != null) {
+                            events.add(
+                                    new AguiEvent.ToolCallStart(
+                                            state.threadId,
+                                            state.runId,
+                                            toolCallId,
+                                            toolUse.getName()));
+                            state.startToolCall(toolCallId);
+
+                            if (config.isEmitToolCallArgs()) {
+                                String args = toolUse.getContent();
+                                if (args != null && !args.isEmpty()) {
+                                    events.add(
+                                            new AguiEvent.ToolCallArgs(
+                                                    state.threadId, state.runId, toolCallId, args));
+                                }
+                            }
+                        } else {
+                            events.add(
+                                    new AguiEvent.ToolCallStart(
+                                            state.threadId, state.runId, toolCallId, "unknown"));
+                            state.startToolCall(toolCallId);
+                        }
+                    }
 
                     // Ensure ToolCallEnd is emitted to close arguments phase
                     events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
@@ -302,9 +335,21 @@ public class AguiAgentAdapter {
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
         private String currentTextMessageId = null;
 
+        private final Map<String, ToolUseBlock> toolUseBlocks = new HashMap<>();
+
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
             this.runId = runId;
+        }
+
+        void cacheToolUseBlock(ToolUseBlock toolUse) {
+            if (toolUse.getId() != null) {
+                toolUseBlocks.put(toolUse.getId(), toolUse);
+            }
+        }
+
+        ToolUseBlock getToolUseBlock(String toolCallId) {
+            return toolUseBlocks.get(toolCallId);
         }
 
         boolean hasStartedMessage(String messageId) {
