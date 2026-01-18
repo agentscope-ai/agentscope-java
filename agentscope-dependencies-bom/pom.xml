@@ -96,7 +96,7 @@
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
-        <jedis.version>7.2.0</jedis.version>
+        <jedis.version>7.2.1</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.3</spring.version>
