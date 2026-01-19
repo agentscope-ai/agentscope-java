@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.formatter.dashscope.dto.DashScopeResponseFormat;
 import java.time.Duration;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -82,7 +81,6 @@ class GenerateOptionsTest {
     @Test
     @DisplayName("Should support builder method chaining")
     void testBuilderChaining() {
-        DashScopeResponseFormat responseFormat = DashScopeResponseFormat.builder().build();
         GenerateOptions.Builder builder = GenerateOptions.builder();
 
         GenerateOptions options =
@@ -91,12 +89,10 @@ class GenerateOptionsTest {
                         .maxTokens(2048)
                         .frequencyPenalty(0.2)
                         .presencePenalty(0.3)
-                        .responseFormat(responseFormat)
                         .build();
 
         assertNotNull(options);
         assertEquals(0.7, options.getTemperature());
-        assertEquals(responseFormat, options.getResponseFormat());
     }
 
     @Test

@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
 import io.agentscope.core.message.ToolUseBlock;
@@ -107,14 +106,12 @@ class DashScopeToolsHelperComprehensiveTest {
     @Test
     void testApplyOptionsWithAllOptions() {
         DashScopeParameters params = DashScopeParameters.builder().build();
-        DashScopeResponseFormat responseFormat = DashScopeResponseFormat.builder().build();
         GenerateOptions options =
                 GenerateOptions.builder()
                         .temperature(0.8)
                         .topP(0.9)
                         .maxTokens(1024)
                         .thinkingBudget(500)
-                        .responseFormat(responseFormat)
                         .build();
 
         helper.applyOptions(params, options, null);
@@ -123,7 +120,6 @@ class DashScopeToolsHelperComprehensiveTest {
         assertEquals(0.9, params.getTopP());
         assertEquals(1024, params.getMaxTokens());
         assertEquals(500, params.getThinkingBudget());
-        assertEquals(responseFormat, params.getResponseFormat());
         assertTrue(params.getEnableThinking());
     }
 

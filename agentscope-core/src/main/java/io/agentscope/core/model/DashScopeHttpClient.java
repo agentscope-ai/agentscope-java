@@ -477,8 +477,7 @@ public class DashScopeHttpClient {
 
         // Deserialize to Map, merge additional params, re-serialize
         Map<String, Object> bodyMap =
-                JsonUtils.getJsonCodec()
-                        .fromJson(requestBody, new TypeReference<Map<String, Object>>() {});
+                JsonUtils.getJsonCodec().fromJson(requestBody, new TypeReference<>() {});
         bodyMap.putAll(additionalBodyParams);
         requestBody = JsonUtils.getJsonCodec().toJson(bodyMap);
 

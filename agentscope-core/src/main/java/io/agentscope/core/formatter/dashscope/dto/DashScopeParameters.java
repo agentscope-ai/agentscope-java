@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.dashscope.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.agentscope.core.formatter.ResponseFormat;
 import java.util.List;
 
 /**
@@ -96,7 +97,7 @@ public class DashScopeParameters {
 
     /** The configuration for the llm response format. */
     @JsonProperty("response_format")
-    DashScopeResponseFormat responseFormat;
+    ResponseFormat responseFormat;
 
     public DashScopeParameters() {}
 
@@ -228,11 +229,11 @@ public class DashScopeParameters {
         this.repetitionPenalty = repetitionPenalty;
     }
 
-    public DashScopeResponseFormat getResponseFormat() {
+    public ResponseFormat getResponseFormat() {
         return responseFormat;
     }
 
-    public void setResponseFormat(DashScopeResponseFormat responseFormat) {
+    public void setResponseFormat(ResponseFormat responseFormat) {
         this.responseFormat = responseFormat;
     }
 
@@ -318,7 +319,7 @@ public class DashScopeParameters {
             return this;
         }
 
-        public Builder responseFormat(DashScopeResponseFormat responseFormat) {
+        public Builder responseFormat(ResponseFormat responseFormat) {
             params.setResponseFormat(responseFormat);
             return this;
         }

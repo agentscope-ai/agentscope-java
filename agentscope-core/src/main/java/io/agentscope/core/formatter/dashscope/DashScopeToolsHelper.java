@@ -17,7 +17,6 @@ package io.agentscope.core.formatter.dashscope;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeToolFunction;
@@ -96,12 +95,6 @@ public class DashScopeToolsHelper {
                 getOption(options, defaultOptions, GenerateOptions::getPresencePenalty);
         if (presencePenalty != null) {
             params.setPresencePenalty(presencePenalty);
-        }
-
-        DashScopeResponseFormat responseFormat =
-                getOption(options, defaultOptions, GenerateOptions::getResponseFormat);
-        if (responseFormat != null) {
-            params.setResponseFormat(responseFormat);
         }
     }
 
