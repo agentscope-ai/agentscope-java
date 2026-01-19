@@ -16,7 +16,9 @@
 package io.agentscope.core.rag.reader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -54,7 +56,7 @@ class ReaderInputTest {
 
     @Test
     @DisplayName("Should create ReaderInput from file path")
-    void testFromFilePath() throws IOException {
+    void testFromFilePathString() throws IOException {
         Path testFile = tempDir.resolve("test.txt");
         String content = "Test file content";
         Files.writeString(testFile, content);
@@ -67,7 +69,7 @@ class ReaderInputTest {
 
     @Test
     @DisplayName("Should create ReaderInput from Path")
-    void testFromPath() throws IOException {
+    void testFromFilePath() throws IOException {
         Path testFile = tempDir.resolve("test.txt");
         String content = "Test file content";
         Files.writeString(testFile, content);
@@ -104,5 +106,36 @@ class ReaderInputTest {
         assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromFile((String) null));
         assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromFile((Path) null));
         assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromFile((File) null));
+    }
+
+    @Test
+    @DisplayName("Should create ReaderInput from file path")
+    void testFromPath() {
+        ReaderInput input = ReaderInput.fromPath(Path.of("src/test/resources/rag-test.docx"));
+        assertNotNull(input);
+        assertEquals(ReaderInput.InputType.FILE, input.getType());
+        assertTrue(input.asString().contains("src/test/resources/rag-test.docx"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when path is invalid")
+    void testFromPathWithInvalidPath() {
+        assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromPath((String) null));
+        assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromPath("/not/exist/path"));
+        assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromPath(""));
+        assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromPath("  "));
+        assertThrows(IllegalArgumentException.class, () -> ReaderInput.fromPath((Path) null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReaderInput.fromPath(Path.of("/not/exist/path")));
+    }
+
+    @Test
+    @DisplayName("Should create ReaderInput from file path string")
+    void testFromPathString() {
+        ReaderInput input = ReaderInput.fromPath("src/test/resources/rag-test.docx");
+        assertNotNull(input);
+        assertEquals(ReaderInput.InputType.FILE, input.getType());
+        assertTrue(input.asString().contains("src/test/resources/rag-test.docx"));
     }
 }

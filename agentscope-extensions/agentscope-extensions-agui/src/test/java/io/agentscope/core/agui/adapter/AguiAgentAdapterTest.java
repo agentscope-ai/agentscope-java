@@ -181,6 +181,7 @@ class AguiAgentAdapterTest {
                                         .id("tc-1")
                                         .name("get_weather")
                                         .input(Map.of("city", "Beijing"))
+                                        .content("{\"city\":\"Beijing\"}")
                                         .build())
                         .build();
 
@@ -267,7 +268,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Find ToolCallEnd (triggered by tool result)
+        // Find ToolCallEnd (triggered before result)
         AguiEvent.ToolCallEnd toolEnd =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.ToolCallEnd)
@@ -277,6 +278,19 @@ class AguiAgentAdapterTest {
 
         assertNotNull(toolEnd, "Should have ToolCallEnd");
         assertEquals("tc-1", toolEnd.toolCallId());
+        // ToolCallEnd no longer carries result
+
+        // Find ToolCallResult (triggered by tool result)
+        AguiEvent.ToolCallResult toolResult =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallResult)
+                        .map(e -> (AguiEvent.ToolCallResult) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResult, "Should have ToolCallResult");
+        assertEquals("tc-1", toolResult.toolCallId());
+        assertEquals("4", toolResult.content());
     }
 
     @Test

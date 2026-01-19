@@ -223,7 +223,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
                 Files.createDirectories(skillDir);
 
                 // Generate SKILL.md with YAML frontmatter
-                Map<String, Object> metadata = new LinkedHashMap<>();
+                Map<String, String> metadata = new LinkedHashMap<>();
                 metadata.put("name", skill.getName());
                 metadata.put("description", skill.getDescription());
 

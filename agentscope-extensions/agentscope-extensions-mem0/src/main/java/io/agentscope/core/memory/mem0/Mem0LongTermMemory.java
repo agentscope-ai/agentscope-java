@@ -18,6 +18,7 @@ package io.agentscope.core.memory.mem0;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
@@ -34,6 +35,7 @@ import reactor.core.publisher.Mono;
  *   <li>Semantic memory search using vector embeddings
  *   <li>LLM-powered memory extraction and inference
  *   <li>Multi-tenant memory isolation (agent, user, run)
+ *   <li>Custom metadata support for tagging and filtering memories
  *   <li>Automatic fallback mechanisms to ensure reliable memory storage
  *   <li>Reactive, non-blocking operations
  * </ul>
@@ -44,6 +46,7 @@ import reactor.core.publisher.Mono;
  *   <li><b>agentId:</b> Identifies the agent (optional)</li>
  *   <li><b>userId:</b> Identifies the user/workspace (optional)</li>
  *   <li><b>runId:</b> Identifies the session/run (optional)</li>
+ *   <li><b>metadata:</b> Custom key-value pairs for additional filtering (optional)</li>
  * </ul>
  * At least one identifier is required. During retrieval, only memories with matching
  * metadata are returned.
@@ -53,7 +56,7 @@ import reactor.core.publisher.Mono;
  * // Create memory instance with authentication
  * Mem0LongTermMemory memory = Mem0LongTermMemory.builder()
  *     .agentName("Assistant")
- *     .userName("user_123")
+ *     .userId("user_123")
  *     .apiBaseUrl("http://localhost:8000")
  *     .apiKey(System.getenv("MEM0_API_KEY"))
  *     .build();
@@ -61,19 +64,31 @@ import reactor.core.publisher.Mono;
  * // For local deployments without authentication
  * Mem0LongTermMemory localMemory = Mem0LongTermMemory.builder()
  *     .agentName("Assistant")
- *     .userName("user_123")
+ *     .userId("user_123")
  *     .apiBaseUrl("http://localhost:8000")
  *     .build();
  *
  * // For self-hosted Mem0
  * Mem0LongTermMemory selfHostedMemory = Mem0LongTermMemory.builder()
  *     .agentName("Assistant")
- *     .userName("user_123")
+ *     .userId("user_123")
  *     .apiBaseUrl("http://localhost:8000")
  *     .apiType(Mem0ApiType.SELF_HOSTED)  // Specify self-hosted API type
  *     .build();
  *
- * // Record a message
+ * // With custom metadata for filtering
+ * Map<String, Object> metadata = new HashMap<>();
+ * metadata.put("category", "travel");
+ * metadata.put("project_id", "proj_001");
+ *
+ * Mem0LongTermMemory memoryWithMetadata = Mem0LongTermMemory.builder()
+ *     .agentName("Assistant")
+ *     .userId("user_123")
+ *     .apiBaseUrl("http://localhost:8000")
+ *     .metadata(metadata)  // Custom metadata for storage and filtering
+ *     .build();
+ *
+ * // Record a message (metadata will be stored with the memory)
  * Msg msg = Msg.builder()
  *     .role(MsgRole.USER)
  *     .content("I prefer homestays when traveling")
@@ -81,7 +96,7 @@ import reactor.core.publisher.Mono;
  *
  * memory.record(List.of(msg)).block();
  *
- * // Retrieve relevant memories
+ * // Retrieve relevant memories (metadata will be used as filter)
  * Msg query = Msg.builder()
  *     .role(MsgRole.USER)
  *     .content("What are my travel preferences?")
@@ -102,6 +117,24 @@ public class Mem0LongTermMemory implements LongTermMemory {
     private final String runId;
 
     /**
+     * Custom metadata to be stored with memories and used for filtering during retrieval.
+     *
+     * <p>This metadata is:
+     * <ul>
+     *   <li>Included in the {@code metadata} field when recording memories via {@link #record(List)}</li>
+     *   <li>Added to the {@code filters} field when retrieving memories via {@link #retrieve(Msg)}</li>
+     * </ul>
+     *
+     * <p>Use cases include:
+     * <ul>
+     *   <li>Tagging memories with custom labels (e.g., "category": "travel")</li>
+     *   <li>Filtering memories by project, tenant, or other business attributes</li>
+     *   <li>Storing additional context that should be associated with all memories</li>
+     * </ul>
+     */
+    private final Map<String, Object> metadata;
+
+    /**
      * Private constructor - use Builder instead.
      */
     private Mem0LongTermMemory(Builder builder) {
@@ -110,6 +143,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         this.agentId = builder.agentName;
         this.userId = builder.userId;
         this.runId = builder.runName;
+        this.metadata = builder.metadata;
 
         // Validate that at least one identifier is provided
         if (agentId == null && userId == null && runId == null) {
@@ -158,8 +192,10 @@ public class Mem0LongTermMemory implements LongTermMemory {
         Mem0AddRequest request =
                 Mem0AddRequest.builder()
                         .messages(mem0Messages)
+                        .agentId(agentId)
                         .userId(userId)
                         .runId(runId)
+                        .metadata(metadata)
                         .infer(true)
                         .build();
 
@@ -190,11 +226,30 @@ public class Mem0LongTermMemory implements LongTermMemory {
     /**
      * Builds a search request with the given query.
      *
+     * <p>The search request includes:
+     * <ul>
+     *   <li>Standard filters: userId, agentId, runId (added by builder convenience methods)</li>
+     *   <li>Custom metadata filters: merged into filters via builder.getFilters()</li>
+     * </ul>
+     *
      * @param query The search query string
      * @return A configured Mem0SearchRequest for v2 API
      */
     private Mem0SearchRequest buildSearchRequest(String query) {
-        return Mem0SearchRequest.builder().query(query).userId(userId).runId(runId).topK(5).build();
+        Mem0SearchRequest.Builder builder =
+                Mem0SearchRequest.builder()
+                        .query(query)
+                        .userId(userId)
+                        .agentId(agentId)
+                        .runId(runId)
+                        .topK(5);
+
+        // Merge custom metadata into filters if present
+        if (metadata != null && !metadata.isEmpty()) {
+            builder.getFilters().putAll(metadata);
+        }
+
+        return builder.build();
     }
 
     /**
@@ -255,6 +310,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         private String apiKey;
         private Mem0ApiType apiType;
         private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
+        private Map<String, Object> metadata;
 
         /**
          * Sets the agent name identifier.
@@ -331,6 +387,37 @@ public class Mem0LongTermMemory implements LongTermMemory {
          */
         public Builder apiType(Mem0ApiType apiType) {
             this.apiType = apiType;
+            return this;
+        }
+
+        /**
+         * Sets custom metadata to be stored with memories and used for filtering.
+         *
+         * <p>This metadata will be:
+         * <ul>
+         *   <li>Included in the request body when recording memories</li>
+         *   <li>Added to the filters when searching/retrieving memories</li>
+         * </ul>
+         *
+         * <p>Example usage:
+         * <pre>{@code
+         * Map<String, Object> metadata = new HashMap<>();
+         * metadata.put("category", "travel");
+         * metadata.put("priority", "high");
+         *
+         * Mem0LongTermMemory memory = Mem0LongTermMemory.builder()
+         *     .agentName("Assistant")
+         *     .userId("user_123")
+         *     .apiBaseUrl("http://localhost:8000")
+         *     .metadata(metadata)
+         *     .build();
+         * }</pre>
+         *
+         * @param metadata Custom metadata map (can be null)
+         * @return This builder
+         */
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
             return this;
         }
 

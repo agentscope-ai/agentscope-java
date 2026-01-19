@@ -22,9 +22,12 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreActingEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
@@ -619,6 +622,50 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     protected Mono<Msg> summarizing() {
         log.debug("Maximum iterations reached. Generating summary...");
 
+        List<Msg> messageList = prepareSummaryMessages();
+        GenerateOptions generateOptions = buildGenerateOptions();
+
+        return notifyPreSummaryHook(messageList, generateOptions)
+                .flatMap(
+                        preSummaryEvent -> {
+                            List<Msg> effectiveMessages = preSummaryEvent.getInputMessages();
+                            GenerateOptions effectiveOptions =
+                                    preSummaryEvent.getEffectiveGenerateOptions();
+
+                            return streamAndAccumulateSummary(effectiveMessages, effectiveOptions)
+                                    .flatMap(
+                                            msg ->
+                                                    notifyPostSummaryHook(msg, effectiveOptions)
+                                                            .map(
+                                                                    postEvent -> {
+                                                                        Msg finalMsg =
+                                                                                postEvent
+                                                                                        .getSummaryMessage();
+                                                                        memory.addMessage(finalMsg);
+                                                                        return finalMsg;
+                                                                    }));
+                        })
+                .onErrorResume(this::handleSummaryError);
+    }
+
+    private Mono<Msg> streamAndAccumulateSummary(
+            List<Msg> messages, GenerateOptions generateOptions) {
+        return model.stream(messages, null, generateOptions)
+                .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
+                .reduce(
+                        new ReasoningContext(getName()),
+                        (ctx, chunk) -> {
+                            List<Msg> streamedMessages = ctx.processChunk(chunk);
+                            for (Msg streamedMessage : streamedMessages) {
+                                notifySummaryChunk(streamedMessage, ctx, generateOptions)
+                                        .subscribe();
+                            }
+                            return ctx;
+                        })
+                .map(ReasoningContext::buildFinalMessage);
+    }
+
+    private List<Msg> prepareSummaryMessages() {
         List<Msg> messageList = prepareMessages();
         messageList.add(
                 Msg.builder()
@@ -632,67 +679,29 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                     + " summarizing the current situation.")
                                         .build())
                         .build());
+        return messageList;
+    }
 
-        return model.stream(messageList, null, buildGenerateOptions())
-                .concatMap(chunk -> checkInterruptedAsync().thenReturn(chunk))
-                .reduce(
-                        new ReasoningContext(getName()),
-                        (ctx, chunk) -> {
-                            ctx.processChunk(chunk);
-                            return ctx;
-                        })
-                .map(ReasoningContext::buildFinalMessage)
-                .flatMap(
-                        msg -> {
-                            if (msg != null) {
-                                memory.addMessage(msg);
-                                return Mono.just(msg);
-                            }
-                            Msg fallback =
-                                    Msg.builder()
-                                            .name(getName())
-                                            .role(MsgRole.ASSISTANT)
-                                            .content(
-                                                    TextBlock.builder()
-                                                            .text(
-                                                                    String.format(
-                                                                            "Maximum iterations"
-                                                                                + " (%d) reached."
-                                                                                + " Unable to"
-                                                                                + " generate"
-                                                                                + " summary.",
-                                                                            maxIters))
-                                                            .build())
-                                            .build();
-                            memory.addMessage(fallback);
-                            return Mono.just(fallback);
-                        })
-                .onErrorResume(
-                        error -> {
-                            if (error instanceof InterruptedException) {
-                                return Mono.error(error);
-                            }
-                            log.error("Error generating summary", error);
-                            Msg errorMsg =
-                                    Msg.builder()
-                                            .name(getName())
-                                            .role(MsgRole.ASSISTANT)
-                                            .content(
-                                                    TextBlock.builder()
-                                                            .text(
-                                                                    String.format(
-                                                                            "Maximum iterations"
-                                                                                + " (%d) reached."
-                                                                                + " Error"
-                                                                                + " generating"
-                                                                                + " summary: %s",
-                                                                            maxIters,
-                                                                            error.getMessage()))
-                                                            .build())
-                                            .build();
-                            memory.addMessage(errorMsg);
-                            return Mono.just(errorMsg);
-                        });
+    private Mono<Msg> handleSummaryError(Throwable error) {
+        if (error instanceof InterruptedException) {
+            return Mono.error(error);
+        }
+        log.error("Error generating summary", error);
+        Msg errorMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                String.format(
+                                                        "Maximum iterations (%d) reached."
+                                                                + " Error generating summary: %s",
+                                                        maxIters, error.getMessage()))
+                                        .build())
+                        .build();
+        memory.addMessage(errorMsg);
+        return Mono.just(errorMsg);
     }
 
     // ==================== Helper Methods ====================
@@ -783,7 +792,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        ActingChunkEvent event = new ActingChunkEvent(this, toolkit, toolUse, chunk);
+        ActingChunkEvent event =
+                new ActingChunkEvent(
+                        this,
+                        toolkit,
+                        toolUse,
+                        chunk.withIdAndName(toolUse.getId(), toolUse.getName()));
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
@@ -818,6 +832,48 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             this, model.getModelName(), null, chunkMsg, accumulated);
+            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+        }
+
+        return Mono.empty();
+    }
+
+    // ==================== Summary Hook Notification Methods ====================
+
+    private Mono<PreSummaryEvent> notifyPreSummaryHook(
+            List<Msg> msgs, GenerateOptions generateOptions) {
+        return notifyHooks(
+                new PreSummaryEvent(
+                        this, model.getModelName(), generateOptions, msgs, maxIters, maxIters));
+    }
+
+    private Mono<PostSummaryEvent> notifyPostSummaryHook(Msg msg, GenerateOptions generateOptions) {
+        return notifyHooks(new PostSummaryEvent(this, model.getModelName(), generateOptions, msg));
+    }
+
+    private Mono<Void> notifySummaryChunk(
+            Msg chunkMsg, ReasoningContext context, GenerateOptions generateOptions) {
+        ContentBlock content = chunkMsg.getFirstContentBlock();
+
+        ContentBlock accumulatedContent = null;
+        if (content instanceof TextBlock) {
+            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
+        } else if (content instanceof ThinkingBlock) {
+            accumulatedContent =
+                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
+        }
+
+        if (accumulatedContent != null) {
+            Msg accumulated =
+                    Msg.builder()
+                            .id(chunkMsg.getId())
+                            .name(chunkMsg.getName())
+                            .role(chunkMsg.getRole())
+                            .content(accumulatedContent)
+                            .build();
+            SummaryChunkEvent event =
+                    new SummaryChunkEvent(
+                            this, model.getModelName(), generateOptions, chunkMsg, accumulated);
             return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
         }
 
@@ -913,7 +969,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private RAGMode ragMode = RAGMode.GENERIC;
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
-        private boolean enableOnlyForUserQueries = true;
 
         private Builder() {}
 
@@ -1245,17 +1300,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
-         * Sets whether to enable RAG only for user queries.
-         *
-         * @param enableOnlyForUserQueries If true, RAG is only triggered for user messages
-         * @return This builder instance for method chaining
-         */
-        public Builder enableOnlyForUserQueries(boolean enableOnlyForUserQueries) {
-            this.enableOnlyForUserQueries = enableOnlyForUserQueries;
-            return this;
-        }
-
-        /**
          * Sets the tool execution context for this agent.
          *
          * <p>This context will be passed to all tools invoked by this agent and can include
@@ -1358,8 +1402,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case GENERIC -> {
                     // Create and add GenericRAGHook
                     GenericRAGHook ragHook =
-                            new GenericRAGHook(
-                                    aggregatedKnowledge, retrieveConfig, enableOnlyForUserQueries);
+                            new GenericRAGHook(aggregatedKnowledge, retrieveConfig);
                     hooks.add(ragHook);
                 }
                 case AGENTIC -> {
@@ -1461,14 +1504,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          *
          * <p>This method automatically:
          * <ul>
-         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
-            agentToolkit.registerTool(skillBox);
+            skillBox.registerSkillLoadTool();
 
             hooks.add(new SkillHook(skillBox));
         }

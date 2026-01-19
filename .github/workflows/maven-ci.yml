@@ -29,6 +29,16 @@ jobs:
           config: .licenserc.yaml
           mode: check
 
+  module-sync:
+    name: "Check Module Sync"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check extension modules are synced to agentscope-all and agentscope-bom
+        run: |
+          chmod +x .github/scripts/check-shade-and-bom-sync.sh
+          ./.github/scripts/check-shade-and-bom-sync.sh
+
   build:
     runs-on: ubuntu-latest
     env:

@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.7-SNAPSHOT</revision>
+        <revision>1.0.8-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -69,22 +69,25 @@
 
         <opentelemetry.version>1.58.0</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
-        <reactor-bom.version>2025.0.1</reactor-bom.version>
+        <reactor-bom.version>2025.0.2</reactor-bom.version>
         <jackson.version>2.20.1</jackson.version>
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.34.0</google-genai.version>
+        <google-genai.version>1.35.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.5</dashscope-sdk-java.version>
-        <bailian.version>2.6.2</bailian.version>
+        <bailian.version>2.7.1</bailian.version>
         <openai-java.version>4.15.0</openai-java.version>
         <anthropic.version>2.11.1</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.11</milvus.version>
+        <milvus.version>2.6.12</milvus.version>
+        <postgresql.version>42.7.9</postgresql.version>
+        <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
+        <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.5.0</mysql.version>
         <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
@@ -96,12 +99,15 @@
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.2</spring.version>
+        <spring.version>7.0.3</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.5</snakeyaml.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
+        <kotlin.version>1.9.24</kotlin.version>
+        <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
 
 
         <spotless.version>3.1.0</spotless.version>
@@ -232,11 +238,39 @@
                 <version>${qdrant.version}</version>
             </dependency>
 
+            <!-- Kotlin Coroutines -->
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-core</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jetbrains.kotlinx</groupId>
+                <artifactId>kotlinx-coroutines-reactor</artifactId>
+                <version>${kotlin.coroutines.version}</version>
+            </dependency>
+
+
             <!-- Milvus Java SDK -->
             <dependency>
                 <groupId>io.milvus</groupId>
                 <artifactId>milvus-sdk-java</artifactId>
                 <version>${milvus.version}</version>
+            </dependency>
+
+            <!-- PostgreSQL JDBC Driver -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+
+            <!-- pgvector Java SDK for PostgreSQL vector extension -->
+            <dependency>
+                <groupId>com.pgvector</groupId>
+                <artifactId>pgvector</artifactId>
+                <version>${pgvector.version}</version>
             </dependency>
 
             <!-- Apache PDFBox for PDF document processing -->
@@ -251,6 +285,18 @@
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+
+            <!-- Apache Tika for document processing -->
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-core</artifactId>
+                <version>${tika.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tika</groupId>
+                <artifactId>tika-parsers-standard-package</artifactId>
+                <version>${tika.version}</version>
             </dependency>
 
             <!-- Socket.IO Client for WebSocket communication -->
@@ -378,6 +424,13 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-module-jackson</artifactId>
                 <version>${jsonschema-generator.version}</version>
+            </dependency>
+
+            <!-- Apache Commons Lang3 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
