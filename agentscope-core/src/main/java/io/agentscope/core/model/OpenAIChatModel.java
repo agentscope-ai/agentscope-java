@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
+import io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
@@ -122,8 +123,7 @@ public class OpenAIChatModel extends ChatModelBase {
         // This ensures token usage information is available in the final response chunk
         // Required by OpenAI-compatible APIs like DashScope, Bailian, etc.
         if (stream) {
-            requestBuilder.streamOptions(
-                    new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
+            requestBuilder.streamOptions(new OpenAIStreamOptions(true));
         }
 
         OpenAIRequest request = requestBuilder.build();

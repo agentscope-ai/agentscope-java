@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.ConnectionPool;
@@ -162,7 +163,7 @@ public class OkHttpTransport implements HttpTransport {
      *
      * @return the SSL socket factory
      */
-    private static javax.net.ssl.SSLSocketFactory createTrustAllSslSocketFactory() {
+    private static SSLSocketFactory createTrustAllSslSocketFactory() {
         try {
             SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init(

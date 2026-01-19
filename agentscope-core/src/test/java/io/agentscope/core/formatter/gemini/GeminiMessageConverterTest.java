@@ -435,7 +435,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert ImageBlock to inline data part")
     void testConvertImageBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake image".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
 
         ImageBlock imageBlock =
                 ImageBlock.builder()
@@ -461,7 +461,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert AudioBlock to inline data part")
     void testConvertAudioBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake audio".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake audio".getBytes());
 
         AudioBlock audioBlock =
                 AudioBlock.builder()
@@ -484,7 +484,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert VideoBlock to inline data part")
     void testConvertVideoBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake video".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake video".getBytes());
 
         VideoBlock videoBlock =
                 VideoBlock.builder()
@@ -548,7 +548,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should handle mixed content types")
     void testMixedContentTypes() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake image".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
 
         Msg msg =
                 Msg.builder()

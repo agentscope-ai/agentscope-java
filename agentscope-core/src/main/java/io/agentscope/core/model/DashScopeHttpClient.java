@@ -29,9 +29,11 @@ import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.StringJoiner;
+import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -507,7 +509,7 @@ public class DashScopeHttpClient {
             String inputJson = JsonUtils.getJsonCodec().toJson(inputObj);
 
             // Generate AES key and IV for this request
-            javax.crypto.SecretKey aesSecretKey = DashScopeEncryptionUtils.generateAesSecretKey();
+            SecretKey aesSecretKey = DashScopeEncryptionUtils.generateAesSecretKey();
             byte[] iv = DashScopeEncryptionUtils.generateIv();
 
             // Encrypt input
@@ -538,7 +540,7 @@ public class DashScopeHttpClient {
      */
     private String buildEncryptionHeader(EncryptionContext context) {
         try {
-            String ivBase64 = java.util.Base64.getEncoder().encodeToString(context.iv);
+            String ivBase64 = Base64.getEncoder().encodeToString(context.iv);
 
             // Build header JSON: {"public_key_id": "...", "encrypt_key": "...", "iv": "..."}
             Map<String, String> headerMap = new HashMap<>();
@@ -596,11 +598,11 @@ public class DashScopeHttpClient {
      * Internal class to store encryption context (AES key, IV, and encrypted AES key).
      */
     private static class EncryptionContext {
-        final javax.crypto.SecretKey secretKey;
+        final SecretKey secretKey;
         final byte[] iv;
         final String encryptedAesKey;
 
-        EncryptionContext(javax.crypto.SecretKey secretKey, byte[] iv, String encryptedAesKey) {
+        EncryptionContext(SecretKey secretKey, byte[] iv, String encryptedAesKey) {
             this.secretKey = secretKey;
             this.iv = iv;
             this.encryptedAesKey = encryptedAesKey;

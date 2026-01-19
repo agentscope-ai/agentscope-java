@@ -29,13 +29,19 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import okhttp3.mockwebserver.Dispatcher;
@@ -364,7 +370,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        Map<String, String> additionalHeaders = new HashMap<>();
         additionalHeaders.put("X-Custom-Header", "custom-value");
         additionalHeaders.put("X-Request-Id", "req-123");
 
@@ -384,7 +390,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        java.util.Map<String, String> queryParams = new java.util.HashMap<>();
+        Map<String, String> queryParams = new HashMap<>();
         queryParams.put("param1", "value1");
         queryParams.put("param2", "value2");
 
@@ -405,7 +411,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        java.util.Map<String, Object> bodyParams = new java.util.HashMap<>();
+        Map<String, Object> bodyParams = new HashMap<>();
         bodyParams.put("custom_field", "custom_value");
         bodyParams.put("extra_option", 123);
 
@@ -427,7 +433,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "text/event-stream"));
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        Map<String, String> additionalHeaders = new HashMap<>();
         additionalHeaders.put("X-Stream-Header", "stream-value");
 
         client.stream(request, additionalHeaders, null, null).blockLast();
@@ -455,7 +461,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "text/event-stream"));
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
-        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        Map<String, String> additionalHeaders = new HashMap<>();
         additionalHeaders.put("X-Stream-Header", "stream-value");
 
         Flux<DashScopeResponse> response = client.stream(request, additionalHeaders, null, null);
@@ -483,7 +489,7 @@ class DashScopeHttpClientTest {
 
         DashScopeRequest request = createTestRequest("qwen-plus", "test");
         // Override the Content-Type header
-        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        Map<String, String> additionalHeaders = new HashMap<>();
         additionalHeaders.put("Content-Type", "application/json; charset=utf-8");
 
         client.call(request, additionalHeaders, null, null);
@@ -640,8 +646,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        io.agentscope.core.model.transport.OkHttpTransport transport =
-                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+        OkHttpTransport transport = OkHttpTransport.builder().build();
 
         try {
             DashScopeHttpClient.PublicKeyResult result =
@@ -679,8 +684,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        io.agentscope.core.model.transport.OkHttpTransport transport =
-                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+        OkHttpTransport transport = OkHttpTransport.builder().build();
 
         try {
             DashScopeHttpClient.DashScopeHttpException exception =
@@ -706,8 +710,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "text/plain"));
 
         String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        io.agentscope.core.model.transport.OkHttpTransport transport =
-                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+        OkHttpTransport transport = OkHttpTransport.builder().build();
 
         try {
             DashScopeHttpClient.DashScopeHttpException exception =
@@ -739,8 +742,7 @@ class DashScopeHttpClientTest {
                         .setHeader("Content-Type", "application/json"));
 
         String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        io.agentscope.core.model.transport.OkHttpTransport transport =
-                io.agentscope.core.model.transport.OkHttpTransport.builder().build();
+        OkHttpTransport transport = OkHttpTransport.builder().build();
 
         try {
             DashScopeHttpClient.DashScopeHttpException exception =
@@ -768,12 +770,11 @@ class DashScopeHttpClientTest {
     @Test
     void testEncryptionEnabled() throws Exception {
         // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
@@ -788,12 +789,11 @@ class DashScopeHttpClientTest {
 
     @Test
     void testEncryptionEnabledWithNullPublicKeyId() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient clientWithNullId =
                 DashScopeHttpClient.builder()
@@ -821,12 +821,11 @@ class DashScopeHttpClientTest {
 
     @Test
     void testEncryptionEnabledWithEmptyPublicKeyId() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient clientWithEmptyId =
                 DashScopeHttpClient.builder()
@@ -854,12 +853,11 @@ class DashScopeHttpClientTest {
 
     @Test
     void testBuilderWithEncryption() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         DashScopeHttpClient encryptedClient =
                 DashScopeHttpClient.builder()
@@ -875,12 +873,11 @@ class DashScopeHttpClientTest {
     @Test
     void testEncryptRequestBody() throws Exception {
         // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         // Create encrypted client
         DashScopeHttpClient encryptedClient =
@@ -957,7 +954,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponse() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1013,12 +1010,11 @@ class DashScopeHttpClientTest {
     @Test
     void testBuildEncryptionHeader() throws Exception {
         // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         // Create encrypted client
         DashScopeHttpClient encryptedClient =
@@ -1087,7 +1083,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testCallWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1139,7 +1135,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testStreamWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1250,7 +1246,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testEncryptionHeaderAbsentWhenNoInput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1292,7 +1288,7 @@ class DashScopeHttpClientTest {
         // This test now validates: if there is no encryption context for this request,
         // encrypted output will be left as-is and deserialized as null output (graceful behavior).
 
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1306,7 +1302,7 @@ class DashScopeHttpClientTest {
 
         // Server returns an encrypted output string, but request has no input -> client has no
         // context
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
+        SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
         String originalOutputJson = "{\"choices\":[]}";
         String encryptedOutput =
@@ -1340,7 +1336,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponseWithNonStringOutput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1414,8 +1410,8 @@ class DashScopeHttpClientTest {
                 .build();
     }
 
-    private java.security.KeyPair generateRsaKeyPair() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+    private KeyPair generateRsaKeyPair() throws Exception {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         return keyGen.generateKeyPair();
     }
@@ -1425,14 +1421,14 @@ class DashScopeHttpClientTest {
         return Base64.getDecoder().decode(headerMap.get("iv"));
     }
 
-    private SecretKey extractAesKeyFromRequest(
-            RecordedRequest request, java.security.PrivateKey privateKey) throws Exception {
+    private SecretKey extractAesKeyFromRequest(RecordedRequest request, PrivateKey privateKey)
+            throws Exception {
         Map<String, String> headerMap = parseEncryptionHeader(request);
         String encryptedKeyBase64 = headerMap.get("encrypt_key");
         byte[] encryptedKeyBytes = Base64.getDecoder().decode(encryptedKeyBase64);
 
-        javax.crypto.Cipher rsaCipher = javax.crypto.Cipher.getInstance("RSA");
-        rsaCipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+        Cipher rsaCipher = Cipher.getInstance("RSA");
+        rsaCipher.init(Cipher.DECRYPT_MODE, privateKey);
         byte[] decrypted = rsaCipher.doFinal(encryptedKeyBytes);
 
         String base64AesKey = new String(decrypted, StandardCharsets.UTF_8);

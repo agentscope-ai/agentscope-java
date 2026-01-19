@@ -15,6 +15,7 @@
  */
 package io.agentscope.quarkus.deployment;
 
+import io.quarkus.deployment.annotations.BuildProducer;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -36,8 +37,7 @@ class AgentScopeProcessorSimpleTest {
         Assertions.assertNotNull(AgentScopeProcessor.class.getDeclaredMethod("feature"));
         Assertions.assertNotNull(
                 AgentScopeProcessor.class.getDeclaredMethod(
-                        "registerForReflection",
-                        io.quarkus.deployment.annotations.BuildProducer.class));
+                        "registerForReflection", BuildProducer.class));
     }
 
     @Test

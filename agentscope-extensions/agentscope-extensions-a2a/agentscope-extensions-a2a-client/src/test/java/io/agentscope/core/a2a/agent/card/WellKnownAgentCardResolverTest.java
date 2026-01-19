@@ -22,6 +22,7 @@ import static org.mockito.Mockito.mock;
 
 import io.a2a.A2A;
 import io.a2a.spec.AgentCard;
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -194,7 +195,7 @@ class WellKnownAgentCardResolverTest {
 
     private <T> T getFieldValue(Object obj, String fieldName, Class<T> fieldType) throws Exception {
         Class<?> clazz = obj.getClass();
-        java.lang.reflect.Field field = clazz.getDeclaredField(fieldName);
+        Field field = clazz.getDeclaredField(fieldName);
         field.setAccessible(true);
         return fieldType.cast(field.get(obj));
     }

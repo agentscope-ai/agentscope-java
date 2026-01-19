@@ -23,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
+import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -178,8 +179,7 @@ class StudioClientTest {
         mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
 
         // Use a Map instead of Object for JSON serialization
-        java.util.Map<String, Object> schema =
-                java.util.Map.of("type", "object", "properties", java.util.Map.of());
+        Map<String, Object> schema = Map.of("type", "object", "properties", Map.of());
 
         Mono<String> result = client.requestUserInput("agent-123", "TestAgent", schema);
 

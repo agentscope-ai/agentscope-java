@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
@@ -28,6 +29,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
+import java.net.http.HttpRequest;
+import java.net.http.HttpRequest.BodyPublisher;
+import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
@@ -152,7 +157,7 @@ public class JdkHttpTransport implements HttpTransport {
                 final String username = proxyConfig.getUsername();
                 final String password = proxyConfig.getPassword();
                 builder.authenticator(
-                        new java.net.Authenticator() {
+                        new Authenticator() {
                             @Override
                             protected PasswordAuthentication getPasswordAuthentication() {
                                 if (getRequestorType() == RequestorType.PROXY) {
@@ -197,7 +202,7 @@ public class JdkHttpTransport implements HttpTransport {
 
         // Check status code and read error body immediately when CompletableFuture completes
         // to avoid stream being closed before we can read it
-        CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
+        CompletableFuture<HttpResponse<InputStream>> future =
                 client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
                         .thenApply(
                                 response -> {
@@ -239,7 +244,7 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     private Flux<String> processStreamResponse(
-            java.net.http.HttpResponse<InputStream> response, HttpRequest request) {
+            HttpResponse<InputStream> response, HttpRequest request) {
         InputStream inputStream = response.body();
         if (inputStream == null) {
             return Flux.empty();
@@ -309,7 +314,7 @@ public class JdkHttpTransport implements HttpTransport {
         return closed.get();
     }
 
-    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request) {
+    private HttpRequest buildJdkRequest(HttpRequest request) {
         URI uri;
         try {
             uri = URI.create(request.getUrl());
@@ -317,8 +322,7 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
         }
 
-        var builder =
-                java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
+        var builder = HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.header(header.getKey(), header.getValue());
@@ -347,13 +351,13 @@ public class JdkHttpTransport implements HttpTransport {
         return builder.build();
     }
 
-    private java.net.http.HttpRequest.BodyPublisher bodyPublisher(String body) {
+    private BodyPublisher bodyPublisher(String body) {
         return body != null
-                ? java.net.http.HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)
-                : java.net.http.HttpRequest.BodyPublishers.noBody();
+                ? BodyPublishers.ofString(body, StandardCharsets.UTF_8)
+                : BodyPublishers.noBody();
     }
 
-    private HttpResponse buildHttpResponse(java.net.http.HttpResponse<String> response) {
+    private HttpResponse buildHttpResponse(HttpResponse<String> response) {
         HttpResponse.Builder builder =
                 HttpResponse.builder().statusCode(response.statusCode()).body(response.body());
 

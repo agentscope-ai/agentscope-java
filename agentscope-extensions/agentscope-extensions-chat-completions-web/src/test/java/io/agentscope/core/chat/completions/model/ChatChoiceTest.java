@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -122,7 +123,7 @@ class ChatChoiceTest {
             ChatChoice choice = new ChatChoice();
             ChatMessage delta = new ChatMessage();
             delta.setRole("assistant");
-            delta.setToolCalls(java.util.List.of(new ToolCall("call-1", "func", "{}")));
+            delta.setToolCalls(List.of(new ToolCall("call-1", "func", "{}")));
 
             choice.setDelta(delta);
 
@@ -158,7 +159,6 @@ class ChatChoiceTest {
             ChatChoice choice1 = new ChatChoice();
             choice1.setIndex(0);
             assertEquals(0, choice1.getIndex());
-
             ChatChoice choice2 = new ChatChoice();
             choice2.setIndex(1);
             assertEquals(1, choice2.getIndex());

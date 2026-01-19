@@ -176,7 +176,7 @@ public final class ThinkingBlock extends ContentBlock {
         public Builder signature(String signature) {
             if (signature != null) {
                 if (this.metadata == null) {
-                    this.metadata = new java.util.HashMap<>();
+                    this.metadata = new HashMap<>();
                 }
                 this.metadata.put(METADATA_THOUGHT_SIGNATURE, signature);
             }

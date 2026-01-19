@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.pipeline.FanoutPipeline;
@@ -101,7 +102,7 @@ class PipelineE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
+    @MethodSource("ProviderFactory#getBasicProviders")
     @DisplayName("Should execute sequential pipeline using utility method")
     void testSequentialPipelineUtility(ModelProvider provider) {
         System.out.println(
@@ -230,10 +231,7 @@ class PipelineE2ETest {
     @DisplayName("Should broadcast messages in MsgHub")
     void testMsgHubBroadcast(ModelProvider provider) {
         assumeTrue(
-                provider.getCapabilities()
-                        .contains(
-                                io.agentscope.core.e2e.providers.ModelCapability
-                                        .MULTI_AGENT_FORMATTER),
+                provider.getCapabilities().contains(ModelCapability.MULTI_AGENT_FORMATTER),
                 "Skipping: "
                         + provider.getProviderName()
                         + " does not support multi-agent formatter");
@@ -287,10 +285,7 @@ class PipelineE2ETest {
     @DisplayName("Should handle dynamic participant addition in MsgHub")
     void testMsgHubDynamicParticipants(ModelProvider provider) {
         assumeTrue(
-                provider.getCapabilities()
-                        .contains(
-                                io.agentscope.core.e2e.providers.ModelCapability
-                                        .MULTI_AGENT_FORMATTER),
+                provider.getCapabilities().contains(ModelCapability.MULTI_AGENT_FORMATTER),
                 "Skipping: "
                         + provider.getProviderName()
                         + " does not support multi-agent formatter");

@@ -39,6 +39,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -280,7 +281,7 @@ class AutoContextHookTest {
                                     ToolUseBlock.builder()
                                             .name("test_tool")
                                             .id("call_" + i)
-                                            .input(new java.util.HashMap<>())
+                                            .input(new HashMap<>())
                                             .build())
                             .build());
             compressionMemory.addMessage(

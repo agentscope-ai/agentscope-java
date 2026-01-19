@@ -25,6 +25,7 @@ import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -339,7 +340,7 @@ class GenericRAGHookTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }

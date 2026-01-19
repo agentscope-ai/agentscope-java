@@ -18,9 +18,18 @@ package io.agentscope.core.studio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 @DisplayName("StudioUserAgent Tests")
 class StudioUserAgentTest {
@@ -139,21 +148,20 @@ class StudioUserAgentTest {
     @DisplayName("observe(Msg) should return empty Mono")
     void testObserveMsg() {
         StudioUserAgent agent = StudioUserAgent.builder().name("User").build();
-        io.agentscope.core.message.Msg msg =
-                io.agentscope.core.message.Msg.builder()
+        Msg msg =
+                Msg.builder()
                         .name("test")
-                        .role(io.agentscope.core.message.MsgRole.USER)
-                        .content(
-                                io.agentscope.core.message.TextBlock.builder().text("test").build())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
                         .build();
-        reactor.test.StepVerifier.create(agent.observe(msg)).verifyComplete();
+        StepVerifier.create(agent.observe(msg)).verifyComplete();
     }
 
     @Test
     @DisplayName("observe(List<Msg>) should return empty Mono")
     void testObserveMsgs() {
         StudioUserAgent agent = StudioUserAgent.builder().name("User").build();
-        reactor.test.StepVerifier.create(agent.observe(java.util.List.of())).verifyComplete();
+        StepVerifier.create(agent.observe(List.of())).verifyComplete();
     }
 
     @Test
@@ -167,12 +175,11 @@ class StudioUserAgentTest {
     @DisplayName("interrupt(Msg) should be no-op")
     void testInterruptWithMsg() {
         StudioUserAgent agent = StudioUserAgent.builder().name("User").build();
-        io.agentscope.core.message.Msg msg =
-                io.agentscope.core.message.Msg.builder()
+        Msg msg =
+                Msg.builder()
                         .name("test")
-                        .role(io.agentscope.core.message.MsgRole.USER)
-                        .content(
-                                io.agentscope.core.message.TextBlock.builder().text("test").build())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("test").build())
                         .build();
         agent.interrupt(msg); // Should not throw
     }
@@ -197,20 +204,18 @@ class StudioUserAgentTest {
     @DisplayName("call(Msg) should use terminal input when Studio not configured")
     void testCallWithTerminalInput() throws Exception {
         String testInput = "test input";
-        java.io.StringReader stringReader = new java.io.StringReader(testInput);
-        java.io.BufferedReader mockReader = new java.io.BufferedReader(stringReader);
+        StringReader stringReader = new StringReader(testInput);
+        BufferedReader mockReader = new BufferedReader(stringReader);
 
         StudioUserAgent agent =
                 StudioUserAgent.builder().name("TestUser").terminalReader(mockReader).build();
 
-        io.agentscope.core.message.Msg result =
-                agent.call((io.agentscope.core.message.Msg) null).block();
+        Msg result = agent.call((Msg) null).block();
 
         assertNotNull(result);
         assertEquals("TestUser", result.getName());
-        assertEquals(io.agentscope.core.message.MsgRole.USER, result.getRole());
-        io.agentscope.core.message.TextBlock textBlock =
-                (io.agentscope.core.message.TextBlock) result.getContent().get(0);
+        assertEquals(MsgRole.USER, result.getRole());
+        TextBlock textBlock = (TextBlock) result.getContent().get(0);
         assertEquals(testInput, textBlock.getText());
         assertEquals("terminal", result.getMetadata().get("source"));
     }
@@ -218,48 +223,38 @@ class StudioUserAgentTest {
     @Test
     @DisplayName("call(Msg) should handle empty terminal input")
     void testCallWithEmptyTerminalInput() throws Exception {
-        java.io.StringReader stringReader = new java.io.StringReader("   ");
-        java.io.BufferedReader mockReader = new java.io.BufferedReader(stringReader);
+        StringReader stringReader = new StringReader("   ");
+        BufferedReader mockReader = new BufferedReader(stringReader);
 
         StudioUserAgent agent =
                 StudioUserAgent.builder().name("TestUser").terminalReader(mockReader).build();
 
-        io.agentscope.core.message.Msg result =
-                agent.call((io.agentscope.core.message.Msg) null).block();
+        Msg result = agent.call((Msg) null).block();
 
         assertNotNull(result);
-        io.agentscope.core.message.TextBlock textBlock =
-                (io.agentscope.core.message.TextBlock) result.getContent().get(0);
+        TextBlock textBlock = (TextBlock) result.getContent().get(0);
         assertEquals("", textBlock.getText());
     }
 
     @Test
     @DisplayName("call() with Studio integration should use Studio")
     void testCallWithStudioIntegration() {
-        StudioClient mockClient = org.mockito.Mockito.mock(StudioClient.class);
-        StudioWebSocketClient mockWsClient = org.mockito.Mockito.mock(StudioWebSocketClient.class);
+        StudioClient mockClient = Mockito.mock(StudioClient.class);
+        StudioWebSocketClient mockWsClient = Mockito.mock(StudioWebSocketClient.class);
 
         String requestId = "test-request-id";
-        org.mockito.Mockito.when(
+        Mockito.when(
                         mockClient.requestUserInput(
-                                org.mockito.Mockito.anyString(),
-                                org.mockito.Mockito.anyString(),
-                                org.mockito.Mockito.any()))
-                .thenReturn(reactor.core.publisher.Mono.just(requestId));
+                                Mockito.anyString(), Mockito.anyString(), Mockito.any()))
+                .thenReturn(Mono.just(requestId));
 
         StudioWebSocketClient.UserInputData inputData =
                 new StudioWebSocketClient.UserInputData(
-                        java.util.List.of(
-                                io.agentscope.core.message.TextBlock.builder()
-                                        .text("Studio input")
-                                        .build()),
-                        null);
+                        List.of(TextBlock.builder().text("Studio input").build()), null);
 
-        org.mockito.Mockito.when(mockWsClient.waitForInput(requestId))
-                .thenReturn(reactor.core.publisher.Mono.just(inputData));
+        Mockito.when(mockWsClient.waitForInput(requestId)).thenReturn(Mono.just(inputData));
 
-        org.mockito.Mockito.when(mockClient.pushMessage(org.mockito.Mockito.any()))
-                .thenReturn(reactor.core.publisher.Mono.empty());
+        Mockito.when(mockClient.pushMessage(Mockito.any())).thenReturn(Mono.empty());
 
         StudioUserAgent agent =
                 StudioUserAgent.builder()
@@ -269,31 +264,26 @@ class StudioUserAgentTest {
                         .inputTimeout(Duration.ofSeconds(5))
                         .build();
 
-        io.agentscope.core.message.Msg result =
-                agent.call((io.agentscope.core.message.Msg) null).block();
+        Msg result = agent.call((Msg) null).block();
 
         assertNotNull(result);
         assertEquals("TestUser", result.getName());
-        assertEquals(io.agentscope.core.message.MsgRole.USER, result.getRole());
+        assertEquals(MsgRole.USER, result.getRole());
     }
 
     @Test
     @DisplayName("call() with Studio should fallback to terminal on error")
     void testCallWithStudioFallbackToTerminal() throws Exception {
-        StudioClient mockClient = org.mockito.Mockito.mock(StudioClient.class);
-        StudioWebSocketClient mockWsClient = org.mockito.Mockito.mock(StudioWebSocketClient.class);
+        StudioClient mockClient = Mockito.mock(StudioClient.class);
+        StudioWebSocketClient mockWsClient = Mockito.mock(StudioWebSocketClient.class);
 
-        org.mockito.Mockito.when(
+        Mockito.when(
                         mockClient.requestUserInput(
-                                org.mockito.Mockito.anyString(),
-                                org.mockito.Mockito.anyString(),
-                                org.mockito.Mockito.any()))
-                .thenReturn(
-                        reactor.core.publisher.Mono.error(
-                                new RuntimeException("Studio unavailable")));
+                                Mockito.anyString(), Mockito.anyString(), Mockito.any()))
+                .thenReturn(Mono.error(new RuntimeException("Studio unavailable")));
 
-        java.io.StringReader stringReader = new java.io.StringReader("fallback input");
-        java.io.BufferedReader mockReader = new java.io.BufferedReader(stringReader);
+        StringReader stringReader = new StringReader("fallback input");
+        BufferedReader mockReader = new BufferedReader(stringReader);
 
         StudioUserAgent agent =
                 StudioUserAgent.builder()
@@ -303,12 +293,10 @@ class StudioUserAgentTest {
                         .terminalReader(mockReader)
                         .build();
 
-        io.agentscope.core.message.Msg result =
-                agent.call((io.agentscope.core.message.Msg) null).block();
+        Msg result = agent.call((Msg) null).block();
 
         assertNotNull(result);
-        io.agentscope.core.message.TextBlock textBlock =
-                (io.agentscope.core.message.TextBlock) result.getContent().get(0);
+        TextBlock textBlock = (TextBlock) result.getContent().get(0);
         assertEquals("fallback input", textBlock.getText());
         assertEquals("terminal", result.getMetadata().get("source"));
     }

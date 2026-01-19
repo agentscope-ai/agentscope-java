@@ -21,6 +21,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -423,7 +424,7 @@ public class ShellCommandTool implements AgentTool {
      * @param inputStream The input stream to read from
      * @return The content as a string
      */
-    private String readStream(java.io.InputStream inputStream) {
+    private String readStream(InputStream inputStream) {
         if (inputStream == null) {
             return "";
         }

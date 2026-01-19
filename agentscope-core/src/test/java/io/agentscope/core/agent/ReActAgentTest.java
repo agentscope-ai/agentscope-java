@@ -27,6 +27,9 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -43,9 +46,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ReActAgent class.
@@ -696,19 +702,15 @@ class ReActAgentTest {
     @DisplayName("Should emit ReasoningChunkEvent for ToolUseBlock during streaming")
     void testStreamingToolUseChunkEvent() {
         // Track received ToolUseBlock events
-        final java.util.List<ToolUseBlock> receivedToolUseBlocks =
-                new java.util.concurrent.CopyOnWriteArrayList<>();
-        final java.util.List<ToolUseBlock> accumulatedToolUseBlocks =
-                new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<ToolUseBlock> receivedToolUseBlocks = new CopyOnWriteArrayList<>();
+        final List<ToolUseBlock> accumulatedToolUseBlocks = new CopyOnWriteArrayList<>();
 
         // Create a hook to capture ReasoningChunkEvent with ToolUseBlock
-        io.agentscope.core.hook.Hook captureHook =
-                new io.agentscope.core.hook.Hook() {
+        Hook captureHook =
+                new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
-                        if (event
-                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
                             Msg chunk = chunkEvent.getIncrementalChunk();
                             if (chunk.hasContentBlocks(ToolUseBlock.class)) {
                                 ToolUseBlock tub = chunk.getFirstContentBlock(ToolUseBlock.class);
@@ -722,7 +724,7 @@ class ReActAgentTest {
                                 }
                             }
                         }
-                        return reactor.core.publisher.Mono.just(event);
+                        return Mono.just(event);
                     }
                 };
 
@@ -804,31 +806,25 @@ class ReActAgentTest {
     @DisplayName("Should emit ReasoningChunkEvent for multiple parallel tool calls")
     void testStreamingMultipleToolCallsChunkEvents() {
         // Track received ToolUseBlock events by ID
-        final java.util.Map<String, java.util.List<ToolUseBlock>> receivedByToolId =
-                new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<String, List<ToolUseBlock>> receivedByToolId = new ConcurrentHashMap<>();
 
         // Create a hook to capture ReasoningChunkEvent with ToolUseBlock
-        io.agentscope.core.hook.Hook captureHook =
-                new io.agentscope.core.hook.Hook() {
+        Hook captureHook =
+                new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
-                        if (event
-                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
                             Msg accumulated = chunkEvent.getAccumulated();
                             if (accumulated.hasContentBlocks(ToolUseBlock.class)) {
                                 ToolUseBlock tub =
                                         accumulated.getFirstContentBlock(ToolUseBlock.class);
                                 receivedByToolId
                                         .computeIfAbsent(
-                                                tub.getId(),
-                                                k ->
-                                                        new java.util.concurrent
-                                                                .CopyOnWriteArrayList<>())
+                                                tub.getId(), k -> new CopyOnWriteArrayList<>())
                                         .add(tub);
                             }
                         }
-                        return reactor.core.publisher.Mono.just(event);
+                        return Mono.just(event);
                     }
                 };
 
