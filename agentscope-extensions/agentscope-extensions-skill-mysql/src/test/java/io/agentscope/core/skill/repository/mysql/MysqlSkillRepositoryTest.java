@@ -45,15 +45,17 @@ import org.mockito.MockitoAnnotations;
 /**
  * Unit tests for MysqlSkillRepository.
  *
- * <p>These tests use mocked DataSource and Connection to verify the behavior of
+ * <p>
+ * These tests use mocked DataSource and Connection to verify the behavior of
  * MysqlSkillRepository without requiring an actual MySQL database.
  *
- * <p>Test categories:
+ * <p>
+ * Test categories:
  * <ul>
- *   <li>Constructor tests - validate initialization and parameter handling
- *   <li>CRUD operation tests - verify skill save, get, delete operations
- *   <li>SQL injection prevention tests - ensure security validations work
- *   <li>Repository info tests - verify metadata reporting
+ * <li>Constructor tests - validate initialization and parameter handling
+ * <li>CRUD operation tests - verify skill save, get, delete operations
+ * <li>SQL injection prevention tests - ensure security validations work
+ * <li>Repository info tests - verify metadata reporting
  * </ul>
  */
 @DisplayName("MysqlSkillRepository Tests")
@@ -506,10 +508,11 @@ public class MysqlSkillRepositoryTest {
         @Test
         @DisplayName("Should save skill with resources")
         void testSaveSkillWithResources() throws SQLException {
+            // Mock executeUpdate for both skill insertion and resource insertions
+            // Note: insertResources uses executeUpdate() in a loop, not batch processing
             when(mockStatement.executeUpdate()).thenReturn(1);
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
             when(mockResultSet.next()).thenReturn(false); // skill doesn't exist
-            when(mockStatement.executeBatch()).thenReturn(new int[] {1, 1});
 
             Map<String, String> resources =
                     Map.of(
@@ -522,10 +525,12 @@ public class MysqlSkillRepositoryTest {
             boolean saved = repo.save(List.of(skill), false);
 
             assertTrue(saved);
+            // Verify executeUpdate was called: 1 for skill insert + 2 for resource inserts
+            verify(mockStatement, atLeast(3)).executeUpdate();
         }
 
         @Test
-        @DisplayName("Should not save when skill exists and force=false")
+        @DisplayName("Should throw exception when skill exists and force=false")
         void testSaveSkillExistsNoForce() throws SQLException {
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
             when(mockResultSet.next()).thenReturn(true); // skill exists
@@ -533,9 +538,13 @@ public class MysqlSkillRepositoryTest {
             AgentSkill skill =
                     new AgentSkill("existing-skill", "Description", "Content", Map.of(), "test");
 
-            boolean saved = repo.save(List.of(skill), false);
+            // Pre-check now throws IllegalStateException instead of returning false
+            IllegalStateException exception =
+                    assertThrows(
+                            IllegalStateException.class, () -> repo.save(List.of(skill), false));
 
-            assertFalse(saved);
+            assertTrue(exception.getMessage().contains("existing-skill"));
+            assertTrue(exception.getMessage().contains("force=false"));
         }
 
         @Test

@@ -196,15 +196,120 @@ ReActAgent agent = ReActAgent.builder()
 Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:
 
 - 文件系统存储
-- 数据库存储 (暂未实现)
+- MySQL 数据库存储
 - Git 仓库 (暂未实现)
 
-**示例代码**:
+#### 文件系统存储
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
 repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
+```
+
+#### MySQL 数据库存储
+
+MySQL 存储适用于需要高可用性、多实例共享和事务保证的生产环境。
+
+**添加依赖** (Maven):
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-skill-mysql</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+**基本使用**:
+
+```java
+// 配置数据源 (以 HikariCP 为例)
+HikariConfig config = new HikariConfig();
+config.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?useSSL=false&serverTimezone=UTC");
+config.setUsername("your_username");
+config.setPassword("your_password");
+DataSource dataSource = new HikariDataSource(config);
+
+// 创建仓库 (自动创建数据库和表)
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true);
+
+// 保存技能
+repo.save(List.of(skill), false);
+
+// 加载技能
+AgentSkill loaded = repo.getSkill("data_analysis");
+
+// 获取所有技能
+List<AgentSkill> allSkills = repo.getAllSkills();
+
+// 删除技能
+repo.delete("data_analysis");
+```
+
+**使用 Builder 模式** (推荐用于自定义配置):
+
+```java
+MysqlSkillRepository repo = MysqlSkillRepository.builder()
+        .dataSource(dataSource)
+        .databaseName("my_database")           // 自定义数据库名, 默认: agentscope
+        .skillsTableName("my_skills")          // 自定义技能表名, 默认: agentscope_skills
+        .resourcesTableName("my_resources")    // 自定义资源表名, 默认: agentscope_skill_resources
+        .createIfNotExist(true)                // 自动创建数据库和表
+        .writeable(true)                       // 允许写操作
+        .build();
+```
+
+**只读模式**:
+
+```java
+// 创建只读仓库用于共享访问
+MysqlSkillRepository repo = MysqlSkillRepository.builder()
+        .dataSource(dataSource)
+        .createIfNotExist(false)   // 要求数据库/表已存在
+        .writeable(false)          // 只读模式
+        .build();
+
+// 读取操作正常工作
+AgentSkill skill = repo.getSkill("data_analysis");
+
+// 写操作返回 false，不会抛出异常
+boolean saved = repo.save(List.of(newSkill), false);  // 返回 false
+```
+
+**强制覆盖已存在的技能**:
+
+```java
+// 当 force=false 时，如果技能已存在会抛出 IllegalStateException
+repo.save(List.of(skill), false);
+
+// 当 force=true 时，会覆盖已存在的技能
+repo.save(List.of(skill), true);
+```
+
+**表结构** (自动创建):
+
+```sql
+-- 技能表
+CREATE TABLE agentscope_skills (
+    name VARCHAR(255) NOT NULL PRIMARY KEY,
+    description TEXT NOT NULL,
+    skill_content LONGTEXT NOT NULL,
+    source VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- 资源表 (带外键约束)
+CREATE TABLE agentscope_skill_resources (
+    skill_name VARCHAR(255) NOT NULL,
+    resource_path VARCHAR(500) NOT NULL,
+    resource_content LONGTEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (skill_name, resource_path),
+    FOREIGN KEY (skill_name) REFERENCES agentscope_skills(name) ON DELETE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 这种保护适用于所有仓库操作: `getSkill()`、`save()`、`delete()` 和 `skillExists()`。

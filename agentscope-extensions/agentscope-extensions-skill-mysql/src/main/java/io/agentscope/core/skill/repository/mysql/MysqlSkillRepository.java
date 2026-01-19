@@ -307,7 +307,10 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                         + " (skill_name VARCHAR(255) NOT NULL, resource_path VARCHAR(500) NOT NULL,"
                         + " resource_content LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT"
                         + " CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON"
-                        + " UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (skill_name, resource_path))"
+                        + " UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (skill_name, resource_path),"
+                        + " FOREIGN KEY (skill_name) REFERENCES "
+                        + getFullTableName(skillsTableName)
+                        + "(name) ON DELETE CASCADE)"
                         + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection()) {
@@ -478,19 +481,70 @@ public class MysqlSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        List<String> skillNames = getAllSkillNames();
-        List<AgentSkill> skills = new ArrayList<>();
+        String selectAllSkillsSql =
+                "SELECT name, description, skill_content, source FROM "
+                        + getFullTableName(skillsTableName)
+                        + " ORDER BY name";
 
-        for (String name : skillNames) {
-            try {
-                skills.add(getSkill(name));
-            } catch (Exception e) {
-                logger.warn("Failed to load skill '{}': {}", name, e.getMessage(), e);
-                // Continue processing other skills
+        String selectAllResourcesSql =
+                "SELECT skill_name, resource_path, resource_content FROM "
+                        + getFullTableName(resourcesTableName);
+
+        try (Connection conn = dataSource.getConnection()) {
+            // Load all skills in one query
+            Map<String, AgentSkill.Builder> skillBuilders = new HashMap<>();
+
+            try (PreparedStatement stmt = conn.prepareStatement(selectAllSkillsSql);
+                    ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String name = rs.getString("name");
+                    String description = rs.getString("description");
+                    String skillContent = rs.getString("skill_content");
+                    String source = rs.getString("source");
+
+                    AgentSkill.Builder builder =
+                            AgentSkill.builder()
+                                    .name(name)
+                                    .description(description)
+                                    .skillContent(skillContent)
+                                    .source(source);
+                    skillBuilders.put(name, builder);
+                }
             }
-        }
 
-        return skills;
+            // Load all resources in one query and map them to skills
+            try (PreparedStatement stmt = conn.prepareStatement(selectAllResourcesSql);
+                    ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String skillName = rs.getString("skill_name");
+                    String resourcePath = rs.getString("resource_path");
+                    String resourceContent = rs.getString("resource_content");
+
+                    AgentSkill.Builder builder = skillBuilders.get(skillName);
+                    if (builder != null) {
+                        builder.addResource(resourcePath, resourceContent);
+                    } else {
+                        logger.warn(
+                                "Found orphaned resource for non-existent skill: {}", skillName);
+                    }
+                }
+            }
+
+            // Build all skills
+            List<AgentSkill> skills = new ArrayList<>(skillBuilders.size());
+            for (AgentSkill.Builder builder : skillBuilders.values()) {
+                try {
+                    skills.add(builder.build());
+                } catch (Exception e) {
+                    logger.warn("Failed to build skill: {}", e.getMessage(), e);
+                }
+            }
+
+            return skills;
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load all skills", e);
+        }
     }
 
     @Override
@@ -505,22 +559,39 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         }
 
         try (Connection conn = dataSource.getConnection()) {
+            // Pre-check: validate all skill names first
+            for (AgentSkill skill : skills) {
+                validateSkillName(skill.getName());
+            }
+
+            // Pre-check: if force=false, check all skills for existence before starting
+            // transaction
+            if (!force) {
+                List<String> existingSkills = new ArrayList<>();
+                for (AgentSkill skill : skills) {
+                    if (skillExistsInternal(conn, skill.getName())) {
+                        existingSkills.add(skill.getName());
+                    }
+                }
+                if (!existingSkills.isEmpty()) {
+                    String conflictingSkills = String.join(", ", existingSkills);
+                    throw new IllegalStateException(
+                            "Cannot save skills: the following skills already exist and"
+                                    + " force=false: "
+                                    + conflictingSkills
+                                    + ". Use force=true to overwrite existing skills.");
+                }
+            }
+
             // Use transaction for atomic operations
             conn.setAutoCommit(false);
 
             try {
                 for (AgentSkill skill : skills) {
                     String skillName = skill.getName();
-                    validateSkillName(skillName);
 
-                    // Check if skill exists
+                    // Check if skill exists (for force=true case)
                     boolean exists = skillExistsInternal(conn, skillName);
-
-                    if (exists && !force) {
-                        logger.info("Skill already exists and force=false: {}", skillName);
-                        conn.rollback();
-                        return false;
-                    }
 
                     if (exists) {
                         // Delete existing skill and its resources
@@ -579,10 +650,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * Insert resources for a skill.
      *
      * <p>
-     * This method inserts each resource one by one instead of using batch
-     * processing
-     * to ensure better compatibility and error handling across different database
-     * drivers.
+     * This method creates a single PreparedStatement outside the loop and reuses it
+     * for all resources to improve performance by avoiding repeated SQL parsing.
      *
      * @param conn      the database connection
      * @param skillName the skill name
@@ -596,22 +665,28 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             return;
         }
 
+        // Validate all resource paths first
+        for (String path : resources.keySet()) {
+            validateResourcePath(path);
+        }
+
         String insertSql =
                 "INSERT INTO "
                         + getFullTableName(resourcesTableName)
                         + " (skill_name, resource_path, resource_content) VALUES (?, ?, ?)";
 
         int insertedCount = 0;
-        for (Map.Entry<String, String> entry : resources.entrySet()) {
-            String path = entry.getKey();
-            String content = entry.getValue();
 
-            validateResourcePath(path);
+        // Create PreparedStatement once outside the loop and reuse it
+        try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+            for (Map.Entry<String, String> entry : resources.entrySet()) {
+                String path = entry.getKey();
+                String content = entry.getValue();
 
-            try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
                 stmt.setString(1, skillName);
                 stmt.setString(2, path);
                 stmt.setString(3, content);
+
                 int affected = stmt.executeUpdate();
                 if (affected > 0) {
                     insertedCount++;
@@ -619,6 +694,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 } else {
                     logger.warn("Failed to insert resource '{}' for skill '{}'", path, skillName);
                 }
+
+                // Clear parameters for next iteration
+                stmt.clearParameters();
             }
         }
 
