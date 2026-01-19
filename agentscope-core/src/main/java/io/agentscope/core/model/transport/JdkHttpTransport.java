@@ -29,10 +29,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
-import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublisher;
 import java.net.http.HttpRequest.BodyPublishers;
-import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
@@ -202,7 +200,7 @@ public class JdkHttpTransport implements HttpTransport {
 
         // Check status code and read error body immediately when CompletableFuture completes
         // to avoid stream being closed before we can read it
-        CompletableFuture<HttpResponse<InputStream>> future =
+        CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
                 client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
                         .thenApply(
                                 response -> {
@@ -244,7 +242,7 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     private Flux<String> processStreamResponse(
-            HttpResponse<InputStream> response, HttpRequest request) {
+            java.net.http.HttpResponse<InputStream> response, HttpRequest request) {
         InputStream inputStream = response.body();
         if (inputStream == null) {
             return Flux.empty();
@@ -314,7 +312,7 @@ public class JdkHttpTransport implements HttpTransport {
         return closed.get();
     }
 
-    private HttpRequest buildJdkRequest(HttpRequest request) {
+    private java.net.http.HttpRequest buildJdkRequest(HttpRequest request) {
         URI uri;
         try {
             uri = URI.create(request.getUrl());
@@ -322,7 +320,8 @@ public class JdkHttpTransport implements HttpTransport {
             throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
         }
 
-        var builder = HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
+        var builder =
+                java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.header(header.getKey(), header.getValue());
@@ -357,7 +356,7 @@ public class JdkHttpTransport implements HttpTransport {
                 : BodyPublishers.noBody();
     }
 
-    private HttpResponse buildHttpResponse(HttpResponse<String> response) {
+    private HttpResponse buildHttpResponse(java.net.http.HttpResponse<String> response) {
         HttpResponse.Builder builder =
                 HttpResponse.builder().statusCode(response.statusCode()).body(response.body());
 

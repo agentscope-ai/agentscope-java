@@ -54,7 +54,8 @@ import org.junit.jupiter.api.Test;
 class AgentScopeA2aRequestHandlerTest {
 
     private static final String TASK_STATE_PROVIDER_CLASS_NAME =
-            AgentScopeA2aRequestHandler.AgentScopeTaskStateProvider.class.getName();
+            "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$"
+                    + "AgentScopeTaskStateProvider";
 
     /**
      * Helper method to create a AgentScopeA2aRequestHandler and extract its TaskStateProvider

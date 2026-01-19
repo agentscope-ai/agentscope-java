@@ -44,7 +44,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tracing.Tracer;
 import io.agentscope.core.tracing.telemetry.AttributesExtractors.FormatterConverter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
@@ -65,7 +64,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.context.ContextView;
 
-public class TelemetryTracer implements Tracer {
+public class TelemetryTracer implements io.agentscope.core.tracing.Tracer {
 
     private final Tracer tracer;
 
