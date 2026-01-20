@@ -90,7 +90,7 @@
         <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.5.0</mysql.version>
-        <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-reactor.version>2.24.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.1.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
