@@ -129,9 +129,6 @@ public class AguiAgentAdapter {
         EventType type = event.getType();
 
         if (type == EventType.REASONING) {
-            boolean hasToolUseBlock =
-                    msg.getContent().stream().anyMatch(block -> block instanceof ToolUseBlock);
-
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -175,7 +172,7 @@ public class AguiAgentAdapter {
                     if (toolCallId == null) {
                         toolCallId = UUID.randomUUID().toString();
                     }
-                    state.cacheToolUseBlock(toolUse);
+                    state.cacheToolUseBlock(toolCallId, toolUse);
 
                     if (!state.hasStartedToolCall(toolCallId)) {
                         events.add(
@@ -342,9 +339,9 @@ public class AguiAgentAdapter {
             this.runId = runId;
         }
 
-        void cacheToolUseBlock(ToolUseBlock toolUse) {
-            if (toolUse.getId() != null) {
-                toolUseBlocks.put(toolUse.getId(), toolUse);
+        void cacheToolUseBlock(String toolCallId, ToolUseBlock toolUse) {
+            if (toolCallId != null) {
+                toolUseBlocks.put(toolCallId, toolUse);
             }
         }
 
