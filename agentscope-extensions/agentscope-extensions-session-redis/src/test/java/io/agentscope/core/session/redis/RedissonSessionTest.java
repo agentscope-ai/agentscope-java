@@ -42,6 +42,7 @@ import org.redisson.api.RKeys;
 import org.redisson.api.RList;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
+import org.redisson.api.options.KeysScanOptions;
 import org.redisson.client.codec.Codec;
 import reactor.test.StepVerifier;
 
@@ -65,6 +66,10 @@ class RedissonSessionTest {
         rList = mock(RList.class);
         rSet = mock(RSet.class);
         keys = mock(RKeys.class);
+        when(redissonClient.getBucket(anyString(), any(Codec.class))).thenReturn(bucket);
+        when(redissonClient.getList(anyString(), any(Codec.class))).thenReturn(rList);
+        when(redissonClient.getSet(anyString(), any(Codec.class))).thenReturn(rSet);
+        when(redissonClient.getKeys()).thenReturn(keys);
     }
 
     @Test
@@ -93,12 +98,6 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should save and get single state correctly")
     void testSaveAndGetSingleState() {
-        when(redissonClient.getBucket(
-                        eq("agentscope:session:session1:testModule"), any(Codec.class)))
-                .thenReturn(bucket);
-        when(redissonClient.getSet(eq("agentscope:session:session1:_keys"), any(Codec.class)))
-                .thenReturn(rSet);
-
         String stateJson = "{\"value\":\"test_value\",\"count\":42}";
         when(bucket.get()).thenReturn(stateJson);
 
@@ -128,12 +127,6 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should save and get list state correctly")
     void testSaveAndGetListState() {
-        when(redissonClient.getList(
-                        eq("agentscope:session:session1:testList:list"), any(Codec.class)))
-                .thenReturn(rList);
-        when(redissonClient.getSet(eq("agentscope:session:session1:_keys"), any(Codec.class)))
-                .thenReturn(rSet);
-
         when(rList.size()).thenReturn(0);
         when(rList.isEmpty()).thenReturn(false);
         when(rList.iterator())
@@ -142,6 +135,11 @@ class RedissonSessionTest {
                                         "{\"value\":\"value1\",\"count\":1}",
                                         "{\"value\":\"value2\",\"count\":2}")
                                 .iterator());
+        when(rList.range(0, -1))
+                .thenReturn(
+                        List.of(
+                                "{\"value\":\"value1\",\"count\":1}",
+                                "{\"value\":\"value2\",\"count\":2}"));
 
         RedisSession session =
                 RedisSession.builder()
@@ -206,9 +204,7 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should return true when session exists")
     void testSessionExists() {
-        when(redissonClient.getSet(eq("agentscope:session:session1:_keys"), any(Codec.class)))
-                .thenReturn(rSet);
-        when(rSet.isExists()).thenReturn(true);
+        when(keys.countExists("agentscope:session:session1:_keys")).thenReturn(1L);
         when(rSet.size()).thenReturn(2);
 
         RedisSession session =
@@ -224,8 +220,6 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should return false when session does not exist")
     void testSessionDoesNotExist() {
-        when(redissonClient.getSet(eq("agentscope:session:session1:_keys"), any(Codec.class)))
-                .thenReturn(rSet);
         when(rSet.isExists()).thenReturn(false);
 
         RedisSession session =
@@ -241,10 +235,8 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should delete session correctly")
     void testDeleteSession() {
-        when(redissonClient.getSet(eq("agentscope:session:session1:_keys"), any(Codec.class)))
-                .thenReturn(rSet);
-        when(redissonClient.getKeys()).thenReturn(keys);
-        when(rSet.readAll()).thenReturn(Set.of("module1", "module2:list"));
+        Set<String> trackedKeys = Set.of("module1", "module2:list");
+        when(rSet.iterator()).thenReturn(trackedKeys.iterator());
 
         RedisSession session =
                 RedisSession.builder()
@@ -255,15 +247,15 @@ class RedissonSessionTest {
         SessionKey sessionKey = SimpleSessionKey.of("session1");
         session.delete(sessionKey);
 
-        // Verify readAll was called to get tracked keys
-        verify(rSet).readAll();
+        // Verify iterator was called to get tracked keys
+        verify(rSet).iterator();
     }
 
     @Test
     @DisplayName("Should list all session keys")
     void testListSessionKeys() {
         when(redissonClient.getKeys()).thenReturn(keys);
-        when(keys.getKeysByPattern("agentscope:session:*:_keys"))
+        when(keys.getKeys(any(KeysScanOptions.class)))
                 .thenReturn(
                         List.of(
                                 "agentscope:session:session1:_keys",
@@ -285,7 +277,7 @@ class RedissonSessionTest {
     @DisplayName("Should clear all sessions")
     void testClearAllSessions() {
         when(redissonClient.getKeys()).thenReturn(keys);
-        when(keys.getKeysByPattern("agentscope:session:*"))
+        when(keys.getKeys(any(KeysScanOptions.class)))
                 .thenReturn(
                         List.of(
                                 "agentscope:session:s1:module1",

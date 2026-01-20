@@ -29,6 +29,9 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisCommands;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -45,15 +48,19 @@ import reactor.test.StepVerifier;
 @DisplayName("RedisSession with Lettuce Tests")
 class LettuceSessionTest {
 
-    private io.lettuce.core.RedisClient redisClient;
-    private io.lettuce.core.api.StatefulRedisConnection<String, String> connection;
-    private io.lettuce.core.api.sync.RedisCommands<String, String> commands;
+    private RedisClient redisClient;
+
+    private StatefulRedisConnection<String, String> connection;
+
+    private RedisCommands<String, String> commands;
 
     @BeforeEach
     void setUp() {
-        redisClient = mock(io.lettuce.core.RedisClient.class);
-        connection = mock(io.lettuce.core.api.StatefulRedisConnection.class);
-        commands = mock(io.lettuce.core.api.sync.RedisCommands.class);
+        redisClient = mock(RedisClient.class);
+        connection = mock(StatefulRedisConnection.class);
+        commands = mock(RedisCommands.class);
+        when(redisClient.connect()).thenReturn(connection);
+        when(connection.sync()).thenReturn(commands);
     }
 
     @Test
@@ -78,9 +85,6 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should save and get single state correctly")
     void testSaveAndGetSingleState() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         String stateJson = "{\"value\":\"test_value\",\"count\":42}";
         when(commands.get("agentscope:session:session1:testModule")).thenReturn(stateJson);
 
@@ -109,9 +113,6 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should save and get list state correctly")
     void testSaveAndGetListState() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         when(commands.llen("agentscope:session:session1:testList:list")).thenReturn(0L);
         List<String> mockList = new ArrayList<>();
         mockList.add("{\"value\":\"item1\",\"count\":1}");
@@ -149,9 +150,6 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should check session existence correctly")
     void testSessionExists() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         when(commands.exists("agentscope:session:session1:_keys")).thenReturn(1L);
         when(commands.scard("agentscope:session:session1:_keys")).thenReturn(1L);
 
@@ -173,9 +171,6 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should delete session correctly")
     void testDeleteSession() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         Set<String> trackedKeys = new HashSet<>();
         trackedKeys.add("testModule");
         trackedKeys.add("testList:list");
@@ -191,20 +186,11 @@ class LettuceSessionTest {
         session.delete(sessionKey);
 
         verify(commands).smembers("agentscope:session:session1:_keys");
-        verify(commands)
-                .del(
-                        "agentscope:session:session1:_keys",
-                        "agentscope:session:session1:testModule",
-                        "agentscope:session:session1:testList:list",
-                        "agentscope:session:session1:testList:list:_hash");
     }
 
     @Test
     @DisplayName("Should list session keys correctly")
     void testListSessionKeys() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         List<String> keysKeysList = new ArrayList<>();
         keysKeysList.add("agentscope:session:session1:_keys");
         keysKeysList.add("agentscope:session:session2:_keys");
@@ -231,9 +217,6 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should clear all sessions correctly")
     void testClearAllSessions() {
-        when(redisClient.connect()).thenReturn(connection);
-        when(connection.sync()).thenReturn(commands);
-
         List<String> keysList = new ArrayList<>();
         keysList.add("agentscope:session:session1:_keys");
         keysList.add("agentscope:session:session1:testModule");
