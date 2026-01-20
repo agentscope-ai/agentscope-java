@@ -36,7 +36,7 @@ import java.util.Objects;
  * concise implementation.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
-    @JsonSubTypes({
+@JsonSubTypes({
     @JsonSubTypes.Type(value = AguiEvent.RunStarted.class, name = "RUN_STARTED"),
     @JsonSubTypes.Type(value = AguiEvent.RunFinished.class, name = "RUN_FINISHED"),
     @JsonSubTypes.Type(value = AguiEvent.TextMessageStart.class, name = "TEXT_MESSAGE_START"),
@@ -518,8 +518,7 @@ public sealed interface AguiEvent
      * The Custom event provides an extension mechanism for implementing
      * features not covered by the standard event types.
      */
-    record Custom(String threadId, String runId, String name, Object value)
-            implements AguiEvent {
+    record Custom(String threadId, String runId, String name, Object value) implements AguiEvent {
 
         @JsonCreator
         public Custom(
