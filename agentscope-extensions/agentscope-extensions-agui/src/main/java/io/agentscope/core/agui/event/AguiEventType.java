@@ -77,5 +77,10 @@ public enum AguiEventType {
     /**
      * A raw event with custom data.
      */
-    RAW
+    RAW,
+
+    /**
+     * A custom event with structured data.
+     */
+    CUSTOM
 }
