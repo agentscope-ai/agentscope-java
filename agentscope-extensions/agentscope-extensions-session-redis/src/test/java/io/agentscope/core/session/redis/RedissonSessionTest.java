@@ -28,7 +28,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.session.redis.redisson.RedissonSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
@@ -47,9 +46,9 @@ import org.redisson.client.codec.Codec;
 import reactor.test.StepVerifier;
 
 /**
- * Unit tests for {@link RedissonSession}.
+ * Unit tests for {@link RedisSession} with Redisson client.
  */
-@DisplayName("RedissonSession Tests")
+@DisplayName("RedisSession with Redisson Tests")
 @SuppressWarnings({"unchecked", "rawtypes"})
 class RedissonSessionTest {
 
@@ -71,8 +70,8 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should build session with valid arguments")
     void testBuilderWithValidArguments() {
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -85,7 +84,7 @@ class RedissonSessionTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
-                        RedissonSession.builder()
+                        RedisSession.builder()
                                 .redissonClient(redissonClient)
                                 .keyPrefix("  ")
                                 .build());
@@ -103,8 +102,8 @@ class RedissonSessionTest {
         String stateJson = "{\"value\":\"test_value\",\"count\":42}";
         when(bucket.get()).thenReturn(stateJson);
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -144,8 +143,8 @@ class RedissonSessionTest {
                                         "{\"value\":\"value2\",\"count\":2}")
                                 .iterator());
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -174,8 +173,8 @@ class RedissonSessionTest {
                 .thenReturn(bucket);
         when(bucket.get()).thenReturn(null);
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -193,8 +192,8 @@ class RedissonSessionTest {
                 .thenReturn(rList);
         when(rList.isEmpty()).thenReturn(true);
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -212,8 +211,8 @@ class RedissonSessionTest {
         when(rSet.isExists()).thenReturn(true);
         when(rSet.size()).thenReturn(2);
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -229,8 +228,8 @@ class RedissonSessionTest {
                 .thenReturn(rSet);
         when(rSet.isExists()).thenReturn(false);
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -247,8 +246,8 @@ class RedissonSessionTest {
         when(redissonClient.getKeys()).thenReturn(keys);
         when(rSet.readAll()).thenReturn(Set.of("module1", "module2:list"));
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -270,8 +269,8 @@ class RedissonSessionTest {
                                 "agentscope:session:session1:_keys",
                                 "agentscope:session:session2:_keys"));
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -294,8 +293,8 @@ class RedissonSessionTest {
                                 "agentscope:session:s2:module1",
                                 "agentscope:session:s2:_keys"));
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -306,8 +305,8 @@ class RedissonSessionTest {
     @Test
     @DisplayName("Should shutdown client when closing session")
     void testCloseShutsDownClient() {
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -315,6 +314,29 @@ class RedissonSessionTest {
         verify(redissonClient).shutdown();
     }
 
-    /** Simple test state record for testing. */
+    @Test
+    @DisplayName("Should build session with cluster mode RedissonClient")
+    void testBuilderWithClusterRedissonClient() {
+        // Redisson uses the same RedissonClient interface for all modes
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+        assertNotNull(session);
+    }
+
+    @Test
+    @DisplayName("Should build session with sentinel mode RedissonClient")
+    void testBuilderWithSentinelRedissonClient() {
+        // Redisson uses the same RedissonClient interface for all modes
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+        assertNotNull(session);
+    }
+
     public record TestState(String value, int count) implements State {}
 }
