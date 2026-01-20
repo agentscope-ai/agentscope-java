@@ -676,4 +676,90 @@ class AguiAgentAdapterTest {
         assertNotNull(toolResult, "应该有 ToolCallResult 事件");
         assertEquals("tc-unknown", toolResult.toolCallId());
     }
+
+    @Test
+    void testToolCallStartBackfillWithNullContent() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .content(null)
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.ToolCallStart toolStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolStart, "应该有 ToolCallStart 事件");
+
+        boolean hasToolArgs = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallArgs);
+        assertTrue(!hasToolArgs, "content 为 null 时不应该有 ToolCallArgs 事件");
+    }
+
+    @Test
+    void testToolCallStartBackfillWithEmptyContent() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .content("")
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.ToolCallStart toolStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolStart, "应该有 ToolCallStart 事件");
+
+        boolean hasToolArgs = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallArgs);
+        assertTrue(!hasToolArgs, "content 为空字符串时不应该有 ToolCallArgs 事件");
+    }
 }
