@@ -22,6 +22,8 @@ import io.agentscope.core.memory.mem0.Mem0ApiType;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Mem0Example - Demonstrates long-term memory using Mem0 backend.
@@ -33,14 +35,16 @@ public class Mem0Example {
         String dashscopeApiKey = ExampleUtils.getDashScopeApiKey();
         String mem0BaseUrl = getMem0BaseUrl();
         Mem0ApiType mem0ApiType = getMem0ApiType();
-
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("agentName", "SmartAssistant");
         Mem0LongTermMemory.Builder memoryBuilder =
                 Mem0LongTermMemory.builder()
                         .agentName("SmartAssistant")
                         .userId("static-control01126")
                         .apiBaseUrl(mem0BaseUrl)
                         .apiKey(System.getenv("MEM0_API_KEY"))
-                        .apiType(mem0ApiType);
+                        .apiType(mem0ApiType)
+                        .metadata(metadata);
 
         Mem0LongTermMemory longTermMemory = memoryBuilder.build();
 
