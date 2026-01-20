@@ -561,7 +561,6 @@ class AguiAgentAdapterTest {
         assertEquals(toolStart.toolCallId(), toolArgs.toolCallId(), "toolCallId 应该一致");
     }
 
-
     @Test
     void testToolCallStartBackfillWithCache() {
         Msg toolCallMsg =
@@ -626,7 +625,6 @@ class AguiAgentAdapterTest {
         assertEquals("tc-1", toolResult.toolCallId());
         assertEquals("4", toolResult.content());
     }
-
 
     @Test
     void testToolCallStartBackfillWithoutCache() {
