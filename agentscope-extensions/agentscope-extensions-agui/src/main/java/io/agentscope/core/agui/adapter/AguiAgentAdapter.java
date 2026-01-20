@@ -204,30 +204,10 @@ public class AguiAgentAdapter {
 
                     boolean hasStarted = state.hasStartedToolCall(toolCallId);
                     if (!hasStarted) {
-                        ToolUseBlock toolUse = state.getToolUseBlock(toolCallId);
-                        if (toolUse != null) {
-                            events.add(
-                                    new AguiEvent.ToolCallStart(
-                                            state.threadId,
-                                            state.runId,
-                                            toolCallId,
-                                            toolUse.getName()));
-                            state.startToolCall(toolCallId);
-
-                            if (config.isEmitToolCallArgs()) {
-                                String args = toolUse.getContent();
-                                if (args != null && !args.isEmpty()) {
-                                    events.add(
-                                            new AguiEvent.ToolCallArgs(
-                                                    state.threadId, state.runId, toolCallId, args));
-                                }
-                            }
-                        } else {
-                            events.add(
-                                    new AguiEvent.ToolCallStart(
-                                            state.threadId, state.runId, toolCallId, "unknown"));
-                            state.startToolCall(toolCallId);
-                        }
+                        events.add(
+                                new AguiEvent.ToolCallStart(
+                                        state.threadId, state.runId, toolCallId, "unknown"));
+                        state.startToolCall(toolCallId);
                     }
 
                     // Ensure ToolCallEnd is emitted to close arguments phase

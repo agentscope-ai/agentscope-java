@@ -562,7 +562,7 @@ class AguiAgentAdapterTest {
     }
 
     @Test
-    void testToolCallStartBackfillWithCache() {
+    void testNormalToolCallFlow() {
         Msg toolCallMsg =
                 Msg.builder()
                         .id("msg-tc1")
