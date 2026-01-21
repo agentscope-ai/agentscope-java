@@ -17,6 +17,7 @@ package io.agentscope.core.model;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.Version;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopePublicKeyResponse;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
@@ -476,12 +477,18 @@ public class DashScopeHttpClient {
         }
 
         // Deserialize to Map, merge additional params, re-serialize
-        Map<String, Object> bodyMap =
-                JsonUtils.getJsonCodec()
-                        .fromJson(requestBody, new TypeReference<Map<String, Object>>() {});
-        bodyMap.putAll(additionalBodyParams);
-        requestBody = JsonUtils.getJsonCodec().toJson(bodyMap);
+        // The additional params should be added to dashscope parameters
+        DashScopeParameters parameters = request.getParameters();
+        String parametersJson = JsonUtils.getJsonCodec().toJson(parameters);
+        Map<String, Object> parametersMap =
+                JsonUtils.getJsonCodec().fromJson(parametersJson, new TypeReference<>() {});
+        parametersMap.putAll(additionalBodyParams);
 
+        // Set the merged parameters to dashscope request body map
+        Map<String, Object> bodyMap =
+                JsonUtils.getJsonCodec().fromJson(requestBody, new TypeReference<>() {});
+        bodyMap.put("parameters", parametersMap);
+        requestBody = JsonUtils.getJsonCodec().toJson(bodyMap);
         return requestBody;
     }
 

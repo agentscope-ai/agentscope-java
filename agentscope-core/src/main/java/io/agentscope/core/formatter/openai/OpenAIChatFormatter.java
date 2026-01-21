@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai;
 
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
@@ -240,6 +241,11 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
                             Map<String, Object> formatMap = (Map<String, Object>) value;
                             request.setResponseFormat(formatMap);
                         }
+
+                        if (value instanceof ResponseFormat responseFormat) {
+                            request.setResponseFormat(responseFormat);
+                        }
+
                         break;
                     default:
                         // Add unknown parameters to extraParams

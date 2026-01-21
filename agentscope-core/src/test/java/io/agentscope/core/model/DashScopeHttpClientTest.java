@@ -23,12 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeInput;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
+import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -1249,6 +1254,53 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testBuildRequestBodyWithAdditionalBodyParams() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(User.class);
+        ResponseFormat responseFormat =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("user_info")
+                                .description("The user information")
+                                .strict(true)
+                                .schema(schema)
+                                .build());
+
+        Map<String, Object> additionalBodyParams = new HashMap<>();
+        additionalBodyParams.put("enable_search", true);
+        additionalBodyParams.put("response_format", responseFormat);
+
+        client.call(request, null, additionalBodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        DashScopeRequest dashScopeRequest =
+                JsonUtils.getJsonCodec().fromJson(body, DashScopeRequest.class);
+        assertNotNull(dashScopeRequest);
+        assertNotNull(dashScopeRequest.getParameters());
+        assertTrue(dashScopeRequest.getParameters().getEnableSearch());
+        ResponseFormat format = dashScopeRequest.getParameters().getResponseFormat();
+        assertNotNull(format);
+        assertEquals("json_schema", format.getType());
+        assertEquals("user_info", format.getJsonSchema().getName());
+        assertEquals("The user information", format.getJsonSchema().getDescription());
+        assertTrue(format.getJsonSchema().getStrict());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) format.getJsonSchema().getSchema().get("properties");
+        assertTrue(properties.containsKey("name"));
+        assertTrue(properties.containsKey("age"));
+    }
+
+    @Test
     void testEncryptionHeaderAbsentWhenNoInput() throws Exception {
         java.security.KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
@@ -1446,4 +1498,12 @@ class DashScopeHttpClientTest {
         return JsonUtils.getJsonCodec()
                 .fromJson(encryptionHeader, new TypeReference<Map<String, String>>() {});
     }
+
+    private record User(
+            @JsonPropertyDescription("The user name") @JsonProperty(value = "name", required = true)
+                    String name,
+            @JsonPropertyDescription("The user age") @JsonProperty(value = "age", required = true)
+                    int age,
+            @JsonPropertyDescription("The user email address") @JsonProperty("email")
+                    String email) {}
 }
