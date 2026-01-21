@@ -564,13 +564,26 @@ public class SkillBox implements StateModule {
      * <p>After calling this method, scripts from registered skills will be written to the
      * working directory when the agent is configured.
      *
-     * @param workDir Working directory for code execution. If null or empty, a temporary
+     * <p>
+     * <b>Note:</b> This method should only be called once. Calling it multiple
+     * times
+     * will throw an IllegalStateException.
+     *
+     * @param workDir Working directory for code execution. If null or empty, a
+     *                temporary
      *                directory will be created when scripts are written.
-     * @throws IllegalStateException if toolkit is not bound
+     * @throws IllegalStateException if toolkit is not bound or if code execution is
+     *                               already enabled
      */
     public void enableCodeExecution(String workDir) {
         if (toolkit == null) {
             throw new IllegalStateException("Must bind toolkit before enabling code execution");
+        }
+
+        // Prevent duplicate enablement
+        if (isCodeExecutionEnabled()) {
+            throw new IllegalStateException(
+                    "Code execution is already enabled. This method should only be called once.");
         }
 
         // Set workDir (null means temporary directory will be created later)
@@ -636,6 +649,26 @@ public class SkillBox implements StateModule {
             // Create temporary directory
             try {
                 workDir = Files.createTempDirectory("agentscope-code-execution-");
+
+                // Register shutdown hook to clean up temporary directory
+                Runtime.getRuntime()
+                        .addShutdownHook(
+                                new Thread(
+                                        () -> {
+                                            try {
+                                                deleteTempDirectory(workDir);
+                                                logger.info(
+                                                        "Cleaned up temporary working directory:"
+                                                                + " {}",
+                                                        workDir);
+                                            } catch (IOException e) {
+                                                logger.warn(
+                                                        "Failed to clean up temporary directory:"
+                                                                + " {}",
+                                                        e.getMessage());
+                                            }
+                                        }));
+
                 logger.info("Created temporary working directory: {}", workDir);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create temporary working directory", e);
@@ -654,6 +687,34 @@ public class SkillBox implements StateModule {
         }
 
         return workDir;
+    }
+
+    /**
+     * Deletes the temporary working directory if it was created.
+     *
+     * <p>
+     * This method only deletes directories that were created as temporary
+     * directories
+     * by this SkillBox instance. User-specified directories are never deleted.
+     *
+     * @throws IOException if deletion fails
+     */
+    private void deleteTempDirectory(Path temporaryWorkDir) throws IOException {
+        if (temporaryWorkDir != null && Files.exists(temporaryWorkDir)) {
+            Files.walk(temporaryWorkDir)
+                    .sorted(
+                            (a, b) ->
+                                    -a.compareTo(
+                                            b)) // Reverse order to delete files before directories
+                    .forEach(
+                            path -> {
+                                try {
+                                    Files.delete(path);
+                                } catch (IOException e) {
+                                    logger.warn("Failed to delete: {}", path);
+                                }
+                            });
+        }
     }
 
     /**
@@ -692,7 +753,15 @@ public class SkillBox implements StateModule {
             for (Map.Entry<String, String> entry : scripts.entrySet()) {
                 String relativePath = entry.getKey();
                 String content = entry.getValue();
-                Path targetPath = skillDir.resolve(relativePath);
+                Path targetPath = skillDir.resolve(relativePath).normalize();
+
+                // Security check: Prevent path traversal attacks
+                if (!targetPath.startsWith(skillDir)) {
+                    logger.warn(
+                            "Skipping script with invalid path (path traversal attempt): {}",
+                            relativePath);
+                    continue;
+                }
 
                 try {
                     // Create parent directories if they don't exist

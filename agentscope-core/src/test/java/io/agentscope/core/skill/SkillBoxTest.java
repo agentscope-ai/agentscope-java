@@ -51,7 +51,8 @@ import reactor.core.publisher.Mono;
 /**
  * Unit tests for SkillBox.
  *
- * <p>These tests verify skill registration.
+ * <p>
+ * These tests verify skill registration.
  */
 @Tag("unit")
 class SkillBoxTest {
@@ -473,9 +474,48 @@ class SkillBoxTest {
             assertDoesNotThrow(() -> skillBox.writeSkillScriptsToWorkDir());
 
             // Verify temporary directory was created and script exists
-            // We can't get the exact temp dir path, but we can verify the script was written
+            // We can't get the exact temp dir path, but we can verify the script was
+            // written
             // by checking that no exception was thrown and the operation completed
             assertTrue(skillBox.isCodeExecutionEnabled());
+        }
+
+        @Test
+        @DisplayName("Should prevent path traversal attacks")
+        void testPathTraversalPrevention() throws IOException {
+            String workDir = tempDir.resolve("secure").toString();
+            skillBox.enableCodeExecution(workDir);
+
+            // Create skill with malicious path traversal attempts
+            Map<String, String> resources = new HashMap<>();
+            resources.put("../../../etc/passwd", "malicious content");
+            resources.put("../../outside.py", "print('escaped')");
+            resources.put("normal.py", "print('safe')");
+
+            AgentSkill skill = new AgentSkill("malicious", "desc", "content", resources);
+            skillBox.registerSkill(skill);
+
+            // Write scripts - malicious paths should be skipped
+            skillBox.writeSkillScriptsToWorkDir();
+
+            Path workPath = Path.of(workDir);
+            // Verify malicious files were NOT created
+            assertFalse(Files.exists(workPath.resolve("../../../etc/passwd")));
+            assertFalse(Files.exists(workPath.resolve("../../outside.py")));
+            // Verify safe file WAS created
+            assertTrue(Files.exists(workPath.resolve("malicious_custom/normal.py")));
+        }
+
+        @Test
+        @DisplayName("Should throw exception when enableCodeExecution called multiple times")
+        void testDuplicateEnableCodeExecution() {
+            skillBox.enableCodeExecution();
+
+            IllegalStateException exception =
+                    assertThrows(IllegalStateException.class, () -> skillBox.enableCodeExecution());
+            assertEquals(
+                    "Code execution is already enabled. This method should only be called once.",
+                    exception.getMessage());
         }
     }
 
@@ -511,7 +551,8 @@ class SkillBoxTest {
     }
 
     /**
-     * Test tool class with @Tool annotated methods for testing tool object registration.
+     * Test tool class with @Tool annotated methods for testing tool object
+     * registration.
      */
     private static class TestToolObject {
 
