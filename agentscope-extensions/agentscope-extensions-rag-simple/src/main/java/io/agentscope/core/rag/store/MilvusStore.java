@@ -22,6 +22,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.agentscope.core.util.JsonUtils;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
@@ -249,7 +250,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     @Override
-    public Mono<List<Document>> search(double[] queryEmbedding, int limit, Double scoreThreshold) {
+    public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
+        double[] queryEmbedding = searchDocumentDto.getQueryEmbedding();
+        int limit = searchDocumentDto.getLimit();
+        Double scoreThreshold = searchDocumentDto.getScoreThreshold();
         if (queryEmbedding == null) {
             return Mono.error(new IllegalArgumentException("Query embedding cannot be null"));
         }
@@ -522,7 +526,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                 SearchReq.builder()
                         .collectionName(collectionName)
                         .data(Collections.singletonList(queryVector))
-                        .topK(limit)
+                        .limit(limit)
                         .outputFields(
                                 Arrays.asList(
                                         FIELD_ID,

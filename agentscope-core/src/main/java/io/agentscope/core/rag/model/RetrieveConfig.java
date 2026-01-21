@@ -29,11 +29,13 @@ public class RetrieveConfig {
 
     private final int limit;
     private final double scoreThreshold;
+    private final String vectorName;
     private final List<Msg> conversationHistory;
 
     private RetrieveConfig(Builder builder) {
         this.limit = builder.limit;
         this.scoreThreshold = builder.scoreThreshold;
+        this.vectorName = builder.vectorName;
         this.conversationHistory = builder.conversationHistory;
     }
 
@@ -53,6 +55,15 @@ public class RetrieveConfig {
      */
     public double getScoreThreshold() {
         return scoreThreshold;
+    }
+
+    /**
+     * Gets the vector name for retrieval.
+     *
+     * @return the vector name, or null if not set
+     */
+    public String getVectorName() {
+        return vectorName;
     }
 
     /**
@@ -83,6 +94,7 @@ public class RetrieveConfig {
 
         private int limit = 5;
         private double scoreThreshold = 0.5;
+        private String vectorName;
         private List<Msg> conversationHistory;
 
         /**
@@ -110,6 +122,17 @@ public class RetrieveConfig {
                 throw new IllegalArgumentException("Score threshold must be between 0.0 and 1.0");
             }
             this.scoreThreshold = scoreThreshold;
+            return this;
+        }
+
+        /**
+         * Sets the vector name for retrieval.
+         *
+         * @param vectorName the vector name (can be null)
+         * @return this builder for chaining
+         */
+        public Builder vectorName(String vectorName) {
+            this.vectorName = vectorName;
             return this;
         }
 

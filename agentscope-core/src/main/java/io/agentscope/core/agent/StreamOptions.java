@@ -81,6 +81,30 @@ public class StreamOptions {
     private final boolean includeReasoningResult;
 
     /**
+     * Whether to include the incremental chunks from tool execution during streaming.
+     * <p>
+     * If false, intermediate acting chunk emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeActingChunk;
+
+    /**
+     * Whether to include the incremental chunks from summary generation during streaming.
+     * <p>
+     * If false, intermediate summary chunk emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeSummaryChunk;
+
+    /**
+     * Whether to include the final consolidated summary output in the response.
+     * <p>
+     * If false, final summary result emissions should be filtered out by the stream
+     * implementation.
+     */
+    private final boolean includeSummaryResult;
+
+    /**
      * Private constructor called by the builder.
      *
      * @param builder The builder containing configuration values
@@ -90,6 +114,9 @@ public class StreamOptions {
         this.incremental = builder.incremental;
         this.includeReasoningChunk = builder.includeReasoningChunk;
         this.includeReasoningResult = builder.includeReasoningResult;
+        this.includeActingChunk = builder.includeActingChunk;
+        this.includeSummaryChunk = builder.includeSummaryChunk;
+        this.includeSummaryResult = builder.includeSummaryResult;
     }
 
     /**
@@ -156,6 +183,41 @@ public class StreamOptions {
     }
 
     /**
+     * Whether acting (tool execution) chunk emissions should be included.
+     *
+     * <p>Acting chunks are the incremental outputs from tool execution via ToolEmitter.</p>
+     *
+     * @return true if acting chunks should be included
+     */
+    public boolean isIncludeActingChunk() {
+        return includeActingChunk;
+    }
+
+    /**
+     * Whether summary chunk emissions should be included.
+     *
+     * <p>Summary chunks are the incremental outputs from summary generation when max iterations
+     * is reached.</p>
+     *
+     * @return true if summary chunks should be included
+     */
+    public boolean isIncludeSummaryChunk() {
+        return includeSummaryChunk;
+    }
+
+    /**
+     * Whether the final summary result should be included.
+     *
+     * <p>The summary result is the final consolidated summary output when max iterations
+     * is reached.</p>
+     *
+     * @return true if the final summary result should be included
+     */
+    public boolean isIncludeSummaryResult() {
+        return includeSummaryResult;
+    }
+
+    /**
      * Check if a specific event type should be streamed.
      *
      * @param type The event type to check
@@ -178,6 +240,16 @@ public class StreamOptions {
         return isChunk ? includeReasoningChunk : includeReasoningResult;
     }
 
+    /**
+     * Convenience method for stream implementations to decide whether to emit a summary subtype.
+     *
+     * @param isChunk true if the summary emission is an incremental chunk, false if it is the final result
+     * @return true if this summary emission should be included
+     */
+    public boolean shouldIncludeSummaryEmission(boolean isChunk) {
+        return isChunk ? includeSummaryChunk : includeSummaryResult;
+    }
+
     /** Builder for {@link StreamOptions}. */
     public static class Builder {
         private Set<EventType> eventTypes = EnumSet.of(EventType.ALL);
@@ -186,6 +258,9 @@ public class StreamOptions {
         // Defaults are "true" to preserve existing behavior.
         private boolean includeReasoningChunk = true;
         private boolean includeReasoningResult = true;
+        private boolean includeActingChunk = true;
+        private boolean includeSummaryChunk = true;
+        private boolean includeSummaryResult = true;
 
         /**
          * Set which event types to stream.
@@ -243,6 +318,48 @@ public class StreamOptions {
          */
         public Builder includeReasoningResult(boolean includeReasoningResult) {
             this.includeReasoningResult = includeReasoningResult;
+            return this;
+        }
+
+        /**
+         * Include or exclude tool execution chunk emissions.
+         *
+         * <p>When {@link EventType#TOOL_RESULT} is enabled, tools may emit intermediate chunks via
+         * ToolEmitter. Set to false to hide these and only receive the final tool result.</p>
+         *
+         * @param includeActingChunk true to include chunk emissions, false to filter them out
+         * @return this builder
+         */
+        public Builder includeActingChunk(boolean includeActingChunk) {
+            this.includeActingChunk = includeActingChunk;
+            return this;
+        }
+
+        /**
+         * Include or exclude summary chunk emissions.
+         *
+         * <p>When {@link EventType#SUMMARY} is enabled, summary generation may emit intermediate
+         * chunks. Set to false to hide these and only receive the final summary result.</p>
+         *
+         * @param includeSummaryChunk true to include chunk emissions, false to filter them out
+         * @return this builder
+         */
+        public Builder includeSummaryChunk(boolean includeSummaryChunk) {
+            this.includeSummaryChunk = includeSummaryChunk;
+            return this;
+        }
+
+        /**
+         * Include or exclude the final consolidated summary result emission.
+         *
+         * <p>When {@link EventType#SUMMARY} is enabled, the final summary result is emitted after
+         * generation completes. Set to false to hide it.</p>
+         *
+         * @param includeSummaryResult true to include the final summary result, false to filter it out
+         * @return this builder
+         */
+        public Builder includeSummaryResult(boolean includeSummaryResult) {
+            this.includeSummaryResult = includeSummaryResult;
             return this;
         }
 

@@ -98,6 +98,9 @@ class VideoCapabilityE2ETest {
         assertTrue(
                 ContentValidator.hasMeaningfulContent(response),
                 "Response should have meaningful content");
+        assertTrue(
+                ContentValidator.containsKeywords(response, "woman"),
+                "Response should have meaningful content");
 
         String responseText = TestUtils.extractTextContent(response);
         System.out.println(
@@ -148,6 +151,9 @@ class VideoCapabilityE2ETest {
         assertNotNull(response, "Response should not be null");
         assertTrue(
                 ContentValidator.hasMeaningfulContent(response),
+                "Response should have meaningful content");
+        assertTrue(
+                ContentValidator.containsKeywords(response, "woman"),
                 "Response should have meaningful content");
 
         String responseText = TestUtils.extractTextContent(response);
@@ -218,6 +224,9 @@ class VideoCapabilityE2ETest {
         System.out.println("Round 2: Follow-up question");
         Msg response2 = agent.call(followUpMsg).block(TEST_TIMEOUT);
         assertNotNull(response2);
+        assertTrue(
+                ContentValidator.containsKeywords(response2, "woman"),
+                "Response should have meaningful content");
 
         String response2Text = TestUtils.extractTextContent(response2);
         System.out.println("Follow-up response: " + response2Text);

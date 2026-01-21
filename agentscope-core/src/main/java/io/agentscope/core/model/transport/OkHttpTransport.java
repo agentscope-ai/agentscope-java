@@ -18,17 +18,24 @@ package io.agentscope.core.model.transport;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.ConnectionPool;
+import okhttp3.Credentials;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -108,13 +115,43 @@ public class OkHttpTransport implements HttpTransport {
 
         // Configure SSL (optionally ignore certificate verification)
         if (config.isIgnoreSsl()) {
-            log.warn(
-                    "SSL certificate verification is disabled. This is not recommended for"
-                            + " production.");
+            log.error(
+                    "SSL certificate verification has been disabled for this WebSocket client. This"
+                        + " configuration must only be used for local development or testing with"
+                        + " self-signed certificates. Do not disable SSL verification in production"
+                        + " environments, as it exposes connections to man-in-the-middle attacks.");
             builder =
                     builder.sslSocketFactory(
                                     createTrustAllSslSocketFactory(), createTrustAllTrustManager())
                             .hostnameVerifier((hostname, session) -> true);
+        }
+
+        // Configure proxy
+        if (config.getProxyConfig() != null) {
+            ProxyConfig proxyConfig = config.getProxyConfig();
+
+            if (proxyConfig.getNonProxyHosts() != null
+                    && !proxyConfig.getNonProxyHosts().isEmpty()) {
+                builder.proxySelector(new NonProxyHostsSelector(proxyConfig));
+            } else {
+                builder.proxy(proxyConfig.toJavaProxy());
+            }
+
+            if (proxyConfig.hasAuthentication()) {
+                final String username = proxyConfig.getUsername();
+                final String password = proxyConfig.getPassword();
+                builder.proxyAuthenticator(
+                        (route, response) -> {
+                            if (response.request().header("Proxy-Authorization") != null) {
+                                return null; // Avoid infinite retry
+                            }
+                            String credential = Credentials.basic(username, password);
+                            return response.request()
+                                    .newBuilder()
+                                    .header("Proxy-Authorization", credential)
+                                    .build();
+                        });
+            }
         }
 
         return builder.build();
@@ -423,6 +460,35 @@ public class OkHttpTransport implements HttpTransport {
                 return new OkHttpTransport(existingClient, config);
             }
             return new OkHttpTransport(config);
+        }
+    }
+
+    /**
+     * ProxySelector that respects non-proxy hosts configuration.
+     */
+    private static class NonProxyHostsSelector extends ProxySelector {
+        private final ProxyConfig proxyConfig;
+        private final List<Proxy> proxyList;
+
+        NonProxyHostsSelector(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            this.proxyList = Collections.singletonList(proxyConfig.toJavaProxy());
+        }
+
+        @Override
+        public List<Proxy> select(URI uri) {
+            if (uri == null || uri.getHost() == null) {
+                return proxyList;
+            }
+            if (proxyConfig.shouldBypass(uri.getHost())) {
+                return Collections.singletonList(Proxy.NO_PROXY);
+            }
+            return proxyList;
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed: uri={}, address={}", uri, sa, ioe);
         }
     }
 }

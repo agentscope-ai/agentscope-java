@@ -101,6 +101,15 @@ class SimpleKnowledgeTest {
     }
 
     @Test
+    @DisplayName("Should add documents to knowledge base with vector name")
+    void testAddWithVectorName() {
+        Document doc1 = createDocument("doc1", "Content 1");
+        doc1.setVectorName("test-vector");
+        StepVerifier.create(knowledgeBase.addDocuments(List.of(doc1))).verifyComplete();
+        assertEquals(1, vectorStore.size());
+    }
+
+    @Test
     @DisplayName("Should handle empty document list")
     void testAddEmptyDocuments() {
         StepVerifier.create(knowledgeBase.addDocuments(List.of())).verifyComplete();
@@ -221,6 +230,29 @@ class SimpleKnowledgeTest {
                                                     >= results.get(i + 1).getScore());
                                 }
                             }
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should retrieve documents filtered by vector name")
+    void testRetrieveWithVectorName() {
+        Document doc1 = createDocument("doc1", "Machine learning");
+        doc1.setVectorName("test-vector");
+        Document doc2 = createDocument("doc2", "Machine learning");
+        knowledgeBase.addDocuments(List.of(doc1, doc2)).block();
+
+        RetrieveConfig config =
+                RetrieveConfig.builder()
+                        .vectorName("test-vector")
+                        .limit(3)
+                        .scoreThreshold(0.0)
+                        .build();
+
+        StepVerifier.create(knowledgeBase.retrieve("Machine learning", config))
+                .assertNext(
+                        results -> {
+                            assertEquals(doc1.getId(), results.get(0).getId());
                         })
                 .verifyComplete();
     }

@@ -29,6 +29,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
@@ -538,7 +539,9 @@ class MilvusStoreTest {
     void testSearchNullQueryEmbedding() throws VectorStoreException {
         store = createMockStoreForSearch();
 
-        StepVerifier.create(store.search(null, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(null).limit(10).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -549,7 +552,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] wrongDimensionQuery = new double[] {1.0, 2.0}; // Wrong dimension
 
-        StepVerifier.create(store.search(wrongDimensionQuery, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(wrongDimensionQuery)
+                                        .limit(10)
+                                        .build()))
                 .expectError(VectorStoreException.class)
                 .verify();
     }
@@ -560,7 +568,9 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 0, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(0).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -571,7 +581,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, -1, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(-1)
+                                        .build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -582,7 +597,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -597,7 +617,13 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, 0.5))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.5)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -608,7 +634,13 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, 0.0))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.0)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -619,7 +651,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearchWithResults();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -638,7 +675,13 @@ class MilvusStoreTest {
         double[] query = new double[] {1.0, 0.0, 0.0};
 
         // Score threshold higher than result score (0.9)
-        StepVerifier.create(store.search(query, 10, 0.95))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.95)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -655,7 +698,12 @@ class MilvusStoreTest {
 
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .expectError(VectorStoreException.class)
                 .verify();
     }
@@ -666,7 +714,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10000, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10000)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -834,7 +887,12 @@ class MilvusStoreTest {
 
         // Search for the document
         double[] query = new double[] {1.0, 0.0, 0.0};
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results, "Search results should not be null");

@@ -90,9 +90,15 @@ class RetrieveConfigTest {
     @Test
     @DisplayName("Should allow chaining builder methods")
     void testBuilderChaining() {
-        RetrieveConfig config = RetrieveConfig.builder().limit(20).scoreThreshold(0.8).build();
+        RetrieveConfig config =
+                RetrieveConfig.builder()
+                        .limit(20)
+                        .scoreThreshold(0.8)
+                        .vectorName("test-vector")
+                        .build();
 
         assertEquals(20, config.getLimit());
         assertEquals(0.8, config.getScoreThreshold());
+        assertEquals("test-vector", config.getVectorName());
     }
 }

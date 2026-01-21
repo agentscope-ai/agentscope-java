@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * <p>Each content part has a type and corresponding data:
  * - "text" type with text field
  * - "image_url" type with image_url field
+ * - "video_url" type with video_url field
  * - "input_audio" type with input_audio field
  *
  * <p>Example text part:
@@ -35,11 +36,16 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * <pre>{@code
  * {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}}
  * }</pre>
+ *
+ * <p>Example video part:
+ * <pre>{@code
+ * {"type": "video_url", "videoUrl": {"url": "https://example.com/video.mp4"}}
+ * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OpenAIContentPart {
 
-    /** Content type: "text", "image_url", or "input_audio". */
+    /** Content type: "text", "image_url", "video_url", or "input_audio". */
     @JsonProperty("type")
     private String type;
 
@@ -54,6 +60,10 @@ public class OpenAIContentPart {
     /** Audio input object (for type="input_audio"). */
     @JsonProperty("input_audio")
     private OpenAIInputAudio inputAudio;
+
+    /** Video URL object (for type="video_url"). */
+    @JsonProperty("video_url")
+    private OpenAIVideoUrl videoUrl;
 
     public OpenAIContentPart() {}
 
@@ -87,6 +97,14 @@ public class OpenAIContentPart {
 
     public void setInputAudio(OpenAIInputAudio inputAudio) {
         this.inputAudio = inputAudio;
+    }
+
+    public OpenAIVideoUrl getVideoUrl() {
+        return videoUrl;
+    }
+
+    public void setVideoUrl(OpenAIVideoUrl videoUrl) {
+        this.videoUrl = videoUrl;
     }
 
     /**
@@ -143,6 +161,19 @@ public class OpenAIContentPart {
         return part;
     }
 
+    /**
+     * Create a video content part.
+     *
+     * @param url the video URL or base64 data URI
+     * @return a new OpenAIContentPart
+     */
+    public static OpenAIContentPart videoUrl(String url) {
+        OpenAIContentPart part = new OpenAIContentPart();
+        part.setType("video_url");
+        part.setVideoUrl(new OpenAIVideoUrl(url));
+        return part;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -167,6 +198,11 @@ public class OpenAIContentPart {
 
         public Builder inputAudio(OpenAIInputAudio inputAudio) {
             part.setInputAudio(inputAudio);
+            return this;
+        }
+
+        public Builder videoUrl(OpenAIVideoUrl videoUrl) {
+            part.setVideoUrl(videoUrl);
             return this;
         }
 
