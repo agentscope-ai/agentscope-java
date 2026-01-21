@@ -76,6 +76,12 @@
             <artifactId>milvus-sdk-java</artifactId>
         </dependency>
 
+        <!-- Elasticsearch Java SDK -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+        </dependency>
+
         <!-- PostgreSQL JDBC Driver -->
         <dependency>
             <groupId>org.postgresql</groupId>
