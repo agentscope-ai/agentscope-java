@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +34,15 @@ class SkillToolFactory {
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
     private final SkillRegistry skillRegistry;
+    private Toolkit toolkit;
 
-    SkillToolFactory(SkillRegistry skillRegistry) {
+    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
         this.skillRegistry = skillRegistry;
+        this.toolkit = toolkit;
+    }
+
+    void bindToolkit(Toolkit toolkit) {
+        this.toolkit = toolkit;
     }
 
     /**
@@ -228,7 +235,7 @@ class SkillToolFactory {
     }
 
     /**
-     * Validate skill exists and activate it.
+     * Validate skill exists and activate it and its tool group.
      *
      * @param skillId The unique identifier of the skill
      * @return The skill instance
@@ -239,11 +246,6 @@ class SkillToolFactory {
             throw new IllegalArgumentException(
                     String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
         }
-
-        // Set skill as active
-        skillRegistry.setSkillActive(skillId, true);
-        logger.debug("Activated skill: {}", skillId);
-
         // Get skill
         AgentSkill skill = skillRegistry.getSkill(skillId);
         if (skill == null) {
@@ -253,6 +255,19 @@ class SkillToolFactory {
                                     + " error.",
                             skillId));
         }
+        // Set skill as active
+        skillRegistry.setSkillActive(skillId, true);
+        logger.info("Activated skill: {}", skillId);
+
+        String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
+        if (toolkit.getToolGroup(toolsGroupName) != null) {
+            toolkit.setActiveGroups(List.of(toolsGroupName));
+            logger.info(
+                    "Activated skill tool group : {} and its tools: {}",
+                    toolsGroupName,
+                    toolkit.getToolGroup(toolsGroupName).getTools());
+        }
+
         return skill;
     }
 }

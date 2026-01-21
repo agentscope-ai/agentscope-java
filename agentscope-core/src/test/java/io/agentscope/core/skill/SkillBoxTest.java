@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -236,6 +237,63 @@ class SkillBoxTest {
         assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
         assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
         assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+    }
+
+    @Test
+    @DisplayName("Should bind toolkit and propagate to SkillToolFactory")
+    void testBindToolkitUpdatesSkillToolFactory() {
+        // Arrange: Create a new toolkit
+        Toolkit newToolkit = new Toolkit();
+
+        // Register a skill with tools
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        AgentTool tool = createTestTool("test_tool");
+
+        skillBox.registration().skill(skill).agentTool(tool).apply();
+        skillBox.registerSkillLoadTool();
+
+        // Act: Bind new toolkit
+        skillBox.bindToolkit(newToolkit);
+
+        // Register skill load tool to new toolkit
+        skillBox.registerSkillLoadTool();
+
+        // Load skill through the new toolkit
+        AgentTool skillLoader = newToolkit.getTool("load_skill_through_path");
+        assertNotNull(skillLoader, "Skill loader should be available in new toolkit");
+
+        Map<String, Object> loadParams = new HashMap<>();
+        loadParams.put("skillId", skill.getSkillId());
+        loadParams.put("path", "SKILL.md");
+
+        ToolCallParam callParam =
+                ToolCallParam.builder()
+                        .toolUseBlock(
+                                ToolUseBlock.builder()
+                                        .id("call-001")
+                                        .name("load_skill_through_path")
+                                        .input(loadParams)
+                                        .build())
+                        .input(loadParams)
+                        .build();
+
+        ToolResultBlock result = skillLoader.callAsync(callParam).block();
+
+        // Assert: Should successfully activate skill through new toolkit
+        assertNotNull(result, "Should successfully load skill through new toolkit");
+        assertFalse(result.getOutput().isEmpty(), "Should have output");
+        assertTrue(
+                skillBox.isSkillActive(skill.getSkillId()),
+                "Skill should be activated through new toolkit");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when binding null toolkit")
+    void testBindToolkitWithNullThrowsException() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> skillBox.bindToolkit(null),
+                "Should throw exception when binding null toolkit");
     }
 
     /**
