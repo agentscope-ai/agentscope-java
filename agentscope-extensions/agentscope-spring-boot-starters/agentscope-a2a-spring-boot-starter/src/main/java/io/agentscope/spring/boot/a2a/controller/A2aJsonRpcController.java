@@ -21,15 +21,13 @@ import io.a2a.spec.TransportProtocol;
 import io.a2a.util.Utils;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
-import jakarta.servlet.http.HttpServletRequest;
-import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,8 +52,8 @@ public class A2aJsonRpcController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_EVENT_STREAM_VALUE})
     @ResponseBody
-    public Object handleRequest(@RequestBody String body, HttpServletRequest httpRequest) {
-        Map<String, String> header = getHeaders(httpRequest);
+    public Object handleRequest(
+            @RequestBody String body, @RequestHeader Map<String, String> header) {
         Object result = getJsonRpcHandler().handleRequest(body, header, Map.of());
         if (result instanceof Flux<?> fluxResult) {
             return fluxResult
@@ -74,17 +72,6 @@ public class A2aJsonRpcController {
                             TransportProtocol.JSONRPC.asString(), JsonRpcTransportWrapper.class);
         }
         return jsonRpcHandler;
-    }
-
-    private Map<String, String> getHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new HashMap<>();
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            String headerValue = request.getHeader(headerName);
-            headers.put(headerName, headerValue);
-        }
-        return headers;
     }
 
     private ServerSentEvent<String> convertToSse(JSONRPCResponse<?> response) {
