@@ -41,6 +41,18 @@ class SkillToolFactory {
         this.toolkit = toolkit;
     }
 
+    /**
+     * Binds a toolkit to the skill tool factory.
+     *
+     * <p>
+     * This method binds the toolkit to skill tool factory.
+     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
+     * ensure the
+     * skill tool factory references the correct toolkit instance.
+     *
+     * @param toolkit The toolkit to bind to the skill tool factory
+     * @throws IllegalArgumentException if the toolkit is null
+     */
     void bindToolkit(Toolkit toolkit) {
         this.toolkit = toolkit;
     }
@@ -261,9 +273,9 @@ class SkillToolFactory {
 
         String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
         if (toolkit.getToolGroup(toolsGroupName) != null) {
-            toolkit.setActiveGroups(List.of(toolsGroupName));
+            toolkit.updateToolGroups(List.of(toolsGroupName), true);
             logger.info(
-                    "Activated skill tool group : {} and its tools: {}",
+                    "Activated skill tool group: {} and its tools: {}",
                     toolsGroupName,
                     toolkit.getToolGroup(toolsGroupName).getTools());
         }

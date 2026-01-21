@@ -34,6 +34,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 class SkillBoxToolsTest {
 
@@ -94,8 +95,8 @@ class SkillBoxToolsTest {
             }
 
             @Override
-            public reactor.core.publisher.Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                return reactor.core.publisher.Mono.just(ToolResultBlock.text("dummy result"));
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return Mono.just(ToolResultBlock.text("dummy result"));
             }
         };
     }
@@ -480,7 +481,6 @@ class SkillBoxToolsTest {
         assertFalse(isErrorResult(result), "Should not fail when skill has no tools");
         assertTrue(skillBox.isSkillActive(skillId), "Skill should still be activated");
         assertNull(
-                toolkit.getToolGroup(skillId + "_skill_tools"),
-                "Tool group should not be " + "created");
+                toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
     }
 }

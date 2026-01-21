@@ -206,6 +206,12 @@ class SkillRuntimeIntegrationTest {
         assertTrue(
                 toolkit.getToolGroup(weatherToolGroupName).isActive(),
                 "Weather tool group should be activated");
+        assertTrue(
+                toolkit.getActiveGroups().contains(mathToolGroupName),
+                "Math tool group should be activated");
+        assertTrue(
+                toolkit.getActiveGroups().contains(weatherToolGroupName),
+                "Weather tool group should be activated");
     }
 
     @Test

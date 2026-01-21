@@ -27,7 +27,9 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,9 +109,9 @@ class SkillHookTest {
     private void activateSkill(String skillId) {
         toolkit.getTool("load_skill_through_path")
                 .callAsync(
-                        io.agentscope.core.tool.ToolCallParam.builder()
+                        ToolCallParam.builder()
                                 .toolUseBlock(
-                                        io.agentscope.core.message.ToolUseBlock.builder()
+                                        ToolUseBlock.builder()
                                                 .id("test-call")
                                                 .name("load_skill_through_path")
                                                 .input(
