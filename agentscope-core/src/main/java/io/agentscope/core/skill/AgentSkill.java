@@ -184,8 +184,8 @@ public class AgentSkill {
      * A resource is considered a script if:
      * <ul>
      * <li>It is located in the "scripts/" directory, OR</li>
-     * <li>It has a script file extension (.py, .js, .java, .sh, .bash, .rb,
-     * .pl)</li>
+     * <li>It has a script file extension (.py, .js, .sh)
+     * </li>
      * </ul>
      *
      * @return Map of script resources (path -> content), never null, may be empty
