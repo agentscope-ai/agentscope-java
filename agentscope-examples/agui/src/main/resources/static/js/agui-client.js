@@ -27,6 +27,7 @@
  *     messages: [{ id: 'msg-1', role: 'user', content: 'Hello!' }]
  * }, {
  *     onTextContent: (delta) => console.log(delta),
+ *     onReasoningContent: (delta) => console.log('Reasoning:', delta),
  *     onRunFinished: () => console.log('Done')
  * });
  */
@@ -71,6 +72,9 @@ class AguiClient {
      * @param {Object} [input.state] - Optional state
      * @param {Object} [input.forwardedProps] - Optional forwarded properties
      * @param {Object} callbacks - Event callbacks
+     * @param {Function} [callbacks.onReasoningMessageStart] - Called when reasoning message starts
+     * @param {Function} [callbacks.onReasoningContent] - Called with reasoning content delta
+     * @param {Function} [callbacks.onReasoningMessageEnd] - Called when reasoning message ends
      * @returns {Promise} Resolves when the run completes
      */
     async run(input, callbacks = {}) {
@@ -218,6 +222,22 @@ class AguiClient {
 
                 case 'TEXT_MESSAGE_END':
                     callbacks.onTextMessageEnd?.(event.messageId);
+                    break;
+
+                case 'REASONING_MESSAGE_START':
+                    callbacks.onReasoningMessageStart?.(event.messageId, event.role);
+                    break;
+
+                case 'REASONING_MESSAGE_CONTENT':
+                    // Ensure delta is not null/undefined
+                    const reasoningDelta = event.delta || '';
+                    if (reasoningDelta) {
+                        callbacks.onReasoningContent?.(reasoningDelta, event.messageId);
+                    }
+                    break;
+
+                case 'REASONING_MESSAGE_END':
+                    callbacks.onReasoningMessageEnd?.(event.messageId);
                     break;
 
                 case 'TOOL_CALL_START':
