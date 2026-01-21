@@ -454,7 +454,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
                             // HITL stop
                             if (event.isStopRequested()) {
-                                return Mono.just(msg);
+                                return Mono.just(
+                                        msg.withGenerateReason(
+                                                GenerateReason.REASONING_STOP_REQUESTED));
                             }
 
                             // gotoReasoning requested (e.g., by StructuredOutputHook)
@@ -543,7 +545,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                 // HITL stop (also triggered by
                                                 // StructuredOutputHook when completed)
                                                 if (event.isStopRequested()) {
-                                                    return Mono.just(event.getToolResultMsg());
+                                                    return Mono.just(
+                                                            event.getToolResultMsg()
+                                                                    .withGenerateReason(
+                                                                            GenerateReason
+                                                                                    .ACTING_STOP_REQUESTED));
                                                 }
 
                                                 // If there are pending results, build suspended Msg
