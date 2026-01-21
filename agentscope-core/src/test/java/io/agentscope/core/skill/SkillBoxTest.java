@@ -488,7 +488,7 @@ class SkillBoxTest {
 
             // Create skill with malicious path traversal attempts
             Map<String, String> resources = new HashMap<>();
-            resources.put("../../../etc/passwd", "malicious content");
+            resources.put("scripts/../../../test/pwd", "malicious content");
             resources.put("../../outside.py", "print('escaped')");
             resources.put("normal.py", "print('safe')");
 
@@ -500,7 +500,7 @@ class SkillBoxTest {
 
             Path workPath = Path.of(workDir);
             // Verify malicious files were NOT created
-            assertFalse(Files.exists(workPath.resolve("../../../etc/passwd")));
+            assertFalse(Files.exists(workPath.resolve("scripts/../../../test/passwd")));
             assertFalse(Files.exists(workPath.resolve("../../outside.py")));
             // Verify safe file WAS created
             assertTrue(Files.exists(workPath.resolve("malicious_custom/normal.py")));
