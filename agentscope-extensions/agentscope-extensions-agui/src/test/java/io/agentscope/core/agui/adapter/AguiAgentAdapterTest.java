@@ -34,6 +34,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
@@ -507,5 +508,438 @@ class AguiAgentAdapterTest {
                 .expectNextMatches(e -> e instanceof AguiEvent.TextMessageEnd)
                 .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
                 .verifyComplete();
+    }
+
+    @Test
+    void testRunWithThinkingBlockDefaultDisabled() {
+        // Test that reasoning is disabled by default
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Let me think about this problem step by step...")
+                                        .build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should NOT have any reasoning events when disabled (default)
+        boolean hasReasoningMessageStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+        boolean hasReasoningMessageContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageContent);
+
+        assertTrue(
+                !hasReasoningMessageStart, "Should NOT have ReasoningMessageStart when disabled");
+        assertTrue(
+                !hasReasoningMessageContent,
+                "Should NOT have ReasoningMessageContent when disabled");
+    }
+
+    @Test
+    void testRunWithThinkingBlockEvent() {
+        // Test reasoning events when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Let me think about this problem step by step...")
+                                        .build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Find reasoning events
+        AguiEvent.ReasoningMessageStart reasoningMessageStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
+                        .map(e -> (AguiEvent.ReasoningMessageStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
+        assertEquals("msg-r1", reasoningMessageStart.messageId());
+        assertEquals("assistant", reasoningMessageStart.role());
+
+        AguiEvent.ReasoningMessageContent reasoningMessageContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageContent)
+                        .map(e -> (AguiEvent.ReasoningMessageContent) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(reasoningMessageContent, "Should have ReasoningMessageContent");
+        assertTrue(
+                reasoningMessageContent.delta().contains("think about this problem"),
+                "Should contain thinking content");
+    }
+
+    @Test
+    void testRunWithStreamingThinkingBlockEvents() {
+        // Test streaming reasoning events when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        // Simulate streaming thinking: multiple events with same message ID
+        Msg thinkingChunk1 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("First thought").build())
+                        .build();
+
+        Msg thinkingChunk2 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Second thought").build())
+                        .build();
+
+        Event event1 = new Event(EventType.REASONING, thinkingChunk1, false);
+        Event event2 = new Event(EventType.REASONING, thinkingChunk2, false);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Count ReasoningMessageContent events - should have 2 (one for each chunk)
+        long reasoningMessageContentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageContent).count();
+        assertEquals(
+                2,
+                reasoningMessageContentCount,
+                "Should have 2 reasoning message content events for streaming");
+
+        // Should only have 1 ReasoningMessageStart (same message ID)
+        long reasoningMessageStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
+        assertEquals(
+                1,
+                reasoningMessageStartCount,
+                "Should have only 1 start event for same reasoning message ID");
+    }
+
+    @Test
+    void testRunWithThinkingAndTextMixedContent() {
+        // Test reasoning and text mixed content when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        // Message with both thinking and text
+        Msg mixedMsg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need to analyze this carefully.")
+                                                .build(),
+                                        TextBlock.builder()
+                                                .text("Based on my analysis, here's the answer.")
+                                                .build()))
+                        .build();
+
+        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(mixedEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Question?")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have reasoning events
+        boolean hasReasoningMessageStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+        boolean hasReasoningMessageContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageContent);
+
+        // Should have regular text message events
+        boolean hasTextStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageStart);
+        boolean hasTextContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+
+        assertTrue(hasReasoningMessageStart, "Should have ReasoningMessageStart");
+        assertTrue(hasReasoningMessageContent, "Should have ReasoningMessageContent");
+        assertTrue(hasTextStart, "Should have TextMessageStart for text");
+        assertTrue(hasTextContent, "Should have TextMessageContent for text");
+    }
+
+    @Test
+    void testRunWithEmptyThinkingBlock() {
+        // Empty thinking block should be skipped even when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("").build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should NOT have any reasoning events for empty thinking
+        boolean hasReasoningMessageStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+
+        assertTrue(
+                !hasReasoningMessageStart,
+                "Should NOT have ReasoningMessageStart for empty thinking");
+    }
+
+    @Test
+    void testRunWithThinkingBlockLastEvent() {
+        // Test the isLast() == true branch for ThinkingBlock when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Final thinking content").build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, true); // isLast = true
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have ReasoningMessageStart and ReasoningMessageEnd
+        AguiEvent.ReasoningMessageStart reasoningMessageStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
+                        .map(e -> (AguiEvent.ReasoningMessageStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
+
+        AguiEvent.ReasoningMessageEnd reasoningMessageEnd =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ReasoningMessageEnd)
+                        .map(e -> (AguiEvent.ReasoningMessageEnd) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(reasoningMessageEnd, "Should have ReasoningMessageEnd when isLast=true");
+
+        // Should NOT have ReasoningMessageContent when isLast=true (content is empty)
+        boolean hasContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageContent);
+
+        assertTrue(!hasContent, "Should NOT have ReasoningMessageContent when isLast=true");
+    }
+
+    @Test
+    void testRunWithThinkingAndToolCallMixed() {
+        // Test thinking content mixed with tool call when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg mixedMsg =
+                Msg.builder()
+                        .id("msg-mixed")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("I need to use a tool to get the answer.")
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("tc-1")
+                                                .name("get_weather")
+                                                .input(Map.of("city", "Beijing"))
+                                                .build()))
+                        .build();
+
+        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(mixedEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Weather?")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have reasoning events
+        boolean hasReasoningMessageStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+
+        // Should have tool call events
+        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallStart);
+
+        assertTrue(hasReasoningMessageStart, "Should have reasoning message start event");
+        assertTrue(hasToolStart, "Should have tool call");
+    }
+
+    @Test
+    void testRunWithStreamingThinkingBlockLastEvent() {
+        // Test streaming with last event (isLast=true) when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg thinkingChunk1 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("First thought").build())
+                        .build();
+
+        Msg thinkingChunk2 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Second thought").build())
+                        .build();
+
+        Event event1 = new Event(EventType.REASONING, thinkingChunk1, false);
+        Event event2 = new Event(EventType.REASONING, thinkingChunk2, true); // Last event
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have ReasoningMessageContent for first chunk
+        long messageContentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageContent).count();
+        assertEquals(
+                1,
+                messageContentCount,
+                "Should have 1 reasoning message content event for first chunk");
+
+        // Should have ReasoningMessageEnd for last event
+        boolean hasMessageEnd =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageEnd);
+        assertTrue(hasMessageEnd, "Should have ReasoningMessageEnd for last event");
+    }
+
+    @Test
+    void testRunWithNullThinkingBlock() {
+        // ThinkingBlock with null thinking should be converted to empty string and skipped
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking(null).build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should NOT have any reasoning events for null/empty thinking
+        boolean hasReasoningMessageStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+
+        assertTrue(
+                !hasReasoningMessageStart,
+                "Should NOT have ReasoningMessageStart for null thinking");
     }
 }

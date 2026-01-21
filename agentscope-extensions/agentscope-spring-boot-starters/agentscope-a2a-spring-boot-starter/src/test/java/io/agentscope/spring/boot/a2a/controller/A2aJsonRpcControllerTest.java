@@ -32,7 +32,7 @@ import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Enumeration;
+import java.util.Map;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,7 +59,7 @@ class A2aJsonRpcControllerTest {
 
     @Mock private JsonRpcTransportWrapper jsonRpcTransportWrapper;
 
-    @Mock private HttpServletRequest httpRequest;
+    private Map<String, String> headers;
 
     @BeforeEach
     void setUp() {
@@ -69,6 +69,7 @@ class A2aJsonRpcControllerTest {
                         eq(TransportProtocol.JSONRPC.asString()),
                         eq(JsonRpcTransportWrapper.class)))
                 .thenReturn(jsonRpcTransportWrapper);
+        headers = Collections.emptyMap();
     }
 
     @Nested
@@ -81,11 +82,10 @@ class A2aJsonRpcControllerTest {
             String requestBody = "{\"method\": \"test\"}";
             String responseBody = "{\"result\": \"success\"}";
 
-            when(httpRequest.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
 
-            Object result = controller.handleRequest(requestBody, httpRequest);
+            Object result = controller.handleRequest(requestBody, headers);
 
             assertEquals(responseBody, result);
 
@@ -112,11 +112,10 @@ class A2aJsonRpcControllerTest {
             Message message = A2A.toAgentMessage("test");
             SendStreamingMessageResponse response = new SendStreamingMessageResponse(1, message);
 
-            when(httpRequest.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(Flux.just(response));
 
-            Object result = controller.handleRequest(requestBody, httpRequest);
+            Object result = controller.handleRequest(requestBody, headers);
 
             assertTrue(result instanceof Flux);
 
@@ -142,16 +141,13 @@ class A2aJsonRpcControllerTest {
             String responseBody = "{\"result\": \"success\"}";
 
             // Mock headers
-            Enumeration<String> headerNames =
-                    Collections.enumeration(Arrays.asList("Content-Type", "Authorization"));
-            when(httpRequest.getHeaderNames()).thenReturn(headerNames);
-            when(httpRequest.getHeader("Content-Type")).thenReturn("application/json");
-            when(httpRequest.getHeader("Authorization")).thenReturn("Bearer token");
+            Map<String, String> header =
+                    Map.of("Content-Type", "application/json", "Authorization", "Bearer token");
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
 
-            Object result = controller.handleRequest(requestBody, httpRequest);
+            Object result = controller.handleRequest(requestBody, header);
 
             assertEquals(responseBody, result);
 
@@ -178,16 +174,12 @@ class A2aJsonRpcControllerTest {
             String requestBody = "{\"method\": \"test\"}";
             String responseBody = "{\"result\": \"success\"}";
 
-            Enumeration<String> headerNames =
-                    Collections.enumeration(Arrays.asList("Header1", "Header2"));
-            when(httpRequest.getHeaderNames()).thenReturn(headerNames);
-            when(httpRequest.getHeader("Header1")).thenReturn("Value1");
-            when(httpRequest.getHeader("Header2")).thenReturn("Value2");
+            Map<String, String> header = Map.of("Header1", "Value1", "Header2", "Value2");
 
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
 
-            controller.handleRequest(requestBody, httpRequest);
+            controller.handleRequest(requestBody, header);
 
             ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
@@ -204,11 +196,10 @@ class A2aJsonRpcControllerTest {
             String requestBody = "{\"method\": \"test\"}";
             String responseBody = "{\"result\": \"success\"}";
 
-            when(httpRequest.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
 
-            controller.handleRequest(requestBody, httpRequest);
+            controller.handleRequest(requestBody, headers);
 
             ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
             verify(jsonRpcTransportWrapper)
@@ -229,16 +220,15 @@ class A2aJsonRpcControllerTest {
             String requestBody = "{\"method\": \"test\"}";
             String responseBody = "{\"result\": \"success\"}";
 
-            when(httpRequest.getHeaderNames()).thenReturn(Collections.emptyEnumeration());
             when(jsonRpcTransportWrapper.handleRequest(anyString(), anyMap(), anyMap()))
                     .thenReturn(responseBody);
 
             // First call should initialize the handler
-            Object result1 = controller.handleRequest(requestBody, httpRequest);
+            Object result1 = controller.handleRequest(requestBody, headers);
             assertEquals(responseBody, result1);
 
             // Second call should reuse the same handler
-            Object result2 = controller.handleRequest(requestBody, httpRequest);
+            Object result2 = controller.handleRequest(requestBody, headers);
             assertEquals(responseBody, result2);
 
             // Should only fetch the transport wrapper once

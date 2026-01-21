@@ -758,7 +758,7 @@ class AguiEventTest {
 
         @Test
         void testEventTypeCount() {
-            assertEquals(12, AguiEventType.values().length);
+            assertEquals(18, AguiEventType.values().length);
         }
 
         @Test
