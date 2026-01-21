@@ -369,7 +369,7 @@ agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new 
 //Build a DashScopeChatModel to invoke the LLM service.
 private static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
     if (StringUtils.isEmpty(dashScopeApiKey)) {
-        throw new IllegalStateException(
+        throw new IllegalArgumentException(
             "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
         );
     }

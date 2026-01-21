@@ -366,7 +366,7 @@ agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new 
 //构建DashScopeChatModel 用于调用LLM服务
 public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
     if (StringUtils.isEmpty(dashScopeApiKey)) {
-        throw new IllegalStateException(
+        throw new IllegalArgumentException(
             "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
         );
     }
