@@ -44,6 +44,7 @@ agentscope:
     server-side-memory: true
     max-thread-sessions: 1000
     session-timeout-minutes: 30
+    enable-reasoning: false
 
 # Logging
 logging:

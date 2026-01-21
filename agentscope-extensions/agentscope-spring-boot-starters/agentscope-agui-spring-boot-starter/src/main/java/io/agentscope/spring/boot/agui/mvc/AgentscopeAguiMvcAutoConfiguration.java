@@ -89,6 +89,7 @@ public class AgentscopeAguiMvcAutoConfiguration {
                         .runTimeout(props.getRunTimeout())
                         .emitStateEvents(props.isEmitStateEvents())
                         .emitToolCallArgs(props.isEmitToolCallArgs())
+                        .enableReasoning(props.isEnableReasoning())
                         .defaultAgentId(props.getDefaultAgentId())
                         .build();
 

@@ -540,7 +540,7 @@ public class CustomReader implements Reader {
 6. **向量存储选择**：
    - 使用 **InMemoryStore**：开发、测试、小型数据集（<10K 文档）
    - 使用 **QdrantStore**：生产环境、大型数据集、需要持久化
-
+   - 使用 **ElasticsearchStore**: 生产环境、大型数据集、私有部署服务。
 
 ## 完整示例
 
@@ -548,4 +548,5 @@ public class CustomReader implements Reader {
 - **百炼知识库示例**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
 - **Dify 知识库示例**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
 - **RAGFlow 知识库示例**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
+- **Elasticsearch 知识库实例**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
 - **PgVector 知识库示例**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
