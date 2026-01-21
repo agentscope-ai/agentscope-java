@@ -360,10 +360,18 @@ The server externally exposes the AgentCard service
 ```java
 //Externally expose the AgentCard service based on RocketMQ communication
 AgentInterface agentInterface = new AgentInterface(RocketMQA2AConstant.ROCKETMQ_PROTOCOL, buildRocketMQUrl());
-ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildRocketMQUrl()).preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL).additionalInterfaces(List.of(agentInterface)).description("An intelligent assistant enabling highly reliable asynchronous communication based on Apache RocketMQ.").build();
+ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
+    .url(buildRocketMQUrl())
+    .preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL)
+    .additionalInterfaces(List.of(agentInterface))
+    .description("An intelligent assistant enabling highly reliable asynchronous communication based on Apache RocketMQ.")
+    .build();
 //Configure the DASHSCOPE_API_KEY to invoke the LLM service
 AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
-agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10))).port(10001).build());
+agentApp.deployManager(LocalDeployManager.builder()
+    .protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10)))
+    .port(10001)
+    .build());
 ```
 ```java
 //Build a DashScopeChatModel to invoke the LLM service.

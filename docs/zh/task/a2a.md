@@ -357,11 +357,20 @@ private static String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQN
 ```java
 //对外开放基于Apache RocketMQ通信的AgentCard服务
 AgentInterface agentInterface = new AgentInterface(RocketMQA2AConstant.ROCKETMQ_PROTOCOL, buildRocketMQUrl());
-ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder().url(buildRocketMQUrl()).preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL).additionalInterfaces(List.of(agentInterface)).description("基于Apache RocketMQ进行高可靠异步通信的智能助手").build();
+ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
+    .url(buildRocketMQUrl())
+    .preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL)
+    .additionalInterfaces(List.of(agentInterface))
+    .description("基于Apache RocketMQ进行高可靠异步通信的智能助手")
+    .build();
 //配置DASHSCOPE_API_KEY以调用LLM服务
 AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
-agentApp.deployManager(LocalDeployManager.builder().protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10))).port(10001).build());
+agentApp.deployManager(LocalDeployManager.builder()
+    .protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10)))
+    .port(10001)
+    .build());
 ```
+
 ```java
 //构建DashScopeChatModel 用于调用LLM服务
 public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
