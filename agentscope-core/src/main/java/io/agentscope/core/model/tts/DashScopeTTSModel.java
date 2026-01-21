@@ -15,17 +15,12 @@
  */
 package io.agentscope.core.model.tts;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.Version;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
-import io.agentscope.core.util.JacksonJsonCodec;
-import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.Base64;
@@ -87,25 +82,6 @@ public class DashScopeTTSModel implements TTSModel {
         this.baseUrl = builder.baseUrl != null ? builder.baseUrl : DEFAULT_BASE_URL;
         this.transport =
                 builder.transport != null ? builder.transport : HttpTransportFactory.getDefault();
-    }
-
-    /**
-     * Gets the ObjectMapper from JsonUtils.
-     *
-     * <p>This method provides access to the underlying ObjectMapper for operations
-     * that require JsonNode (not covered by JsonCodec interface), such as parsing
-     * incoming API responses.
-     *
-     * @return the ObjectMapper instance
-     */
-    private static ObjectMapper getObjectMapper() {
-        JsonCodec codec = JsonUtils.getJsonCodec();
-        if (codec instanceof JacksonJsonCodec) {
-            return ((JacksonJsonCodec) codec).getObjectMapper();
-        }
-        // Fallback to creating a new ObjectMapper if JsonCodec is not Jackson-based
-        // This should rarely happen as JsonUtils defaults to JacksonJsonCodec
-        return new ObjectMapper();
     }
 
     /**
@@ -289,18 +265,19 @@ public class DashScopeTTSModel implements TTSModel {
         log.debug("DashScope TTS raw response: {}", responseBody);
 
         try {
-            JsonNode root = getObjectMapper().readTree(responseBody);
+            DashScopeTTSResponse response =
+                    JsonUtils.getJsonCodec().fromJson(responseBody, DashScopeTTSResponse.class);
 
             // Check for errors
-            if (root.has("code") && !root.get("code").isNull()) {
-                String code = root.get("code").asText();
+            if (response.getCode() != null) {
+                String code = response.getCode();
                 String message =
-                        root.has("message") ? root.get("message").asText() : "Unknown error";
+                        response.getMessage() != null ? response.getMessage() : "Unknown error";
                 log.error("DashScope TTS API error - code: {}, message: {}", code, message);
                 throw new TTSException("DashScope TTS error: " + message, code, responseBody);
             }
 
-            String requestId = root.has("request_id") ? root.get("request_id").asText() : null;
+            String requestId = response.getRequestId();
             log.debug("TTS request_id: {}", requestId);
 
             TTSResponse.Builder builder = TTSResponse.builder().requestId(requestId);
@@ -309,21 +286,21 @@ public class DashScopeTTSModel implements TTSModel {
             byte[] audioData = null;
 
             // Parse output
-            JsonNode output = root.get("output");
+            DashScopeTTSResponse.Output output = response.getOutput();
             if (output != null) {
-                JsonNode audio = output.get("audio");
+                DashScopeTTSResponse.Audio audio = output.getAudio();
                 if (audio != null) {
                     // Check for URL
-                    if (audio.has("url") && !audio.get("url").isNull()) {
-                        audioUrl = audio.get("url").asText();
+                    if (audio.getUrl() != null && !audio.getUrl().isEmpty()) {
+                        audioUrl = audio.getUrl();
                         log.debug("TTS audio URL present: {}", !audioUrl.isEmpty());
                         if (!audioUrl.isEmpty()) {
                             builder.audioUrl(audioUrl);
                         }
                     }
                     // Check for base64 data
-                    if (audio.has("data") && !audio.get("data").isNull()) {
-                        String base64Data = audio.get("data").asText();
+                    if (audio.getData() != null && !audio.getData().isEmpty()) {
+                        String base64Data = audio.getData();
                         log.debug(
                                 "TTS audio data present: {}, length: {}",
                                 base64Data != null && !base64Data.isEmpty(),
@@ -368,7 +345,7 @@ public class DashScopeTTSModel implements TTSModel {
 
             return result;
 
-        } catch (JsonProcessingException e) {
+        } catch (JsonException e) {
             log.error("Failed to parse TTS response: {}", e.getMessage());
             throw new TTSException("Failed to parse TTS response: " + e.getMessage(), e);
         }

@@ -15,16 +15,12 @@
  */
 package io.agentscope.core.model.tts;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.model.transport.WebSocketTransport;
 import io.agentscope.core.model.transport.websocket.JdkWebSocketTransport;
 import io.agentscope.core.model.transport.websocket.WebSocketConnection;
 import io.agentscope.core.model.transport.websocket.WebSocketRequest;
-import io.agentscope.core.util.JacksonJsonCodec;
-import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.io.ByteArrayOutputStream;
@@ -90,25 +86,6 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
 
     /** WebSocket URL for DashScope realtime TTS API. */
     private static final String WEBSOCKET_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
-
-    /**
-     * Gets the ObjectMapper from JsonUtils.
-     *
-     * <p>This method provides access to the underlying ObjectMapper for operations
-     * that require JsonNode (not covered by JsonCodec interface), such as parsing
-     * incoming WebSocket messages.
-     *
-     * @return the ObjectMapper instance
-     */
-    private static ObjectMapper getObjectMapper() {
-        JsonCodec codec = JsonUtils.getJsonCodec();
-        if (codec instanceof JacksonJsonCodec) {
-            return ((JacksonJsonCodec) codec).getObjectMapper();
-        }
-        // Fallback to creating a new ObjectMapper if JsonCodec is not Jackson-based
-        // This should rarely happen as JsonUtils defaults to JacksonJsonCodec
-        return new ObjectMapper();
-    }
 
     private final String apiKey;
     private final String modelName;
@@ -252,8 +229,9 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
      */
     private void processMessage(String message) {
         try {
-            JsonNode event = getObjectMapper().readTree(message);
-            String eventType = event.has("type") ? event.get("type").asText() : "unknown";
+            RealtimeTTSResponseEvent event =
+                    JsonUtils.getJsonCodec().fromJson(message, RealtimeTTSResponseEvent.class);
+            String eventType = event.getType();
 
             if (!"response.audio.delta".equals(eventType)) {
                 log.debug("Received event: {}", eventType);
@@ -261,8 +239,12 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
 
             switch (eventType) {
                 case "error":
+                    RealtimeTTSResponseEvent.ErrorEvent errorEvent =
+                            (RealtimeTTSResponseEvent.ErrorEvent) event;
                     String errMsg =
-                            event.has("error") ? event.get("error").toString() : "Unknown error";
+                            errorEvent.getError() != null
+                                    ? errorEvent.getError().toString()
+                                    : "Unknown error";
                     log.error("TTS API error: {}", errMsg);
                     if (audioSink != null) {
                         audioSink.tryEmitError(new TTSException("TTS API error: " + errMsg));
@@ -270,7 +252,13 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                     break;
 
                 case "session.created":
-                    log.debug("Session created: {}", event.path("session").path("id").asText());
+                    RealtimeTTSResponseEvent.SessionCreatedEvent sessionCreatedEvent =
+                            (RealtimeTTSResponseEvent.SessionCreatedEvent) event;
+                    String sessionId =
+                            sessionCreatedEvent.getSession() != null
+                                    ? sessionCreatedEvent.getSession().getId()
+                                    : null;
+                    log.debug("Session created: {}", sessionId);
                     break;
 
                 case "session.updated":
@@ -278,7 +266,9 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                     break;
 
                 case "input_text_buffer.committed":
-                    log.debug("Text buffer committed, item_id: {}", event.path("item_id").asText());
+                    RealtimeTTSResponseEvent.InputTextBufferCommittedEvent committedEvent =
+                            (RealtimeTTSResponseEvent.InputTextBufferCommittedEvent) event;
+                    log.debug("Text buffer committed, item_id: {}", committedEvent.getItemId());
                     break;
 
                 case "input_text_buffer.cleared":
@@ -286,37 +276,64 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                     break;
 
                 case "response.created":
-                    currentResponseId = event.path("response").path("id").asText();
+                    RealtimeTTSResponseEvent.ResponseCreatedEvent responseCreatedEvent =
+                            (RealtimeTTSResponseEvent.ResponseCreatedEvent) event;
+                    currentResponseId =
+                            responseCreatedEvent.getResponse() != null
+                                    ? responseCreatedEvent.getResponse().getId()
+                                    : null;
                     isResponding.set(true);
                     responseDoneFuture = new CompletableFuture<>();
                     log.debug("Response created: {}", currentResponseId);
                     break;
 
                 case "response.output_item.added":
-                    currentItemId = event.path("item").path("id").asText();
+                    RealtimeTTSResponseEvent.ResponseOutputItemAddedEvent itemAddedEvent =
+                            (RealtimeTTSResponseEvent.ResponseOutputItemAddedEvent) event;
+                    currentItemId =
+                            itemAddedEvent.getItem() != null
+                                    ? itemAddedEvent.getItem().getId()
+                                    : null;
                     log.debug("Output item added: {}", currentItemId);
                     break;
 
+                case "response.output_item.done":
+                    log.debug("Output item done");
+                    break;
+
+                case "response.content_part.added":
+                    RealtimeTTSResponseEvent.ResponseContentPartAddedEvent contentPartEvent =
+                            (RealtimeTTSResponseEvent.ResponseContentPartAddedEvent) event;
+                    String contentPartId =
+                            contentPartEvent.getContentPart() != null
+                                    ? contentPartEvent.getContentPart().getId()
+                                    : null;
+                    log.debug("Content part added: {}", contentPartId);
+                    break;
+
+                case "response.content_part.done":
+                    log.debug("Content part done");
+                    break;
+
                 case "response.audio.delta":
-                    if (event.has("delta") && !event.get("delta").isNull()) {
-                        String base64Audio = event.get("delta").asText();
-                        if (base64Audio != null && !base64Audio.isEmpty()) {
-                            AudioBlock audioBlock =
-                                    AudioBlock.builder()
-                                            .source(
-                                                    Base64Source.builder()
-                                                            .mediaType("audio/" + format)
-                                                            .data(base64Audio)
-                                                            .build())
-                                            .build();
-                            if (audioSink != null) {
-                                Sinks.EmitResult result = audioSink.tryEmitNext(audioBlock);
-                                if (result.isFailure()) {
-                                    // Use debug level - this can happen if subscriber cancelled
-                                    log.debug(
-                                            "Failed to emit audio (sink may be cancelled): {}",
-                                            result);
-                                }
+                    RealtimeTTSResponseEvent.ResponseAudioDeltaEvent audioDeltaEvent =
+                            (RealtimeTTSResponseEvent.ResponseAudioDeltaEvent) event;
+                    String base64Audio = audioDeltaEvent.getDelta();
+                    if (base64Audio != null && !base64Audio.isEmpty()) {
+                        AudioBlock audioBlock =
+                                AudioBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .mediaType("audio/" + format)
+                                                        .data(base64Audio)
+                                                        .build())
+                                        .build();
+                        if (audioSink != null) {
+                            Sinks.EmitResult result = audioSink.tryEmitNext(audioBlock);
+                            if (result.isFailure()) {
+                                // Use debug level - this can happen if subscriber cancelled
+                                log.debug(
+                                        "Failed to emit audio (sink may be cancelled): {}", result);
                             }
                         }
                     }
@@ -340,6 +357,15 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                     log.debug("Session finished");
                     if (audioSink != null) {
                         audioSink.tryEmitComplete();
+                    }
+                    break;
+
+                default:
+                    // Handle unknown event types gracefully
+                    if (event instanceof RealtimeTTSResponseEvent.UnknownEvent) {
+                        log.warn("Received unknown event type: {}", eventType);
+                    } else {
+                        log.warn("Unhandled event type: {}", eventType);
                     }
                     break;
             }
@@ -645,8 +671,9 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
          */
         void processMessage(String message) {
             try {
-                JsonNode event = getObjectMapper().readTree(message);
-                String eventType = event.has("type") ? event.get("type").asText() : "unknown";
+                RealtimeTTSResponseEvent event =
+                        JsonUtils.getJsonCodec().fromJson(message, RealtimeTTSResponseEvent.class);
+                String eventType = event.getType();
 
                 if (!"response.audio.delta".equals(eventType)) {
                     log.debug("Received event: {}", eventType);
@@ -654,16 +681,28 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
 
                 switch (eventType) {
                     case "error":
-                        handleError(event);
+                        handleError((RealtimeTTSResponseEvent.ErrorEvent) event);
                         break;
                     case "session.created":
-                        handleSessionCreated(event);
+                        handleSessionCreated((RealtimeTTSResponseEvent.SessionCreatedEvent) event);
                         break;
                     case "session.updated":
                         handleSessionUpdated();
                         break;
+                    case "response.output_item.done":
+                        // Output item done - no special handling needed, just log
+                        log.debug("Output item done event received");
+                        break;
+                    case "response.content_part.added":
+                        // Content part added - no special handling needed, just log
+                        log.debug("Content part added event received");
+                        break;
+                    case "response.content_part.done":
+                        // Content part done - no special handling needed, just log
+                        log.debug("Content part done event received");
+                        break;
                     case "response.audio.delta":
-                        handleAudioDelta(event);
+                        handleAudioDelta((RealtimeTTSResponseEvent.ResponseAudioDeltaEvent) event);
                         break;
                     case "response.audio.done":
                         log.debug("Audio generation completed");
@@ -675,7 +714,12 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
                         handleSessionFinished();
                         break;
                     default:
-                        log.debug("Unhandled event type: {}", eventType);
+                        // Handle unknown event types gracefully
+                        if (event instanceof RealtimeTTSResponseEvent.UnknownEvent) {
+                            log.debug("Received unknown event type: {}", eventType);
+                        } else {
+                            log.debug("Unhandled event type: {}", eventType);
+                        }
                         break;
                 }
             } catch (Exception e) {
@@ -685,14 +729,15 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
             }
         }
 
-        private void handleError(JsonNode event) {
-            String errMsg = event.has("error") ? event.get("error").toString() : "Unknown error";
+        private void handleError(RealtimeTTSResponseEvent.ErrorEvent event) {
+            String errMsg =
+                    event.getError() != null ? event.getError().toString() : "Unknown error";
             log.error("TTS API error: {}", errMsg);
             sink.tryEmitError(new TTSException("TTS API error: " + errMsg));
         }
 
-        private void handleSessionCreated(JsonNode event) {
-            String sessionId = event.path("session").path("id").asText();
+        private void handleSessionCreated(RealtimeTTSResponseEvent.SessionCreatedEvent event) {
+            String sessionId = event.getSession() != null ? event.getSession().getId() : null;
             log.debug("Session created: {}", sessionId);
         }
 
@@ -721,12 +766,8 @@ public class DashScopeRealtimeTTSModel implements RealtimeTTSModel {
             sendStreamEvent(connection, event);
         }
 
-        private void handleAudioDelta(JsonNode event) {
-            if (!event.has("delta") || event.get("delta").isNull()) {
-                return;
-            }
-
-            String base64Audio = event.get("delta").asText();
+        private void handleAudioDelta(RealtimeTTSResponseEvent.ResponseAudioDeltaEvent event) {
+            String base64Audio = event.getDelta();
             if (base64Audio == null || base64Audio.isEmpty()) {
                 return;
             }
