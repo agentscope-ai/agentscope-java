@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -29,7 +30,10 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.ScanArgs;
+import io.lettuce.core.ScanCursor;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import java.util.ArrayList;
@@ -191,10 +195,14 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should list session keys correctly")
     void testListSessionKeys() {
+        // Mock scan result for session keys
+        KeyScanCursor<String> scanResult = mock(KeyScanCursor.class);
         List<String> keysKeysList = new ArrayList<>();
         keysKeysList.add("agentscope:session:session1:_keys");
         keysKeysList.add("agentscope:session:session2:_keys");
-        when(commands.keys("agentscope:session:*:_keys")).thenReturn(keysKeysList);
+        when(scanResult.getKeys()).thenReturn(keysKeysList);
+        when(scanResult.isFinished()).thenReturn(true);
+        when(commands.scan(any(ScanCursor.class), any(ScanArgs.class))).thenReturn(scanResult);
 
         RedisSession session =
                 RedisSession.builder()
@@ -204,7 +212,6 @@ class LettuceSessionTest {
 
         Set<SessionKey> sessionKeys = session.listSessionKeys();
 
-        verify(commands).keys("agentscope:session:*:_keys");
         assertEquals(2, sessionKeys.size());
         Set<String> sessionIds = new HashSet<>();
         for (SessionKey key : sessionKeys) {
@@ -217,11 +224,15 @@ class LettuceSessionTest {
     @Test
     @DisplayName("Should clear all sessions correctly")
     void testClearAllSessions() {
+        // Mock scan result for all keys
+        KeyScanCursor<String> scanResult = mock(KeyScanCursor.class);
         List<String> keysList = new ArrayList<>();
         keysList.add("agentscope:session:session1:_keys");
         keysList.add("agentscope:session:session1:testModule");
         keysList.add("agentscope:session:session2:_keys");
-        when(commands.keys("agentscope:session:*")).thenReturn(keysList);
+        when(scanResult.getKeys()).thenReturn(keysList);
+        when(scanResult.isFinished()).thenReturn(true);
+        when(commands.scan(any(ScanCursor.class), any(ScanArgs.class))).thenReturn(scanResult);
 
         RedisSession session =
                 RedisSession.builder()
@@ -231,7 +242,6 @@ class LettuceSessionTest {
 
         StepVerifier.create(session.clearAllSessions()).expectNext(3).verifyComplete();
 
-        verify(commands).keys("agentscope:session:*");
         verify(commands).del(keysList.toArray(new String[0]));
     }
 

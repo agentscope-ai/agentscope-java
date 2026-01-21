@@ -163,8 +163,12 @@ public class JedisClientAdapter implements RedisClientAdapter {
         ScanParams scanParams = new ScanParams().match(pattern);
         do {
             ScanResult<String> scanResult = unifiedJedis.scan(cursor, scanParams);
-            matchingKeys.addAll(scanResult.getResult());
-            cursor = scanResult.getCursor();
+            if (scanResult != null) {
+                matchingKeys.addAll(scanResult.getResult());
+                cursor = scanResult.getCursor();
+            } else {
+                break;
+            }
         } while (!cursor.equals(ScanParams.SCAN_POINTER_START));
         return matchingKeys;
     }

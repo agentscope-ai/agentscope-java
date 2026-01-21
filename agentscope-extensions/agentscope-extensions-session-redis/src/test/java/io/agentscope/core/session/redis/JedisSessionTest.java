@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +40,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 import redis.clients.jedis.UnifiedJedis;
+import redis.clients.jedis.params.ScanParams;
+import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Unit tests for {@link RedisSession} with Jedis client.
@@ -223,7 +227,10 @@ class JedisSessionTest {
         Set<String> keysKeys = new HashSet<>();
         keysKeys.add("agentscope:session:session1:_keys");
         keysKeys.add("agentscope:session:session2:_keys");
-        when(unifiedJedis.keys("agentscope:session:*:_keys")).thenReturn(keysKeys);
+        ScanResult<String> scanResult = mock(ScanResult.class);
+        when(scanResult.getResult()).thenReturn(new ArrayList<>(keysKeys));
+        when(scanResult.getCursor()).thenReturn(ScanParams.SCAN_POINTER_START);
+        when(unifiedJedis.scan(anyString(), any(ScanParams.class))).thenReturn(scanResult);
 
         RedisSession session =
                 RedisSession.builder()
@@ -245,7 +252,10 @@ class JedisSessionTest {
         allKeys.add("agentscope:session:s1:_keys");
         allKeys.add("agentscope:session:s2:module1");
         allKeys.add("agentscope:session:s2:_keys");
-        when(unifiedJedis.keys("agentscope:session:*")).thenReturn(allKeys);
+        ScanResult<String> scanResult = mock(ScanResult.class);
+        when(scanResult.getResult()).thenReturn(new ArrayList<>(allKeys));
+        when(scanResult.getCursor()).thenReturn(ScanParams.SCAN_POINTER_START);
+        when(unifiedJedis.scan(anyString(), any(ScanParams.class))).thenReturn(scanResult);
 
         RedisSession session =
                 RedisSession.builder()

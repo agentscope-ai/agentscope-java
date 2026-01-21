@@ -192,8 +192,12 @@ public class LettuceClientAdapter implements RedisClientAdapter {
         while (!cursor.isFinished()) {
             KeyScanCursor<String> scanResult =
                     commands.scan(cursor, ScanArgs.Builder.matches(pattern));
-            keys.addAll(scanResult.getKeys());
-            cursor = scanResult;
+            if (scanResult != null) {
+                keys.addAll(scanResult.getKeys());
+                cursor = scanResult;
+            } else {
+                break;
+            }
         }
         return keys;
     }
