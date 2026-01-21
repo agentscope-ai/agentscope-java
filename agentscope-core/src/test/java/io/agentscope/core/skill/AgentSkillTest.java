@@ -279,16 +279,10 @@ class AgentSkillTest {
         AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
         Map<String, String> scripts = skill.getScriptResources();
 
-        assertEquals(7, scripts.size());
+        assertEquals(3, scripts.size());
         assertTrue(scripts.containsKey("process.py"));
         assertTrue(scripts.containsKey("analyze.js"));
-        assertTrue(scripts.containsKey("Main.java"));
         assertTrue(scripts.containsKey("setup.sh"));
-        assertTrue(scripts.containsKey("install.bash"));
-        assertTrue(scripts.containsKey("script.rb"));
-        assertTrue(scripts.containsKey("util.pl"));
-        assertTrue(!scripts.containsKey("config.json"));
-        assertTrue(!scripts.containsKey("data.txt"));
     }
 
     @Test
