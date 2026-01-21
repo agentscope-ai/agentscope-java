@@ -240,6 +240,6 @@ Set<SessionKey> sessionKeys = session.listSessionKeys();
 ### 清空所有session
 
 ```java
-Mono<Long> deletedCount = session.clearAllSessions();
+Mono<Integer> deletedCount = session.clearAllSessions();
 long count = deletedCount.block();
 ```

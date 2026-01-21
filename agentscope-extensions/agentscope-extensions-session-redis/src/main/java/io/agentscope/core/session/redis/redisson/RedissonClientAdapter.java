@@ -160,6 +160,13 @@ public class RedissonClientAdapter implements RedisClientAdapter {
 
     @Override
     public List<String> rangeList(String key, long start, long end) {
+        if (start > Integer.MAX_VALUE
+                || end > Integer.MAX_VALUE
+                || start < Integer.MIN_VALUE
+                || end < Integer.MIN_VALUE) {
+            throw new IllegalArgumentException(
+                    "Index out of range for Redisson RList, which supports int-based indexing.");
+        }
         RList<String> rList = redissonClient.getList(key, StringCodec.INSTANCE);
         return rList.range((int) start, (int) end);
     }

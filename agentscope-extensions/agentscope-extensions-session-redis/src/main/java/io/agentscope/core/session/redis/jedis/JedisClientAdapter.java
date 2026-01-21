@@ -23,6 +23,8 @@ import redis.clients.jedis.RedisClient;
 import redis.clients.jedis.RedisClusterClient;
 import redis.clients.jedis.RedisSentinelClient;
 import redis.clients.jedis.UnifiedJedis;
+import redis.clients.jedis.params.ScanParams;
+import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Adapter for Jedis Redis client.
@@ -156,7 +158,15 @@ public class JedisClientAdapter implements RedisClientAdapter {
 
     @Override
     public Set<String> findKeysByPattern(String pattern) {
-        return new HashSet<>(unifiedJedis.keys(pattern));
+        Set<String> matchingKeys = new HashSet<>();
+        String cursor = ScanParams.SCAN_POINTER_START;
+        ScanParams scanParams = new ScanParams().match(pattern);
+        do {
+            ScanResult<String> scanResult = unifiedJedis.scan(cursor, scanParams);
+            matchingKeys.addAll(scanResult.getResult());
+            cursor = scanResult.getCursor();
+        } while (!cursor.equals(ScanParams.SCAN_POINTER_START));
+        return matchingKeys;
     }
 
     @Override

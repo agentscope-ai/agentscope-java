@@ -16,8 +16,11 @@
 package io.agentscope.core.session.redis.lettuce;
 
 import io.agentscope.core.session.redis.RedisClientAdapter;
+import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import io.lettuce.core.ScanArgs;
+import io.lettuce.core.ScanCursor;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import java.util.HashSet;
@@ -184,8 +187,15 @@ public class LettuceClientAdapter implements RedisClientAdapter {
 
     @Override
     public Set<String> findKeysByPattern(String pattern) {
-        List<String> keysList = commands.keys(pattern);
-        return new HashSet<>(keysList);
+        Set<String> keys = new HashSet<>();
+        ScanCursor cursor = ScanCursor.INITIAL;
+        while (!cursor.isFinished()) {
+            KeyScanCursor<String> scanResult =
+                    commands.scan(cursor, ScanArgs.Builder.matches(pattern));
+            keys.addAll(scanResult.getKeys());
+            cursor = scanResult;
+        }
+        return keys;
     }
 
     @Override

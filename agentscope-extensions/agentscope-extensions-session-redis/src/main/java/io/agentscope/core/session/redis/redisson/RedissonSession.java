@@ -21,12 +21,19 @@ import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
-import org.redisson.api.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import org.redisson.api.RBucket;
+import org.redisson.api.RKeys;
+import org.redisson.api.RList;
+import org.redisson.api.RSet;
+import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-
-import java.util.*;
 
 /**
  * Redis-based session implementation using Redisson.
