@@ -1455,12 +1455,18 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <ul>
          *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         *   <li>Writes skill scripts to baseDir if code execution is enabled
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
             skillBox.registerSkillLoadTool();
+
+            // If code execution is enabled, write skill scripts to workDir
+            if (skillBox.isCodeExecutionEnabled()) {
+                skillBox.writeSkillScriptsToWorkDir();
+            }
 
             hooks.add(new SkillHook(skillBox));
         }

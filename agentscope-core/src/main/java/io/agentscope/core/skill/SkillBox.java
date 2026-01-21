@@ -19,9 +19,17 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +44,7 @@ public class SkillBox implements StateModule {
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
     private Toolkit toolkit;
+    private Path codeExecutionWorkDir;
 
     public SkillBox() {
         this(null);
@@ -526,5 +535,178 @@ public class SkillBox implements StateModule {
                 .apply();
 
         logger.info("Registered skill load tools to toolkit");
+    }
+
+    // ==================== Code Execution ====================
+
+    /**
+     * Enables code execution capabilities for skills with temporary working directory.
+     *
+     * <p>This method creates a sandboxed environment for executing scripts from skills.
+     * A temporary directory will be created when scripts are written.
+     *
+     * @throws IllegalStateException if toolkit is not bound
+     */
+    public void enableCodeExecution() {
+        enableCodeExecution(null);
+    }
+
+    /**
+     * Enables code execution capabilities for skills.
+     *
+     * <p>This method creates a sandboxed environment for executing scripts from skills by:
+     * <ul>
+     *   <li>Registering ShellCommandTool with allowed commands (python, python3, node, nodejs)</li>
+     *   <li>Registering ReadFileTool and WriteFileTool restricted to the working directory</li>
+     *   <li>Creating and activating the "skill_code_execution_tool_group" tool group</li>
+     * </ul>
+     *
+     * <p>After calling this method, scripts from registered skills will be written to the
+     * working directory when the agent is configured.
+     *
+     * @param workDir Working directory for code execution. If null or empty, a temporary
+     *                directory will be created when scripts are written.
+     * @throws IllegalStateException if toolkit is not bound
+     */
+    public void enableCodeExecution(String workDir) {
+        if (toolkit == null) {
+            throw new IllegalStateException("Must bind toolkit before enabling code execution");
+        }
+
+        // Set workDir (null means temporary directory will be created later)
+        if (workDir == null || workDir.isEmpty()) {
+            this.codeExecutionWorkDir = null;
+        } else {
+            this.codeExecutionWorkDir = Paths.get(workDir).toAbsolutePath().normalize();
+        }
+
+        // Create tool group
+        if (toolkit.getToolGroup("skill_code_execution_tool_group") == null) {
+            toolkit.createToolGroup(
+                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
+        }
+
+        // Create and register three tools
+        Set<String> allowedCommands = Set.of("python", "python3", "node", "nodejs");
+        String workDirStr = codeExecutionWorkDir != null ? codeExecutionWorkDir.toString() : null;
+        ShellCommandTool shellTool = new ShellCommandTool(workDirStr, allowedCommands, null);
+        ReadFileTool readTool = new ReadFileTool(workDirStr);
+        WriteFileTool writeTool = new WriteFileTool(workDirStr);
+
+        toolkit.registration()
+                .agentTool(shellTool)
+                .group("skill_code_execution_tool_group")
+                .apply();
+        toolkit.registration().tool(readTool).group("skill_code_execution_tool_group").apply();
+        toolkit.registration().tool(writeTool).group("skill_code_execution_tool_group").apply();
+
+        logger.info(
+                "Code execution enabled with workDir: {}",
+                codeExecutionWorkDir != null ? codeExecutionWorkDir : "temporary directory");
+    }
+
+    /**
+     * Checks if code execution is enabled.
+     *
+     * @return true if code execution is enabled, false otherwise
+     */
+    public boolean isCodeExecutionEnabled() {
+        return toolkit != null && toolkit.getToolGroup("skill_code_execution_tool_group") != null;
+    }
+
+    /**
+     * Gets the working directory for code execution.
+     *
+     * @return The working directory path, or null if using temporary directory
+     */
+    public Path getCodeExecutionWorkDir() {
+        return codeExecutionWorkDir;
+    }
+
+    /**
+     * Ensures the working directory exists, creating it if necessary.
+     *
+     * @return The working directory path
+     * @throws RuntimeException if failed to create the directory
+     */
+    private Path ensureWorkDirExists() {
+        Path workDir;
+
+        if (codeExecutionWorkDir == null) {
+            // Create temporary directory
+            try {
+                workDir = Files.createTempDirectory("agentscope-code-execution-");
+                logger.info("Created temporary working directory: {}", workDir);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to create temporary working directory", e);
+            }
+        } else {
+            workDir = codeExecutionWorkDir;
+            // Create directory if it doesn't exist
+            if (!Files.exists(workDir)) {
+                try {
+                    Files.createDirectories(workDir);
+                    logger.info("Created working directory: {}", workDir);
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to create working directory", e);
+                }
+            }
+        }
+
+        return workDir;
+    }
+
+    /**
+     * Writes all skill scripts to the code execution working directory.
+     *
+     * <p>This method iterates through all registered skills and writes their script
+     * resources to the working directory. Scripts are organized by skill ID:
+     * <ul>
+     *   <li>Scripts are written to workDir/skillId/relativePath</li>
+     *   <li>Scripts are identified by being in "scripts/" directory OR having script extension (.py, .js, .sh)</li>
+     * </ul>
+     *
+     * <p>If a script file already exists, it will be overwritten.
+     *
+     * @throws IllegalStateException if code execution is not enabled
+     */
+    public void writeSkillScriptsToWorkDir() {
+        if (!isCodeExecutionEnabled()) {
+            throw new IllegalStateException("Code execution is not enabled");
+        }
+
+        Path workDir = ensureWorkDirExists();
+        int scriptCount = 0;
+
+        for (String skillId : getAllSkillIds()) {
+            AgentSkill skill = getSkill(skillId);
+            Map<String, String> scripts = skill.getScriptResources();
+
+            if (scripts.isEmpty()) {
+                continue;
+            }
+
+            // Create skill-specific directory
+            Path skillDir = workDir.resolve(skillId);
+
+            for (Map.Entry<String, String> entry : scripts.entrySet()) {
+                String relativePath = entry.getKey();
+                String content = entry.getValue();
+                Path targetPath = skillDir.resolve(relativePath);
+
+                try {
+                    // Create parent directories if they don't exist
+                    if (targetPath.getParent() != null) {
+                        Files.createDirectories(targetPath.getParent());
+                    }
+                    Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                    logger.debug("Wrote script: {}", targetPath);
+                    scriptCount++;
+                } catch (IOException e) {
+                    logger.error("Failed to write script {}: {}", relativePath, e.getMessage());
+                }
+            }
+        }
+        logger.info("Wrote {} skill scripts to workDir: {}", scriptCount, workDir);
     }
 }
