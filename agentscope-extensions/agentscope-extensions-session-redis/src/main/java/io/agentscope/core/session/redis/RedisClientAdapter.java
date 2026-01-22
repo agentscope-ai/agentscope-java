@@ -32,11 +32,6 @@ import java.util.Set;
  *   <li>Set operations: {@code addToSet}, {@code getSetMembers}, {@code getSetSize}</li>
  *   <li>Key operations: {@code keyExists}, {@code deleteKeys}, {@code findKeysByPattern}</li>
  * </ul>
- *
- * @author Kevin
- * @author jianjun.xu
- * @author benym
- * @since 1.0.8
  */
 public interface RedisClientAdapter {
 

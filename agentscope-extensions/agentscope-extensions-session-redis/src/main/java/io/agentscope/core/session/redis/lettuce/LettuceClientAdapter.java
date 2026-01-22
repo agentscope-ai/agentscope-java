@@ -102,21 +102,16 @@ import java.util.Set;
  * // Create adapter
  * LettuceClientAdapter adapter = LettuceClientAdapter.of(redisClient);
  * }</pre>
- *
- * @author Kevin
- * @author jianjun.xu
- * @author benym
- * @since 1.0.8
  */
 public class LettuceClientAdapter implements RedisClientAdapter {
 
-    private final io.lettuce.core.RedisClient redisClient;
+    private final RedisClient redisClient;
 
     private final StatefulRedisConnection<String, String> connection;
 
     private final RedisCommands<String, String> commands;
 
-    private LettuceClientAdapter(io.lettuce.core.RedisClient redisClient) {
+    private LettuceClientAdapter(RedisClient redisClient) {
         this.redisClient = redisClient;
         this.connection = redisClient.connect();
         this.commands = connection.sync();
@@ -131,7 +126,7 @@ public class LettuceClientAdapter implements RedisClientAdapter {
      * @param redisClient the RedisClient
      * @return a new LettuceClientAdapter
      */
-    public static LettuceClientAdapter of(io.lettuce.core.RedisClient redisClient) {
+    public static LettuceClientAdapter of(RedisClient redisClient) {
         return new LettuceClientAdapter(redisClient);
     }
 

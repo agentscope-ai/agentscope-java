@@ -113,11 +113,6 @@ import org.redisson.client.codec.StringCodec;
  * // Create adapter
  * RedissonClientAdapter adapter = RedissonClientAdapter.of(redissonClient);
  * }</pre>
- *
- * @author Kevin
- * @author jianjun.xu
- * @author benym
- * @since 1.0.8
  */
 public class RedissonClientAdapter implements RedisClientAdapter {
 

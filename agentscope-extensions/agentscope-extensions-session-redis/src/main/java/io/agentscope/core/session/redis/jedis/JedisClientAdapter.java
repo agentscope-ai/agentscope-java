@@ -82,11 +82,6 @@ import redis.clients.jedis.resps.ScanResult;
  * // Create adapter
  * JedisClientAdapter adapter = JedisClientAdapter.of(unifiedJedis);
  * }</pre>
- *
- * @author Kevin
- * @author jianjun.xu
- * @author benym
- * @since 1.0.8
  */
 public class JedisClientAdapter implements RedisClientAdapter {
 

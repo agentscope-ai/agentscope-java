@@ -65,7 +65,7 @@ import redis.clients.jedis.UnifiedJedis;
  *
  * // Build RedisSession
  * Session session = RedisSession.builder()
- *     .redisClient(redisClient)
+ *     .jedisClient(redisClient)
  *     .build();
  * }</pre>
  *
@@ -81,7 +81,7 @@ import redis.clients.jedis.UnifiedJedis;
  *
  * // Build RedisSession
  * Session session = RedisSession.builder()
- *     .redisClusterClient(redisClusterClient)
+ *     .jedisClient(redisClusterClient)
  *     .build();
  * }</pre>
  *
@@ -96,7 +96,7 @@ import redis.clients.jedis.UnifiedJedis;
  *
  * // Build RedisSession
  * Session session = RedisSession.builder()
- *     .redisSentinelClient(redisSentinelClient)
+ *     .jedisClient(redisSentinelClient)
  *     .build();
  * }</pre>
  *
@@ -169,15 +169,10 @@ import redis.clients.jedis.UnifiedJedis;
  *
  * // Build RedisSession with custom key prefix
  * Session session = RedisSession.builder()
- *     .redisClient(redisClient)
+ *     .jedisClient(redisClient)
  *     .keyPrefix("myapp:session:")
  *     .build();
  * }</pre>
- *
- * @author Kevin
- * @author jianjun.xu
- * @author benym
- * @since 1.0.8
  */
 public class RedisSession implements Session {
 
