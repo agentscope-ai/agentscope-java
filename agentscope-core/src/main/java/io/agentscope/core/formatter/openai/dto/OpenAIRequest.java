@@ -165,7 +165,7 @@ public class OpenAIRequest {
      * Example: ["text", "audio"]
      */
     @JsonProperty("modalities")
-    private java.util.List<String> modalities;
+    private List<String> modalities;
 
     /**
      * Audio output configuration.

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.formatter.openai.dto;
+package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
 import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonUtils;
 import java.util.Arrays;

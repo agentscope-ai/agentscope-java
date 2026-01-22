@@ -454,7 +454,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
                             // HITL stop
                             if (event.isStopRequested()) {
-                                return Mono.just(msg);
+                                return Mono.just(
+                                        msg.withGenerateReason(
+                                                GenerateReason.REASONING_STOP_REQUESTED));
                             }
 
                             // gotoReasoning requested (e.g., by StructuredOutputHook)
@@ -543,7 +545,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                 // HITL stop (also triggered by
                                                 // StructuredOutputHook when completed)
                                                 if (event.isStopRequested()) {
-                                                    return Mono.just(event.getToolResultMsg());
+                                                    return Mono.just(
+                                                            event.getToolResultMsg()
+                                                                    .withGenerateReason(
+                                                                            GenerateReason
+                                                                                    .ACTING_STOP_REQUESTED));
                                                 }
 
                                                 // If there are pending results, build suspended Msg
@@ -1506,12 +1512,18 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <ul>
          *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         *   <li>Writes skill scripts to baseDir if code execution is enabled
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
             skillBox.registerSkillLoadTool();
+
+            // If code execution is enabled, write skill scripts to workDir
+            if (skillBox.isCodeExecutionEnabled()) {
+                skillBox.writeSkillScriptsToWorkDir();
+            }
 
             hooks.add(new SkillHook(skillBox));
         }

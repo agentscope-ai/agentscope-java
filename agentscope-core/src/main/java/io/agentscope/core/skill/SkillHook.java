@@ -17,8 +17,6 @@ package io.agentscope.core.skill;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,22 +34,8 @@ public class SkillHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        // Reset skill state and skill tool group before and after calls
-        if (event instanceof PreCallEvent preCallEvent) {
-            skillBox.deactivateAllSkills();
-            skillBox.syncToolGroupStates();
-            return Mono.just(event);
-        }
-
-        if (event instanceof PostCallEvent postCallEvent) {
-            skillBox.deactivateAllSkills();
-            skillBox.syncToolGroupStates();
-            return Mono.just(event);
-        }
-
         // Inject skill prompts
         if (event instanceof PreReasoningEvent preReasoningEvent) {
-            skillBox.syncToolGroupStates();
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
                 List<Msg> inputMessages = new ArrayList<>(preReasoningEvent.getInputMessages());

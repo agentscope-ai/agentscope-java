@@ -242,4 +242,89 @@ class AgentSkillTest {
         AgentSkill skill4 = new AgentSkill("name", "desc", "content", manyResources);
         assertEquals(50, skill4.getResources().size());
     }
+
+    @Test
+    @DisplayName("Should get script resources from scripts folder")
+    void testGetScriptResourcesFromScriptsFolder() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/process.py", "print('hello')");
+        resources.put("scripts/analyze.js", "console.log('test')");
+        resources.put("scripts/data.txt", "not a script but in scripts folder");
+        resources.put("config.json", "{\"key\": \"value\"}");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+        Map<String, String> scripts = skill.getScriptResources();
+
+        assertEquals(3, scripts.size());
+        assertTrue(scripts.containsKey("scripts/process.py"));
+        assertTrue(scripts.containsKey("scripts/analyze.js"));
+        assertTrue(scripts.containsKey("scripts/data.txt"));
+        assertTrue(!scripts.containsKey("config.json"));
+    }
+
+    @Test
+    @DisplayName("Should get script resources by extension")
+    void testGetScriptResourcesByExtension() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("process.py", "python code");
+        resources.put("analyze.js", "javascript code");
+        resources.put("Main.java", "java code");
+        resources.put("setup.sh", "shell script");
+        resources.put("install.bash", "bash script");
+        resources.put("script.rb", "ruby code");
+        resources.put("util.pl", "perl code");
+        resources.put("config.json", "not a script");
+        resources.put("data.txt", "not a script");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+        Map<String, String> scripts = skill.getScriptResources();
+
+        assertEquals(3, scripts.size());
+        assertTrue(scripts.containsKey("process.py"));
+        assertTrue(scripts.containsKey("analyze.js"));
+        assertTrue(scripts.containsKey("setup.sh"));
+    }
+
+    @Test
+    @DisplayName("Should get script resources mixed cases")
+    void testGetScriptResourcesMixedCases() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/process.py", "in scripts folder with script extension");
+        resources.put("scripts/config.json", "in scripts folder but not script extension");
+        resources.put("analyze.js", "not in scripts folder but has script extension");
+        resources.put("data/file.txt", "not in scripts folder and no script extension");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+        Map<String, String> scripts = skill.getScriptResources();
+
+        assertEquals(3, scripts.size());
+        assertTrue(scripts.containsKey("scripts/process.py"));
+        assertTrue(scripts.containsKey("scripts/config.json"));
+        assertTrue(scripts.containsKey("analyze.js"));
+        assertTrue(!scripts.containsKey("data/file.txt"));
+    }
+
+    @Test
+    @DisplayName("Should return empty map when no scripts")
+    void testGetScriptResourcesEmpty() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("config.json", "config");
+        resources.put("data.txt", "data");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+        Map<String, String> scripts = skill.getScriptResources();
+
+        assertNotNull(scripts);
+        assertTrue(scripts.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return empty map when no resources")
+    void testGetScriptResourcesNoResources() {
+        AgentSkill skill = new AgentSkill("test", "desc", "content", null);
+        Map<String, String> scripts = skill.getScriptResources();
+
+        assertNotNull(scripts);
+        assertTrue(scripts.isEmpty());
+    }
 }
