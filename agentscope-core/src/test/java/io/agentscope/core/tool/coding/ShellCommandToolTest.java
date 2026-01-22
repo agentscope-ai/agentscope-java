@@ -780,4 +780,152 @@ class ShellCommandToolTest {
             assertEquals(threadCount, successCount.get());
         }
     }
+
+    @Nested
+    @DisplayName("Buffer Deadlock Fix Tests (Issue #617)")
+    class BufferDeadlockTests {
+
+        @Test
+        @DisplayName("Should handle large output without deadlock using seq command")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproducePipeBufferDeadlockWithSeq() {
+            // Generate ~8KB output using seq command, which exceeds typical pipe buffer
+            // (4-8KB)
+            // This command completes in milliseconds with the fix (Apache Commons Exec's
+            // PumpStreamHandler)
+            String command = "seq 1 20000"; // Approximately 8000 bytes
+
+            // Set a reasonable timeout - should complete quickly now
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 60);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully without timeout
+                                // The fix uses PumpStreamHandler to consume output in separate
+                                // threads
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("20000"),
+                                        "Expected output to contain the last number");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle large file cat without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproduceLargeFileCatDeadlock() throws Exception {
+            // Create a temporary large file
+            java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("test_large_", ".txt");
+            try {
+                // Write 20KB of data (far exceeds typical pipe buffer size)
+                StringBuilder content = new StringBuilder();
+                for (int i = 0; i < 2000; i++) {
+                    content.append("Line ")
+                            .append(i)
+                            .append(": ")
+                            .append("Some test content to fill the buffer\n");
+                }
+                java.nio.file.Files.writeString(tempFile, content.toString());
+
+                String command = "cat " + tempFile.toString();
+
+                // Set a reasonable timeout - should complete quickly with the fix
+                Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    // Expected: Should complete successfully and return the file
+                                    // content
+                                    assertFalse(
+                                            text.contains("TimeoutError"),
+                                            "Should not timeout with Apache Commons Exec fix, but"
+                                                    + " got: "
+                                                    + text);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Expected successful execution");
+                                    assertTrue(
+                                            text.contains("Line 1999"),
+                                            "Expected output to contain last line");
+                                })
+                        .verifyComplete();
+            } finally {
+                java.nio.file.Files.deleteIfExists(tempFile);
+            }
+        }
+
+        @Test
+        @DisplayName("Should handle pre-created large test file without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproduceLargeFileCatDeadlockWithTestResource() {
+            // Use the pre-created test resource file (20KB)
+            String resourcePath =
+                    getClass().getClassLoader().getResource("large_output_test.txt").getPath();
+            String command = "cat " + resourcePath;
+
+            // Set a reasonable timeout - should complete quickly with the fix
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully and return the file
+                                // content
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("This is test content"),
+                                        "Expected output to contain file content");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle yes command piped to head without deadlock")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void reproducePipeBufferDeadlockWithYesCommand() {
+            // Generate large output using yes command
+            // This produces continuous output that will definitely fill the buffer
+            String command = "yes 'This is a test line with some content' | head -n 1000";
+
+            // Set a reasonable timeout - should complete quickly with the fix
+            Mono<ToolResultBlock> result = tool.executeShellCommand(command, 10);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                // Expected: Should complete successfully without timeout
+                                // PumpStreamHandler consumes output in separate threads
+                                assertFalse(
+                                        text.contains("TimeoutError"),
+                                        "Should not timeout with Apache Commons Exec fix, but got: "
+                                                + text);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Expected successful execution");
+                                assertTrue(
+                                        text.contains("This is a test line"),
+                                        "Expected output to contain the repeated line");
+                            })
+                    .verifyComplete();
+        }
+    }
 }
