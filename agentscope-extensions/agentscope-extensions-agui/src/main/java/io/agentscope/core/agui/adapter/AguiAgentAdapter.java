@@ -25,6 +25,7 @@ import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
@@ -46,9 +47,17 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Event Mapping:</b>
  * <ul>
- *   <li>AgentScope REASONING events → AG-UI TEXT_MESSAGE_* events</li>
+ *   <li>AgentScope REASONING events → AG-UI TEXT_MESSAGE_* events (for TextBlock)</li>
+ *   <li>AgentScope REASONING events → AG-UI REASONING_* events (for ThinkingBlock, when enabled)</li>
  *   <li>AgentScope TOOL_RESULT events → AG-UI TOOL_CALL_END events</li>
  *   <li>ToolUseBlock content → AG-UI TOOL_CALL_START events</li>
+ * </ul>
+ *
+ * <p><b>Reasoning Support:</b>
+ * <ul>
+ *   <li>ThinkingBlock content is converted to REASONING_* events according to AG-UI Reasoning draft</li>
+ *   <li>Reasoning output is disabled by default (enableReasoning=false) for backward compatibility</li>
+ *   <li>Set enableReasoning=true in AguiAdapterConfig to enable reasoning events</li>
  * </ul>
  */
 public class AguiAgentAdapter {
@@ -150,12 +159,49 @@ public class AguiAgentAdapter {
                                             state.threadId, state.runId, messageId, text));
                         } else {
                             // End message if this is the last event
-                            events.add(
-                                    new AguiEvent.TextMessageEnd(
-                                            state.threadId, state.runId, messageId));
-                            state.endMessage(messageId);
+                            if (!state.hasEndedMessage(messageId)) {
+                                events.add(
+                                        new AguiEvent.TextMessageEnd(
+                                                state.threadId, state.runId, messageId));
+                                state.endMessage(messageId);
+                            }
                         }
                     }
+                } else if (block instanceof ThinkingBlock thinkingBlock) {
+                    // Handle thinking blocks - convert to REASONING_* events (only if enabled)
+                    // According to AG-UI Reasoning draft: https://docs.ag-ui.com/drafts/reasoning
+                    if (config.isEnableReasoning()) {
+                        String thinking = thinkingBlock.getThinking();
+                        if (thinking != null && !thinking.isEmpty()) {
+                            String messageId = msg.getId();
+
+                            // Start reasoning message if not started
+                            if (!state.hasStartedReasoningMessage(messageId)) {
+                                events.add(
+                                        new AguiEvent.ReasoningMessageStart(
+                                                state.threadId,
+                                                state.runId,
+                                                messageId,
+                                                "assistant"));
+                                state.startReasoningMessage(messageId);
+                            }
+
+                            if (!event.isLast()) {
+                                // In incremental mode, thinking is already the delta
+                                events.add(
+                                        new AguiEvent.ReasoningMessageContent(
+                                                state.threadId, state.runId, messageId, thinking));
+                            } else {
+                                // End reasoning message if this is the last event
+                                events.add(
+                                        new AguiEvent.ReasoningMessageEnd(
+                                                state.threadId, state.runId, messageId));
+                                state.endReasoningMessage(messageId);
+                            }
+                        }
+                    }
+                    // If reasoning is disabled, ThinkingBlock content is ignored (backward
+                    // compatibility)
                 } else if (block instanceof ToolUseBlock toolUse) {
                     // End any active text message before starting tool call
                     if (state.hasActiveTextMessage()) {
@@ -242,6 +288,14 @@ public class AguiAgentAdapter {
             }
         }
 
+        // End any reasoning messages that weren't properly ended
+        for (String messageId : state.getStartedReasoningMessages()) {
+            if (!state.hasEndedReasoningMessage(messageId)) {
+                events.add(
+                        new AguiEvent.ReasoningMessageEnd(state.threadId, state.runId, messageId));
+            }
+        }
+
         // Emit RUN_FINISHED
         events.add(new AguiEvent.RunFinished(state.threadId, state.runId));
 
@@ -300,6 +354,8 @@ public class AguiAgentAdapter {
         private final Set<String> endedMessages = new LinkedHashSet<>();
         private final Set<String> startedToolCalls = new LinkedHashSet<>();
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
+        private final Set<String> startedReasoningMessages = new LinkedHashSet<>();
+        private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
         private String currentTextMessageId = null;
 
         EventConversionState(String threadId, String runId) {
@@ -357,6 +413,26 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedToolCalls() {
             return startedToolCalls;
+        }
+
+        boolean hasStartedReasoningMessage(String messageId) {
+            return startedReasoningMessages.contains(messageId);
+        }
+
+        void startReasoningMessage(String messageId) {
+            startedReasoningMessages.add(messageId);
+        }
+
+        void endReasoningMessage(String messageId) {
+            endedReasoningMessages.add(messageId);
+        }
+
+        boolean hasEndedReasoningMessage(String messageId) {
+            return endedReasoningMessages.contains(messageId);
+        }
+
+        Set<String> getStartedReasoningMessages() {
+            return startedReasoningMessages;
         }
     }
 }

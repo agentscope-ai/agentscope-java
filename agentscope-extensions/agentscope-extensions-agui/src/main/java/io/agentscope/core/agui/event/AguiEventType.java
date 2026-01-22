@@ -77,5 +77,35 @@ public enum AguiEventType {
     /**
      * A raw event with custom data.
      */
-    RAW
+    RAW,
+
+    /**
+     * Indicates the start of a reasoning/thinking phase.
+     */
+    REASONING_START,
+
+    /**
+     * Signals the start of a reasoning message.
+     */
+    REASONING_MESSAGE_START,
+
+    /**
+     * Contains a chunk of content in a streaming reasoning message.
+     */
+    REASONING_MESSAGE_CONTENT,
+
+    /**
+     * Signals the end of a reasoning message.
+     */
+    REASONING_MESSAGE_END,
+
+    /**
+     * A convenience event to auto start/close reasoning messages.
+     */
+    REASONING_MESSAGE_CHUNK,
+
+    /**
+     * Indicates the end of a reasoning/thinking phase.
+     */
+    REASONING_END
 }

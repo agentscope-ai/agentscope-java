@@ -37,6 +37,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     default-agent-id: default
  *     agent-id-header: X-Agent-Id
  *     enable-path-routing: true
+ *     enable-reasoning: false
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -62,6 +63,15 @@ public class AguiProperties {
 
     /** Whether to emit tool call argument events. */
     private boolean emitToolCallArgs = true;
+
+    /**
+     * Whether to enable reasoning/thinking content output.
+     *
+     * <p>When enabled, ThinkingBlock content will be converted to REASONING_* events
+     * according to the AG-UI Reasoning draft specification. Default is false to ensure
+     * backward compatibility and privacy compliance.
+     */
+    private boolean enableReasoning = false;
 
     /** Default agent ID to use when not specified in the request. */
     private String defaultAgentId = "default";
@@ -156,6 +166,14 @@ public class AguiProperties {
 
     public void setEmitToolCallArgs(boolean emitToolCallArgs) {
         this.emitToolCallArgs = emitToolCallArgs;
+    }
+
+    public boolean isEnableReasoning() {
+        return enableReasoning;
+    }
+
+    public void setEnableReasoning(boolean enableReasoning) {
+        this.enableReasoning = enableReasoning;
     }
 
     public String getDefaultAgentId() {
