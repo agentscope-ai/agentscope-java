@@ -528,6 +528,24 @@ class AguiAgentAdapterTest {
         Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        StepVerifier.create(adapter.run(input))
+                .expectNextMatches(e -> e instanceof AguiEvent.RunStarted)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallStart)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallArgs)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallEnd)
+                .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
+                .verifyComplete();
+    }
+
+    @Test
     void testTextMessageEndNotDuplicatedWhenLastEventAfterToolCall() {
         // Test that when a text message is interrupted by a tool call and then the last event
         // contains text blocks with the same message ID, only one TextMessageEnd is emitted
@@ -570,30 +588,6 @@ class AguiAgentAdapterTest {
                         .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
                         .build();
 
-        StepVerifier.create(adapter.run(input))
-                .expectNextMatches(e -> e instanceof AguiEvent.RunStarted)
-                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallStart)
-                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallArgs)
-                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallEnd)
-                .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
-                .verifyComplete();
-    }
-
-    @Test
-    void testToolUseBlockWithNullIdGeneratesUUID() {
-        Msg toolCallMsg =
-                Msg.builder()
-                        .id("msg-tc1")
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                ToolUseBlock.builder()
-                                        .id("tc-1")
-                                        .name("calculator")
-                                        .input(Map.of("expr", "2+2"))
-                                        .content("{\"expr\":\"2+2\"}")
-                                        .build())
-                        .build();
-
         List<AguiEvent> events = adapter.run(input).collectList().block();
 
         assertNotNull(events);
@@ -609,6 +603,48 @@ class AguiAgentAdapterTest {
                                 })
                         .count();
         assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
+    }
+
+    @Test
+    void testToolUseBlockWithNullIdGeneratesUUID() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id(null) // null ID
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.ToolCallStart toolStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolStart, "Should have ToolCallStart");
+        // Should have generated a UUID (non-null, non-empty string)
+        assertNotNull(toolStart.toolCallId(), "Tool call ID should not be null");
+        assertTrue(!toolStart.toolCallId().isEmpty(), "Tool call ID should not be empty");
     }
 
     @Test
@@ -669,15 +705,6 @@ class AguiAgentAdapterTest {
                         .content(
                                 ToolResultBlock.builder()
                                         .id("tc-1")
-                                        .output(TextBlock.builder().text("4").build())
-                                        .build())
-                        .build();
-
-        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
-        Event toolResultEvent = new Event(EventType.TOOL_RESULT, toolResultMsg, true);
-
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(toolCallEvent, toolResultEvent));
                                         .output(
                                                 List.of(
                                                         TextBlock.builder().text("Line 1").build(),
@@ -695,22 +722,12 @@ class AguiAgentAdapterTest {
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Calculate 2+2")))
                         .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
                         .build();
 
         List<AguiEvent> events = adapter.run(input).collectList().block();
 
         assertNotNull(events);
-
-        // Should have ToolCallStart, ToolCallArgs, ToolCallResult events
-        long toolStartCount =
-                events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
-        assertEquals(1, toolStartCount, "Should have ToolCallStart");
-
-        long toolArgsCount =
-                events.stream().filter(e -> e instanceof AguiEvent.ToolCallArgs).count();
-        assertEquals(1, toolArgsCount, "Should have ToolCallArgs");
 
         long toolResultCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ToolCallResult).count();
@@ -765,54 +782,10 @@ class AguiAgentAdapterTest {
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(toolResult);
-        assertEquals("4", toolResult.content());
         assertNotNull(toolResult, "Should have ToolCallResult");
-        // When output is empty, result should be null
-        assertTrue(toolResult.content() == null || toolResult.content().isEmpty());
-    }
-
-    @Test
-    void testToolUseBlockWithNullId() {
-        // Test that when ToolUseBlock has null ID, a UUID is generated
-        Msg toolCallMsg =
-                Msg.builder()
-                        .id("msg-tc1")
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                ToolUseBlock.builder()
-                                        .id(null) // null ID
-                                        .name("test_tool")
-                                        .input(Map.of("param", "value"))
-                                        .build())
-                        .build();
-
-        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(toolCallEvent));
-
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
-                        .build();
-
-        List<AguiEvent> events = adapter.run(input).collectList().block();
-
-        assertNotNull(events);
-
-        AguiEvent.ToolCallStart toolStart =
-                events.stream()
-                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
-                        .map(e -> (AguiEvent.ToolCallStart) e)
-                        .findFirst()
-                        .orElse(null);
-
-        assertNotNull(toolStart, "Should have ToolCallStart");
-        // Should have generated a UUID (non-null, non-empty string)
-        assertNotNull(toolStart.toolCallId(), "Tool call ID should not be null");
-        assertTrue(!toolStart.toolCallId().isEmpty(), "Tool call ID should not be empty");
+        assertTrue(
+                toolResult.content() == null || toolResult.content().isEmpty(),
+                "Empty output should result in null or empty content");
     }
 
     @Test
