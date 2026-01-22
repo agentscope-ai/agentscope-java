@@ -43,7 +43,7 @@ public class SkillBox implements StateModule {
 
     public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
-        this.skillToolFactory = new SkillToolFactory(skillRegistry);
+        this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
 
@@ -85,6 +85,13 @@ public class SkillBox implements StateModule {
     /**
      * Binds a toolkit to the skill box.
      *
+     * <p>
+     * This method binds the toolkit to both the skill box and its internal skill
+     * tool factory.
+     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
+     * ensure the
+     * skill tool factory references the correct toolkit instance.
+     *
      * @param toolkit The toolkit to bind to the skill box
      * @throws IllegalArgumentException if the toolkit is null
      */
@@ -93,6 +100,8 @@ public class SkillBox implements StateModule {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
         this.toolkit = toolkit;
+        // ReActAgent uses a deep copy of Toolkit, so we need to rebind it here
+        this.skillToolFactory.bindToolkit(toolkit);
     }
 
     /**
