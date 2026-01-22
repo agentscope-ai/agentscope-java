@@ -83,7 +83,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
         <milvus.version>2.6.13</milvus.version>
-        <elasticsearch.version>8.12.0</elasticsearch.version>
+        <elasticsearch.version>9.2.4</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
