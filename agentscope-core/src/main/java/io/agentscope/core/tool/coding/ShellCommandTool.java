@@ -519,7 +519,7 @@ public class ShellCommandTool implements AgentTool {
             }
         }
     }
-    
+
     /**
      * Get output from a Future with timeout.
      *
@@ -538,32 +538,6 @@ public class ShellCommandTool implements AgentTool {
         } catch (TimeoutException e) {
             logger.warn("Timeout waiting for stream reader to complete");
             future.cancel(true); // Cancel the task
-            return "";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.warn("Interrupted while waiting for stream reader");
-            future.cancel(true); // Cancel the task
-            return "";
-        } catch (ExecutionException e) {
-            logger.error("Error in stream reader: {}", e.getCause().getMessage(), e.getCause());
-            return "";
-        }
-    }
-    
-    /**
-     * Get output from a Future with timeout.
-     *
-     * <p>This helper method safely retrieves the output from an asynchronous stream reader,
-     * with proper timeout and error handling. If the future times out or fails, it will be
-     * cancelled and an empty string will be returned.
-     *
-     * @param future The Future containing the output string
-     * @param timeout The timeout value
-     * @param unit The timeout unit
-     * @return The output string, or empty string if timeout or error occurs
-     */
-    private String readStream(InputStream inputStream) {
-        if (inputStream == null) {
             return "";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
