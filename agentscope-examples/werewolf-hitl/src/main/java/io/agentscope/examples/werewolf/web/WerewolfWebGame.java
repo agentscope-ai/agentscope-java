@@ -23,6 +23,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.user.UserAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -437,7 +438,14 @@ public class WerewolfWebGame {
                                     .name(werewolf.getName())
                                     .role(MsgRole.USER)
                                     .content(TextBlock.builder().text(voteTarget).build())
-                                    .metadata(Map.of("targetPlayer", voteTarget, "reason", ""))
+                                    .metadata(
+                                            Map.of(
+                                                    MessageMetadataKeys.STRUCTURED_OUTPUT,
+                                                    Map.of(
+                                                            "targetPlayer",
+                                                            voteTarget,
+                                                            "reason",
+                                                            "")))
                                     .build();
                     votes.add(voteMsg);
                 } else {
@@ -921,7 +929,14 @@ public class WerewolfWebGame {
                                     .name(player.getName())
                                     .role(MsgRole.USER)
                                     .content(TextBlock.builder().text(voteTarget).build())
-                                    .metadata(Map.of("targetPlayer", voteTarget, "reason", ""))
+                                    .metadata(
+                                            Map.of(
+                                                    MessageMetadataKeys.STRUCTURED_OUTPUT,
+                                                    Map.of(
+                                                            "targetPlayer",
+                                                            voteTarget,
+                                                            "reason",
+                                                            "")))
                                     .build();
                     votes.add(voteMsg);
                 } else {
