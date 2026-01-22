@@ -24,6 +24,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -91,13 +93,14 @@ public class ShellCommandTool implements AgentTool {
     private final Set<String> allowedCommands;
     private final Function<String, Boolean> approvalCallback;
     private final CommandValidator commandValidator;
+    private final Path baseDir;
 
     public ShellCommandTool() {
-        this(null, null);
+        this(null, null, null, createDefaultValidator());
     }
 
     public ShellCommandTool(Set<String> allowedCommands) {
-        this(allowedCommands, null);
+        this(null, allowedCommands, null, createDefaultValidator());
     }
 
     /**
@@ -108,7 +111,21 @@ public class ShellCommandTool implements AgentTool {
      */
     public ShellCommandTool(
             Set<String> allowedCommands, Function<String, Boolean> approvalCallback) {
-        this(allowedCommands, approvalCallback, createDefaultValidator());
+        this(null, allowedCommands, approvalCallback, createDefaultValidator());
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, and approval callback.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables
+     * @param approvalCallback Callback function to request user approval
+     */
+    public ShellCommandTool(
+            String baseDir,
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback) {
+        this(baseDir, allowedCommands, approvalCallback, createDefaultValidator());
     }
 
     /**
@@ -119,6 +136,22 @@ public class ShellCommandTool implements AgentTool {
      * @param commandValidator Custom command validator
      */
     public ShellCommandTool(
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback,
+            CommandValidator commandValidator) {
+        this(null, allowedCommands, approvalCallback, commandValidator);
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, approval callback, and custom validator.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param approvalCallback Callback function to request user approval
+     * @param commandValidator Custom command validator
+     */
+    public ShellCommandTool(
+            String baseDir,
             Set<String> allowedCommands,
             Function<String, Boolean> approvalCallback,
             CommandValidator commandValidator) {
@@ -133,6 +166,11 @@ public class ShellCommandTool implements AgentTool {
         this.approvalCallback = approvalCallback;
         this.commandValidator =
                 commandValidator != null ? commandValidator : createDefaultValidator();
+        this.baseDir = baseDir != null ? Paths.get(baseDir).toAbsolutePath().normalize() : null;
+
+        if (this.baseDir != null) {
+            logger.info("ShellCommandTool initialized with base directory: {}", this.baseDir);
+        }
     }
 
     /**
@@ -223,6 +261,14 @@ public class ShellCommandTool implements AgentTool {
     public String getDescription() {
         StringBuilder desc = new StringBuilder();
         desc.append("Execute a shell command with security validation and return the result.");
+
+        // Add base directory information if configured
+        if (baseDir != null) {
+            desc.append(" WORKING DIRECTORY: The command will be executed in the directory: ");
+            desc.append(baseDir.toString());
+            desc.append(
+                    ". All relative paths in the command will be resolved from this directory.");
+        }
 
         // Add whitelist information if configured
         if (!allowedCommands.isEmpty()) {
@@ -364,6 +410,12 @@ public class ShellCommandTool implements AgentTool {
             processBuilder = new ProcessBuilder("cmd.exe", "/c", command);
         } else {
             processBuilder = new ProcessBuilder("sh", "-c", command);
+        }
+
+        // Set working directory if baseDir is specified
+        if (baseDir != null) {
+            processBuilder.directory(baseDir.toFile());
+            logger.debug("Setting working directory to: {}", baseDir);
         }
 
         Process process = null;
