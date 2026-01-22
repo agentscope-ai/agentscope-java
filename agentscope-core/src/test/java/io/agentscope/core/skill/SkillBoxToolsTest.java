@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.TextBlock;
@@ -33,6 +34,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 class SkillBoxToolsTest {
 
@@ -63,7 +65,9 @@ class SkillBoxToolsTest {
 
         AgentSkill skill1 =
                 new AgentSkill("test_skill", "Test Skill", "# Test Content", resources1);
-        skillBox.registerSkill(skill1);
+        // Register skill1 with a dummy tool to create tool group
+        AgentTool dummyTool = createDummyTool("test_skill_tool");
+        skillBox.registration().skill(skill1).agentTool(dummyTool).apply();
 
         AgentSkill skill2 =
                 new AgentSkill("empty_skill", "Empty Skill", "# Empty", new HashMap<>());
@@ -71,6 +75,30 @@ class SkillBoxToolsTest {
 
         // Register skill access tools
         skillBox.registerSkillLoadTool();
+    }
+
+    private AgentTool createDummyTool(String name) {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public String getDescription() {
+                return "Dummy tool for testing";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                return Map.of("type", "object", "properties", Map.of());
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                return Mono.just(ToolResultBlock.text("dummy result"));
+            }
+        };
     }
 
     @Test
@@ -135,13 +163,16 @@ class SkillBoxToolsTest {
     }
 
     @Test
-    @DisplayName("Should activate skill when loading markdown")
-    void testActivateSkillWhenLoadingMarkdown() {
+    @DisplayName("Should activate skill and tool group when loading markdown")
+    void testActivateSkillAndToolGroupWhenLoadingMarkdown() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        assertFalse(skillBox.isSkillActive("test_skill_custom"));
+        String skillId = "test_skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
 
-        Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "SKILL.md");
+        assertFalse(skillBox.isSkillActive(skillId));
+
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-002")
@@ -152,7 +183,12 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
         tool.callAsync(param).block(TIMEOUT);
 
-        assertTrue(skillBox.isSkillActive("test_skill_custom"));
+        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated");
+        // Tool group should also be activated when skill is loaded
+        assertNotNull(toolkit.getToolGroup(toolGroupName), "Tool group should exist");
+        assertTrue(
+                toolkit.getToolGroup(toolGroupName).isActive(),
+                "Tool group should be activated when skill is loaded");
     }
 
     @Test
@@ -247,13 +283,16 @@ class SkillBoxToolsTest {
     }
 
     @Test
-    @DisplayName("Should activate skill when loading resource")
-    void testActivateSkillWhenLoadingResource() {
+    @DisplayName("Should activate skill and tool group when loading resource")
+    void testActivateSkillAndToolGroupWhenLoadingResource() {
         AgentTool tool = toolkit.getTool("load_skill_through_path");
 
-        assertFalse(skillBox.isSkillActive("test_skill_custom"));
+        String skillId = "test_skill_custom";
+        String toolGroupName = skillId + "_skill_tools";
 
-        Map<String, Object> input = Map.of("skillId", "test_skill_custom", "path", "data.txt");
+        assertFalse(skillBox.isSkillActive(skillId));
+
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "data.txt");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-007")
@@ -264,7 +303,12 @@ class SkillBoxToolsTest {
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
         tool.callAsync(param).block(TIMEOUT);
 
-        assertTrue(skillBox.isSkillActive("test_skill_custom"));
+        assertTrue(skillBox.isSkillActive(skillId), "Skill should be activated");
+        // Tool group should also be activated when skill is loaded
+        assertNotNull(toolkit.getToolGroup(toolGroupName), "Tool group should exist");
+        assertTrue(
+                toolkit.getToolGroup(toolGroupName).isActive(),
+                "Tool group should be activated when skill is loaded");
     }
 
     @Test
@@ -407,5 +451,36 @@ class SkillBoxToolsTest {
 
         assertNotNull(result);
         assertTrue(isErrorResult(result));
+    }
+
+    @Test
+    @DisplayName("Should handle skill with no tools gracefully")
+    void testLoadSkillWithNoToolsDoesNotFail() {
+        // Skill without tools - tool group won't exist
+        AgentSkill emptySkill = new AgentSkill("no_tools_skill", "No Tools", "# Empty", null);
+        skillBox.registerSkill(emptySkill);
+
+        String skillId = emptySkill.getSkillId();
+
+        // Load skill
+        AgentTool loader = toolkit.getTool("load_skill_through_path");
+        Map<String, Object> input = Map.of("skillId", skillId, "path", "SKILL.md");
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("test-call-015")
+                        .name("load_skill_through_path")
+                        .input(input)
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+
+        ToolResultBlock result = loader.callAsync(param).block(TIMEOUT);
+
+        // Should succeed even without tool group
+        assertNotNull(result);
+        assertFalse(isErrorResult(result), "Should not fail when skill has no tools");
+        assertTrue(skillBox.isSkillActive(skillId), "Skill should still be activated");
+        assertNull(
+                toolkit.getToolGroup(skillId + "_skill_tools"), "Tool group should not be created");
     }
 }

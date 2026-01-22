@@ -21,17 +21,27 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -58,16 +68,39 @@ public class ShellCommandTool implements AgentTool {
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);
     private static final int DEFAULT_TIMEOUT = 300;
 
+    /**
+     * Shared thread pool for asynchronous stream reading.
+     * Uses cached thread pool for dynamic scaling with 60s idle timeout.
+     * Daemon threads ensure they don't prevent JVM shutdown.
+     */
+    private static final ExecutorService STREAM_READER_POOL =
+            Executors.newCachedThreadPool(
+                    new ThreadFactory() {
+                        private final AtomicInteger counter = new AtomicInteger(0);
+
+                        @Override
+                        public Thread newThread(Runnable r) {
+                            Thread t =
+                                    new Thread(
+                                            r,
+                                            "ShellCommand-StreamReader-"
+                                                    + counter.incrementAndGet());
+                            t.setDaemon(true); // Daemon thread won't prevent JVM shutdown
+                            return t;
+                        }
+                    });
+
     private final Set<String> allowedCommands;
     private final Function<String, Boolean> approvalCallback;
     private final CommandValidator commandValidator;
+    private final Path baseDir;
 
     public ShellCommandTool() {
-        this(null, null);
+        this(null, null, null, createDefaultValidator());
     }
 
     public ShellCommandTool(Set<String> allowedCommands) {
-        this(allowedCommands, null);
+        this(null, allowedCommands, null, createDefaultValidator());
     }
 
     /**
@@ -78,7 +111,21 @@ public class ShellCommandTool implements AgentTool {
      */
     public ShellCommandTool(
             Set<String> allowedCommands, Function<String, Boolean> approvalCallback) {
-        this(allowedCommands, approvalCallback, createDefaultValidator());
+        this(null, allowedCommands, approvalCallback, createDefaultValidator());
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, and approval callback.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables
+     * @param approvalCallback Callback function to request user approval
+     */
+    public ShellCommandTool(
+            String baseDir,
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback) {
+        this(baseDir, allowedCommands, approvalCallback, createDefaultValidator());
     }
 
     /**
@@ -89,6 +136,22 @@ public class ShellCommandTool implements AgentTool {
      * @param commandValidator Custom command validator
      */
     public ShellCommandTool(
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback,
+            CommandValidator commandValidator) {
+        this(null, allowedCommands, approvalCallback, commandValidator);
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, approval callback, and custom validator.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param approvalCallback Callback function to request user approval
+     * @param commandValidator Custom command validator
+     */
+    public ShellCommandTool(
+            String baseDir,
             Set<String> allowedCommands,
             Function<String, Boolean> approvalCallback,
             CommandValidator commandValidator) {
@@ -103,6 +166,11 @@ public class ShellCommandTool implements AgentTool {
         this.approvalCallback = approvalCallback;
         this.commandValidator =
                 commandValidator != null ? commandValidator : createDefaultValidator();
+        this.baseDir = baseDir != null ? Paths.get(baseDir).toAbsolutePath().normalize() : null;
+
+        if (this.baseDir != null) {
+            logger.info("ShellCommandTool initialized with base directory: {}", this.baseDir);
+        }
     }
 
     /**
@@ -193,6 +261,14 @@ public class ShellCommandTool implements AgentTool {
     public String getDescription() {
         StringBuilder desc = new StringBuilder();
         desc.append("Execute a shell command with security validation and return the result.");
+
+        // Add base directory information if configured
+        if (baseDir != null) {
+            desc.append(" WORKING DIRECTORY: The command will be executed in the directory: ");
+            desc.append(baseDir.toString());
+            desc.append(
+                    ". All relative paths in the command will be resolved from this directory.");
+        }
 
         // Add whitelist information if configured
         if (!allowedCommands.isEmpty()) {
@@ -336,13 +412,37 @@ public class ShellCommandTool implements AgentTool {
             processBuilder = new ProcessBuilder("sh", "-c", command);
         }
 
+        // Set working directory if baseDir is specified
+        if (baseDir != null) {
+            processBuilder.directory(baseDir.toFile());
+            logger.debug("Setting working directory to: {}", baseDir);
+        }
+
         Process process = null;
+        Future<String> stdoutFuture = null;
+        Future<String> stderrFuture = null;
+
         try {
             long startTime = System.currentTimeMillis();
             logger.debug("Starting command execution: {}", command);
 
             // Start the process
             process = processBuilder.start();
+
+            // CRITICAL FIX: Start asynchronous stream readers immediately to prevent pipe buffer
+            // deadlock
+            // When a child process writes more data than the pipe buffer can hold (typically
+            // 4-64KB),
+            // it will block waiting for the parent process to read the data. If the parent is
+            // blocked
+            // in waitFor(), this creates a deadlock. By reading streams asynchronously in
+            // background
+            // threads from the thread pool, we ensure the pipe buffers are continuously drained,
+            // preventing the deadlock.
+            stdoutFuture =
+                    STREAM_READER_POOL.submit(new StreamReader(process.getInputStream(), "stdout"));
+            stderrFuture =
+                    STREAM_READER_POOL.submit(new StreamReader(process.getErrorStream(), "stderr"));
 
             // Wait for the process to complete with timeout
             logger.debug("Waiting for process with timeout: {} seconds", timeoutSeconds);
@@ -359,12 +459,12 @@ public class ShellCommandTool implements AgentTool {
                         timeoutSeconds,
                         waitElapsed);
 
-                // Try to capture partial output before terminating
-                String stdout = readStream(process.getInputStream());
-                String stderr = readStream(process.getErrorStream());
-
                 // Terminate the process
                 process.destroyForcibly();
+
+                // Get partial output from async readers with short timeout
+                String stdout = getOutputWithTimeout(stdoutFuture, 1, TimeUnit.SECONDS);
+                String stderr = getOutputWithTimeout(stderrFuture, 1, TimeUnit.SECONDS);
 
                 String timeoutMessage =
                         String.format(
@@ -384,8 +484,11 @@ public class ShellCommandTool implements AgentTool {
 
             // Process completed normally
             int returnCode = process.exitValue();
-            String stdout = readStream(process.getInputStream());
-            String stderr = readStream(process.getErrorStream());
+
+            // Get complete output from async readers
+            // Process has finished, so readers should complete quickly
+            String stdout = getOutputWithTimeout(stdoutFuture, 5, TimeUnit.SECONDS);
+            String stderr = getOutputWithTimeout(stderrFuture, 5, TimeUnit.SECONDS);
 
             logger.debug("Command '{}' completed with return code: {}", command, returnCode);
 
@@ -411,37 +514,40 @@ public class ShellCommandTool implements AgentTool {
             // Clean up process resources
             if (process != null && process.isAlive()) {
                 // Destroy the process if still alive
-                // Note: Streams are already closed by try-with-resources in readStream()
+                // Note: Streams are already closed by try-with-resources in StreamReader
                 process.destroyForcibly();
             }
         }
     }
 
     /**
-     * Read all content from an input stream.
+     * Get output from a Future with timeout.
      *
-     * @param inputStream The input stream to read from
-     * @return The content as a string
+     * <p>This helper method safely retrieves the output from an asynchronous stream reader,
+     * with proper timeout and error handling. If the future times out or fails, it will be
+     * cancelled and an empty string will be returned.
+     *
+     * @param future The Future containing the output string
+     * @param timeout The timeout value
+     * @param unit The timeout unit
+     * @return The output string, or empty string if timeout or error occurs
      */
-    private String readStream(java.io.InputStream inputStream) {
-        if (inputStream == null) {
+    private String getOutputWithTimeout(Future<String> future, long timeout, TimeUnit unit) {
+        try {
+            return future.get(timeout, unit);
+        } catch (TimeoutException e) {
+            logger.warn("Timeout waiting for stream reader to complete");
+            future.cancel(true); // Cancel the task
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for stream reader");
+            future.cancel(true); // Cancel the task
+            return "";
+        } catch (ExecutionException e) {
+            logger.error("Error in stream reader: {}", e.getCause().getMessage(), e.getCause());
             return "";
         }
-
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (output.length() > 0) {
-                    output.append("\n");
-                }
-                output.append(line);
-            }
-        } catch (IOException e) {
-            logger.error("Error reading stream: {}", e.getMessage(), e);
-        }
-        return output.toString();
     }
 
     /**
@@ -489,6 +595,46 @@ public class ShellCommandTool implements AgentTool {
                     e.getMessage(),
                     e);
             return false;
+        }
+    }
+
+    /**
+     * Callable task for reading process output streams asynchronously.
+     * This prevents pipe buffer deadlock by continuously draining stdout/stderr.
+     */
+    private static class StreamReader implements Callable<String> {
+        private final InputStream inputStream;
+        private final String streamType;
+
+        StreamReader(InputStream inputStream, String streamType) {
+            this.inputStream = inputStream;
+            this.streamType = streamType;
+        }
+
+        @Override
+        public String call() throws Exception {
+            if (inputStream == null) {
+                return "";
+            }
+
+            logger.debug("StreamReader [{}] started", streamType);
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader =
+                    new BufferedReader(
+                            new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (output.length() > 0) {
+                        output.append("\n");
+                    }
+                    output.append(line);
+                }
+            } catch (IOException e) {
+                logger.error("Error reading {} stream: {}", streamType, e.getMessage(), e);
+                throw e;
+            }
+            logger.debug("StreamReader [{}] completed, read {} bytes", streamType, output.length());
+            return output.toString();
         }
     }
 }
