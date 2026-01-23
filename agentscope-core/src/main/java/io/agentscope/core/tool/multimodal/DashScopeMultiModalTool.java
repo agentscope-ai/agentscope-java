@@ -318,9 +318,18 @@ public class DashScopeMultiModalTool {
     /**
      * Convert the given text to audio.
      *
+     * <p>Supports two types of TTS models:
+     * <ul>
+     *   <li>Qwen TTS models (qwen3-tts-flash, qwen-tts) - uses multimodal-generation API</li>
+     *   <li>Sambert models (sambert-*) - uses speech synthesis SDK</li>
+     * </ul>
+     *
      * @param text       The text to be converted into audio.
-     * @param model      The TTS model to use, e.g., 'sambert-zhinan-v1', 'sambert-zhiqi-v1', 'sambert-zhichu-v1', etc.
-     * @param sampleRate Sample rate of the audio (e.g., 8000, 16000).
+     * @param model      The TTS model to use. For Qwen TTS: 'qwen3-tts-flash', 'qwen-tts'.
+     *                   For Sambert: 'sambert-zhinan-v1', 'sambert-zhiqi-v1', 'sambert-zhichu-v1', etc.
+     * @param voice      Voice name for Qwen TTS models, e.g., 'Cherry', 'Serena'. Ignored for Sambert models.
+     * @param language   Language type for Qwen TTS, e.g., 'Chinese', 'English'. Ignored for Sambert models.
+     * @param sampleRate Sample rate of the audio (e.g., 16000, 24000, 48000).
      * @return A ToolResultBlock containing the base64 data of audio or error message.
      */
     @Tool(name = "dashscope_text_to_audio", description = "Convert the given text to audio.")
@@ -330,35 +339,232 @@ public class DashScopeMultiModalTool {
             @ToolParam(
                             name = "model",
                             description =
-                                    "The TTS model to use, e.g., 'sambert-zhinan-v1',"
+                                    "The TTS model to use. For Qwen TTS: 'qwen3-tts-flash',"
+                                            + " 'qwen-tts'. For Sambert: 'sambert-zhinan-v1',"
                                             + " 'sambert-zhiqi-v1', 'sambert-zhichu-v1', etc.",
                             required = false)
                     String model,
             @ToolParam(
+                            name = "voice",
+                            description =
+                                    "Voice name for Qwen TTS models, e.g., 'Cherry', 'Serena'."
+                                            + " Ignored for Sambert models.",
+                            required = false)
+                    String voice,
+            @ToolParam(
+                            name = "language",
+                            description =
+                                    "Language type for Qwen TTS, e.g., 'Chinese', 'English'."
+                                            + " Ignored for Sambert models.",
+                            required = false)
+                    String language,
+            @ToolParam(
                             name = "sample_rate",
-                            description = "Sample rate of the audio (e.g., 16000, 48000).",
+                            description = "Sample rate of the audio (e.g., 16000, 24000, 48000).",
                             required = false)
                     Integer sampleRate) {
 
         String finalModel =
                 Optional.ofNullable(model)
                         .filter(s -> !s.trim().isEmpty())
-                        .orElse("sambert-zhichu-v1");
-        Integer finalSampleRate = Optional.ofNullable(sampleRate).orElse(16000);
+                        .orElse("qwen3-tts-flash");
+        Integer finalSampleRate = Optional.ofNullable(sampleRate).orElse(24000);
+
+        // Check if it's a Qwen TTS model
+        boolean isQwenTTS = finalModel.startsWith("qwen3-tts") || finalModel.startsWith("qwen-tts");
+
         log.debug(
-                "dashscope_text_to_audio called: prompt='{}', model='{}', sampleRate='{}'",
+                "dashscope_text_to_audio called: text='{}', model='{}', voice='{}', language='{}',"
+                        + " sampleRate='{}', isQwenTTS='{}'",
                 text,
                 finalModel,
-                finalSampleRate);
+                voice,
+                language,
+                finalSampleRate,
+                isQwenTTS);
 
+        if (isQwenTTS) {
+            return synthesizeWithQwenTTS(text, finalModel, voice, language);
+        } else {
+            return synthesizeWithSambert(text, finalModel, finalSampleRate);
+        }
+    }
+
+    /**
+     * Synthesizes audio using Qwen TTS models via the multimodal-generation API.
+     *
+     * <p>This method handles the HTTP communication with DashScope's Qwen TTS endpoint,
+     * building the request payload with text, voice, and language parameters, then
+     * parsing the response to extract audio data.
+     *
+     * <p>The method uses the multimodal-generation API endpoint which differs from
+     * the standard speech synthesis endpoint used by other models.
+     *
+     * @param text the text to synthesize into speech
+     * @param model the Qwen TTS model name (e.g., "qwen3-tts-flash", "qwen-tts")
+     * @param voice the voice name for synthesis, defaults to "Cherry" if null/empty
+     * @param language the language type, defaults to "Chinese" if null/empty
+     * @return a Mono containing ToolResultBlock with AudioBlock on success,
+     *         or an error ToolResultBlock on failure
+     */
+    private Mono<ToolResultBlock> synthesizeWithQwenTTS(
+            String text, String model, String voice, String language) {
+        String finalVoice =
+                Optional.ofNullable(voice).filter(s -> !s.trim().isEmpty()).orElse("Cherry");
+        String finalLanguage =
+                Optional.ofNullable(language).filter(s -> !s.trim().isEmpty()).orElse("Chinese");
+
+        return Mono.fromCallable(
+                        () -> {
+                            // Build request for Qwen TTS API
+                            Map<String, Object> input = new java.util.HashMap<>();
+                            input.put("text", text);
+                            input.put("voice", finalVoice);
+                            input.put("language_type", finalLanguage);
+
+                            Map<String, Object> request = new java.util.HashMap<>();
+                            request.put("model", model);
+                            request.put("input", input);
+
+                            String requestBody =
+                                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                                            .toJson(request);
+
+                            // Call DashScope API using Java HttpClient
+                            java.net.http.HttpClient client =
+                                    java.net.http.HttpClient.newHttpClient();
+                            java.net.http.HttpRequest httpRequest =
+                                    java.net.http.HttpRequest.newBuilder()
+                                            .uri(
+                                                    URI.create(
+                                                            "https://dashscope.aliyuncs.com/api/v1/services"
+                                                                + "/aigc/multimodal-generation/generation"))
+                                            .header("Authorization", "Bearer " + this.apiKey)
+                                            .header("Content-Type", "application/json")
+                                            .header("User-Agent", Version.getUserAgent())
+                                            .POST(
+                                                    java.net.http.HttpRequest.BodyPublishers
+                                                            .ofString(requestBody))
+                                            .build();
+
+                            java.net.http.HttpResponse<String> response =
+                                    client.send(
+                                            httpRequest,
+                                            java.net.http.HttpResponse.BodyHandlers.ofString());
+
+                            if (response.statusCode() != 200) {
+                                log.error(
+                                        "Qwen TTS API failed: status={}, body={}",
+                                        response.statusCode(),
+                                        response.body());
+                                return ToolResultBlock.error(
+                                        "TTS API failed: " + response.statusCode());
+                            }
+
+                            return parseQwenTTSResponse(response.body());
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error(
+                                    "Failed to generate audio with Qwen TTS: '{}'",
+                                    e.getMessage(),
+                                    e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Parses the Qwen TTS API response and extracts audio data.
+     *
+     * <p>The response structure from Qwen TTS API is:
+     * <pre>{@code
+     * {
+     *   "request_id": "...",
+     *   "output": {
+     *     "audio": {
+     *       "url": "https://..."  // or "data": "base64..."
+     *     }
+     *   }
+     * }
+     * }</pre>
+     *
+     * <p>The method handles two audio formats:
+     * <ul>
+     *   <li>URL-based: returns AudioBlock with URLSource</li>
+     *   <li>Base64-encoded: returns AudioBlock with Base64Source</li>
+     * </ul>
+     *
+     * @param responseBody the raw JSON response body from the API
+     * @return ToolResultBlock containing AudioBlock on success,
+     *         or an error ToolResultBlock if parsing fails or response contains an error
+     */
+    private ToolResultBlock parseQwenTTSResponse(String responseBody) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .fromJson(responseBody, Map.class);
+
+            // Check for error
+            if (response.containsKey("code") && response.get("code") != null) {
+                String message =
+                        response.containsKey("message")
+                                ? response.get("message").toString()
+                                : "Unknown error";
+                log.error("Qwen TTS error: {}", message);
+                return ToolResultBlock.error(message);
+            }
+
+            // Extract audio from output
+            @SuppressWarnings("unchecked")
+            Map<String, Object> output = (Map<String, Object>) response.get("output");
+            if (output == null) {
+                return ToolResultBlock.error("No output in response");
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> audio = (Map<String, Object>) output.get("audio");
+            if (audio == null) {
+                return ToolResultBlock.error("No audio in response");
+            }
+
+            // Check for URL or base64 data
+            if (audio.containsKey("url") && audio.get("url") != null) {
+                String url = audio.get("url").toString();
+                return ToolResultBlock.of(
+                        AudioBlock.builder().source(URLSource.builder().url(url).build()).build());
+            } else if (audio.containsKey("data") && audio.get("data") != null) {
+                String data = audio.get("data").toString();
+                return ToolResultBlock.of(
+                        AudioBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("audio/wav")
+                                                .data(data)
+                                                .build())
+                                .build());
+            } else {
+                return ToolResultBlock.error("No audio data in response");
+            }
+        } catch (Exception e) {
+            log.error("Failed to parse Qwen TTS response: {}", e.getMessage());
+            return ToolResultBlock.error("Failed to parse response: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Synthesize audio using Sambert models via speech synthesis SDK.
+     */
+    private Mono<ToolResultBlock> synthesizeWithSambert(
+            String text, String model, Integer sampleRate) {
         return Mono.fromCallable(
                         () -> {
                             SpeechSynthesisParam param =
                                     SpeechSynthesisParam.builder()
                                             .apiKey(this.apiKey)
                                             .text(text)
-                                            .model(finalModel)
-                                            .sampleRate(finalSampleRate)
+                                            .model(model)
+                                            .sampleRate(sampleRate)
                                             .format(SpeechSynthesisAudioFormat.WAV)
                                             .header("user-agent", Version.getUserAgent())
                                             .build();
@@ -383,7 +589,10 @@ public class DashScopeMultiModalTool {
                         })
                 .onErrorResume(
                         e -> {
-                            log.error("Failed to generate audio '{}'", e.getMessage(), e);
+                            log.error(
+                                    "Failed to generate audio with Sambert: '{}'",
+                                    e.getMessage(),
+                                    e);
                             return Mono.just(ToolResultBlock.error(e.getMessage()));
                         });
     }

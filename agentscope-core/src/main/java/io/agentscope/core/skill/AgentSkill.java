@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents an agent skill that can be loaded and used by agents.
@@ -59,6 +60,8 @@ import java.util.Map;
  * @see io.agentscope.core.skill.util.MarkdownSkillParser
  */
 public class AgentSkill {
+    private static final Set<String> SCRIPT_EXTENSIONS = Set.of(".py", ".js", ".sh");
+
     private final String name;
     private final String description;
     private final String skillContent;
@@ -172,6 +175,41 @@ public class AgentSkill {
      */
     public String getSkillId() {
         return name + "_" + source;
+    }
+
+    /**
+     * Gets script resources from the skill's resources.
+     *
+     * <p>
+     * A resource is considered a script if:
+     * <ul>
+     * <li>It is located in the "scripts/" directory, OR</li>
+     * <li>It has a script file extension (.py, .js, .sh)
+     * </li>
+     * </ul>
+     *
+     * @return Map of script resources (path -> content), never null, may be empty
+     */
+    public Map<String, String> getScriptResources() {
+        Map<String, String> scripts = new HashMap<>();
+        for (Map.Entry<String, String> entry : resources.entrySet()) {
+            String path = entry.getKey();
+            // Check if in scripts/ folder or has script extension
+            if (path.startsWith("scripts/") || hasScriptExtension(path)) {
+                scripts.put(path, entry.getValue());
+            }
+        }
+        return scripts;
+    }
+
+    /**
+     * Checks if a file path has a script extension.
+     *
+     * @param path The file path to check
+     * @return true if the path ends with a known script extension
+     */
+    private boolean hasScriptExtension(String path) {
+        return SCRIPT_EXTENSIONS.stream().anyMatch(path::endsWith);
     }
 
     /**
