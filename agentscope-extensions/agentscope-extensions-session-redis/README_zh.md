@@ -18,7 +18,7 @@
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-session-redis</artifactId>
-    <version>1.0.8-SNAPSHOT</version>
+    <version>${agentscope.version}</version>
 </dependency>
 ```
 
