@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-14T03:13:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-01-23T08:20:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -433,6 +433,12 @@
 <h3>Progressive Disclosure Mechanism<a class="headerlink" href="#progressive-disclosure-mechanism" title="Link to this heading">¶</a></h3>
 <p>Adopts <strong>three-stage on-demand loading</strong> to optimize context: Initially loads only metadata (~100 tokens/Skill) → AI loads complete instructions when needed (&lt;5k tokens) → On-demand access to resource files. Tools are also progressively disclosed, activated only when the Skill is in use.</p>
 <p><strong>Workflow:</strong> User Query → AI Identifies Relevant Skill → Calls <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> Tool to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion</p>
+<p><strong>Unified Loading Tool</strong>: <code class="docutils literal notranslate"><span class="pre">load_skill_through_path(skillId,</span> <span class="pre">resourcePath)</span></code> provides a single entry point for loading skill resources</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">skillId</span></code> uses an enum field, ensuring selection only from registered Skills, guaranteeing accuracy</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resourcePath</span></code> is the resource path relative to the Skill root directory (e.g., <code class="docutils literal notranslate"><span class="pre">references/api-doc.md</span></code>)</p></li>
+<li><p>Returns a list of all available resource paths when the path is incorrect, helping the LLM correct errors</p></li>
+</ul>
 </section>
 <section id="adaptive-design">
 <h3>Adaptive Design<a class="headerlink" href="#adaptive-design" title="Link to this heading">¶</a></h3>
@@ -586,6 +592,7 @@
 <section id="feature-1-progressive-disclosure-of-tools">
 <h3>Feature 1: Progressive Disclosure of Tools<a class="headerlink" href="#feature-1-progressive-disclosure-of-tools" title="Link to this heading">¶</a></h3>
 <p>Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.</p>
+<p><strong>Lifecycle of Progressively Disclosed Tools</strong>: Tool lifecycle remains consistent with Skill lifecycle. Once a Skill is activated, Tools remain available throughout the entire session, avoiding the call failures caused by Tool deactivation after each conversation round in the old mechanism.</p>
 <p><strong>Example Code</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
@@ -612,8 +619,52 @@
 </pre></div>
 </div>
 </section>
-<section id="feature-2-skill-persistence-storage">
-<h3>Feature 2: Skill Persistence Storage<a class="headerlink" href="#feature-2-skill-persistence-storage" title="Link to this heading">¶</a></h3>
+<section id="feature-2-code-execution-capabilities">
+<h3>Feature 2: Code Execution Capabilities<a class="headerlink" href="#feature-2-code-execution-capabilities" title="Link to this heading">¶</a></h3>
+<p>Provides an isolated code execution folder for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern for flexible configuration of required tools.</p>
+<p><strong>Basic Usage</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+
+<span class="c1">// Enable all code execution tools (Shell, read file, write file)</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Custom Configuration</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Customize working directory and Shell command whitelist</span>
+<span class="n">ShellCommandTool</span><span class="w"> </span><span class="n">customShell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span>
+<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir will be automatically set to workDir</span>
+<span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;node&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;npm&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="w">  </span><span class="c1">// Optional command approval callback</span>
+<span class="p">);</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/path/to/workdir&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Specify working directory</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span><span class="w">       </span><span class="c1">// Use custom Shell tool</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span><span class="w">                   </span><span class="c1">// Enable file reading</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span><span class="w">                  </span><span class="c1">// Enable file writing</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+
+<span class="c1">// Or enable only file operations, without Shell</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Core Features</strong>:</p>
+<ul class="simple">
+<li><p><strong>Unified Working Directory</strong>: All tools share the same <code class="docutils literal notranslate"><span class="pre">workDir</span></code>, ensuring file isolation</p></li>
+<li><p><strong>Selective Enabling</strong>: Flexibly combine Shell, read file, and write file tools as needed</p></li>
+<li><p><strong>Flexible Configuration</strong>: Supports custom ShellCommandTool to meet customization requirements</p></li>
+<li><p><strong>Automatic Management</strong>: Automatically creates temporary directory when <code class="docutils literal notranslate"><span class="pre">workDir</span></code> is not specified, with automatic cleanup on program exit</p></li>
+</ul>
+</section>
+<section id="feature-3-skill-persistence-storage">
+<h3>Feature 3: Skill Persistence Storage<a class="headerlink" href="#feature-3-skill-persistence-storage" title="Link to this heading">¶</a></h3>
 <p><strong>Why is this feature needed?</strong></p>
 <p>Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:</p>
 <ul class="simple">
@@ -703,7 +754,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-14</div>
+              Last updated on 2026-01-23</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -764,7 +815,8 @@
 <li><a class="reference internal" href="#simplified-integration">Simplified Integration</a></li>
 <li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
 <li><a class="reference internal" href="#feature-1-progressive-disclosure-of-tools">Feature 1: Progressive Disclosure of Tools</a></li>
-<li><a class="reference internal" href="#feature-2-skill-persistence-storage">Feature 2: Skill Persistence Storage</a></li>
+<li><a class="reference internal" href="#feature-2-code-execution-capabilities">Feature 2: Code Execution Capabilities</a></li>
+<li><a class="reference internal" href="#feature-3-skill-persistence-storage">Feature 3: Skill Persistence Storage</a></li>
 <li><a class="reference internal" href="#performance-optimization-recommendations">Performance Optimization Recommendations</a></li>
 </ul>
 </li>

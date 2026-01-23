@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-14T03:13:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-01-23T08:20:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -433,6 +433,12 @@
 <h3>渐进式披露机制<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <p>采用<strong>三阶段按需加载</strong>优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(&lt;5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。</p>
 <p><strong>工作流程:</strong> 用户提问 → AI 识别相关 Skill → 调用 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务</p>
+<p><strong>统一加载工具</strong>: <code class="docutils literal notranslate"><span class="pre">load_skill_through_path(skillId,</span> <span class="pre">resourcePath)</span></code> 提供单一入口加载技能资源</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">skillId</span></code> 使用枚举字段, 确保只能从已注册的 Skill 中选择, 保证准确性</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resourcePath</span></code> 是相对于 Skill 根目录的资源路径(如 <code class="docutils literal notranslate"><span class="pre">references/api-doc.md</span></code>)</p></li>
+<li><p>路径错误时会返回所有可用的资源路径列表,帮助 LLM 纠正</p></li>
+</ul>
 </section>
 <section id="id4">
 <h3>适应性设计<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
@@ -583,6 +589,7 @@
 <section id="tool">
 <h3>功能 1: Tool 的渐进式披露<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h3>
 <p>将 Tool 与 Skill 绑定,实现按需激活。避免预先注册所有 Tool 导致的上下文污染,仅在 Skill 被 LLM 使用时才传递相关 Tool。</p>
+<p><strong>渐进式暴露的Tool的生命周期</strong>: Tool 与 Skill 生命周期保持一致, Skill 激活后 Tool 在整个会话期间保持可用, 避免了旧机制中每轮对话后 Tool 失活导致的调用失败问题。</p>
 <p><strong>示例代码</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
@@ -610,7 +617,51 @@
 </div>
 </section>
 <section id="id11">
-<h3>功能 2: Skill 持久化存储<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<h3>功能 2: 代码执行能力<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<p>为 Skill 提供隔离的代码执行文件夹,支持 Shell 命令、文件读写等操作。使用 Builder 模式灵活配置所需工具。</p>
+<p><strong>基础用法</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+
+<span class="c1">// 启用所有代码执行工具(Shell、读文件、写文件)</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>自定义配置</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义工作目录和 Shell 命令白名单</span>
+<span class="n">ShellCommandTool</span><span class="w"> </span><span class="n">customShell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span>
+<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir 会被自动设置为 workDir</span>
+<span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;node&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;npm&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选的命令审批回调</span>
+<span class="p">);</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/path/to/workdir&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 指定工作目录</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span><span class="w">       </span><span class="c1">// 使用自定义 Shell 工具</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span><span class="w">                   </span><span class="c1">// 启用文件读取</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span><span class="w">                  </span><span class="c1">// 启用文件写入</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+
+<span class="c1">// 或仅启用文件操作,不启用 Shell</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>核心特性</strong>:</p>
+<ul class="simple">
+<li><p><strong>统一工作目录</strong>: 所有工具共享同一 <code class="docutils literal notranslate"><span class="pre">workDir</span></code>,确保文件隔离</p></li>
+<li><p><strong>选择性启用</strong>: 根据需求灵活组合 Shell、读文件、写文件工具</p></li>
+<li><p><strong>灵活配置</strong>: 支持自定义 ShellCommandTool, 满足定制化的ShellCommandTool需求</p></li>
+<li><p><strong>自动管理</strong>: 未指定 <code class="docutils literal notranslate"><span class="pre">workDir</span></code> 时自动创建临时目录,程序退出时自动清理</p></li>
+</ul>
+</section>
+<section id="id12">
+<h3>功能 3: Skill 持久化存储<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
 <p><strong>为什么需要这个功能?</strong></p>
 <p>Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:</p>
 <ul class="simple">
@@ -627,8 +678,8 @@
 <p>这种保护适用于所有仓库操作: <code class="docutils literal notranslate"><span class="pre">getSkill()</span></code>、<code class="docutils literal notranslate"><span class="pre">save()</span></code>、<code class="docutils literal notranslate"><span class="pre">delete()</span></code> 和 <code class="docutils literal notranslate"><span class="pre">skillExists()</span></code>。</p>
 <p>详细安全指南请参阅 <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#%E5%AE%89%E5%85%A8%E8%80%83%E8%99%91">Claude Agent Skills 安全考虑</a>。</p>
 </section>
-<section id="id12">
-<h3>性能优化建议<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
+<section id="id13">
+<h3>性能优化建议<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
 <ol class="arabic simple">
 <li><p><strong>控制 SKILL.md 大小</strong>: 保持在 5k tokens 以内,建议 1.5-2k tokens</p></li>
 <li><p><strong>合理组织资源</strong>: 将详细文档放在 <code class="docutils literal notranslate"><span class="pre">references/</span></code> 中,而非 SKILL.md</p></li>
@@ -637,8 +688,8 @@
 </ol>
 </section>
 </section>
-<section id="id13">
-<h2>相关文档<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
+<section id="id14">
+<h2>相关文档<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills 官方文档</a> - 完整的概念和架构介绍</p></li>
 <li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool 使用指南</span></a> - 工具系统的使用方法</p></li>
@@ -700,7 +751,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-14</div>
+              Last updated on 2026-01-23</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -761,11 +812,12 @@
 <li><a class="reference internal" href="#id9">简化的集成方式</a></li>
 <li><a class="reference internal" href="#id10">高级功能</a><ul>
 <li><a class="reference internal" href="#tool">功能 1: Tool 的渐进式披露</a></li>
-<li><a class="reference internal" href="#id11">功能 2: Skill 持久化存储</a></li>
-<li><a class="reference internal" href="#id12">性能优化建议</a></li>
+<li><a class="reference internal" href="#id11">功能 2: 代码执行能力</a></li>
+<li><a class="reference internal" href="#id12">功能 3: Skill 持久化存储</a></li>
+<li><a class="reference internal" href="#id13">性能优化建议</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id13">相关文档</a></li>
+<li><a class="reference internal" href="#id14">相关文档</a></li>
 </ul>
 </li>
 </ul>
