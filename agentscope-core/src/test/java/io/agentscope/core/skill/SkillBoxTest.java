@@ -33,14 +33,20 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.CommandValidator;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.coding.UnixCommandValidator;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -260,7 +266,7 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should enable code execution with default temporary directory")
         void testEnableCodeExecutionWithDefaultTempDir() {
-            skillBox.enableCodeExecution();
+            skillBox.codeExecution().withShell().withRead().withWrite().enable();
 
             assertTrue(skillBox.isCodeExecutionEnabled());
             // workDir is null, meaning temporary directory will be created later
@@ -276,7 +282,7 @@ class SkillBoxTest {
         void testEnableCodeExecutionWithCustomWorkDir() {
             String customDir = tempDir.resolve("custom-code-exec").toString();
 
-            skillBox.enableCodeExecution(customDir);
+            skillBox.codeExecution().workDir(customDir).withShell().withRead().withWrite().enable();
 
             assertTrue(skillBox.isCodeExecutionEnabled());
             assertEquals(
@@ -293,7 +299,12 @@ class SkillBoxTest {
             String existingDir = tempDir.resolve("existing-dir").toString();
             Files.createDirectories(Path.of(existingDir));
 
-            skillBox.enableCodeExecution(existingDir);
+            skillBox.codeExecution()
+                    .workDir(existingDir)
+                    .withShell()
+                    .withRead()
+                    .withWrite()
+                    .enable();
 
             assertTrue(skillBox.isCodeExecutionEnabled());
             assertEquals(
@@ -312,7 +323,7 @@ class SkillBoxTest {
             IllegalStateException exception =
                     assertThrows(
                             IllegalStateException.class,
-                            () -> skillBoxWithoutToolkit.enableCodeExecution(null));
+                            () -> skillBoxWithoutToolkit.codeExecution().withShell().enable());
             assertEquals(
                     "Must bind toolkit before enabling code execution", exception.getMessage());
         }
@@ -321,7 +332,7 @@ class SkillBoxTest {
         @DisplayName("Should write skill scripts to working directory organized by skill ID")
         void testWriteSkillScriptsToWorkDir() throws IOException {
             String workDir = tempDir.resolve("scripts").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             // Verify directory not created yet
             assertFalse(Files.exists(Path.of(workDir)));
@@ -380,7 +391,7 @@ class SkillBoxTest {
         @DisplayName("Should handle empty scripts gracefully and not create skill directory")
         void testWriteEmptyScripts() throws IOException {
             String workDir = tempDir.resolve("empty-scripts").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             // Skill with no script resources
             Map<String, String> resources = new HashMap<>();
@@ -404,7 +415,7 @@ class SkillBoxTest {
         @DisplayName("Should overwrite existing scripts in skill directory")
         void testOverwriteExistingScripts() throws IOException {
             String workDir = tempDir.resolve("overwrite").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             // Create initial script in skill directory
             Path scriptPath = Path.of(workDir).resolve("skill_custom/test.py");
@@ -428,7 +439,7 @@ class SkillBoxTest {
         @DisplayName("Should create nested directories for scripts in skill directory")
         void testNestedDirectories() throws IOException {
             String workDir = tempDir.resolve("nested").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             Map<String, String> resources = new HashMap<>();
             resources.put("scripts/utils/helper.py", "def help(): pass");
@@ -448,7 +459,7 @@ class SkillBoxTest {
         @DisplayName("Should register three tools when code execution is enabled")
         void testToolsRegistration() {
             String workDir = tempDir.resolve("tools").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             var toolGroup = toolkit.getToolGroup("skill_code_execution_tool_group");
             assertNotNull(toolGroup);
@@ -464,7 +475,7 @@ class SkillBoxTest {
         @Test
         @DisplayName("Should create temporary directory when workDir is null and verify it exists")
         void testCreateTemporaryDirectory() throws IOException {
-            skillBox.enableCodeExecution(); // null workDir
+            skillBox.codeExecution().withShell().withRead().withWrite().enable(); // null workDir
 
             Map<String, String> resources = new HashMap<>();
             resources.put("test.py", "print('test')");
@@ -485,7 +496,7 @@ class SkillBoxTest {
         @DisplayName("Should prevent path traversal attacks")
         void testPathTraversalPrevention() throws IOException {
             String workDir = tempDir.resolve("secure").toString();
-            skillBox.enableCodeExecution(workDir);
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             // Create skill with malicious path traversal attempts
             Map<String, String> resources = new HashMap<>();
@@ -508,15 +519,135 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when enableCodeExecution called multiple times")
-        void testDuplicateEnableCodeExecution() {
-            skillBox.enableCodeExecution();
+        @DisplayName("Should replace existing code execution configuration")
+        void testReplaceCodeExecutionConfiguration() {
+            // Initial configuration - enable all three tools
+            skillBox.codeExecution().withShell().withRead().withWrite().enable();
 
-            IllegalStateException exception =
-                    assertThrows(IllegalStateException.class, () -> skillBox.enableCodeExecution());
-            assertEquals(
-                    "Code execution is already enabled. This method should only be called once.",
-                    exception.getMessage());
+            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getTool("execute_shell_command"));
+            assertNotNull(toolkit.getTool("view_text_file"));
+            assertNotNull(toolkit.getTool("write_text_file"));
+
+            // Replace configuration - only enable read and write
+            skillBox.codeExecution().withRead().withWrite().enable();
+
+            assertTrue(skillBox.isCodeExecutionEnabled());
+            // Shell tool should be removed
+            assertNull(toolkit.getTool("execute_shell_command"));
+            // Read and write tools should still exist
+            assertNotNull(toolkit.getTool("view_text_file"));
+            assertNotNull(toolkit.getTool("write_text_file"));
+        }
+
+        @Test
+        @DisplayName("Should enable only selected tools")
+        void testEnableOnlySelectedTools() {
+            // Enable only read and write, not shell
+            skillBox.codeExecution().withRead().withWrite().enable();
+
+            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNull(toolkit.getTool("execute_shell_command"));
+            assertNotNull(toolkit.getTool("view_text_file"));
+            assertNotNull(toolkit.getTool("write_text_file"));
+        }
+
+        @Test
+        @DisplayName("Should enable only shell tool")
+        void testEnableOnlyShellTool() {
+            skillBox.codeExecution().withShell().enable();
+
+            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getTool("execute_shell_command"));
+            assertNull(toolkit.getTool("view_text_file"));
+            assertNull(toolkit.getTool("write_text_file"));
+        }
+
+        @Test
+        @DisplayName("Should create empty tool group when no tools enabled")
+        void testEmptyToolGroupWhenNoToolsEnabled() {
+            skillBox.codeExecution().enable();
+
+            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNull(toolkit.getTool("execute_shell_command"));
+            assertNull(toolkit.getTool("view_text_file"));
+            assertNull(toolkit.getTool("write_text_file"));
+        }
+
+        @Test
+        @DisplayName("Should clone custom ShellCommandTool with workDir")
+        void testCloneCustomShellTool() {
+            // Create custom shell tool with specific configuration
+            Set<String> customCommands = new HashSet<>(Set.of("python3", "npm", "node"));
+            Function<String, Boolean> callback = cmd -> true;
+            ShellCommandTool customShell = new ShellCommandTool(null, customCommands, callback);
+
+            String workDir = tempDir.resolve("custom-shell").toString();
+            skillBox.codeExecution().workDir(workDir).withShell(customShell).enable();
+
+            // Verify tool is registered
+            AgentTool registered = toolkit.getTool("execute_shell_command");
+            assertNotNull(registered);
+
+            // Verify it's a ShellCommandTool and check configuration
+            assertTrue(registered instanceof ShellCommandTool);
+            ShellCommandTool shellTool = (ShellCommandTool) registered;
+
+            // Verify configuration was preserved
+            assertEquals(customCommands, shellTool.getAllowedCommands());
+            assertEquals(callback, shellTool.getApprovalCallback());
+
+            // Verify baseDir was set to workDir
+            assertEquals(Path.of(workDir).toAbsolutePath().normalize(), shellTool.getBaseDir());
+        }
+
+        @Test
+        @DisplayName("Should throw exception when withShell receives null")
+        void testWithShellNullThrowsException() {
+            assertThrows(
+                    IllegalArgumentException.class, () -> skillBox.codeExecution().withShell(null));
+        }
+
+        @Test
+        @DisplayName(
+                "Should use default shell configuration when withShell called without argument")
+        void testDefaultShellConfiguration() {
+            skillBox.codeExecution().withShell().enable();
+
+            AgentTool registered = toolkit.getTool("execute_shell_command");
+            assertNotNull(registered);
+
+            assertTrue(registered instanceof ShellCommandTool);
+            ShellCommandTool shellTool = (ShellCommandTool) registered;
+
+            // Verify default configuration
+            Set<String> allowedCommands = shellTool.getAllowedCommands();
+            assertTrue(allowedCommands.contains("python"));
+            assertTrue(allowedCommands.contains("python3"));
+            assertTrue(allowedCommands.contains("node"));
+            assertTrue(allowedCommands.contains("nodejs"));
+            assertEquals(4, allowedCommands.size());
+
+            // Verify no approval callback
+            assertNull(shellTool.getApprovalCallback());
+        }
+
+        @Test
+        @DisplayName("Should preserve custom validator when cloning ShellCommandTool")
+        void testPreserveCustomValidator() {
+            CommandValidator customValidator = new UnixCommandValidator();
+            ShellCommandTool customShell = new ShellCommandTool(null, null, customValidator);
+
+            skillBox.codeExecution().withShell(customShell).enable();
+
+            AgentTool registered = toolkit.getTool("execute_shell_command");
+            assertNotNull(registered);
+
+            assertTrue(registered instanceof ShellCommandTool);
+            ShellCommandTool shellTool = (ShellCommandTool) registered;
+
+            // Verify validator was preserved
+            assertEquals(customValidator, shellTool.getCommandValidator());
         }
     }
 
