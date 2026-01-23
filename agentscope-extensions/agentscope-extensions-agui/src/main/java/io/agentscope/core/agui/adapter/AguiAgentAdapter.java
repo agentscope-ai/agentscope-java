@@ -31,7 +31,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -218,7 +217,6 @@ public class AguiAgentAdapter {
                     if (toolCallId == null) {
                         toolCallId = UUID.randomUUID().toString();
                     }
-                    state.cacheToolUseBlock(toolCallId, toolUse);
 
                     if (!state.hasStartedToolCall(toolCallId)) {
                         events.add(
@@ -368,21 +366,9 @@ public class AguiAgentAdapter {
         private final Set<String> endedReasoningMessages = new LinkedHashSet<>();
         private String currentTextMessageId = null;
 
-        private final Map<String, ToolUseBlock> toolUseBlocks = new HashMap<>();
-
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
             this.runId = runId;
-        }
-
-        void cacheToolUseBlock(String toolCallId, ToolUseBlock toolUse) {
-            if (toolCallId != null) {
-                toolUseBlocks.put(toolCallId, toolUse);
-            }
-        }
-
-        ToolUseBlock getToolUseBlock(String toolCallId) {
-            return toolUseBlocks.get(toolCallId);
         }
 
         boolean hasStartedMessage(String messageId) {
