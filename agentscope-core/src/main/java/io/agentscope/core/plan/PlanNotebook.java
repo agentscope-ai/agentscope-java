@@ -951,7 +951,7 @@ public class PlanNotebook implements StateModule {
      *     applicable
      */
     public Mono<Msg> getCurrentHint() {
-        String hintContent = planToHint.generateHint(currentPlan, needUserConfirm);
+        String hintContent = planToHint.generateHint(currentPlan, this);
         if (hintContent != null && !hintContent.isEmpty()) {
             return Mono.just(
                     Msg.builder()
@@ -979,6 +979,15 @@ public class PlanNotebook implements StateModule {
      */
     public boolean isNeedUserConfirm() {
         return needUserConfirm;
+    }
+
+    /**
+     * Gets the maximum number of subtasks allowed per plan.
+     *
+     * @return maximum number of subtasks
+     */
+    public Integer getMaxSubtasks() {
+        return maxSubtasks;
     }
 
     private Mono<Void> triggerPlanChangeHooks() {
