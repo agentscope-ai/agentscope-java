@@ -26,12 +26,11 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>io.agentscope.examples</groupId>
-    <artifactId>quickstart</artifactId>
+    <artifactId>chat-tts</artifactId>
     <packaging>jar</packaging>
 
-    <name>AgentScope Java - Examples - Quickstart</name>
-    <description>Basic examples demonstrating core AgentScope functionality</description>
+    <name>AgentScope Java - Examples - Chat with TTS</name>
+    <description>ReActAgent chat with real-time Text-to-Speech streaming to frontend</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -58,57 +57,27 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
         </dependency>
-
-        <!-- DashScope SDK for MultiModalTool -->
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>dashscope-sdk-java</artifactId>
-        </dependency>
-
-        <!-- RAG Extensions -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-dify</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-ragflow</artifactId>
-        </dependency>
-
-        <!-- Higress AI Gateway Extension -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-higress</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-haystack</artifactId>
-        </dependency>
-
-        <!-- Simple RAG Extension (includes PgVectorStore, DashScopeTextEmbedding, etc.) -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-simple</artifactId>
-        </dependency>
-
-        <!-- PostgreSQL Driver for PgVectorStore -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-        </dependency>
-
-        <!-- PGvector JDBC Extension -->
-        <dependency>
-            <groupId>com.pgvector</groupId>
-            <artifactId>pgvector</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
-
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
+

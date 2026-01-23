@@ -74,10 +74,10 @@
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.35.0</google-genai.version>
+        <google-genai.version>1.36.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.6</dashscope-sdk-java.version>
-        <bailian.version>2.7.2</bailian.version>
-        <openai-java.version>4.15.0</openai-java.version>
+        <bailian.version>2.8.0</bailian.version>
+        <openai-java.version>4.16.0</openai-java.version>
         <anthropic.version>2.11.1</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
@@ -101,7 +101,7 @@
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.3</spring.version>
-        <spring-boot.version>4.0.1</spring-boot.version>
+        <spring-boot.version>4.0.2</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
