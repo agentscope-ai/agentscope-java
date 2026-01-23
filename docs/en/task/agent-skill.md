@@ -262,20 +262,35 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 
 #### MySQL Database Storage (not yet implemented)
 
-#### Git Repository (not yet implemented)
+#### Git Repository (Read-Only)
 
-#### JAR Resource Adapter (Read-Only)
-
-Used to load pre-packaged Skills from JAR resources. Automatically compatible with standard JARs and Spring Boot Fat JARs.
+Used to load Skills from a Git repository (read-only). Supports HTTPS and SSH and synchronizes
+on each read (clone/pull).
 
 ```java
-try (JarSkillRepositoryAdapter adapter = new JarSkillRepositoryAdapter("skills")) {
-    AgentSkill skill = adapter.getSkill("data-analysis");
-    List<AgentSkill> allSkills = adapter.getAllSkills();
+AgentSkillRepository repo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git");
+AgentSkill skill = repo.getSkill("data-analysis");
+List<AgentSkill> allSkills = repo.getAllSkills();
+```
+
+If the repository contains a `skills/` subdirectory, it will be used; otherwise the repo root
+is used.
+
+#### Classpath Repository (Read-Only)
+
+Used to load pre-packaged Skills from classpath resources. Automatically compatible with standard JARs and Spring Boot Fat JARs.
+
+```java
+try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    List<AgentSkill> allSkills = repository.getAllSkills();
 } catch //...
 ```
 
 Resource structure: Place multiple skill subdirectories under `src/main/resources/skills/`, each containing a `SKILL.md`.
+
+> Note: `JarSkillRepositoryAdapter` is deprecated. Use `ClasspathSkillRepository` instead.
 
 ### Performance Optimization Recommendations
 
