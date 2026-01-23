@@ -55,7 +55,7 @@ public class DefaultPlanToHint implements PlanToHint {
                     + " respond accordingly but DO NOT start execution\n";
 
     private static final String RULE_SUBTASK_LIMIT =
-            "- Subtask Limit: Ensure the plan consists of no more than {max_subtasks} subtasks";
+            "- Subtask Limit: Ensure the plan consists of no more than {max_subtasks} subtasks\n";
 
     private static final String RULE_COMMON =
             "- Update before processing each subtask: When processing each subtask, call"
@@ -169,8 +169,7 @@ public class DefaultPlanToHint implements PlanToHint {
                 planNotebook.isNeedUserConfirm() ? RULE_WAIT_FOR_CONFIRMATION : "";
 
         if (plan == null) {
-            hint = NO_PLAN;
-            // append other rules if any
+            // no plan description with optional append rules
             StringBuilder appendRules = new StringBuilder();
             if (planNotebook.isNeedUserConfirm()) {
                 appendRules.append(confirmationRule);
@@ -180,8 +179,10 @@ public class DefaultPlanToHint implements PlanToHint {
                         RULE_SUBTASK_LIMIT.replace(
                                 "{max_subtasks}", String.valueOf(planNotebook.getMaxSubtasks())));
             }
-            if (!appendRules.isEmpty()) {
-                hint = hint + IMPORTANT_RULES_SEPARATOR + appendRules;
+            if (appendRules.isEmpty()) {
+                hint = NO_PLAN;
+            } else {
+                hint = NO_PLAN + IMPORTANT_RULES_SEPARATOR + appendRules;
             }
         } else {
             // Count subtasks by state
