@@ -45,6 +45,7 @@
         <module>chat-completions-web</module>
         <module>hitl-chat</module>
         <module>a2a</module>
+        <module>chat-tts</module>
     </modules>
 
     <properties>
