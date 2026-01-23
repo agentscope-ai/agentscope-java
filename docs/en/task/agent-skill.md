@@ -14,6 +14,11 @@ Adopts **three-stage on-demand loading** to optimize context: Initially loads on
 
 **Workflow:** User Query → AI Identifies Relevant Skill → Calls `load_skill_through_path` Tool to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion
 
+**Unified Loading Tool**: `load_skill_through_path(skillId, resourcePath)` provides a single entry point for loading skill resources
+- `skillId` uses an enum field, ensuring selection only from registered Skills, guaranteeing accuracy
+- `resourcePath` is the resource path relative to the Skill root directory (e.g., `references/api-doc.md`)
+- Returns a list of all available resource paths when the path is incorrect, helping the LLM correct errors
+
 ### Adaptive Design
 
 We have further abstracted skills so that their discovery and content loading are no longer dependent on the file system. Instead, the LLM discovers and loads skill content and resources through tools. At the same time, to maintain compatibility with the existing skill ecosystem and resources, skills are still organized according to file system structure for their content and resources.
@@ -165,6 +170,8 @@ ReActAgent agent = ReActAgent.builder()
 
 Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.
 
+**Lifecycle of Progressively Disclosed Tools**: Tool lifecycle remains consistent with Skill lifecycle. Once a Skill is activated, Tools remain available throughout the entire session, avoiding the call failures caused by Tool deactivation after each conversation round in the old mechanism.
+
 **Example Code**:
 
 ```java
@@ -192,7 +199,54 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-### Feature 2: Skill Persistence Storage
+### Feature 2: Code Execution Capabilities
+
+Provides an isolated code execution folder for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern for flexible configuration of required tools.
+
+**Basic Usage**:
+
+```java
+SkillBox skillBox = new SkillBox(toolkit);
+
+// Enable all code execution tools (Shell, read file, write file)
+skillBox.codeExecution()
+    .withShell()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+**Custom Configuration**:
+
+```java
+// Customize working directory and Shell command whitelist
+ShellCommandTool customShell = new ShellCommandTool(
+    null,  // baseDir will be automatically set to workDir
+    Set.of("python3", "node", "npm"),
+    command -> askUserApproval(command)  // Optional command approval callback
+);
+
+skillBox.codeExecution()
+    .workDir("/path/to/workdir")  // Specify working directory
+    .withShell(customShell)       // Use custom Shell tool
+    .withRead()                   // Enable file reading
+    .withWrite()                  // Enable file writing
+    .enable();
+
+// Or enable only file operations, without Shell
+skillBox.codeExecution()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+**Core Features**:
+- **Unified Working Directory**: All tools share the same `workDir`, ensuring file isolation
+- **Selective Enabling**: Flexibly combine Shell, read file, and write file tools as needed
+- **Flexible Configuration**: Supports custom ShellCommandTool to meet customization requirements
+- **Automatic Management**: Automatically creates temporary directory when `workDir` is not specified, with automatic cleanup on program exit
+
+### Feature 3: Skill Persistence Storage
 
 **Why is this feature needed?**
 
