@@ -46,6 +46,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -578,7 +579,7 @@ class SkillBoxTest {
         void testCloneCustomShellTool() {
             // Create custom shell tool with specific configuration
             Set<String> customCommands = new HashSet<>(Set.of("python3", "npm", "node"));
-            java.util.function.Function<String, Boolean> callback = cmd -> true;
+            Function<String, Boolean> callback = cmd -> true;
             ShellCommandTool customShell = new ShellCommandTool(null, customCommands, callback);
 
             String workDir = tempDir.resolve("custom-shell").toString();

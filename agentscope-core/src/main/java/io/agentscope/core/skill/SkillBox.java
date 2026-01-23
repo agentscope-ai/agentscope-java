@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -877,15 +878,13 @@ public class SkillBox implements StateModule {
          * @throws IllegalStateException if toolkit is not bound
          */
         public void enable() {
-            // Implementation in next step
             if (skillBox.toolkit == null) {
                 throw new IllegalStateException("Must bind toolkit before enabling code execution");
             }
 
             // Handle replacement: remove existing tool group if present
             if (skillBox.isCodeExecutionEnabled()) {
-                skillBox.toolkit.removeToolGroups(
-                        java.util.List.of("skill_code_execution_tool_group"));
+                skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
                 logger.info("Replacing existing code execution configuration");
             }
 
@@ -973,8 +972,7 @@ public class SkillBox implements StateModule {
                 ShellCommandTool source, String workDir) {
             // Get configuration from source tool
             Set<String> allowedCommands = source.getAllowedCommands();
-            java.util.function.Function<String, Boolean> approvalCallback =
-                    source.getApprovalCallback();
+            Function<String, Boolean> approvalCallback = source.getApprovalCallback();
             CommandValidator validator = source.getCommandValidator();
 
             // Create new instance with workDir override
