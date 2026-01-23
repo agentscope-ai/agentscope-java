@@ -70,7 +70,7 @@ class AguiEventTest {
             AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"RUN_STARTED\""));
+            checkExistAndDuplicate(json, "\"type\":\"RUN_STARTED\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.RunStarted);
@@ -116,7 +116,7 @@ class AguiEventTest {
             AguiEvent.RunFinished event = new AguiEvent.RunFinished("thread-2", "run-2");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"RUN_FINISHED\""));
+            checkExistAndDuplicate(json, "\"type\":\"RUN_FINISHED\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.RunFinished);
@@ -168,7 +168,7 @@ class AguiEventTest {
                     new AguiEvent.TextMessageStart("thread-1", "run-1", "msg-1", "assistant");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_START\""));
+            checkExistAndDuplicate(json, "\"type\":\"TEXT_MESSAGE_START\"");
             assertTrue(json.contains("\"messageId\":\"msg-1\""));
             assertTrue(json.contains("\"role\":\"assistant\""));
 
@@ -216,7 +216,7 @@ class AguiEventTest {
                     new AguiEvent.TextMessageContent("thread-1", "run-1", "msg-1", "Hello World");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_CONTENT\""));
+            checkExistAndDuplicate(json, "\"type\":\"TEXT_MESSAGE_CONTENT\"");
             assertTrue(json.contains("\"delta\":\"Hello World\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
@@ -259,7 +259,7 @@ class AguiEventTest {
                     new AguiEvent.TextMessageEnd("thread-1", "run-1", "msg-1");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TEXT_MESSAGE_END\""));
+            checkExistAndDuplicate(json, "\"type\":\"TEXT_MESSAGE_END\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.TextMessageEnd);
@@ -309,7 +309,7 @@ class AguiEventTest {
                     new AguiEvent.ToolCallStart("thread-1", "run-1", "tc-1", "get_weather");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TOOL_CALL_START\""));
+            checkExistAndDuplicate(json, "\"type\":\"TOOL_CALL_START\"");
             assertTrue(json.contains("\"toolCallId\":\"tc-1\""));
             assertTrue(json.contains("\"toolCallName\":\"get_weather\""));
 
@@ -362,7 +362,7 @@ class AguiEventTest {
                     new AguiEvent.ToolCallArgs("thread-1", "run-1", "tc-1", "{\"key\":\"value\"}");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TOOL_CALL_ARGS\""));
+            checkExistAndDuplicate(json, "\"type\":\"TOOL_CALL_ARGS\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallArgs);
@@ -400,7 +400,7 @@ class AguiEventTest {
             AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TOOL_CALL_END\""));
+            checkExistAndDuplicate(json, "\"type\":\"TOOL_CALL_END\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.ToolCallEnd);
@@ -457,7 +457,7 @@ class AguiEventTest {
                             "thread-1", "run-1", "tc-1", "Operation completed", "tool", "msg-1");
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"TOOL_CALL_RESULT\""));
+            checkExistAndDuplicate(json, "\"type\":\"TOOL_CALL_RESULT\"");
             assertTrue(json.contains("\"content\":\"Operation completed\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
@@ -513,7 +513,7 @@ class AguiEventTest {
                             "thread-1", "run-1", Map.of("count", 10, "name", "test"));
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"STATE_SNAPSHOT\""));
+            checkExistAndDuplicate(json, "\"type\":\"STATE_SNAPSHOT\"");
             assertTrue(json.contains("\"snapshot\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
@@ -578,7 +578,7 @@ class AguiEventTest {
                                     AguiEvent.JsonPatchOperation.remove("/old")));
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"STATE_DELTA\""));
+            checkExistAndDuplicate(json, "\"type\":\"STATE_DELTA\"");
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
             assertTrue(deserialized instanceof AguiEvent.StateDelta);
@@ -728,7 +728,7 @@ class AguiEventTest {
                     new AguiEvent.Raw("thread-1", "run-1", Map.of("key", "value", "number", 42));
 
             String json = JsonUtils.getJsonCodec().toJson(event);
-            assertTrue(json.contains("\"type\":\"RAW\""));
+            checkExistAndDuplicate(json, "\"type\":\"RAW\"");
             assertTrue(json.contains("\"rawEvent\""));
 
             AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
@@ -768,5 +768,13 @@ class AguiEventTest {
             assertEquals(
                     AguiEventType.TEXT_MESSAGE_START, AguiEventType.valueOf("TEXT_MESSAGE_START"));
         }
+    }
+
+    static void checkExistAndDuplicate(String text, String checkText) {
+        int index = text.indexOf(checkText);
+        assertTrue(index >= 0);
+
+        int duplicateIndex = text.indexOf(checkText, index + 1);
+        assertTrue(duplicateIndex < 0);
     }
 }
