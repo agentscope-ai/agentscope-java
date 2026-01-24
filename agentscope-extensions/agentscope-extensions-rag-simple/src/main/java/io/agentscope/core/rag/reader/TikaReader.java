@@ -44,6 +44,18 @@ import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 import reactor.core.publisher.Mono;
 
+/**
+ * TikaReader is a document reader that uses Apache Tika to extract text from various document formats.
+ *
+ * <p>It supports various document formats (e.g. DOC, XSL, PDF, PPT ...) and splitting strategies.
+ *
+ * <p>Example usage:
+ * <pre>{@code
+ * TikaReader reader = new TikaReader();
+ * ReaderInput input = ReaderInput.fromPath("/path/to/file");
+ * List<Document> documents = reader.read(input).block();
+ * }</pre>
+ */
 public class TikaReader extends AbstractChunkingReader {
 
     private static final Logger log = LoggerFactory.getLogger(TikaReader.class);

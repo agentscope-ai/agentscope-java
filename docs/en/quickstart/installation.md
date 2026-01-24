@@ -62,6 +62,7 @@ When using other models or features, add the corresponding dependencies:
 | **Redis Session**         | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
 | **PDF Processing**        | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox)          | `org.apache.pdfbox:pdfbox`       |
 | **Word Processing**       | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml)             | `org.apache.poi:poi-ooxml`       |
+| **Document Processing** | [Apache Tika Core](https://central.sonatype.com/artifact/org.apache.tika/tika-core) + [Apache Tika Parsers](https://central.sonatype.com/artifact/org.apache.tika/tika-parsers-standard-package) | `org.apache.tika:tika-core` + `org.apache.tika:tika-parsers-standard-package` |
 | **Nacos Registry**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
 #### Example: Using OpenAI Models
