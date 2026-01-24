@@ -105,7 +105,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
-                    .content(rawContentStr.isEmpty() ? null : rawContentStr)
+                    .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
