@@ -26,6 +26,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -429,5 +430,104 @@ class ReActAgentStructuredOutputTest {
         assertEquals(100, usage.getInputTokens(), "Input tokens should be preserved");
         assertEquals(50, usage.getOutputTokens(), "Output tokens should be preserved");
         assertEquals(1.5, usage.getTime(), 0.01, "Time should be preserved");
+    }
+
+    @Test
+    void testStructuredOutputPreservesThinkingBlock() {
+        Memory memory = new InMemoryMemory();
+
+        // Create a mock model that returns tool call with ThinkingBlock
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location",
+                                "San Francisco",
+                                "temperature",
+                                "72°F",
+                                "condition",
+                                "Sunny"));
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+
+                            if (!hasToolResults) {
+                                // First call: return ThinkingBlock + tool use
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking(
+                                                                                "Let me analyze the"
+                                                                                    + " weather"
+                                                                                    + " data for"
+                                                                                    + " San Francisco...")
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_123")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
+                                                                        .build()))
+                                                .usage(new ChatUsage(100, 50, 1.5))
+                                                .build());
+                            } else {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_2")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Done")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 5, 0.1))
+                                                .build());
+                            }
+                        });
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("What's the weather in San Francisco?")
+                                        .build())
+                        .build();
+
+        Msg responseMsg = agent.call(inputMsg, WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+
+        // Verify structured output
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+
+        // Verify ThinkingBlock is preserved after memory compression
+        ThinkingBlock thinking = responseMsg.getFirstContentBlock(ThinkingBlock.class);
+        assertNotNull(
+                thinking, "ThinkingBlock should be preserved after structured output compression");
+        assertEquals(
+                "Let me analyze the weather data for San Francisco...",
+                thinking.getThinking(),
+                "Thinking content should be preserved");
     }
 }
