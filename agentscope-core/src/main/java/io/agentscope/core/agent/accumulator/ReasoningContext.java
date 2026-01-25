@@ -199,35 +199,38 @@ public class ReasoningContext {
     }
 
     /**
-     * Enrich a ToolUseBlock with the correct tool call ID.
+     * Enrich a ToolUseBlock with accumulated content from the accumulator.
      *
      * <p>For fragments (placeholder names like "__fragment__"), the original block may not have
-     * the correct ID. This method retrieves the ID from the accumulator and creates a new block
-     * with the correct ID, allowing users to properly concatenate chunks.
+     * the correct ID. This method assigns the current tool call ID if missing.
      *
-     * @param block The original ToolUseBlock
-     * @return A ToolUseBlock with the correct ID
+     * <p>IMPORTANT: For streaming responses, this returns the ORIGINAL fragment (delta), NOT the
+     * accumulated content. OpenAI's streaming API requires deltas, and clients accumulate them.
+     *
+     * @param block The original ToolUseBlock fragment
+     * @return The fragment with ID enriched if needed
      */
     private ToolUseBlock enrichToolUseBlockWithId(ToolUseBlock block) {
-        // If the block already has an ID, return it as-is
+        // If block already has an ID, return as-is (it's a delta fragment)
         if (block.getId() != null && !block.getId().isEmpty()) {
             return block;
         }
 
-        // Get the current tool call ID from the accumulator
+        // For fragments without ID, assign the current tool call ID
         String currentId = toolCallsAcc.getCurrentToolCallId();
-        if (currentId == null || currentId.isEmpty()) {
-            return block;
+        if (currentId != null && !currentId.isEmpty()) {
+            // Return a new block with the ID set, but keeping original content (delta)
+            return ToolUseBlock.builder()
+                    .id(currentId)
+                    .name(block.getName())
+                    .input(block.getInput())
+                    .content(block.getContent())
+                    .metadata(block.getMetadata())
+                    .build();
         }
 
-        // Create a new block with the correct ID
-        return ToolUseBlock.builder()
-                .id(currentId)
-                .name(block.getName())
-                .input(block.getInput())
-                .content(block.getContent())
-                .metadata(block.getMetadata())
-                .build();
+        // Fallback: return original block
+        return block;
     }
 
     /**

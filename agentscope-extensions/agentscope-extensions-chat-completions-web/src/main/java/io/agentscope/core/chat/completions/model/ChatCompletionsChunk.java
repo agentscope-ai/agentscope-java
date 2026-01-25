@@ -148,6 +148,10 @@ public class ChatCompletionsChunk {
      * standard OpenAI streaming response (since OpenAI doesn't execute tools), AgentScope's
      * ReActAgent executes tools internally, so we expose the results in the stream.
      *
+     * <p><b>Important:</b> In OpenAI's streaming API specification, delta.role can only be
+     * "assistant" or "user". The role "tool" is not supported in streaming responses. Therefore,
+     * tool results are formatted as assistant content with a prefix indicating the tool name.
+     *
      * <p><b>Example output:</b>
      *
      * <pre>
@@ -159,10 +163,8 @@ public class ChatCompletionsChunk {
      *   "choices": [{
      *     "index": 0,
      *     "delta": {
-     *       "role": "tool",
-     *       "tool_call_id": "call_abc",
-     *       "name": "get_weather",
-     *       "content": "The weather is sunny..."
+     *       "role": "assistant",
+     *       "content": "[Tool: get_weather] The weather is sunny..."
      *     }
      *   }]
      * }
@@ -170,20 +172,20 @@ public class ChatCompletionsChunk {
      *
      * @param id Request ID
      * @param model Model name
-     * @param toolCallId The ID of the tool call this result corresponds to
+     * @param toolCallId The ID of the tool call this result corresponds to (currently unused in streaming)
      * @param toolName The name of the tool that was executed
      * @param content The tool execution result content
-     * @return ChatCompletionsChunk with tool result
+     * @return ChatCompletionsChunk with tool result formatted as assistant content
      */
     public static ChatCompletionsChunk toolResultChunk(
             String id, String model, String toolCallId, String toolName, String content) {
         ChatCompletionsChunk chunk = new ChatCompletionsChunk(id, model);
 
         ChatMessage delta = new ChatMessage();
-        delta.setRole("tool");
-        delta.setToolCallId(toolCallId);
-        delta.setName(toolName);
-        delta.setContent(content);
+        delta.setRole("assistant");
+        // Format tool result as assistant content for streaming compatibility
+        // OpenAI streaming API does not support role: "tool" in delta
+        delta.setContent("[Tool: " + toolName + "] " + content);
 
         ChatChoice choice = new ChatChoice();
         choice.setIndex(0);

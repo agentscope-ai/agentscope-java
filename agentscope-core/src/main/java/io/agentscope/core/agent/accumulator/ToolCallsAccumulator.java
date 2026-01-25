@@ -96,7 +96,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     if (parsed != null) {
                         finalArgs.putAll(parsed);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
                     // Parsing failed, keep empty args
                 }
             }
