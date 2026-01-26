@@ -286,9 +286,8 @@ public class McpClientBuilder {
     /**
      * Builds an asynchronous MCP client wrapper.
      *
-     * <p>This method uses a two-phase build pattern to support notification handlers.
-     * The wrapper is created first, then the MCP client is built with notification consumers
-     * that can reference the wrapper.
+     * <p>This method uses a constructor that passes the builder to the wrapper, allowing the
+     * wrapper to construct its own client with notification handlers.
      *
      * @return Mono emitting the async client wrapper
      */
@@ -297,96 +296,14 @@ public class McpClientBuilder {
             return Mono.error(new IllegalStateException("Transport must be configured"));
         }
 
-        return Mono.fromCallable(
-                () -> {
-                    McpClientTransport transport = transportConfig.createTransport();
-
-                    McpSchema.Implementation clientInfo =
-                            new McpSchema.Implementation(
-                                    "agentscope-java", "AgentScope Java Framework", "1.0.9-SNAPSHOT");
-
-                    McpSchema.ClientCapabilities clientCapabilities =
-                            McpSchema.ClientCapabilities.builder().build();
-
-                    // ========== Phase 1: Create wrapper (client is temporarily null) ==========
-                    McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper(name, null);
-
-                    // ========== Phase 2: Build client (can reference wrapper) ==========
-                    McpAsyncClient mcpClient =
-                            McpClient.async(transport)
-                                    .requestTimeout(requestTimeout)
-                                    .initializationTimeout(initializationTimeout)
-                                    .clientInfo(clientInfo)
-                                    .capabilities(clientCapabilities)
-
-                                    // ----- Log notification Consumer -----
-                                    .loggingConsumer(
-                                            notification -> {
-                                                // Parse notification content
-                                                String level =
-                                                        notification.level() != null
-                                                                ? notification.level().toString()
-                                                                : "info";
-                                                String loggerName =
-                                                        notification.logger() != null
-                                                                ? notification.logger()
-                                                                : "mcp";
-                                                String data =
-                                                        notification.data() != null
-                                                                ? notification.data()
-                                                                : "";
-
-                                                // Log to SLF4J by level
-                                                switch (level.toLowerCase()) {
-                                                    case "error" ->
-                                                            logger.error(
-                                                                    "[MCP-{}] [{}] {}",
-                                                                    name,
-                                                                    loggerName,
-                                                                    data);
-                                                    case "warning" ->
-                                                            logger.warn(
-                                                                    "[MCP-{}] [{}] {}",
-                                                                    name,
-                                                                    loggerName,
-                                                                    data);
-                                                    case "debug" ->
-                                                            logger.debug(
-                                                                    "[MCP-{}] [{}] {}",
-                                                                    name,
-                                                                    loggerName,
-                                                                    data);
-                                                    default ->
-                                                            logger.info(
-                                                                    "[MCP-{}] [{}] {}",
-                                                                    name,
-                                                                    loggerName,
-                                                                    data);
-                                                }
-                                                return Mono.empty();
-                                            })
-
-                                    // ----- Tools change notification Consumer -----
-                                    .toolsChangeConsumer(
-                                            tools -> {
-                                                // Call wrapper method to update cache
-                                                wrapper.updateCachedTools(tools);
-                                                return Mono.empty();
-                                            })
-                                    .build();
-
-                    // ========== Phase 3: Link MCP client to wrapper ==========
-                    wrapper.setClient(mcpClient);
-                    return wrapper;
-                });
+        return Mono.fromCallable(() -> new McpAsyncClientWrapper(name, this));
     }
 
     /**
      * Builds a synchronous MCP client wrapper (blocking operations).
      *
-     * <p>This method uses a two-phase build pattern to support notification handlers. The wrapper
-     * is created first, then the MCP client is built with notification consumers that can
-     * reference the wrapper.
+     * <p>This method uses a constructor that passes the builder to the wrapper, allowing the
+     * wrapper to construct its own client with notification handlers.
      *
      * @return synchronous client wrapper
      */
@@ -395,68 +312,116 @@ public class McpClientBuilder {
             throw new IllegalStateException("Transport must be configured");
         }
 
+        return new McpSyncClientWrapper(name, this);
+    }
+
+    // ==================== Internal Client Building Methods ====================
+
+    /**
+     * Builds an MCP async client with notification handlers for the specified wrapper.
+     *
+     * @param wrapper the wrapper that will receive notification callbacks
+     * @return the built MCP async client
+     */
+    McpAsyncClient buildClientForAsync(McpAsyncClientWrapper wrapper) {
+        if (transportConfig == null) {
+            throw new IllegalStateException("Transport must be configured");
+        }
+
         McpClientTransport transport = transportConfig.createTransport();
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", "1.0.9-SNAPSHOT");
+                        "agentscope-java", "AgentScope Java Framework", "1.0.8-SNAPSHOT");
 
         McpSchema.ClientCapabilities clientCapabilities =
                 McpSchema.ClientCapabilities.builder().build();
 
-        // ========== Phase 1: Create wrapper (client is temporarily null) ==========
-        McpSyncClientWrapper wrapper = new McpSyncClientWrapper(name, null);
+        return McpClient.async(transport)
+                .requestTimeout(requestTimeout)
+                .initializationTimeout(initializationTimeout)
+                .clientInfo(clientInfo)
+                .capabilities(clientCapabilities)
+                .loggingConsumer(buildAsyncLoggingConsumer())
+                .toolsChangeConsumer(
+                        tools -> {
+                            wrapper.updateCachedTools(tools);
+                            return Mono.empty();
+                        })
+                .build();
+    }
 
-        // ========== Phase 2: Build client (can reference wrapper) ==========
-        McpSyncClient mcpClient =
-                McpClient.sync(transport)
-                        .requestTimeout(requestTimeout)
-                        .initializationTimeout(initializationTimeout)
-                        .clientInfo(clientInfo)
-                        .capabilities(clientCapabilities)
-                        // ----- Log notification Consumer -----
-                        .loggingConsumer(
-                                notification -> {
-                                    // Parse notification content
-                                    String level =
-                                            notification.level() != null
-                                                    ? notification.level().toString()
-                                                    : "info";
-                                    String loggerName =
-                                            notification.logger() != null
-                                                    ? notification.logger()
-                                                    : "mcp";
-                                    String data =
-                                            notification.data() != null ? notification.data() : "";
+    /**
+     * Builds an MCP sync client with notification handlers for the specified wrapper.
+     *
+     * @param wrapper the wrapper that will receive notification callbacks
+     * @return the built MCP sync client
+     */
+    McpSyncClient buildClientForSync(McpSyncClientWrapper wrapper) {
+        if (transportConfig == null) {
+            throw new IllegalStateException("Transport must be configured");
+        }
 
-                                    // Log to SLF4J by level
-                                    switch (level.toLowerCase()) {
-                                        case "error" ->
-                                                logger.error(
-                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
-                                        case "warning" ->
-                                                logger.warn(
-                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
-                                        case "debug" ->
-                                                logger.debug(
-                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
-                                        default ->
-                                                logger.info(
-                                                        "[MCP-{}] [{}] {}", name, loggerName, data);
-                                    }
-                                })
+        McpClientTransport transport = transportConfig.createTransport();
 
-                        // ----- Tools change notification Consumer -----
-                        .toolsChangeConsumer(
-                                tools -> {
-                                    // Call wrapper method to update cache
-                                    wrapper.updateCachedTools(tools);
-                                })
-                        .build();
+        McpSchema.Implementation clientInfo =
+                new McpSchema.Implementation(
+                        "agentscope-java", "AgentScope Java Framework", "1.0.8-SNAPSHOT");
 
-        // ========== Phase 3: Link MCP client to wrapper ==========
-        wrapper.setClient(mcpClient);
-        return wrapper;
+        McpSchema.ClientCapabilities clientCapabilities =
+                McpSchema.ClientCapabilities.builder().build();
+
+        return McpClient.sync(transport)
+                .requestTimeout(requestTimeout)
+                .initializationTimeout(initializationTimeout)
+                .clientInfo(clientInfo)
+                .capabilities(clientCapabilities)
+                .loggingConsumer(buildSyncLoggingConsumer())
+                .toolsChangeConsumer(tools -> wrapper.updateCachedTools(tools))
+                .build();
+    }
+
+    /**
+     * Creates a logging function for async clients that maps MCP log notifications to SLF4J.
+     *
+     * @return the logging function
+     */
+    private java.util.function.Function<
+                    io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification, Mono<Void>>
+            buildAsyncLoggingConsumer() {
+        return notification -> {
+            logNotification(notification);
+            return Mono.empty();
+        };
+    }
+
+    /**
+     * Creates a logging consumer for sync clients that maps MCP log notifications to SLF4J.
+     *
+     * @return the logging consumer
+     */
+    private Consumer<io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification>
+            buildSyncLoggingConsumer() {
+        return notification -> logNotification(notification);
+    }
+
+    /**
+     * Logs an MCP notification to SLF4J at the appropriate level.
+     *
+     * @param notification the notification to log
+     */
+    private void logNotification(
+            io.modelcontextprotocol.spec.McpSchema.LoggingMessageNotification notification) {
+        String level = notification.level() != null ? notification.level().toString() : "info";
+        String loggerName = notification.logger() != null ? notification.logger() : "mcp";
+        String data = notification.data() != null ? notification.data() : "";
+
+        switch (level.toLowerCase()) {
+            case "error" -> logger.error("[MCP-{}] [{}] {}", name, loggerName, data);
+            case "warning" -> logger.warn("[MCP-{}] [{}] {}", name, loggerName, data);
+            case "debug" -> logger.debug("[MCP-{}] [{}] {}", name, loggerName, data);
+            default -> logger.info("[MCP-{}] [{}] {}", name, loggerName, data);
+        }
     }
 
     // ==================== Internal Transport Configuration Classes ====================

@@ -19,8 +19,9 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,8 @@ public class McpSyncClientWrapper extends McpClientWrapper {
 
     private static final Logger logger = LoggerFactory.getLogger(McpSyncClientWrapper.class);
 
-    private final AtomicReference<McpSyncClient> clientRef;
+    private final McpSyncClient client;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
      * Constructs a new synchronous MCP client wrapper.
@@ -54,17 +56,18 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     public McpSyncClientWrapper(String name, McpSyncClient client) {
         super(name);
-        this.clientRef = new AtomicReference<>(client);
+        this.client = Objects.requireNonNull(client, "MCP client cannot be null");
     }
 
     /**
-     * Sets the underlying MCP sync client. This is called by McpClientBuilder after the client is
-     * created with notification handlers.
+     * Package-private constructor for use by McpClientBuilder.
      *
-     * @param client the MCP sync client
+     * @param name unique identifier for this client
+     * @param builder the builder to construct the client with notification handlers
      */
-    void setClient(McpSyncClient client) {
-        this.clientRef.set(client);
+    McpSyncClientWrapper(String name, McpClientBuilder builder) {
+        super(name);
+        this.client = builder.buildClientForSync(this);
     }
 
     /**
@@ -75,13 +78,14 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      * @param tools the new list of tools from the server (empty list clears cache)
      */
     void updateCachedTools(List<McpSchema.Tool> tools) {
-        if (tools != null) {
-            // Build new map first, then atomically replace via volatile assignment
-            Map<String, McpSchema.Tool> newTools =
-                    tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
-            cachedTools = new ConcurrentHashMap<>(newTools);
-            logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
+        if (closed.get() || tools == null) {
+            return;
         }
+        // Build new map first, then atomically replace via volatile assignment
+        Map<String, McpSchema.Tool> newTools =
+                tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
+        cachedTools = new ConcurrentHashMap<>(newTools);
+        logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
     }
 
     /**
@@ -95,18 +99,15 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<Void> initialize() {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (initialized) {
             return Mono.empty();
         }
 
         return Mono.fromCallable(
                         () -> {
-                            McpSyncClient client = clientRef.get();
-                            if (client == null) {
-                                throw new IllegalStateException(
-                                        "MCP client '" + name + "' not available");
-                            }
-
                             logger.info("Initializing MCP sync client: {}", name);
 
                             // Initialize the client (blocking)
@@ -130,7 +131,9 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                                                     Collectors.toMap(McpSchema.Tool::name, t -> t));
                             cachedTools = new ConcurrentHashMap<>(newTools);
 
-                            initialized = true;
+                            if (!closed.get()) {
+                                initialized = true;
+                            }
                             return null;
                         })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -148,14 +151,12 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
-        }
-
-        McpSyncClient client = clientRef.get();
-        if (client == null) {
-            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         return Mono.fromCallable(() -> client.listTools().tools())
@@ -174,14 +175,12 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
-        }
-
-        McpSyncClient client = clientRef.get();
-        if (client == null) {
-            return Mono.error(new IllegalStateException("MCP client '" + name + "' not available"));
         }
 
         logger.debug("Calling MCP tool '{}' on client '{}'", toolName, name);
@@ -220,18 +219,18 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        McpSyncClient toClose = clientRef.getAndSet(null);
-        if (toClose != null) {
+        if (closed.compareAndSet(false, true)) {
             logger.info("Closing MCP sync client: {}", name);
             try {
-                toClose.closeGracefully();
+                client.closeGracefully();
                 logger.debug("MCP client '{}' closed", name);
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
-                toClose.close();
+                client.close();
+            } finally {
+                initialized = false;
+                cachedTools = new ConcurrentHashMap<>();
             }
         }
-        initialized = false;
-        cachedTools = new ConcurrentHashMap<>();
     }
 }

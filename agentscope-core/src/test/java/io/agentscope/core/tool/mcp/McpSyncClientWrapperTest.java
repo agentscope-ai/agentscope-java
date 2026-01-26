@@ -18,7 +18,6 @@ package io.agentscope.core.tool.mcp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -284,15 +283,6 @@ class McpSyncClientWrapperTest {
     }
 
     @Test
-    void testClose_NullClient() {
-        McpSyncClientWrapper nullWrapper = new McpSyncClientWrapper("null-client", null);
-
-        nullWrapper.close();
-
-        assertFalse(nullWrapper.isInitialized());
-    }
-
-    @Test
     void testClose_MultipleCallsSafe() {
         setupSuccessfulInitialization();
         wrapper.initialize().block();
@@ -462,42 +452,6 @@ class McpSyncClientWrapperTest {
         assertNotNull(wrapper.getCachedTool("tool-b"));
     }
 
-    // ==================== setClient Tests ====================
-
-    @Test
-    void testSetClient_ReplacesClient() {
-        // Wrapper created with original client
-        assertNotNull(wrapper);
-        assertEquals("test-sync-client", wrapper.getName());
-
-        // Create a new client
-        McpSyncClient newClient = mock(McpSyncClient.class);
-        assertNotSame(mockClient, newClient);
-
-        // Replace client using reflection
-        invokeSetClient(newClient);
-
-        // Verify by testing initialization with new client
-        McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("NewServer", "New Server", "1.0");
-        McpSchema.InitializeResult initResult =
-                new McpSchema.InitializeResult(
-                        "1.0",
-                        McpSchema.ServerCapabilities.builder().build(),
-                        serverInfo,
-                        null,
-                        null);
-
-        when(newClient.initialize()).thenReturn(initResult);
-        when(newClient.listTools()).thenReturn(new McpSchema.ListToolsResult(List.of(), null));
-
-        wrapper.initialize().block();
-
-        // Verify new client was used
-        verify(newClient, times(1)).initialize();
-        verify(mockClient, times(0)).initialize(); // Original client never called
-    }
-
     // ==================== close() Idempotency Tests ====================
 
     @Test
@@ -526,68 +480,9 @@ class McpSyncClientWrapperTest {
         assertTrue(wrapper.cachedTools.isEmpty());
     }
 
-    @Test
-    void testClose_AfterSetClientToNull() {
-        // First initialize normally
-        setupSuccessfulInitialization();
-        wrapper.initialize().block();
-        assertTrue(wrapper.isInitialized());
-
-        // Manually set client to null via reflection
-        invokeSetClient(null);
-
-        // Close should handle gracefully
-        wrapper.close();
-
-        assertFalse(wrapper.isInitialized());
-        assertTrue(wrapper.cachedTools.isEmpty());
-    }
-
     // ==================== Null Client Error Path Tests ====================
 
-    @Test
-    void testInitialize_WhenClientIsNull() {
-        // Create wrapper with null client
-        McpSyncClientWrapper nullWrapper = new McpSyncClientWrapper("null-client", null);
-
-        // Attempt to initialize should fail with "not available" error
-        Exception exception =
-                assertThrows(IllegalStateException.class, () -> nullWrapper.initialize().block());
-
-        assertTrue(exception.getMessage().contains("not available"));
-    }
-
-    @Test
-    void testListTools_WhenClientIsNullAfterSet() {
-        setupSuccessfulInitialization();
-        wrapper.initialize().block();
-
-        // Set client to null via reflection
-        invokeSetClient(null);
-
-        // Attempt to list tools should fail with "not available" error
-        Exception exception =
-                assertThrows(IllegalStateException.class, () -> wrapper.listTools().block());
-
-        assertTrue(exception.getMessage().contains("not available"));
-    }
-
-    @Test
-    void testCallTool_WhenClientIsNullAfterSet() {
-        setupSuccessfulInitialization();
-        wrapper.initialize().block();
-
-        // Set client to null via reflection
-        invokeSetClient(null);
-
-        // Attempt to call tool should fail with "not available" error
-        Exception exception =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> wrapper.callTool("test-tool", Map.of()).block());
-
-        assertTrue(exception.getMessage().contains("not available"));
-    }
+    // Removed: client is now final and cannot be null after construction
 
     // ==================== Helper Methods ====================
 
@@ -604,22 +499,6 @@ class McpSyncClientWrapperTest {
             method.invoke(wrapper, tools);
         } catch (Exception e) {
             throw new RuntimeException("Failed to invoke updateCachedTools", e);
-        }
-    }
-
-    /**
-     * Invokes the package-private setClient method using reflection.
-     *
-     * @param client the MCP sync client to set
-     */
-    private void invokeSetClient(McpSyncClient client) {
-        try {
-            java.lang.reflect.Method method =
-                    McpSyncClientWrapper.class.getDeclaredMethod("setClient", McpSyncClient.class);
-            method.setAccessible(true);
-            method.invoke(wrapper, client);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to invoke setClient", e);
         }
     }
 
