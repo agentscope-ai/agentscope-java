@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -89,6 +90,7 @@ public sealed interface AguiEvent
      *
      * @return The event type
      */
+    @JsonIgnore
     AguiEventType getType();
 
     /**
