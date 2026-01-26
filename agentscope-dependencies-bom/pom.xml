@@ -111,7 +111,7 @@
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
 
 
-        <spotless.version>3.1.0</spotless.version>
+        <spotless.version>3.2.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
