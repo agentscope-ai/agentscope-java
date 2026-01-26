@@ -76,7 +76,6 @@ public class Toolkit {
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ToolExecutor executor;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     /**
      * Create a Toolkit with default configuration (sequential execution using Reactor).
@@ -111,11 +110,9 @@ public class Toolkit {
                             toolRegistry,
                             groupManager,
                             this.config,
-                            methodInvoker,
                             config.getExecutorService());
         } else {
-            this.executor =
-                    new ToolExecutor(this, toolRegistry, groupManager, this.config, methodInvoker);
+            this.executor = new ToolExecutor(this, toolRegistry, groupManager, this.config);
         }
     }
 
@@ -445,7 +442,6 @@ public class Toolkit {
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
         executor.setChunkCallback(callback);
     }
 
