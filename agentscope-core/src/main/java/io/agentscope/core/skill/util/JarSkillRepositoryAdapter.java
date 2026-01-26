@@ -75,7 +75,7 @@ import org.slf4j.LoggerFactory;
  */
 public class JarSkillRepositoryAdapter implements AutoCloseable {
 
-    private Logger logger = LoggerFactory.getLogger(JarSkillRepositoryAdapter.class);
+    private final Logger logger = LoggerFactory.getLogger(JarSkillRepositoryAdapter.class);
 
     private final FileSystem fileSystem;
     private final Path skillBasePath;
