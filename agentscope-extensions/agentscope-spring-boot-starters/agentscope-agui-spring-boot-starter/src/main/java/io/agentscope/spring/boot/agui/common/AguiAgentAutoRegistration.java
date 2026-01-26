@@ -24,15 +24,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.context.annotation.Bean;
 import org.springframework.core.annotation.AnnotationUtils;
 
 /**
- * Auto-configuration for automatically registering Agent beans with the AguiAgentRegistry.
+ * A Scanner class for automatically registering Agent beans with the AguiAgentRegistry.
  *
  * <p>This configuration scans all Agent beans in the application context and registers them with
  * the registry. It supports both singleton and prototype scoped beans:
@@ -74,13 +72,22 @@ import org.springframework.core.annotation.AnnotationUtils;
  * }
  * }</pre>
  */
-@AutoConfiguration
-@ConditionalOnBean(AguiAgentRegistry.class)
-public class AguiAgentAutoRegistration implements BeanFactoryAware {
+public class AguiAgentAutoRegistration implements BeanFactoryAware, InitializingBean {
 
     private static final Logger logger = LoggerFactory.getLogger(AguiAgentAutoRegistration.class);
 
     private ConfigurableListableBeanFactory beanFactory;
+
+    private final AguiAgentRegistry registry;
+
+    /**
+     * Creates a new AguiAgentAutoRegistration.
+     *
+     * @param registry The agent registry
+     */
+    public AguiAgentAutoRegistration(AguiAgentRegistry registry) {
+        this.registry = registry;
+    }
 
     @Override
     public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
@@ -93,15 +100,11 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware {
      * Registers all Agent beans with the AguiAgentRegistry.
      *
      * <p>This method is called after the registry is created and scans for all Agent beans.
-     *
-     * @param registry The agent registry
-     * @return The same registry (for chaining)
      */
-    @Bean
-    public AguiAgentRegistry aguiAgentAutoRegistrar(AguiAgentRegistry registry) {
+    protected void aguiAgentAutoRegistrar() {
         if (beanFactory == null) {
             logger.warn("BeanFactory is not available, skipping auto-registration");
-            return registry;
+            return;
         }
 
         Map<String, Agent> agentBeans = beanFactory.getBeansOfType(Agent.class);
@@ -124,11 +127,10 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware {
 
             if (isPrototype) {
                 // Register factory for prototype beans (thread-safe: new instance per call)
-                final String finalAgentId = agentId;
                 registry.registerFactory(agentId, () -> beanFactory.getBean(beanName, Agent.class));
                 logger.info(
                         "Auto-registered prototype agent '{}' (bean: {}) with factory",
-                        finalAgentId,
+                        agentId,
                         beanName);
             } else {
                 // Register singleton directly
@@ -136,8 +138,6 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware {
                 logger.info("Auto-registered singleton agent '{}' (bean: {})", agentId, beanName);
             }
         }
-
-        return registry;
     }
 
     /**
@@ -201,5 +201,13 @@ public class AguiAgentAutoRegistration implements BeanFactoryAware {
             logger.debug("Could not determine scope for bean '{}': {}", beanName, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Invoke {@link #aguiAgentAutoRegistrar()} after all properties are set.
+     */
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        this.aguiAgentAutoRegistrar();
     }
 }
