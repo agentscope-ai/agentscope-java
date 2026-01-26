@@ -59,7 +59,7 @@ class McpSyncClientWrapperTest {
     void testInitialize_Success() {
         // Mock initialization with correct constructors
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.8-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.9-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -105,7 +105,7 @@ class McpSyncClientWrapperTest {
     @Test
     void testInitialize_AlreadyInitialized() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.8-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.9-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -625,7 +625,7 @@ class McpSyncClientWrapperTest {
 
     private void setupSuccessfulInitialization() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.8-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.9-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
