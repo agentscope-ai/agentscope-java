@@ -145,11 +145,11 @@ public class GenericRAGHook implements Hook {
                             if (retrievedDocs == null || retrievedDocs.isEmpty()) {
                                 return Mono.just(event);
                             }
-                            List<Msg> enhancedMessages = new ArrayList<>();
+                            List<Msg> enhancedMessages = new ArrayList<>(inputMessages.size() + 1);
                             // Build enhanced messages with knowledge context
                             Msg enhancedMessage = createEnhancedMessages(retrievedDocs);
-                            enhancedMessages.addAll(inputMessages);
                             enhancedMessages.add(enhancedMessage);
+                            enhancedMessages.addAll(inputMessages);
                             event.setInputMessages(enhancedMessages);
                             return Mono.just(event);
                         })
