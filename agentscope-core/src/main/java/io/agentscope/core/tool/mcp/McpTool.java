@@ -218,7 +218,9 @@ public class McpTool implements AgentTool {
             return parameters;
         }
         Map<String, Object> properties =
-                inputSchema.properties() != null ? inputSchema.properties() : new HashMap<>();
+                inputSchema.properties() != null
+                        ? new HashMap<>(inputSchema.properties())
+                        : new HashMap<>();
         List<String> required =
                 inputSchema.required() != null
                         ? new ArrayList<>(inputSchema.required())
@@ -227,9 +229,7 @@ public class McpTool implements AgentTool {
         // Exclude preset parameters from the schema
         if (excludeParams != null) {
             required.removeAll(excludeParams);
-            for (String excludeParam : excludeParams) {
-                properties.remove(excludeParam);
-            }
+            properties.keySet().removeAll(excludeParams);
         }
 
         parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
