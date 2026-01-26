@@ -117,8 +117,17 @@
         .message.tool {
             background: rgba(255, 158, 100, 0.1);
             border-left: 3px solid var(--accent-orange);
-            margin: 0 60px;
+            margin: 0 60px 16px 60px;
             font-size: 0.85rem;
+        }
+
+        .message.reasoning {
+            background: rgba(158, 206, 106, 0.08);
+            border-left: 3px solid var(--accent-green);
+            margin: 0 60px 16px 60px;
+            font-size: 0.85rem;
+            font-style: italic;
+            opacity: 0.9;
         }
 
         .message.error {
@@ -137,6 +146,7 @@
         .message.user .message-role { color: var(--text-secondary); }
         .message.assistant .message-role { color: var(--accent-blue); }
         .message.tool .message-role { color: var(--accent-orange); }
+        .message.reasoning .message-role { color: var(--accent-green); }
 
         .message-content {
             white-space: pre-wrap;
@@ -327,6 +337,14 @@
                 return;
             }
 
+            if (append && role === 'reasoning' && currentReasoningDiv) {
+                // Append to current reasoning message
+                const contentEl = currentReasoningDiv.querySelector('.message-content');
+                contentEl.textContent += content;
+                messages.scrollTop = messages.scrollHeight;
+                return;
+            }
+
             const div = document.createElement('div');
             div.className = `message ${role}`;
             div.innerHTML = `
@@ -338,6 +356,8 @@
 
             if (role === 'assistant') {
                 currentAssistantDiv = div;
+            } else if (role === 'reasoning') {
+                currentReasoningDiv = div;
             }
         }
 
@@ -380,6 +400,9 @@
 
             let assistantContent = '';
             let currentMessageId = null;
+            let reasoningContent = '';
+            let currentReasoningMessageId = null;
+            let currentReasoningDiv = null;
 
             try {
                 await client.run({
@@ -390,6 +413,29 @@
                     onRunStarted: () => {
                         console.log('Run started');
                         currentAssistantDiv = null;
+                        currentReasoningDiv = null;
+                        reasoningContent = '';
+                    },
+                    onReasoningMessageStart: (messageId, role) => {
+                        console.log('Reasoning message start:', messageId, role);
+                        hideTypingIndicator();
+                        currentReasoningMessageId = messageId;
+                        reasoningContent = '';
+                        currentReasoningDiv = null;
+                    },
+                    onReasoningContent: (delta, messageId) => {
+                        console.log('Reasoning content delta:', delta);
+                        if (reasoningContent === '') {
+                            appendMessage('reasoning', delta);
+                        } else {
+                            appendMessage('reasoning', delta, true);
+                        }
+                        reasoningContent += delta;
+                    },
+                    onReasoningMessageEnd: (messageId) => {
+                        console.log('Reasoning message end:', messageId);
+                        currentReasoningDiv = null;
+                        reasoningContent = '';
                     },
                     onTextMessageStart: (messageId, role) => {
                         console.log('Text message start:', messageId, role);
@@ -463,6 +509,8 @@
                 stopBtn.style.display = 'none';
                 hideTypingIndicator();
                 currentAssistantDiv = null;
+                currentReasoningDiv = null;
+                reasoningContent = '';
                 if (statusText.textContent === 'Running...') {
                     setStatus('ready', 'Ready');
                 }

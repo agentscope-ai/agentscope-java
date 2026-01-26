@@ -70,19 +70,20 @@
         <opentelemetry.version>1.58.0</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.2</reactor-bom.version>
-        <jackson.version>2.20.1</jackson.version>
+        <jackson.version>2.21.0</jackson.version>
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.35.0</google-genai.version>
-        <dashscope-sdk-java.version>2.22.5</dashscope-sdk-java.version>
-        <bailian.version>2.7.1</bailian.version>
-        <openai-java.version>4.15.0</openai-java.version>
+        <google-genai.version>1.36.0</google-genai.version>
+        <dashscope-sdk-java.version>2.22.6</dashscope-sdk-java.version>
+        <bailian.version>2.8.0</bailian.version>
+        <openai-java.version>4.16.1</openai-java.version>
         <anthropic.version>2.11.1</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.12</milvus.version>
+        <milvus.version>2.6.13</milvus.version>
+        <elasticsearch.version>8.12.0</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
@@ -90,17 +91,17 @@
         <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.5.0</mysql.version>
-        <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-reactor.version>2.24.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.1.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
-        <jedis.version>7.2.0</jedis.version>
+        <jedis.version>7.2.1</jedis.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.3</spring.version>
-        <spring-boot.version>4.0.1</spring-boot.version>
+        <spring-boot.version>4.0.2</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
         <json-schema-validator.version>3.0.0</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
@@ -110,7 +111,7 @@
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
 
 
-        <spotless.version>3.1.0</spotless.version>
+        <spotless.version>3.2.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -238,6 +239,13 @@
                 <version>${qdrant.version}</version>
             </dependency>
 
+            <!-- Elasticsearch Java SDK -->
+            <dependency>
+                <groupId>co.elastic.clients</groupId>
+                <artifactId>elasticsearch-java</artifactId>
+                <version>${elasticsearch.version}</version>
+            </dependency>
+
             <!-- Kotlin Coroutines -->
             <dependency>
                 <groupId>org.jetbrains.kotlinx</groupId>
@@ -250,7 +258,6 @@
                 <artifactId>kotlinx-coroutines-reactor</artifactId>
                 <version>${kotlin.coroutines.version}</version>
             </dependency>
-
 
             <!-- Milvus Java SDK -->
             <dependency>

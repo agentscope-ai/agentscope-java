@@ -454,7 +454,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
                             // HITL stop
                             if (event.isStopRequested()) {
-                                return Mono.just(msg);
+                                return Mono.just(
+                                        msg.withGenerateReason(
+                                                GenerateReason.REASONING_STOP_REQUESTED));
                             }
 
                             // gotoReasoning requested (e.g., by StructuredOutputHook)
@@ -487,7 +489,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     /**
      * Execute the acting phase.
      *
-     * <p>This method executes all tools (including external ones which return pending results),
+     * <p>This method executes only pending tools (those without results in memory),
      * notifies hooks for successful tool results, and decides whether to continue iteration
      * or return (HITL stop, suspended tools, or structured output).
      *
@@ -502,17 +504,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @return Mono containing the final result message
      */
     private Mono<Msg> acting(int iter) {
-        List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
+        // Extract only pending tool calls (those without results in memory)
+        List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
 
-        if (allToolCalls.isEmpty()) {
+        if (pendingToolCalls.isEmpty()) {
+            // No pending tools have been executed, continue to next iteration
             return executeIteration(iter + 1);
         }
 
         // Set chunk callback for streaming tool responses
         toolkit.setChunkCallback((toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
-        // Execute all tools (including external ones which will return pending results)
-        return notifyPreActingHooks(allToolCalls)
+        // Execute only pending tools (those without results in memory)
+        return notifyPreActingHooks(pendingToolCalls)
                 .flatMap(this::executeToolCalls)
                 .flatMap(
                         results -> {
@@ -543,7 +547,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                 // HITL stop (also triggered by
                                                 // StructuredOutputHook when completed)
                                                 if (event.isStopRequested()) {
-                                                    return Mono.just(event.getToolResultMsg());
+                                                    return Mono.just(
+                                                            event.getToolResultMsg()
+                                                                    .withGenerateReason(
+                                                                            GenerateReason
+                                                                                    .ACTING_STOP_REQUESTED));
                                                 }
 
                                                 // If there are pending results, build suspended Msg
@@ -752,6 +760,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
         return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
+    }
+
+    /**
+     * Extract only pending tool calls (those without results in memory) from the most recent
+     * assistant message.
+     *
+     * <p>This method filters out tool calls that already have corresponding results in memory,
+     * preventing duplicate execution when resuming from HITL or partial tool result scenarios.
+     *
+     * @return List of tool use blocks that don't have results yet, or empty list if all tools
+     *     have been executed
+     */
+    private List<ToolUseBlock> extractPendingToolCalls() {
+        List<ToolUseBlock> allToolCalls = extractRecentToolCalls();
+        if (allToolCalls.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> pendingIds = getPendingToolUseIds();
+        return allToolCalls.stream()
+                .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                .toList();
     }
 
     @Override
@@ -1506,12 +1536,18 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <ul>
          *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         *   <li>Writes skill scripts to baseDir if code execution is enabled
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
             skillBox.bindToolkit(agentToolkit);
             // Register skill loader tools to toolkit
             skillBox.registerSkillLoadTool();
+
+            // If code execution is enabled, write skill scripts to workDir
+            if (skillBox.isCodeExecutionEnabled()) {
+                skillBox.writeSkillScriptsToWorkDir();
+            }
 
             hooks.add(new SkillHook(skillBox));
         }

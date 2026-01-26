@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +34,27 @@ class SkillToolFactory {
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
     private final SkillRegistry skillRegistry;
+    private Toolkit toolkit;
 
-    SkillToolFactory(SkillRegistry skillRegistry) {
+    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
         this.skillRegistry = skillRegistry;
+        this.toolkit = toolkit;
+    }
+
+    /**
+     * Binds a toolkit to the skill tool factory.
+     *
+     * <p>
+     * This method binds the toolkit to skill tool factory.
+     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
+     * ensure the
+     * skill tool factory references the correct toolkit instance.
+     *
+     * @param toolkit The toolkit to bind to the skill tool factory
+     * @throws IllegalArgumentException if the toolkit is null
+     */
+    void bindToolkit(Toolkit toolkit) {
+        this.toolkit = toolkit;
     }
 
     /**
@@ -228,7 +247,7 @@ class SkillToolFactory {
     }
 
     /**
-     * Validate skill exists and activate it.
+     * Validate skill exists and activate it and its tool group.
      *
      * @param skillId The unique identifier of the skill
      * @return The skill instance
@@ -239,11 +258,6 @@ class SkillToolFactory {
             throw new IllegalArgumentException(
                     String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
         }
-
-        // Set skill as active
-        skillRegistry.setSkillActive(skillId, true);
-        logger.debug("Activated skill: {}", skillId);
-
         // Get skill
         AgentSkill skill = skillRegistry.getSkill(skillId);
         if (skill == null) {
@@ -253,6 +267,19 @@ class SkillToolFactory {
                                     + " error.",
                             skillId));
         }
+        // Set skill as active
+        skillRegistry.setSkillActive(skillId, true);
+        logger.info("Activated skill: {}", skillId);
+
+        String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
+        if (toolkit.getToolGroup(toolsGroupName) != null) {
+            toolkit.updateToolGroups(List.of(toolsGroupName), true);
+            logger.info(
+                    "Activated skill tool group: {} and its tools: {}",
+                    toolsGroupName,
+                    toolkit.getToolGroup(toolsGroupName).getTools());
+        }
+
         return skill;
     }
 }

@@ -737,6 +737,98 @@ class AguiEventTest {
     }
 
     @Nested
+    class CustomTest {
+
+        @Test
+        void testCreation() {
+            AguiEvent.Custom event =
+                    new AguiEvent.Custom(
+                            "thread-1", "run-1", "custom-event", Map.of("key", "value"));
+
+            assertEquals(AguiEventType.CUSTOM, event.getType());
+            assertEquals("thread-1", event.getThreadId());
+            assertEquals("run-1", event.getRunId());
+            assertEquals("custom-event", event.name());
+            assertNotNull(event.value());
+        }
+
+        @Test
+        void testWithNullValue() {
+            AguiEvent.Custom event =
+                    new AguiEvent.Custom("thread-1", "run-1", "custom-event", null);
+
+            assertNull(event.value());
+        }
+
+        @Test
+        void testWithComplexValue() {
+            Map<String, Object> complexData =
+                    Map.of(
+                            "error",
+                            "Something failed",
+                            "code",
+                            500,
+                            "details",
+                            Map.of("reason", "Timeout"));
+            AguiEvent.Custom event =
+                    new AguiEvent.Custom("thread-1", "run-1", "error-event", complexData);
+
+            assertTrue(event.value() instanceof Map);
+        }
+
+        @Test
+        void testToString() {
+            AguiEvent.Custom event =
+                    new AguiEvent.Custom("thread-1", "run-1", "test-event", Map.of("key", "value"));
+
+            String str = event.toString();
+            assertTrue(str.contains("thread-1"));
+            assertTrue(str.contains("name"));
+        }
+
+        @Test
+        void testNullThreadIdThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.Custom(null, "run-1", "test-event", Map.of()));
+        }
+
+        @Test
+        void testNullRunIdThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.Custom("thread-1", null, "test-event", Map.of()));
+        }
+
+        @Test
+        void testNullNameThrows() {
+            assertThrows(
+                    NullPointerException.class,
+                    () -> new AguiEvent.Custom("thread-1", "run-1", null, Map.of()));
+        }
+
+        @Test
+        void testJsonSerialization() throws JsonProcessingException {
+            AguiEvent.Custom event =
+                    new AguiEvent.Custom(
+                            "thread-1",
+                            "run-1",
+                            "test-event",
+                            Map.of("key", "value", "number", 42));
+
+            String json = JsonUtils.getJsonCodec().toJson(event);
+            assertTrue(json.contains("\"type\":\"CUSTOM\""));
+            assertTrue(json.contains("\"name\":\"test-event\""));
+            assertTrue(json.contains("\"value\""));
+
+            AguiEvent deserialized = JsonUtils.getJsonCodec().fromJson(json, AguiEvent.class);
+            assertTrue(deserialized instanceof AguiEvent.Custom);
+            AguiEvent.Custom customEvent = (AguiEvent.Custom) deserialized;
+            assertEquals("test-event", customEvent.name());
+        }
+    }
+
+    @Nested
     class AguiEventTypeTest {
 
         @Test
@@ -754,11 +846,12 @@ class AguiEventTest {
             assertNotNull(AguiEventType.STATE_SNAPSHOT);
             assertNotNull(AguiEventType.STATE_DELTA);
             assertNotNull(AguiEventType.RAW);
+            assertNotNull(AguiEventType.CUSTOM);
         }
 
         @Test
         void testEventTypeCount() {
-            assertEquals(12, AguiEventType.values().length);
+            assertEquals(19, AguiEventType.values().length);
         }
 
         @Test
