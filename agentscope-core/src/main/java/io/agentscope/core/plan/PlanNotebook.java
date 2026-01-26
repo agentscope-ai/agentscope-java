@@ -308,7 +308,8 @@ public class PlanNotebook implements StateModule {
         if (maxSubtasks != null && subtaskList.size() > maxSubtasks) {
             return Mono.just(
                     String.format(
-                            "Cannot create plan: the number of subtasks (%d) exceeds the maximum limit of %d. Please reduce the number of subtasks.",
+                            "Cannot create plan: the number of subtasks (%d) exceeds the maximum"
+                                    + " limit of %d. Please reduce the number of subtasks.",
                             subtaskList.size(), maxSubtasks));
         }
         Plan plan = new Plan(name, description, expectedOutcome, subtaskList);
@@ -513,7 +514,9 @@ public class PlanNotebook implements StateModule {
             if (maxSubtasks != null && subtasks.size() >= maxSubtasks) {
                 return Mono.just(
                         String.format(
-                                "Cannot add more subtasks: the current plan has reached the maximum limit of %d subtasks. Please delete some existing subtasks first.",
+                                "Cannot add more subtasks: the current plan has reached the"
+                                        + " maximum limit of %d subtasks. Please delete some"
+                                        + " existing subtasks first.",
                                 maxSubtasks));
             }
         } else {
