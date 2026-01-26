@@ -101,6 +101,15 @@ public class GeminiChatFormatter
     public void applyOptions(
             GeminiRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
 
+        // Only create generation config if there are actual options to apply
+        // This avoids sending empty {} generationConfig which can cause issues with some models
+        boolean hasOptions = hasAnyOption(options, defaultOptions);
+
+        if (!hasOptions) {
+            // No options to apply, remove generationConfig if it's empty
+            return;
+        }
+
         // Ensure generation config exists
         if (request.getGenerationConfig() == null) {
             request.setGenerationConfig(new GeminiGenerationConfig());
@@ -146,6 +155,52 @@ public class GeminiChatFormatter
             thinkingConfig.setThinkingBudget(thinkingBudget);
             config.setThinkingConfig(thinkingConfig);
         }
+    }
+
+    /**
+     * Check if any options are set that need to be applied.
+     */
+    private boolean hasAnyOption(GenerateOptions options, GenerateOptions defaultOptions) {
+        if (options != null && defaultOptions != null) {
+            // Check if any option is explicitly set in either options or defaultOptions
+            return options.getTemperature() != null
+                    || options.getTopP() != null
+                    || options.getTopK() != null
+                    || options.getSeed() != null
+                    || options.getMaxTokens() != null
+                    || options.getFrequencyPenalty() != null
+                    || options.getPresencePenalty() != null
+                    || options.getThinkingBudget() != null
+                    || defaultOptions.getTemperature() != null
+                    || defaultOptions.getTopP() != null
+                    || defaultOptions.getTopK() != null
+                    || defaultOptions.getSeed() != null
+                    || defaultOptions.getMaxTokens() != null
+                    || defaultOptions.getFrequencyPenalty() != null
+                    || defaultOptions.getPresencePenalty() != null
+                    || defaultOptions.getThinkingBudget() != null;
+        }
+        if (options != null) {
+            return options.getTemperature() != null
+                    || options.getTopP() != null
+                    || options.getTopK() != null
+                    || options.getSeed() != null
+                    || options.getMaxTokens() != null
+                    || options.getFrequencyPenalty() != null
+                    || options.getPresencePenalty() != null
+                    || options.getThinkingBudget() != null;
+        }
+        if (defaultOptions != null) {
+            return defaultOptions.getTemperature() != null
+                    || defaultOptions.getTopP() != null
+                    || defaultOptions.getTopK() != null
+                    || defaultOptions.getSeed() != null
+                    || defaultOptions.getMaxTokens() != null
+                    || defaultOptions.getFrequencyPenalty() != null
+                    || defaultOptions.getPresencePenalty() != null
+                    || defaultOptions.getThinkingBudget() != null;
+        }
+        return false;
     }
 
     /**

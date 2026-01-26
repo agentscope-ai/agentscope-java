@@ -782,7 +782,11 @@ class GeminiMessageConverterTest {
     @DisplayName("Should convert ThinkingBlock with signature")
     void testConvertThinkingBlockWithSignature() {
         ThinkingBlock thinkingBlock =
-                ThinkingBlock.builder().thinking("Reasoning").signature("sig_123").build();
+                ThinkingBlock.builder()
+                        .thinking("Reasoning")
+                        .metadata(
+                                Map.of(GeminiResponseParser.METADATA_THOUGHT_SIGNATURE, "sig_123"))
+                        .build();
 
         Msg msg =
                 Msg.builder()

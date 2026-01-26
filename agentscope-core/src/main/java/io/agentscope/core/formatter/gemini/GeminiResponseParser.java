@@ -59,6 +59,14 @@ public class GeminiResponseParser {
     private static final Logger log = LoggerFactory.getLogger(GeminiResponseParser.class);
 
     /**
+     * Metadata key for Gemini thought signature.
+     *
+     * <p>Gemini thinking models return encrypted thought signatures that must be passed back in
+     * subsequent requests to maintain reasoning context across turns.
+     */
+    public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
+
+    /**
      * Creates a new GeminiResponseParser.
      */
     public GeminiResponseParser() {}
@@ -197,7 +205,7 @@ public class GeminiResponseParser {
                     Map<String, Object> metadata = null;
                     if (part.getSignature() != null && !part.getSignature().isEmpty()) {
                         metadata = new HashMap<>();
-                        metadata.put(ThinkingBlock.METADATA_THOUGHT_SIGNATURE, part.getSignature());
+                        metadata.put(METADATA_THOUGHT_SIGNATURE, part.getSignature());
                     }
 
                     blocks.add(

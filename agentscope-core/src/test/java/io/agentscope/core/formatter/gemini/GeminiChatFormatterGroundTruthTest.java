@@ -252,9 +252,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
                     GeminiFunctionCall functionCall = part.getFunctionCall();
                     Map<String, Object> functionCallMap = new LinkedHashMap<>();
 
-                    if (functionCall.getId() != null) {
-                        functionCallMap.put("id", functionCall.getId());
-                    }
+                    // Note: id field is NOT included in JSON serialization (not sent to Gemini API)
                     if (functionCall.getName() != null) {
                         functionCallMap.put("name", functionCall.getName());
                     }

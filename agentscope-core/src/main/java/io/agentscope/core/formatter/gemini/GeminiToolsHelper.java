@@ -24,24 +24,28 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Handles tool registration and configuration for Gemini API.
  *
- * <p>This helper converts AgentScope tool schemas to Gemini's Tool and ToolConfig format:
+ * <p>
+ * This helper converts AgentScope tool schemas to Gemini's Tool and ToolConfig
+ * format:
  * <ul>
- *   <li>Tool: Contains function declarations with JSON Schema parameters</li>
- *   <li>ToolConfig: Contains function calling mode configuration</li>
+ * <li>Tool: Contains function declarations with JSON Schema parameters</li>
+ * <li>ToolConfig: Contains function calling mode configuration</li>
  * </ul>
  *
- * <p><b>Tool Choice Mapping:</b>
+ * <p>
+ * <b>Tool Choice Mapping:</b>
  * <ul>
- *   <li>Auto: mode=AUTO (model decides)</li>
- *   <li>None: mode=NONE (disable tool calling)</li>
- *   <li>Required: mode=ANY (force tool call from all provided tools)</li>
- *   <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
+ * <li>Auto: mode=AUTO (model decides)</li>
+ * <li>None: mode=NONE (disable tool calling)</li>
+ * <li>Required: mode=ANY (force tool call from all provided tools)</li>
+ * <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
  * </ul>
  */
 public class GeminiToolsHelper {
@@ -82,20 +86,22 @@ public class GeminiToolsHelper {
 
                 // Convert parameters (directly modify toolSchema Map structure if needed,
                 // but usually it is already in JSON Schema format compatible with Gemini)
-                if (toolSchema.getParameters() != null && !toolSchema.getParameters().isEmpty()) {
-                    declaration.setParameters(toolSchema.getParameters());
+                // NOTE: Gemini API is sensitive to empty parameter schemas
+                // For tools with no parameters, omit the parameters field entirely
+                Map<String, Object> parameters = toolSchema.getParameters();
 
-                    // Debug: Log the cleaned schema
-                    try {
-                        String schemaJson =
-                                JsonUtils.getJsonCodec().toPrettyJson(toolSchema.getParameters());
-                        log.debug(
-                                "Cleaned schema for tool '{}': {}",
-                                toolSchema.getName(),
-                                schemaJson);
-                    } catch (Exception e) {
-                        log.debug("Could not serialize schema for logging: {}", e.getMessage());
-                    }
+                // Only set parameters if not null and not empty
+                // Gemini rejects tools with empty parameter schemas
+                if (parameters != null && !parameters.isEmpty()) {
+                    declaration.setParameters(parameters);
+                }
+
+                // Debug: Log the cleaned schema
+                try {
+                    String schemaJson = JsonUtils.getJsonCodec().toPrettyJson(parameters);
+                    log.debug("Cleaned schema for tool '{}': {}", toolSchema.getName(), schemaJson);
+                } catch (Exception e) {
+                    log.debug("Could not serialize schema for logging: {}", e.getMessage());
                 }
 
                 functionDeclarations.add(declaration);
@@ -122,12 +128,13 @@ public class GeminiToolsHelper {
     /**
      * Create Gemini ToolConfig from AgentScope ToolChoice.
      *
-     * <p>Tool choice mapping:
+     * <p>
+     * Tool choice mapping:
      * <ul>
-     *   <li>null or Auto: mode=AUTO (model decides)</li>
-     *   <li>None: mode=NONE (disable tool calling)</li>
-     *   <li>Required: mode=ANY (force tool call from all provided tools)</li>
-     *   <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
+     * <li>null or Auto: mode=AUTO (model decides)</li>
+     * <li>None: mode=NONE (disable tool calling)</li>
+     * <li>Required: mode=ANY (force tool call from all provided tools)</li>
+     * <li>Specific: mode=ANY + allowedFunctionNames (force specific tool)</li>
      * </ul>
      *
      * @param toolChoice The tool choice configuration (null means auto)

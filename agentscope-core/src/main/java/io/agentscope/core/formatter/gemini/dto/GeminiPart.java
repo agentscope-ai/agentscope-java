@@ -116,8 +116,10 @@ public class GeminiPart {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GeminiFunctionCall {
-        @JsonProperty("id")
-        private String id; // Added ID field
+        // Note: id field is kept for internal tracking but NOT serialized to Gemini API
+        // The Gemini API only accepts 'name' and 'args' in functionCall
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        private String id; // Internal ID for correlation (not serialized)
 
         @JsonProperty("name")
         private String name;
@@ -138,10 +140,12 @@ public class GeminiPart {
             this.args = args;
         }
 
+        @com.fasterxml.jackson.annotation.JsonIgnore
         public String getId() {
             return id;
         }
 
+        @com.fasterxml.jackson.annotation.JsonIgnore
         public void setId(String id) {
             this.id = id;
         }

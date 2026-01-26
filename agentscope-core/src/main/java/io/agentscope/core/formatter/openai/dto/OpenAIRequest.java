@@ -385,11 +385,11 @@ public class OpenAIRequest {
         this.prediction = prediction;
     }
 
-    public List<String> getModalities() {
+    public java.util.List<String> getModalities() {
         return modalities;
     }
 
-    public void setModalities(List<String> modalities) {
+    public void setModalities(java.util.List<String> modalities) {
         this.modalities = modalities;
     }
 
@@ -579,7 +579,7 @@ public class OpenAIRequest {
             return this;
         }
 
-        public Builder modalities(List<String> modalities) {
+        public Builder modalities(java.util.List<String> modalities) {
             request.setModalities(modalities);
             return this;
         }

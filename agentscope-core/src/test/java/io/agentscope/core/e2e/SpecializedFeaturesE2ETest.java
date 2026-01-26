@@ -113,7 +113,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("ProviderFactory#getThinkingBudgetProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getThinkingBudgetProviders")
     @DisplayName("Should handle thinking mode with different budgets")
     void testThinkingModeWithBudgets(ModelProvider provider) {
         System.out.println(
@@ -191,7 +191,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("ProviderFactory#getMultimodalProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getMultimodalProviders")
     @DisplayName("Should handle complex multimodal reasoning")
     void testComplexMultimodalReasoning(ModelProvider provider) {
         System.out.println(

@@ -411,7 +411,9 @@ class GeminiResponseParserTest {
         assertInstanceOf(ThinkingBlock.class, block1);
         ThinkingBlock thinkingBlock = (ThinkingBlock) block1;
         assertEquals("Let me think about this problem...", thinkingBlock.getThinking());
-        assertEquals("sig-thought-123", thinkingBlock.getSignature());
+        assertEquals(
+                "sig-thought-123",
+                thinkingBlock.getMetadata().get(GeminiResponseParser.METADATA_THOUGHT_SIGNATURE));
 
         // Second should be TextBlock
         ContentBlock block2 = chatResponse.getContent().get(1);
