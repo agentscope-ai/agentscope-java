@@ -217,7 +217,7 @@ class ToolEmitterIntegrationTest {
     }
 
     @Test
-    @DisplayName("test ToolEmitter with copied Toolkit")
+    @DisplayName("ToolEmitter should work after Toolkit copy")
     void testToolEmitterWithCopiedToolkit() {
         toolkit.registerTool(
                 new Object() {
