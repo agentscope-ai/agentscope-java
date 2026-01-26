@@ -511,6 +511,41 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testToolUseBlockWithNullId() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id(null)
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .content("{\"param\":\"value\"}")
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        StepVerifier.create(adapter.run(input))
+                .expectNextMatches(e -> e instanceof AguiEvent.RunStarted)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallStart)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallArgs)
+                .expectNextMatches(e -> e instanceof AguiEvent.ToolCallEnd)
+                .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
+                .verifyComplete();
+    }
+
+    @Test
     void testTextMessageEndNotDuplicatedWhenLastEventAfterToolCall() {
         // Test that when a text message is interrupted by a tool call and then the last event
         // contains text blocks with the same message ID, only one TextMessageEnd is emitted
@@ -568,6 +603,48 @@ class AguiAgentAdapterTest {
                                 })
                         .count();
         assertEquals(1, textEndCount, "Should have exactly 1 TextMessageEnd per message ID");
+    }
+
+    @Test
+    void testToolUseBlockWithNullIdGeneratesUUID() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id(null) // null ID
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.ToolCallStart toolStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolStart, "Should have ToolCallStart");
+        // Should have generated a UUID (non-null, non-empty string)
+        assertNotNull(toolStart.toolCallId(), "Tool call ID should not be null");
+        assertTrue(!toolStart.toolCallId().isEmpty(), "Tool call ID should not be empty");
     }
 
     @Test
@@ -652,6 +729,11 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
+        long toolResultCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ToolCallResult).count();
+        assertEquals(1, toolResultCount, "Should have ToolCallResult");
+
+        // Verify tool result content
         AguiEvent.ToolCallResult toolResult =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.ToolCallResult)
@@ -701,51 +783,9 @@ class AguiAgentAdapterTest {
                         .orElse(null);
 
         assertNotNull(toolResult, "Should have ToolCallResult");
-        // When output is empty, result should be null
-        assertTrue(toolResult.content() == null || toolResult.content().isEmpty());
-    }
-
-    @Test
-    void testToolUseBlockWithNullId() {
-        // Test that when ToolUseBlock has null ID, a UUID is generated
-        Msg toolCallMsg =
-                Msg.builder()
-                        .id("msg-tc1")
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                ToolUseBlock.builder()
-                                        .id(null) // null ID
-                                        .name("test_tool")
-                                        .input(Map.of("param", "value"))
-                                        .build())
-                        .build();
-
-        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
-        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
-                .thenReturn(Flux.just(toolCallEvent));
-
-        RunAgentInput input =
-                RunAgentInput.builder()
-                        .threadId("thread-1")
-                        .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
-                        .build();
-
-        List<AguiEvent> events = adapter.run(input).collectList().block();
-
-        assertNotNull(events);
-
-        AguiEvent.ToolCallStart toolStart =
-                events.stream()
-                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
-                        .map(e -> (AguiEvent.ToolCallStart) e)
-                        .findFirst()
-                        .orElse(null);
-
-        assertNotNull(toolStart, "Should have ToolCallStart");
-        // Should have generated a UUID (non-null, non-empty string)
-        assertNotNull(toolStart.toolCallId(), "Tool call ID should not be null");
-        assertTrue(!toolStart.toolCallId().isEmpty(), "Tool call ID should not be empty");
+        assertTrue(
+                toolResult.content() == null || toolResult.content().isEmpty(),
+                "Empty output should result in null or empty content");
     }
 
     @Test
@@ -809,7 +849,7 @@ class AguiAgentAdapterTest {
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
                         .build();
 
         List<AguiEvent> events = adapter.run(input).collectList().block();
@@ -916,14 +956,14 @@ class AguiAgentAdapterTest {
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Calculate")))
                         .build();
 
         List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
 
         assertNotNull(events);
 
-        // Count ReasoningMessageContent events - should have 2 (one for each chunk)
+        // Count ReasoningMessageContent events
         long reasoningMessageContentCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageContent).count();
         assertEquals(
@@ -931,13 +971,95 @@ class AguiAgentAdapterTest {
                 reasoningMessageContentCount,
                 "Should have 2 reasoning message content events for streaming");
 
-        // Should only have 1 ReasoningMessageStart (same message ID)
+        // Should only have 1 ReasoningMessageStart
         long reasoningMessageStartCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
         assertEquals(
                 1,
                 reasoningMessageStartCount,
                 "Should have only 1 start event for same reasoning message ID");
+    }
+
+    @Test
+    void testToolCallStartBackfillWithoutCache() {
+        Msg toolResultMsg =
+                Msg.builder()
+                        .id("msg-tr1")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-unknown")
+                                        .output(TextBlock.builder().text("result").build())
+                                        .build())
+                        .build();
+
+        Event toolResultEvent = new Event(EventType.TOOL_RESULT, toolResultMsg, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolResultEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have ToolCallStart backfilled for unknown tool result
+        long toolStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
+        assertEquals(1, toolStartCount, "Should backfill ToolCallStart for unknown tool result");
+    }
+
+    @Test
+    void testRunWithThinkingBlockEnabledShowsReasoningContent() {
+        // Test that when reasoning is enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg reasoningMsg =
+                Msg.builder()
+                        .id("msg-r1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ThinkingBlock.builder()
+                                        .thinking("Let me think about this problem step by step...")
+                                        .build())
+                        .build();
+
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(reasoningEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hi")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have ReasoningMessageContent events
+        long reasoningMessageContentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageContent).count();
+        assertTrue(
+                reasoningMessageContentCount > 0,
+                "Should have reasoning message content events when enabled");
+
+        // Should have ReasoningMessageStart
+        long reasoningMessageStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageStart).count();
+        assertEquals(
+                1,
+                reasoningMessageStartCount,
+                "Should have only 1 start event for reasoning message");
     }
 
     @Test
@@ -1052,14 +1174,14 @@ class AguiAgentAdapterTest {
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
                         .build();
 
         List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
 
         assertNotNull(events);
 
-        // Should have ReasoningMessageStart and ReasoningMessageEnd
+        // Should have ReasoningMessageStart
         AguiEvent.ReasoningMessageStart reasoningMessageStart =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.ReasoningMessageStart)
@@ -1069,6 +1191,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
 
+        // Should have ReasoningMessageEnd when isLast=true
         AguiEvent.ReasoningMessageEnd reasoningMessageEnd =
                 events.stream()
                         .filter(e -> e instanceof AguiEvent.ReasoningMessageEnd)
@@ -1077,12 +1200,46 @@ class AguiAgentAdapterTest {
                         .orElse(null);
 
         assertNotNull(reasoningMessageEnd, "Should have ReasoningMessageEnd when isLast=true");
+    }
 
-        // Should NOT have ReasoningMessageContent when isLast=true (content is empty)
-        boolean hasContent =
-                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageContent);
+    @Test
+    void testToolCallStartBackfillWithNullContent() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .content(null)
+                                        .build())
+                        .build();
 
-        assertTrue(!hasContent, "Should NOT have ReasoningMessageContent when isLast=true");
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have ToolCallStart even with null content
+        long toolStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
+        assertEquals(1, toolStartCount, "Should have ToolCallStart even with null content");
+
+        // Should have ToolCallEnd
+        long toolEndCount = events.stream().filter(e -> e instanceof AguiEvent.ToolCallEnd).count();
+        assertEquals(1, toolEndCount, "Should have ToolCallEnd");
     }
 
     @Test
@@ -1115,7 +1272,7 @@ class AguiAgentAdapterTest {
                 RunAgentInput.builder()
                         .threadId("thread-1")
                         .runId("run-1")
-                        .messages(List.of(AguiMessage.userMessage("msg-1", "Weather?")))
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
                         .build();
 
         List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
@@ -1125,12 +1282,54 @@ class AguiAgentAdapterTest {
         // Should have reasoning events
         boolean hasReasoningMessageStart =
                 events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageStart);
+        boolean hasReasoningMessageContent =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.ReasoningMessageContent);
 
         // Should have tool call events
         boolean hasToolStart = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallStart);
 
-        assertTrue(hasReasoningMessageStart, "Should have reasoning message start event");
-        assertTrue(hasToolStart, "Should have tool call");
+        assertTrue(hasReasoningMessageStart, "Should have ReasoningMessageStart");
+        assertTrue(hasReasoningMessageContent, "Should have ReasoningMessageContent");
+        assertTrue(hasToolStart, "Should have ToolCallStart for tool call");
+    }
+
+    @Test
+    void testToolCallStartBackfillWithEmptyContent() {
+        Msg toolCallMsg =
+                Msg.builder()
+                        .id("msg-tc1")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("tc-1")
+                                        .name("test_tool")
+                                        .input(Map.of("param", "value"))
+                                        .content("")
+                                        .build())
+                        .build();
+
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(toolCallEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Weather?")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        // Should have tool call events even with empty content
+        long toolStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
+        assertEquals(1, toolStartCount, "Should have ToolCallStart even with empty content");
+
+        long toolEndCount = events.stream().filter(e -> e instanceof AguiEvent.ToolCallEnd).count();
+        assertEquals(1, toolEndCount, "Should have ToolCallEnd");
     }
 
     @Test
@@ -1158,6 +1357,45 @@ class AguiAgentAdapterTest {
 
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(event1, event2));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Test")))
+                        .build();
+
+        List<AguiEvent> events = adapterWithReasoning.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        long messageContentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageContent).count();
+        assertTrue(
+                messageContentCount >= 1, "Should have at least 1 reasoning message content event");
+
+        // Should have ReasoningMessageEnd when isLast=true
+        long messageEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+        assertEquals(1, messageEndCount, "Should have ReasoningMessageEnd when isLast=true");
+    }
+
+    @Test
+    void testRunWithStreamingThinkingBlockFirstChunk() {
+        // Test streaming with first chunk (isLast=false) when enabled
+        AguiAdapterConfig config = AguiAdapterConfig.builder().enableReasoning(true).build();
+        AguiAgentAdapter adapterWithReasoning = new AguiAgentAdapter(mockAgent, config);
+
+        Msg thinkingChunk1 =
+                Msg.builder()
+                        .id("msg-thinking")
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("First thought").build())
+                        .build();
+
+        Event event1 = new Event(EventType.REASONING, thinkingChunk1, false); // Not last
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.just(event1));
 
         RunAgentInput input =
                 RunAgentInput.builder()

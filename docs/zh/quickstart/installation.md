@@ -64,6 +64,7 @@ All-in-one 包默认带以下依赖，不用额外配置：
 | **Redis Session**    | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
 | **PDF 处理**           | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox)          | `org.apache.pdfbox:pdfbox`       |
 | **Word 处理**          | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml)             | `org.apache.poi:poi-ooxml`       |
+| **文档 处理** | [Apache Tika Core](https://central.sonatype.com/artifact/org.apache.tika/tika-core) + [Apache Tika Parsers](https://central.sonatype.com/artifact/org.apache.tika/tika-parsers-standard-package) | `org.apache.tika:tika-core` + `org.apache.tika:tika-parsers-standard-package` |
 | **Nacos注册中心**        | [Nacos Client](https://central.sonatype.com/artifact/com.alibaba.nacos/nacos-client)     | `com.alibaba.nacos:nacos-client` |
 
 #### 示例：用 OpenAI 模型

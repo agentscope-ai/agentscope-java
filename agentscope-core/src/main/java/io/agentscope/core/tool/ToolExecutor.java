@@ -249,7 +249,7 @@ class ToolExecutor {
 
         // Parallel or sequential execution
         if (parallel) {
-            return Flux.merge(monos).collectList();
+            return Flux.mergeSequential(monos).collectList();
         }
         return Flux.concat(monos).collectList();
     }
