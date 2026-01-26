@@ -102,7 +102,7 @@ class PipelineE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("ProviderFactory#getBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getBasicProviders")
     @DisplayName("Should execute sequential pipeline using utility method")
     void testSequentialPipelineUtility(ModelProvider provider) {
         System.out.println(
