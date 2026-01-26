@@ -22,16 +22,39 @@ AG-UI 是一个前后端通信协议，用于将智能体暴露给 Web 前端。
 
 ### 2. 注册智能体
 
+#### 2.1. 使用自定义器注册智能体
 ```java
 @Configuration
 public class AgentConfiguration {
 
-    @Autowired
-    public void configureAgents(AguiAgentRegistry registry) {
-        registry.registerFactory("default", this::createAgent);
+    @Bean
+    public AguiAgentRegistryCustomizer aguiAgentRegistryCustomizer() {
+        return registry -> registry.registerFactory("default", this::createAgent);
     }
 
     private Agent createAgent() {
+        return ReActAgent.builder()
+                .name("Assistant")
+                .sysPrompt("你是一个有帮助的助手。")
+                .model(DashScopeChatModel.builder()
+                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+                        .modelName("qwen3-max")
+                        .stream(true)
+                        .build())
+                .memory(new InMemoryMemory())
+                .build();
+    }
+}
+```
+
+#### 2.2. 注解驱动注册智能体
+```java
+@Configuration
+public class AgentConfiguration {
+
+    @Bean
+    @AguiAgent("default")
+    public Agent agent() {
         return ReActAgent.builder()
                 .name("Assistant")
                 .sysPrompt("你是一个有帮助的助手。")

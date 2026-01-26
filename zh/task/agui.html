@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio（可视化调试）" href="studio.html">
+    <meta property="article:modified_time" content="2026-01-26T02:17:40+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio（可视化调试）" href="studio.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agui.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -442,12 +442,14 @@
 </section>
 <section id="id3">
 <h3>2. 注册智能体<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="id4">
+<h4>2.1. 使用自定义器注册智能体<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Configuration</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">    </span><span class="nd">@Autowired</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">configureAgents</span><span class="p">(</span><span class="n">AguiAgentRegistry</span><span class="w"> </span><span class="n">registry</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">AguiAgentRegistryCustomizer</span><span class="w"> </span><span class="nf">aguiAgentRegistryCustomizer</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">createAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
@@ -466,8 +468,32 @@
 </pre></div>
 </div>
 </section>
-<section id="id4">
-<h3>3. 配置<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<section id="id5">
+<h4>2.2. 注解驱动注册智能体<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="nd">@AguiAgent</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">agent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id6">
+<h3>3. 配置<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># application.yml</span>
 <span class="nt">agentscope</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">agui</span><span class="p">:</span>
@@ -477,8 +503,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id5">
-<h3>4. 启动并测试<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>4. 启动并测试<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 启动应用后测试</span>
 curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/agui/run<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
@@ -488,8 +514,8 @@ curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>
 </section>
 </section>
 <hr class="docutils" />
-<section id="id6">
-<h2>前端接入<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>前端接入<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <section id="ag-ui-client">
 <h3>使用 &#64;ag-ui/client（推荐）<a class="headerlink" href="#ag-ui-client" title="Link to this heading">¶</a></h3>
 <p>AG-UI 官方客户端库，适用于原生 JavaScript/TypeScript 项目：</p>
@@ -542,8 +568,8 @@ curl<span class="w"> </span>-N<span class="w"> </span>-X<span class="w"> </span>
 </section>
 </section>
 <hr class="docutils" />
-<section id="id7">
-<h2>示例项目<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>示例项目<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <p>完整示例见 <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui">agentscope-examples/agui</a>：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">DASHSCOPE_API_KEY</span><span class="o">=</span>your-key
 <span class="nb">cd</span><span class="w"> </span>agentscope-examples/agui
@@ -553,8 +579,8 @@ mvn<span class="w"> </span>spring-boot:run
 <p>访问 http://localhost:8080 查看演示。</p>
 </section>
 <hr class="docutils" />
-<section id="id8">
-<h2>更多资源<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id10">
+<h2>更多资源<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://www.npmjs.com/package/&#64;ag-ui/client">&#64;ag-ui/client 文档</a></p></li>
 <li><p><a class="reference external" href="https://docs.ag-ui.com">AG-UI 协议文档</a></p></li>
@@ -616,7 +642,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-01-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -654,18 +680,22 @@ mvn<span class="w"> </span>spring-boot:run
 <li><a class="reference internal" href="#">AG-UI 协议集成</a><ul>
 <li><a class="reference internal" href="#id1">快速开始</a><ul>
 <li><a class="reference internal" href="#id2">1. 添加依赖</a></li>
-<li><a class="reference internal" href="#id3">2. 注册智能体</a></li>
-<li><a class="reference internal" href="#id4">3. 配置</a></li>
-<li><a class="reference internal" href="#id5">4. 启动并测试</a></li>
+<li><a class="reference internal" href="#id3">2. 注册智能体</a><ul>
+<li><a class="reference internal" href="#id4">2.1. 使用自定义器注册智能体</a></li>
+<li><a class="reference internal" href="#id5">2.2. 注解驱动注册智能体</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id6">前端接入</a><ul>
+<li><a class="reference internal" href="#id6">3. 配置</a></li>
+<li><a class="reference internal" href="#id7">4. 启动并测试</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id8">前端接入</a><ul>
 <li><a class="reference internal" href="#ag-ui-client">使用 &#64;ag-ui/client（推荐）</a></li>
 <li><a class="reference internal" href="#copilotkit">使用 CopilotKit</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id7">示例项目</a></li>
-<li><a class="reference internal" href="#id8">更多资源</a></li>
+<li><a class="reference internal" href="#id9">示例项目</a></li>
+<li><a class="reference internal" href="#id10">更多资源</a></li>
 </ul>
 </li>
 </ul>

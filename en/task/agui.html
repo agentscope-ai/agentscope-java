@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio (Visual Debugging)" href="studio.html">
+    <meta property="article:modified_time" content="2026-01-26T02:17:40+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio (Visual Debugging)" href="studio.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agui.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -442,12 +442,14 @@
 </section>
 <section id="register-agent">
 <h3>2. Register Agent<a class="headerlink" href="#register-agent" title="Link to this heading">¶</a></h3>
+<section id="use-customizer-to-register-agent">
+<h4>2.1. Use customizer to register agent<a class="headerlink" href="#use-customizer-to-register-agent" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Configuration</span>
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">    </span><span class="nd">@Autowired</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">configureAgents</span><span class="p">(</span><span class="n">AguiAgentRegistry</span><span class="w"> </span><span class="n">registry</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">AguiAgentRegistryCustomizer</span><span class="w"> </span><span class="nf">aguiAgentRegistryCustomizer</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">registry</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">registry</span><span class="p">.</span><span class="na">registerFactory</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">,</span><span class="w"> </span><span class="k">this</span><span class="p">::</span><span class="n">createAgent</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">createAgent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
@@ -465,6 +467,30 @@
 <span class="p">}</span>
 </pre></div>
 </div>
+</section>
+<section id="annotation-process-to-register-agent">
+<h4>2.2. Annotation-process to register agent<a class="headerlink" href="#annotation-process-to-register-agent" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="nd">@AguiAgent</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">agent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="configure">
 <h3>3. Configure<a class="headerlink" href="#configure" title="Link to this heading">¶</a></h3>
@@ -616,7 +642,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-01-26</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -654,7 +680,11 @@ mvn<span class="w"> </span>spring-boot:run
 <li><a class="reference internal" href="#">AG-UI Protocol Integration</a><ul>
 <li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
 <li><a class="reference internal" href="#add-dependencies">1. Add Dependencies</a></li>
-<li><a class="reference internal" href="#register-agent">2. Register Agent</a></li>
+<li><a class="reference internal" href="#register-agent">2. Register Agent</a><ul>
+<li><a class="reference internal" href="#use-customizer-to-register-agent">2.1. Use customizer to register agent</a></li>
+<li><a class="reference internal" href="#annotation-process-to-register-agent">2.2. Annotation-process to register agent</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#configure">3. Configure</a></li>
 <li><a class="reference internal" href="#start-and-test">4. Start and Test</a></li>
 </ul>
