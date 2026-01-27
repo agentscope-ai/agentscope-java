@@ -246,6 +246,14 @@ public class AguiAgentAdapter {
                     String toolCallId = toolResult.getId();
                     String result = extractToolResultText(toolResult);
 
+                    boolean hasStarted = state.hasStartedToolCall(toolCallId);
+                    if (!hasStarted) {
+                        events.add(
+                                new AguiEvent.ToolCallStart(
+                                        state.threadId, state.runId, toolCallId, "unknown"));
+                        state.startToolCall(toolCallId);
+                    }
+
                     // Ensure ToolCallEnd is emitted to close arguments phase
                     events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
 
