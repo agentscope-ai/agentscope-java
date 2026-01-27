@@ -199,16 +199,14 @@ public class ReasoningContext {
     }
 
     /**
-     * Enrich a ToolUseBlock with accumulated content from the accumulator.
+     * Enrich a ToolUseBlock with the correct tool call ID.
      *
      * <p>For fragments (placeholder names like "__fragment__"), the original block may not have
-     * the correct ID. This method assigns the current tool call ID if missing.
+     * the correct ID. This method retrieves the ID from the accumulator and creates a new block
+     * with the correct ID, allowing users to properly concatenate chunks.
      *
-     * <p>IMPORTANT: For streaming responses, this returns the ORIGINAL fragment (delta), NOT the
-     * accumulated content. OpenAI's streaming API requires deltas, and clients accumulate them.
-     *
-     * @param block The original ToolUseBlock fragment
-     * @return The fragment with ID enriched if needed
+     * @param block The original ToolUseBlock
+     * @return A ToolUseBlock with the correct ID
      */
     private ToolUseBlock enrichToolUseBlockWithId(ToolUseBlock block) {
         // If the block already has an ID, return it as-is
