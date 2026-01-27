@@ -211,26 +211,25 @@ public class ReasoningContext {
      * @return The fragment with ID enriched if needed
      */
     private ToolUseBlock enrichToolUseBlockWithId(ToolUseBlock block) {
-        // If block already has an ID, return as-is (it's a delta fragment)
+        // If the block already has an ID, return it as-is
         if (block.getId() != null && !block.getId().isEmpty()) {
             return block;
         }
 
-        // For fragments without ID, assign the current tool call ID
+        // Get the current tool call ID from the accumulator
         String currentId = toolCallsAcc.getCurrentToolCallId();
-        if (currentId != null && !currentId.isEmpty()) {
-            // Return a new block with the ID set, but keeping original content (delta)
-            return ToolUseBlock.builder()
-                    .id(currentId)
-                    .name(block.getName())
-                    .input(block.getInput())
-                    .content(block.getContent())
-                    .metadata(block.getMetadata())
-                    .build();
+        if (currentId == null || currentId.isEmpty()) {
+            return block;
         }
 
-        // Fallback: return original block
-        return block;
+        // Create a new block with the correct ID
+        return ToolUseBlock.builder()
+                .id(currentId)
+                .name(block.getName())
+                .input(block.getInput())
+                .content(block.getContent())
+                .metadata(block.getMetadata())
+                .build();
     }
 
     /**

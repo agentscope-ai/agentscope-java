@@ -150,22 +150,17 @@ class ToolExecutor {
             }
         }
 
-        // Skip parameter validation for schema-only tools
-        // They will be executed externally, so validation should happen on the client side
-        boolean isSchemaOnlyTool = tool instanceof SchemaOnlyTool;
-        if (!isSchemaOnlyTool) {
-            // Validate input against schema for regular tools
-            String validationError =
-                    ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
-            if (validationError != null) {
-                String errorMsg =
-                        String.format(
-                                "Parameter validation failed for tool '%s': %s\n"
-                                        + "Please correct the parameters and try again.",
-                                toolCall.getName(), validationError);
-                logger.debug(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
+        // Validate input against schema
+        String validationError =
+                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+        if (validationError != null) {
+            String errorMsg =
+                    String.format(
+                            "Parameter validation failed for tool '%s': %s\n"
+                                    + "Please correct the parameters and try again.",
+                            toolCall.getName(), validationError);
+            logger.debug(errorMsg);
+            return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
         // Merge context
