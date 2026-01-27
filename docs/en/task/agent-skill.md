@@ -252,11 +252,7 @@ skillBox.codeExecution()
 
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
-- File system storage
-- Database storage (not yet implemented)
-- Git repository (not yet implemented)
-
-**Example Code**:
+#### File System Storage
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -264,9 +260,22 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-This protection applies to all repository operations: `getSkill()`, `save()`, `delete()`, and `skillExists()`.
+#### MySQL Database Storage (not yet implemented)
 
-For detailed security guidelines, please refer to [Claude Agent Skills Security Considerations](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑).
+#### Git Repository (not yet implemented)
+
+#### JAR Resource Adapter (Read-Only)
+
+Used to load pre-packaged Skills from JAR resources. Automatically compatible with standard JARs and Spring Boot Fat JARs.
+
+```java
+try (JarSkillRepositoryAdapter adapter = new JarSkillRepositoryAdapter("skills")) {
+    AgentSkill skill = adapter.getSkill("data-analysis");
+    List<AgentSkill> allSkills = adapter.getAllSkills();
+} catch //...
+```
+
+Resource structure: Place multiple skill subdirectories under `src/main/resources/skills/`, each containing a `SKILL.md`.
 
 ### Performance Optimization Recommendations
 
