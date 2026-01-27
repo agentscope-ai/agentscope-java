@@ -438,7 +438,15 @@ class DashScopeChatModelTest {
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
-                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeChatModel chatModel =
@@ -471,7 +479,7 @@ class DashScopeChatModelTest {
                 recorded.getPath());
         assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-body\""));
 
-        mockServer.close();
+        mockServer.shutdown();
     }
 
     @Test
@@ -483,7 +491,15 @@ class DashScopeChatModelTest {
         mockServer.enqueue(
                 new MockResponse()
                         .setResponseCode(200)
-                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
                         .setHeader("Content-Type", "application/json"));
 
         DashScopeChatModel chatModel =
@@ -515,7 +531,7 @@ class DashScopeChatModelTest {
                 recorded.getPath());
         assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-body\""));
 
-        mockServer.close();
+        mockServer.shutdown();
     }
 
     @Test
@@ -629,7 +645,7 @@ class DashScopeChatModelTest {
         RecordedRequest recorded = mockServer.takeRequest();
         assertNotNull(recorded);
 
-        mockServer.close();
+        mockServer.shutdown();
     }
 
     // ========== Encryption Configuration Tests ==========
