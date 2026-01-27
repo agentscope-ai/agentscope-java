@@ -44,6 +44,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for DashScopeChatModel.
@@ -584,6 +586,50 @@ class DashScopeChatModelTest {
         assertThrows(
                 IllegalStateException.class,
                 () -> invokeApplyThinkingMode(chatModel, request, options));
+    }
+
+    @Test
+    @DisplayName("DashScope chat model non-stream should throw ModelException when occur error")
+    void testDoNonStreamErrorHandling() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setBody(
+                                """
+                                {
+                                    "request_id" : "cd6fa13d-0f95-47e5-aba1-d676b87b7526",
+                                    "code" : "InvalidParameter",
+                                    "message" : "This model does not support enable_search."
+                                  }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-plus").stream(
+                                false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        Flux<ChatResponse> flux =
+                chatModel.doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build());
+
+        StepVerifier.create(flux).expectError(ModelException.class).verify();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNotNull(recorded);
+
+        mockServer.close();
     }
 
     // ========== Encryption Configuration Tests ==========
