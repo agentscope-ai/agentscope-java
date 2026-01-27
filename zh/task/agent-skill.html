@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-23T08:20:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-01-27T02:09:06+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -664,22 +664,34 @@
 <h3>功能 3: Skill 持久化存储<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
 <p><strong>为什么需要这个功能?</strong></p>
 <p>Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:</p>
-<ul class="simple">
-<li><p>文件系统存储</p></li>
-<li><p>数据库存储 (暂未实现)</p></li>
-<li><p>Git 仓库 (暂未实现)</p></li>
-</ul>
-<p><strong>示例代码</strong>:</p>
+<section id="id13">
+<h4>文件系统存储<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./skills&quot;</span><span class="p">));</span>
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
 <span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>这种保护适用于所有仓库操作: <code class="docutils literal notranslate"><span class="pre">getSkill()</span></code>、<code class="docutils literal notranslate"><span class="pre">save()</span></code>、<code class="docutils literal notranslate"><span class="pre">delete()</span></code> 和 <code class="docutils literal notranslate"><span class="pre">skillExists()</span></code>。</p>
-<p>详细安全指南请参阅 <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#%E5%AE%89%E5%85%A8%E8%80%83%E8%99%91">Claude Agent Skills 安全考虑</a>。</p>
 </section>
-<section id="id13">
-<h3>性能优化建议<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
+<section id="mysql">
+<h4>MySQL数据库存储 (暂未实现)<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h4>
+</section>
+<section id="git">
+<h4>Git仓库 (暂未实现)<a class="headerlink" href="#git" title="Link to this heading">¶</a></h4>
+</section>
+<section id="jarresource">
+<h4>Jar中的resource路径存储 (适配器)<a class="headerlink" href="#jarresource" title="Link to this heading">¶</a></h4>
+<p>用于从 JAR 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">JarSkillRepositoryAdapter</span><span class="w"> </span><span class="n">adapter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JarSkillRepositoryAdapter</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
+</pre></div>
+</div>
+<p>资源目录结构: <code class="docutils literal notranslate"><span class="pre">src/main/resources/skills/</span></code> 下放置多个 Skill 子目录,每个子目录包含 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code></p>
+</section>
+</section>
+<section id="id14">
+<h3>性能优化建议<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
 <ol class="arabic simple">
 <li><p><strong>控制 SKILL.md 大小</strong>: 保持在 5k tokens 以内,建议 1.5-2k tokens</p></li>
 <li><p><strong>合理组织资源</strong>: 将详细文档放在 <code class="docutils literal notranslate"><span class="pre">references/</span></code> 中,而非 SKILL.md</p></li>
@@ -688,8 +700,8 @@
 </ol>
 </section>
 </section>
-<section id="id14">
-<h2>相关文档<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
+<section id="id15">
+<h2>相关文档<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills 官方文档</a> - 完整的概念和架构介绍</p></li>
 <li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool 使用指南</span></a> - 工具系统的使用方法</p></li>
@@ -751,7 +763,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-23</div>
+              Last updated on 2026-01-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -813,11 +825,17 @@
 <li><a class="reference internal" href="#id10">高级功能</a><ul>
 <li><a class="reference internal" href="#tool">功能 1: Tool 的渐进式披露</a></li>
 <li><a class="reference internal" href="#id11">功能 2: 代码执行能力</a></li>
-<li><a class="reference internal" href="#id12">功能 3: Skill 持久化存储</a></li>
-<li><a class="reference internal" href="#id13">性能优化建议</a></li>
+<li><a class="reference internal" href="#id12">功能 3: Skill 持久化存储</a><ul>
+<li><a class="reference internal" href="#id13">文件系统存储</a></li>
+<li><a class="reference internal" href="#mysql">MySQL数据库存储 (暂未实现)</a></li>
+<li><a class="reference internal" href="#git">Git仓库 (暂未实现)</a></li>
+<li><a class="reference internal" href="#jarresource">Jar中的resource路径存储 (适配器)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id14">相关文档</a></li>
+<li><a class="reference internal" href="#id14">性能优化建议</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id15">相关文档</a></li>
 </ul>
 </li>
 </ul>

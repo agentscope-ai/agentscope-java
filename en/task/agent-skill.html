@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-23T08:20:39+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-01-27T02:09:06+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -667,19 +667,31 @@
 <h3>Feature 3: Skill Persistence Storage<a class="headerlink" href="#feature-3-skill-persistence-storage" title="Link to this heading">¶</a></h3>
 <p><strong>Why is this feature needed?</strong></p>
 <p>Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:</p>
-<ul class="simple">
-<li><p>File system storage</p></li>
-<li><p>Database storage (not yet implemented)</p></li>
-<li><p>Git repository (not yet implemented)</p></li>
-</ul>
-<p><strong>Example Code</strong>:</p>
+<section id="file-system-storage">
+<h4>File System Storage<a class="headerlink" href="#file-system-storage" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./skills&quot;</span><span class="p">));</span>
 <span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
 <span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>This protection applies to all repository operations: <code class="docutils literal notranslate"><span class="pre">getSkill()</span></code>, <code class="docutils literal notranslate"><span class="pre">save()</span></code>, <code class="docutils literal notranslate"><span class="pre">delete()</span></code>, and <code class="docutils literal notranslate"><span class="pre">skillExists()</span></code>.</p>
-<p>For detailed security guidelines, please refer to <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#%E5%AE%89%E5%85%A8%E8%80%83%E8%99%91">Claude Agent Skills Security Considerations</a>.</p>
+</section>
+<section id="mysql-database-storage-not-yet-implemented">
+<h4>MySQL Database Storage (not yet implemented)<a class="headerlink" href="#mysql-database-storage-not-yet-implemented" title="Link to this heading">¶</a></h4>
+</section>
+<section id="git-repository-not-yet-implemented">
+<h4>Git Repository (not yet implemented)<a class="headerlink" href="#git-repository-not-yet-implemented" title="Link to this heading">¶</a></h4>
+</section>
+<section id="jar-resource-adapter-read-only">
+<h4>JAR Resource Adapter (Read-Only)<a class="headerlink" href="#jar-resource-adapter-read-only" title="Link to this heading">¶</a></h4>
+<p>Used to load pre-packaged Skills from JAR resources. Automatically compatible with standard JARs and Spring Boot Fat JARs.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">JarSkillRepositoryAdapter</span><span class="w"> </span><span class="n">adapter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JarSkillRepositoryAdapter</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
+</pre></div>
+</div>
+<p>Resource structure: Place multiple skill subdirectories under <code class="docutils literal notranslate"><span class="pre">src/main/resources/skills/</span></code>, each containing a <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>.</p>
+</section>
 </section>
 <section id="performance-optimization-recommendations">
 <h3>Performance Optimization Recommendations<a class="headerlink" href="#performance-optimization-recommendations" title="Link to this heading">¶</a></h3>
@@ -754,7 +766,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-23</div>
+              Last updated on 2026-01-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -816,7 +828,13 @@
 <li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
 <li><a class="reference internal" href="#feature-1-progressive-disclosure-of-tools">Feature 1: Progressive Disclosure of Tools</a></li>
 <li><a class="reference internal" href="#feature-2-code-execution-capabilities">Feature 2: Code Execution Capabilities</a></li>
-<li><a class="reference internal" href="#feature-3-skill-persistence-storage">Feature 3: Skill Persistence Storage</a></li>
+<li><a class="reference internal" href="#feature-3-skill-persistence-storage">Feature 3: Skill Persistence Storage</a><ul>
+<li><a class="reference internal" href="#file-system-storage">File System Storage</a></li>
+<li><a class="reference internal" href="#mysql-database-storage-not-yet-implemented">MySQL Database Storage (not yet implemented)</a></li>
+<li><a class="reference internal" href="#git-repository-not-yet-implemented">Git Repository (not yet implemented)</a></li>
+<li><a class="reference internal" href="#jar-resource-adapter-read-only">JAR Resource Adapter (Read-Only)</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#performance-optimization-recommendations">Performance Optimization Recommendations</a></li>
 </ul>
 </li>
