@@ -19,6 +19,7 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.CommandValidator;
 import io.agentscope.core.tool.coding.ShellCommandTool;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -549,82 +551,45 @@ public class SkillBox implements StateModule {
     // ==================== Code Execution ====================
 
     /**
-     * Enables code execution capabilities for skills with temporary working directory.
+     * Create a fluent builder for configuring code execution with custom options.
      *
-     * <p>This method creates a sandboxed environment for executing scripts from skills.
-     * A temporary directory will be created when scripts are written.
+     * <p>This is the recommended way to enable code execution capabilities for skills.
+     * The builder allows selective enabling of tools and customization of ShellCommandTool.
      *
-     * @throws IllegalStateException if toolkit is not bound
+     * <p>Example usage:
+     * <pre>{@code
+     * // Simple - enable all tools with default configuration
+     * skillBox.codeExecution()
+     *     .withShell()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Custom shell tool with approval callback
+     * ShellCommandTool customShell = new ShellCommandTool(
+     *     null,  // baseDir will be overridden
+     *     Set.of("python3", "node", "npm"),
+     *     command -> askUserApproval(command)
+     * );
+     *
+     * skillBox.codeExecution()
+     *     .workDir("/path/to/workdir")
+     *     .withShell(customShell)  // Clone with workDir
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Only enable read and write tools
+     * skillBox.codeExecution()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     * }</pre>
+     *
+     * @return A new CodeExecutionBuilder for configuration
      */
-    public void enableCodeExecution() {
-        enableCodeExecution(null);
-    }
-
-    /**
-     * Enables code execution capabilities for skills.
-     *
-     * <p>This method creates a sandboxed environment for executing scripts from skills by:
-     * <ul>
-     *   <li>Registering ShellCommandTool with allowed commands (python, python3, node, nodejs)</li>
-     *   <li>Registering ReadFileTool and WriteFileTool restricted to the working directory</li>
-     *   <li>Creating and activating the "skill_code_execution_tool_group" tool group</li>
-     * </ul>
-     *
-     * <p>After calling this method, scripts from registered skills will be written to the
-     * working directory when the agent is configured.
-     *
-     * <p>
-     * <b>Note:</b> This method should only be called once. Calling it multiple
-     * times
-     * will throw an IllegalStateException.
-     *
-     * @param workDir Working directory for code execution. If null or empty, a
-     *                temporary
-     *                directory will be created when scripts are written.
-     * @throws IllegalStateException if toolkit is not bound or if code execution is
-     *                               already enabled
-     */
-    public void enableCodeExecution(String workDir) {
-        if (toolkit == null) {
-            throw new IllegalStateException("Must bind toolkit before enabling code execution");
-        }
-
-        // Prevent duplicate enablement
-        if (isCodeExecutionEnabled()) {
-            throw new IllegalStateException(
-                    "Code execution is already enabled. This method should only be called once.");
-        }
-
-        // Set workDir (null means temporary directory will be created later)
-        if (workDir == null || workDir.isEmpty()) {
-            this.codeExecutionWorkDir = null;
-        } else {
-            this.codeExecutionWorkDir = Paths.get(workDir).toAbsolutePath().normalize();
-        }
-
-        // Create tool group
-        if (toolkit.getToolGroup("skill_code_execution_tool_group") == null) {
-            toolkit.createToolGroup(
-                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
-        }
-
-        // Create and register three tools
-        Set<String> allowedCommands = Set.of("python", "python3", "node", "nodejs");
-        String workDirStr = codeExecutionWorkDir != null ? codeExecutionWorkDir.toString() : null;
-        ShellCommandTool shellTool = new ShellCommandTool(workDirStr, allowedCommands, null);
-        ReadFileTool readTool = new ReadFileTool(workDirStr);
-        WriteFileTool writeTool = new WriteFileTool(workDirStr);
-
-        toolkit.registration()
-                .agentTool(shellTool)
-                .group("skill_code_execution_tool_group")
-                .apply();
-        toolkit.registration().tool(readTool).group("skill_code_execution_tool_group").apply();
-        toolkit.registration().tool(writeTool).group("skill_code_execution_tool_group").apply();
-
-        logger.info(
-                "Code execution enabled with workDir: {}",
-                codeExecutionWorkDir != null ? codeExecutionWorkDir : "temporary directory");
+    public CodeExecutionBuilder codeExecution() {
+        return new CodeExecutionBuilder(this);
     }
 
     /**
@@ -786,5 +751,232 @@ public class SkillBox implements StateModule {
             }
         }
         logger.info("Wrote {} skill scripts to workDir: {}", scriptCount, workDir);
+    }
+
+    // ==================== Code Execution Builder ====================
+
+    /**
+     * Fluent builder for configuring code execution with custom options.
+     *
+     * <p>This builder provides a flexible way to enable code execution capabilities
+     * with selective tool enabling and custom ShellCommandTool configuration.
+     *
+     * <p>Key features:
+     * <ul>
+     *   <li>Selective tool enabling: choose which tools (shell/read/write) to enable</li>
+     *   <li>Custom ShellCommandTool: provide your own tool with custom security policies</li>
+     *   <li>WorkDir enforcement: all tools use the same working directory</li>
+     *   <li>Tool cloning: custom ShellCommandTool is cloned with workDir override</li>
+     * </ul>
+     */
+    public static class CodeExecutionBuilder {
+        private final SkillBox skillBox;
+        private String workDir;
+        private ShellCommandTool customShellTool;
+        private boolean withShellCalled = false;
+        private boolean enableRead = false;
+        private boolean enableWrite = false;
+
+        CodeExecutionBuilder(SkillBox skillBox) {
+            this.skillBox = skillBox;
+        }
+
+        /**
+         * Set the working directory for code execution.
+         *
+         * <p>All code execution tools (shell, read, write) will use this directory.
+         * If not set, a temporary directory will be created when scripts are written.
+         *
+         * @param workDir The working directory path (null or empty for temporary directory)
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder workDir(String workDir) {
+            this.workDir = workDir;
+            return this;
+        }
+
+        /**
+         * Enable shell command execution with default configuration.
+         *
+         * <p>Default configuration:
+         * <ul>
+         *   <li>Allowed commands: python, python3, node, nodejs</li>
+         *   <li>No approval callback</li>
+         *   <li>Platform-specific validator (Unix or Windows)</li>
+         * </ul>
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withShell() {
+            this.withShellCalled = true;
+            this.customShellTool = null;
+            return this;
+        }
+
+        /**
+         * Enable shell command execution with a custom ShellCommandTool.
+         *
+         * <p>The provided tool will be cloned with the following behavior:
+         * <ul>
+         *   <li>allowedCommands: copied from the source tool</li>
+         *   <li>approvalCallback: copied from the source tool</li>
+         *   <li>commandValidator: copied from the source tool</li>
+         *   <li>baseDir: OVERRIDDEN with the builder's workDir</li>
+         * </ul>
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving your custom security policies.
+         *
+         * @param shellTool The custom ShellCommandTool to clone (must not be null)
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if shellTool is null
+         */
+        public CodeExecutionBuilder withShell(ShellCommandTool shellTool) {
+            if (shellTool == null) {
+                throw new IllegalArgumentException("ShellCommandTool cannot be null");
+            }
+            this.withShellCalled = true;
+            this.customShellTool = shellTool;
+            return this;
+        }
+
+        /**
+         * Enable file reading capabilities.
+         *
+         * <p>Registers ReadFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withRead() {
+            this.enableRead = true;
+            return this;
+        }
+
+        /**
+         * Enable file writing capabilities.
+         *
+         * <p>Registers WriteFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withWrite() {
+            this.enableWrite = true;
+            return this;
+        }
+
+        /**
+         * Apply the configuration and enable code execution.
+         *
+         * <p>This method:
+         * <ul>
+         *   <li>Validates toolkit is bound</li>
+         *   <li>Removes existing code execution configuration if present</li>
+         *   <li>Creates the code execution tool group</li>
+         *   <li>Registers selected tools (shell, read, write)</li>
+         * </ul>
+         *
+         * @throws IllegalStateException if toolkit is not bound
+         */
+        public void enable() {
+            if (skillBox.toolkit == null) {
+                throw new IllegalStateException("Must bind toolkit before enabling code execution");
+            }
+
+            // Handle replacement: remove existing tool group if present
+            if (skillBox.isCodeExecutionEnabled()) {
+                skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
+                logger.info("Replacing existing code execution configuration");
+            }
+
+            // Set workDir
+            if (workDir == null || workDir.isEmpty()) {
+                skillBox.codeExecutionWorkDir = null;
+            } else {
+                skillBox.codeExecutionWorkDir = Paths.get(workDir).toAbsolutePath().normalize();
+            }
+
+            // Create tool group
+            skillBox.toolkit.createToolGroup(
+                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
+
+            String workDirStr =
+                    skillBox.codeExecutionWorkDir != null
+                            ? skillBox.codeExecutionWorkDir.toString()
+                            : null;
+
+            boolean shellEnabled = false;
+
+            // Shell Tool - check if withShell() was called
+            if (withShellCalled) {
+                ShellCommandTool shellTool;
+                if (customShellTool != null) {
+                    // Clone custom tool with workDir override
+                    shellTool = cloneShellToolWithWorkDir(customShellTool, workDirStr);
+                } else {
+                    // Create default shell tool
+                    shellTool =
+                            new ShellCommandTool(
+                                    workDirStr,
+                                    Set.of("python", "python3", "node", "nodejs"),
+                                    null);
+                }
+                skillBox.toolkit
+                        .registration()
+                        .agentTool(shellTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+                shellEnabled = true;
+            }
+
+            // Read Tool
+            if (enableRead) {
+                ReadFileTool readTool = new ReadFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(readTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            // Write Tool
+            if (enableWrite) {
+                WriteFileTool writeTool = new WriteFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(writeTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            logger.info(
+                    "Code execution enabled with workDir: {}, tools: [shell={}, read={}, write={}]",
+                    skillBox.codeExecutionWorkDir != null
+                            ? skillBox.codeExecutionWorkDir
+                            : "temporary",
+                    shellEnabled,
+                    enableRead,
+                    enableWrite);
+        }
+
+        /**
+         * Clone a ShellCommandTool with a new base directory.
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving the custom security policies from the source tool.
+         *
+         * @param source The source ShellCommandTool to clone
+         * @param workDir The new working directory (can be null for temporary)
+         * @return A new ShellCommandTool with the same configuration but different baseDir
+         */
+        private ShellCommandTool cloneShellToolWithWorkDir(
+                ShellCommandTool source, String workDir) {
+            // Get configuration from source tool
+            Set<String> allowedCommands = source.getAllowedCommands();
+            Function<String, Boolean> approvalCallback = source.getApprovalCallback();
+            CommandValidator validator = source.getCommandValidator();
+
+            // Create new instance with workDir override
+            return new ShellCommandTool(workDir, allowedCommands, approvalCallback, validator);
+        }
     }
 }

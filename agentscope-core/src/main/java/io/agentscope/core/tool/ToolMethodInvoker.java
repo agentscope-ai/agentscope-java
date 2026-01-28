@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
@@ -28,7 +27,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
 /**
@@ -38,19 +36,9 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvoker {
 
     private final ToolResultConverter defaultConverter;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     ToolMethodInvoker(ToolResultConverter resultConverter) {
         this.defaultConverter = resultConverter;
-    }
-
-    /**
-     * Set the chunk callback for delivering streaming chunks from ToolEmitter.
-     *
-     * @param callback Callback to invoke when tools emit chunks
-     */
-    void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
     }
 
     /**
@@ -72,9 +60,9 @@ class ToolMethodInvoker {
                 customConverter != null ? customConverter : defaultConverter;
 
         Map<String, Object> input = param.getInput();
-        ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
         ToolExecutionContext context = param.getContext();
+        ToolEmitter emitter = param.getEmitter();
 
         Class<?> returnType = method.getReturnType();
 
@@ -84,8 +72,7 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
@@ -113,8 +100,7 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
@@ -137,8 +123,7 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
@@ -168,17 +153,17 @@ class ToolMethodInvoker {
      *
      * @param method the method
      * @param input the input map
-     * @param toolUseBlock the tool use block for ToolEmitter injection (may be null)
      * @param agent the agent for Agent injection (may be null)
      * @param context the tool execution context for ToolExecutionContext injection (may be null)
+     * @param emitter the tool emitter for ToolEmitter injection (may be null)
      * @return array of converted arguments
      */
     private Object[] convertParameters(
             Method method,
             Map<String, Object> input,
-            ToolUseBlock toolUseBlock,
             Agent agent,
-            ToolExecutionContext context) {
+            ToolExecutionContext context,
+            ToolEmitter emitter) {
         Parameter[] parameters = method.getParameters();
 
         if (parameters.length == 0) {
@@ -191,7 +176,7 @@ class ToolMethodInvoker {
 
             // Special handling: inject ToolEmitter automatically
             if (param.getType() == ToolEmitter.class) {
-                args[i] = new DefaultToolEmitter(toolUseBlock, chunkCallback);
+                args[i] = emitter;
             }
             // Special handling: inject Agent automatically
             else if (param.getType() == Agent.class) {

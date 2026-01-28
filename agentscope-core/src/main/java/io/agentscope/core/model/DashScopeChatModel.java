@@ -29,6 +29,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model using native HTTP API.
@@ -245,23 +246,26 @@ public class DashScopeChatModel extends ChatModelBase {
         } else {
             // Non-streaming mode
             return Flux.defer(
-                    () -> {
-                        try {
-                            DashScopeResponse response =
-                                    httpClient.call(
-                                            request,
-                                            effectiveOptions.getAdditionalHeaders(),
-                                            effectiveOptions.getAdditionalBodyParams(),
-                                            effectiveOptions.getAdditionalQueryParams());
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            log.error("DashScope HTTP client error: {}", e.getMessage(), e);
-                            return Flux.error(
-                                    new RuntimeException(
-                                            "DashScope API call failed: " + e.getMessage(), e));
-                        }
-                    });
+                            () -> {
+                                try {
+                                    DashScopeResponse response =
+                                            httpClient.call(
+                                                    request,
+                                                    effectiveOptions.getAdditionalHeaders(),
+                                                    effectiveOptions.getAdditionalBodyParams(),
+                                                    effectiveOptions.getAdditionalQueryParams());
+                                    ChatResponse chatResponse =
+                                            formatter.parseResponse(response, start);
+                                    return Flux.just(chatResponse);
+                                } catch (Exception e) {
+                                    log.error("DashScope HTTP client error: {}", e.getMessage(), e);
+                                    return Flux.error(
+                                            new RuntimeException(
+                                                    "DashScope API call failed: " + e.getMessage(),
+                                                    e));
+                                }
+                            })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
     }
 
