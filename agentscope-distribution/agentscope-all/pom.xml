@@ -195,7 +195,7 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-skill-mysql</artifactId>
+            <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>

@@ -52,6 +52,6 @@
         <module>agentscope-extensions-higress</module>
         <module>agentscope-extensions-kotlin</module>
         <module>agentscope-extensions-nacos</module>
-        <module>agentscope-extensions-skill-mysql</module>
+        <module>agentscope-extensions-skill-mysql-repository</module>
     </modules>
 </project>

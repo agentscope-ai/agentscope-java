@@ -199,7 +199,8 @@ ReActAgent agent = ReActAgent.builder()
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
 - File system storage
-- MySQL database storage
+- database storage
+    - MySQL Database Storage (agentscope-extensions-skill-mysql-repository)
 - Git repository (not yet implemented)
 
 #### File System Storage
@@ -209,113 +210,6 @@ AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
 repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
-
-#### MySQL Database Storage
-
-MySQL storage is suitable for production environments that require high availability, multi-instance sharing, and transactional guarantees.
-
-**Add Dependency** (Maven):
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-skill-mysql</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-**Basic Usage**:
-
-```java
-// Configure DataSource (using HikariCP as example)
-HikariConfig config = new HikariConfig();
-config.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?useSSL=false&serverTimezone=UTC");
-config.setUsername("your_username");
-config.setPassword("your_password");
-DataSource dataSource = new HikariDataSource(config);
-
-// Create repository (auto-creates database and tables)
-MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true);
-
-// Save skills
-repo.save(List.of(skill), false);
-
-// Load skill
-AgentSkill loaded = repo.getSkill("data_analysis");
-
-// Get all skills
-List<AgentSkill> allSkills = repo.getAllSkills();
-
-// Delete skill
-repo.delete("data_analysis");
-```
-
-**Using Builder Pattern** (recommended for custom configuration):
-
-```java
-MysqlSkillRepository repo = MysqlSkillRepository.builder()
-        .dataSource(dataSource)
-        .databaseName("my_database")           // Custom database name, default: agentscope
-        .skillsTableName("my_skills")          // Custom skills table name, default: agentscope_skills
-        .resourcesTableName("my_resources")    // Custom resources table name, default: agentscope_skill_resources
-        .createIfNotExist(true)                // Auto-create database and tables
-        .writeable(true)                       // Allow write operations
-        .build();
-```
-
-**Read-Only Mode**:
-
-```java
-// Create read-only repository for shared access
-MysqlSkillRepository repo = MysqlSkillRepository.builder()
-        .dataSource(dataSource)
-        .createIfNotExist(false)   // Require existing database/tables
-        .writeable(false)          // Read-only mode
-        .build();
-
-// Read operations work normally
-AgentSkill skill = repo.getSkill("data_analysis");
-
-// Write operations return false without throwing exception
-boolean saved = repo.save(List.of(newSkill), false);  // Returns false
-```
-
-**Force Overwrite Existing Skills**:
-
-```java
-// When force=false, throws IllegalStateException if skill already exists
-repo.save(List.of(skill), false);
-
-// When force=true, overwrites existing skills
-repo.save(List.of(skill), true);
-```
-
-**Table Schema** (auto-created):
-
-```sql
--- Skills table
-CREATE TABLE agentscope_skills (
-    name VARCHAR(255) NOT NULL PRIMARY KEY,
-    description TEXT NOT NULL,
-    skill_content LONGTEXT NOT NULL,
-    source VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- Resources table with foreign key constraint
-CREATE TABLE agentscope_skill_resources (
-    skill_name VARCHAR(255) NOT NULL,
-    resource_path VARCHAR(500) NOT NULL,
-    resource_content LONGTEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (skill_name, resource_path),
-    FOREIGN KEY (skill_name) REFERENCES agentscope_skills(name) ON DELETE CASCADE
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-This protection applies to all repository operations: `getSkill()`, `save()`, `delete()`, and `skillExists()`.
 
 For detailed security guidelines, please refer to [Claude Agent Skills Security Considerations](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑).
 
