@@ -264,6 +264,25 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 
 #### MySQL数据库存储
 
+```java
+// Using constructor
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true);
+
+// Using builder pattern
+MysqlSkillRepository repo = MysqlSkillRepository.builder()
+        .dataSource(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
+
 #### Git仓库 (暂未实现)
 
 #### Jar中的resource路径存储 (适配器)
