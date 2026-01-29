@@ -44,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import okhttp3.MediaType;
@@ -83,6 +84,31 @@ public class GeminiChatModel extends ChatModelBase {
     private static final String DEFAULT_BASE_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+
+    // Retry configuration aligned with Google GenAI SDK
+    // See: java-genai/src/main/java/com/google/genai/RetryInterceptor.java
+    private static final int RETRY_MAX_ATTEMPTS = 5;
+    private static final long RETRY_MAX_DELAY_SECONDS = 60;
+    private static final double RETRY_JITTER_FACTOR = 0.5;
+    private static final Set<Integer> RETRYABLE_HTTP_STATUS_CODES =
+            Set.of(
+                    408, // Request Timeout
+                    429, // Too Many Requests
+                    500, // Internal Server Error
+                    502, // Bad Gateway
+                    503, // Service Unavailable
+                    504 // Gateway Timeout
+                    );
+
+    // Expected finish reasons aligned with Google GenAI SDK
+    // See: java-genai/src/main/java/com/google/genai/types/GenerateContentResponse.java
+    private static final Set<String> EXPECTED_FINISH_REASONS =
+            Set.of(
+                    "FINISH_REASON_UNSPECIFIED",
+                    "STOP",
+                    "MAX_TOKENS",
+                    "END_TURN" // AgentScope-specific for streaming compatibility
+                    );
 
     private final String baseUrl;
     private final String apiKey;
@@ -318,15 +344,27 @@ public class GeminiChatModel extends ChatModelBase {
                         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .retryWhen(
-                        Retry.backoff(3, Duration.ofSeconds(1))
+                        Retry.backoff(RETRY_MAX_ATTEMPTS, Duration.ofSeconds(1))
+                                .maxBackoff(Duration.ofSeconds(RETRY_MAX_DELAY_SECONDS))
+                                .jitter(RETRY_JITTER_FACTOR)
                                 .filter(
                                         throwable -> {
-                                            // Retry on HTTP errors (429, 5xx)
+                                            // Retry on retryable HTTP status codes
+                                            // Aligned with Google GenAI SDK:
+                                            // 408 (Request Timeout), 429 (Too Many Requests),
+                                            // 500 (Internal Server Error), 502 (Bad Gateway),
+                                            // 503 (Service Unavailable), 504 (Gateway Timeout)
                                             if (throwable instanceof GeminiApiException) {
                                                 int code =
                                                         ((GeminiApiException) throwable)
                                                                 .getStatusCode();
-                                                return code == 429 || (code >= 500 && code < 600);
+                                                boolean isRetryable =
+                                                        RETRYABLE_HTTP_STATUS_CODES.contains(code);
+                                                if (isRetryable) {
+                                                    log.debug(
+                                                            "Retryable HTTP status code: {}", code);
+                                                }
+                                                return isRetryable;
                                             }
 
                                             // Retry on empty content errors for Gemini 3 models
@@ -350,9 +388,10 @@ public class GeminiChatModel extends ChatModelBase {
                                 .doBeforeRetry(
                                         retrySignal ->
                                                 log.debug(
-                                                        "Retrying Gemini request (attempt {}):"
+                                                        "Retrying Gemini request (attempt {}/{}):"
                                                                 + " {}",
                                                         retrySignal.totalRetries() + 1,
+                                                        RETRY_MAX_ATTEMPTS,
                                                         retrySignal.failure().getMessage()))
                                 .onRetryExhaustedThrow(
                                         (retryBackoffSpec, retrySignal) ->
@@ -630,8 +669,11 @@ public class GeminiChatModel extends ChatModelBase {
 
                     for (String key : properties.keySet()) {
                         if (!inputMap.containsKey(key)) {
-                            inputMap.put(key, null);
-                            log.debug("Added missing field '{}' as null", key);
+                            // Use type-appropriate default value instead of null
+                            Object defaultValue = getDefaultValueForSchemaType(properties.get(key));
+                            inputMap.put(key, defaultValue);
+                            log.debug(
+                                    "Added missing field '{}' with default: {}", key, defaultValue);
                         }
                     }
 
@@ -657,8 +699,14 @@ public class GeminiChatModel extends ChatModelBase {
 
                             for (String key : responseProps.keySet()) {
                                 if (!responseMap.containsKey(key)) {
-                                    responseMap.put(key, null);
-                                    log.debug("Added missing response field '{}' as null", key);
+                                    // Use type-appropriate default value instead of null
+                                    Object defaultValue =
+                                            getDefaultValueForSchemaType(responseProps.get(key));
+                                    responseMap.put(key, defaultValue);
+                                    log.debug(
+                                            "Added missing response field '{}' with default: {}",
+                                            key,
+                                            defaultValue);
                                 }
                             }
 
@@ -758,15 +806,13 @@ public class GeminiChatModel extends ChatModelBase {
             return response;
         }
 
-        // Only add fallback text for actual error finish reasons
-        // STOP, null, or empty finish reason can occur in streaming and should be
-        // ignored
+        // Check finish reason against expected values (aligned with GenAI SDK pattern)
+        // Expected finish reasons indicate normal completion: STOP, MAX_TOKENS, etc.
+        // Unexpected finish reasons may indicate API issues that should be retried
         String finishReason = response.getFinishReason();
         if (finishReason == null
                 || finishReason.isEmpty()
-                || finishReason.equals("STOP")
-                || finishReason.equals("MAX_TOKENS")
-                || finishReason.equals("END_TURN")) {
+                || EXPECTED_FINISH_REASONS.contains(finishReason)) {
             // Normal completion or streaming chunk - don't add fallback text or retry
             return response;
         }
@@ -795,11 +841,12 @@ public class GeminiChatModel extends ChatModelBase {
             }
         }
 
-        // For other error finish reasons, add fallback text
-        String fallback = "Gemini returned empty content";
-        if (!finishReason.isEmpty()) {
-            fallback += " (finishReason: " + finishReason + ")";
-        }
+        // For other unexpected finish reasons, log a warning and add fallback text
+        log.warn(
+                "Gemini returned unexpected finishReason: {}. Expected one of: {}",
+                finishReason,
+                EXPECTED_FINISH_REASONS);
+        String fallback = "Gemini returned empty content (finishReason: " + finishReason + ")";
 
         List<ContentBlock> newBlocks = new ArrayList<>(response.getContent());
         newBlocks.add(TextBlock.builder().text(fallback).build());
@@ -823,6 +870,42 @@ public class GeminiChatModel extends ChatModelBase {
             return requiredList.contains(key);
         }
         return false;
+    }
+
+    /**
+     * Returns a type-appropriate default value based on JSON Schema type.
+     *
+     * <p>This method ensures that missing fields in structured output responses
+     * are populated with meaningful defaults instead of null, which helps
+     * maintain data integrity when the model returns incomplete JSON.
+     *
+     * @param schemaProperty The JSON Schema property definition (may contain "type")
+     * @return A default value appropriate for the schema type:
+     *         - "string" -> empty string ""
+     *         - "number"/"integer" -> 0
+     *         - "boolean" -> false
+     *         - "array" -> empty list
+     *         - "object" -> empty map
+     *         - other/null -> empty string (conservative default for Gemini)
+     */
+    @SuppressWarnings("unchecked")
+    private static Object getDefaultValueForSchemaType(Object schemaProperty) {
+        if (schemaProperty instanceof Map<?, ?>) {
+            Map<String, Object> schema = (Map<String, Object>) schemaProperty;
+            Object typeObj = schema.get("type");
+            if (typeObj instanceof String type) {
+                return switch (type.toLowerCase()) {
+                    case "string" -> "";
+                    case "number", "integer" -> 0;
+                    case "boolean" -> false;
+                    case "array" -> new ArrayList<>();
+                    case "object" -> new HashMap<>();
+                    default -> "";
+                };
+            }
+        }
+        // Default to empty string for unknown types (most common in Gemini responses)
+        return "";
     }
 
     /**
@@ -868,16 +951,20 @@ public class GeminiChatModel extends ChatModelBase {
                                         (Map<String, Object>) responsePropsObj;
                                 Map<String, Object> responseMap = new HashMap<>();
                                 for (String key : responseProps.keySet()) {
-                                    responseMap.put(key, "unavailable");
+                                    responseMap.put(
+                                            key,
+                                            getDefaultValueForSchemaType(responseProps.get(key)));
                                 }
                                 inputMap.put("response", responseMap);
                             } else {
                                 inputMap.put("response", new HashMap<String, Object>());
                             }
                         } else {
-                            // Flat structure - populate all properties with "unavailable"
+                            // Flat structure - populate all properties with type-appropriate
+                            // defaults
                             for (String key : properties.keySet()) {
-                                inputMap.put(key, "unavailable");
+                                inputMap.put(
+                                        key, getDefaultValueForSchemaType(properties.get(key)));
                             }
                         }
                     }

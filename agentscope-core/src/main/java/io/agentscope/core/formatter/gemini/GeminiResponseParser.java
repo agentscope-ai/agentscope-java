@@ -116,16 +116,14 @@ public class GeminiResponseParser {
                 log.warn(
                         "Gemini returned no candidates. promptFeedback={}",
                         response.getPromptFeedback());
-                // Only add error block if genuinely no candidates and likely an error
-                if (finishReason != null && !finishReason.equals("STOP")) {
-                    blocks.add(
-                            TextBlock.builder()
-                                    .text(
-                                            "Gemini returned no candidates (finishReason: "
-                                                    + finishReason
-                                                    + ")")
-                                    .build());
+                // Add error block to inform the user that no content was returned
+                // This aligns with the GenAI SDK's behavior of throwing on unexpected finish
+                // reasons
+                String errorMessage = "Gemini returned no candidates";
+                if (finishReason != null && !finishReason.isEmpty()) {
+                    errorMessage += " (finishReason: " + finishReason + ")";
                 }
+                blocks.add(TextBlock.builder().text(errorMessage).build());
             }
 
             // Parse usage metadata
