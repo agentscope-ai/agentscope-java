@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
@@ -69,6 +70,8 @@ public class MysqlSkillRepositoryTest {
 
     @Mock private ResultSet mockResultSet;
 
+    @Mock private ResultSet mockGeneratedKeysResultSet;
+
     private AutoCloseable mockitoCloseable;
 
     @BeforeEach
@@ -76,6 +79,12 @@ public class MysqlSkillRepositoryTest {
         mockitoCloseable = MockitoAnnotations.openMocks(this);
         when(mockDataSource.getConnection()).thenReturn(mockConnection);
         when(mockConnection.prepareStatement(anyString())).thenReturn(mockStatement);
+        // Also mock prepareStatement with RETURN_GENERATED_KEYS for insertSkill
+        when(mockConnection.prepareStatement(anyString(), anyInt())).thenReturn(mockStatement);
+        // Mock getGeneratedKeys for insertSkill
+        when(mockStatement.getGeneratedKeys()).thenReturn(mockGeneratedKeysResultSet);
+        when(mockGeneratedKeysResultSet.next()).thenReturn(true);
+        when(mockGeneratedKeysResultSet.getLong(1)).thenReturn(1L);
     }
 
     @AfterEach
@@ -96,16 +105,7 @@ public class MysqlSkillRepositoryTest {
         void testConstructorWithNullDataSource() {
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> new MysqlSkillRepository(null),
-                    "DataSource cannot be null");
-        }
-
-        @Test
-        @DisplayName("Should throw exception when DataSource is null with createIfNotExist flag")
-        void testConstructorWithNullDataSourceAndCreateIfNotExist() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> new MysqlSkillRepository(null, true),
+                    () -> new MysqlSkillRepository(null, true, true),
                     "DataSource cannot be null");
         }
 
@@ -114,13 +114,24 @@ public class MysqlSkillRepositoryTest {
         void testConstructorWithCreateIfNotExistTrue() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
 
             assertEquals("agentscope", repo.getDatabaseName());
             assertEquals("agentscope_skills", repo.getSkillsTableName());
             assertEquals("agentscope_skill_resources", repo.getResourcesTableName());
             assertEquals(mockDataSource, repo.getDataSource());
             assertTrue(repo.isWriteable());
+        }
+
+        @Test
+        @DisplayName("Should create repository with writeable=false")
+        void testConstructorWithWriteableFalse() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, false);
+
+            assertEquals("agentscope", repo.getDatabaseName());
+            assertFalse(repo.isWriteable());
         }
 
         @Test
@@ -132,7 +143,7 @@ public class MysqlSkillRepositoryTest {
 
             assertThrows(
                     IllegalStateException.class,
-                    () -> new MysqlSkillRepository(mockDataSource, false),
+                    () -> new MysqlSkillRepository(mockDataSource, false, true),
                     "Database does not exist");
         }
 
@@ -145,7 +156,7 @@ public class MysqlSkillRepositoryTest {
 
             assertThrows(
                     IllegalStateException.class,
-                    () -> new MysqlSkillRepository(mockDataSource, false),
+                    () -> new MysqlSkillRepository(mockDataSource, false, true),
                     "Table does not exist");
         }
 
@@ -158,7 +169,7 @@ public class MysqlSkillRepositoryTest {
 
             assertThrows(
                     IllegalStateException.class,
-                    () -> new MysqlSkillRepository(mockDataSource, false),
+                    () -> new MysqlSkillRepository(mockDataSource, false, true),
                     "Table does not exist");
         }
 
@@ -169,7 +180,7 @@ public class MysqlSkillRepositoryTest {
             // database exists, skills table exists, resources table exists
             when(mockResultSet.next()).thenReturn(true, true, true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, false);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, false, true);
 
             assertEquals("agentscope", repo.getDatabaseName());
             assertEquals("agentscope_skills", repo.getSkillsTableName());
@@ -376,7 +387,7 @@ public class MysqlSkillRepositoryTest {
         @BeforeEach
         void setUp() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
-            repo = new MysqlSkillRepository(mockDataSource, true);
+            repo = new MysqlSkillRepository(mockDataSource, true, true);
         }
 
         @Test
@@ -428,7 +439,7 @@ public class MysqlSkillRepositoryTest {
         @BeforeEach
         void setUp() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
-            repo = new MysqlSkillRepository(mockDataSource, true);
+            repo = new MysqlSkillRepository(mockDataSource, true, true);
         }
 
         @Test
@@ -508,11 +519,12 @@ public class MysqlSkillRepositoryTest {
         @Test
         @DisplayName("Should save skill with resources")
         void testSaveSkillWithResources() throws SQLException {
-            // Mock executeUpdate for both skill insertion and resource insertions
-            // Note: insertResources uses executeUpdate() in a loop, not batch processing
+            // Mock executeUpdate for skill insertion
             when(mockStatement.executeUpdate()).thenReturn(1);
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
             when(mockResultSet.next()).thenReturn(false); // skill doesn't exist
+            // Mock executeBatch for resource batch insertion
+            when(mockStatement.executeBatch()).thenReturn(new int[] {1, 1});
 
             Map<String, String> resources =
                     Map.of(
@@ -525,8 +537,10 @@ public class MysqlSkillRepositoryTest {
             boolean saved = repo.save(List.of(skill), false);
 
             assertTrue(saved);
-            // Verify executeUpdate was called: 1 for skill insert + 2 for resource inserts
-            verify(mockStatement, atLeast(3)).executeUpdate();
+            // Verify executeUpdate was called for skill insert
+            verify(mockStatement, atLeast(1)).executeUpdate();
+            // Verify executeBatch was called for resource inserts
+            verify(mockStatement, atLeast(1)).executeBatch();
         }
 
         @Test
@@ -671,7 +685,7 @@ public class MysqlSkillRepositoryTest {
         void testSetWriteable() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
 
             assertTrue(repo.isWriteable());
 
@@ -694,7 +708,7 @@ public class MysqlSkillRepositoryTest {
         void testGetRepositoryInfo() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
 
             AgentSkillRepositoryInfo info = repo.getRepositoryInfo();
 
@@ -709,7 +723,7 @@ public class MysqlSkillRepositoryTest {
         void testGetSource() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
 
             String source = repo.getSource();
 
@@ -747,7 +761,7 @@ public class MysqlSkillRepositoryTest {
         void testClose() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
             repo.close();
 
             // Should not throw exception
@@ -760,155 +774,10 @@ public class MysqlSkillRepositoryTest {
             when(mockStatement.execute()).thenReturn(true);
             when(mockStatement.executeUpdate()).thenReturn(5);
 
-            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true);
+            MysqlSkillRepository repo = new MysqlSkillRepository(mockDataSource, true, true);
             int deleted = repo.clearAllSkills();
 
             assertEquals(5, deleted);
-        }
-    }
-
-    // ==================== Builder Tests ====================
-
-    @Nested
-    @DisplayName("Builder Tests")
-    class BuilderTests {
-
-        @Test
-        @DisplayName("Should create repository with builder using defaults")
-        void testBuilderWithDefaults() throws SQLException {
-            when(mockStatement.execute()).thenReturn(true);
-
-            MysqlSkillRepository repo =
-                    MysqlSkillRepository.builder()
-                            .dataSource(mockDataSource)
-                            .createIfNotExist(true)
-                            .build();
-
-            assertNotNull(repo);
-            assertEquals("agentscope", repo.getDatabaseName());
-            assertEquals("agentscope_skills", repo.getSkillsTableName());
-            assertEquals("agentscope_skill_resources", repo.getResourcesTableName());
-            assertEquals(mockDataSource, repo.getDataSource());
-            assertTrue(repo.isWriteable());
-        }
-
-        @Test
-        @DisplayName("Should create repository with builder using custom values")
-        void testBuilderWithCustomValues() throws SQLException {
-            when(mockStatement.execute()).thenReturn(true);
-
-            MysqlSkillRepository repo =
-                    MysqlSkillRepository.builder()
-                            .dataSource(mockDataSource)
-                            .databaseName("custom_db")
-                            .skillsTableName("custom_skills")
-                            .resourcesTableName("custom_resources")
-                            .createIfNotExist(true)
-                            .writeable(false)
-                            .build();
-
-            assertNotNull(repo);
-            assertEquals("custom_db", repo.getDatabaseName());
-            assertEquals("custom_skills", repo.getSkillsTableName());
-            assertEquals("custom_resources", repo.getResourcesTableName());
-            assertFalse(repo.isWriteable());
-        }
-
-        @Test
-        @DisplayName("Should throw exception when dataSource is null in builder")
-        void testBuilderWithNullDataSource() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () ->
-                            MysqlSkillRepository.builder()
-                                    .dataSource(null)
-                                    .createIfNotExist(true)
-                                    .build(),
-                    "DataSource cannot be null");
-        }
-
-        @Test
-        @DisplayName("Should use defaults when null values provided to builder")
-        void testBuilderWithNullValues() throws SQLException {
-            when(mockStatement.execute()).thenReturn(true);
-
-            MysqlSkillRepository repo =
-                    MysqlSkillRepository.builder()
-                            .dataSource(mockDataSource)
-                            .databaseName(null)
-                            .skillsTableName(null)
-                            .resourcesTableName(null)
-                            .createIfNotExist(true)
-                            .build();
-
-            assertEquals("agentscope", repo.getDatabaseName());
-            assertEquals("agentscope_skills", repo.getSkillsTableName());
-            assertEquals("agentscope_skill_resources", repo.getResourcesTableName());
-        }
-
-        @Test
-        @DisplayName("Should create read-only repository with builder")
-        void testBuilderReadOnly() throws SQLException {
-            when(mockStatement.execute()).thenReturn(true);
-
-            MysqlSkillRepository repo =
-                    MysqlSkillRepository.builder()
-                            .dataSource(mockDataSource)
-                            .createIfNotExist(true)
-                            .writeable(false)
-                            .build();
-
-            assertFalse(repo.isWriteable());
-        }
-
-        @Test
-        @DisplayName("Should support method chaining in builder")
-        void testBuilderMethodChaining() throws SQLException {
-            when(mockStatement.execute()).thenReturn(true);
-
-            // Verify that all methods return the same builder instance for chaining
-            MysqlSkillRepository.Builder builder = MysqlSkillRepository.builder();
-            MysqlSkillRepository.Builder returned =
-                    builder.dataSource(mockDataSource)
-                            .databaseName("db")
-                            .skillsTableName("skills")
-                            .resourcesTableName("resources")
-                            .createIfNotExist(true)
-                            .writeable(true);
-
-            // All calls should return the same builder
-            assertEquals(builder, returned.dataSource(mockDataSource));
-        }
-
-        @Test
-        @DisplayName("Should reject invalid identifiers in builder")
-        void testBuilderWithInvalidIdentifiers() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () ->
-                            MysqlSkillRepository.builder()
-                                    .dataSource(mockDataSource)
-                                    .databaseName("db; DROP TABLE users;")
-                                    .createIfNotExist(true)
-                                    .build(),
-                    "Database name contains invalid characters");
-        }
-
-        @Test
-        @DisplayName(
-                "Should throw exception when database does not exist and createIfNotExist=false")
-        void testBuilderWithoutCreateAndDatabaseNotExist() throws SQLException {
-            when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-            when(mockResultSet.next()).thenReturn(false);
-
-            assertThrows(
-                    IllegalStateException.class,
-                    () ->
-                            MysqlSkillRepository.builder()
-                                    .dataSource(mockDataSource)
-                                    .createIfNotExist(false)
-                                    .build(),
-                    "Database does not exist");
         }
     }
 }

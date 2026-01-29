@@ -250,11 +250,6 @@ skillBox.codeExecution()
 
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
-- File system storage
-- database storage
-    - MySQL Database Storage (agentscope-extensions-skill-mysql-repository)
-- Git repository (not yet implemented)
-
 #### File System Storag
 
 ```java
@@ -266,19 +261,18 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 #### MySQL Database Storage
 
 ```java
-// Using constructor
+// Using simple constructor with default database/table names
 DataSource dataSource = createDataSource();
-MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true);
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
 
-// Using builder pattern
-MysqlSkillRepository repo = MysqlSkillRepository.builder()
-        .dataSource(dataSource)
-        .databaseName("my_database")
-        .skillsTableName("my_skills")
-        .resourcesTableName("my_resources")
-        .createIfNotExist(true)
-        .writeable(true)
-        .build();
+// Using full constructor for custom configuration
+MysqlSkillRepository repo = new MysqlSkillRepository(
+        dataSource,
+        "my_database",
+        "my_skills",
+        "my_resources",
+        true,  // createIfNotExist
+        true); // writeable
 
 repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");

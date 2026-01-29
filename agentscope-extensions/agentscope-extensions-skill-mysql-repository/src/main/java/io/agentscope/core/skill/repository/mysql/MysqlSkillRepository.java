@@ -22,6 +22,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -39,8 +40,8 @@ import org.slf4j.LoggerFactory;
  * structure:
  *
  * <ul>
- * <li>Skills table: stores skill metadata (name, description, content, source)
- * <li>Resources table: stores skill resources (skill_name, resource_path,
+ * <li>Skills table: stores skill metadata (skill_id, name, description, content, source)
+ * <li>Resources table: stores skill resources (skill_id, resource_path,
  * resource_content)
  * </ul>
  *
@@ -49,7 +50,8 @@ import org.slf4j.LoggerFactory;
  *
  * <pre>
  * CREATE TABLE IF NOT EXISTS agentscope_skills (
- *     name VARCHAR(255) NOT NULL PRIMARY KEY,
+ *     skill_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ *     name VARCHAR(255) NOT NULL UNIQUE,
  *     description TEXT NOT NULL,
  *     skill_content LONGTEXT NOT NULL,
  *     source VARCHAR(255) NOT NULL,
@@ -58,13 +60,13 @@ import org.slf4j.LoggerFactory;
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  *
  * CREATE TABLE IF NOT EXISTS agentscope_skill_resources (
- *     skill_name VARCHAR(255) NOT NULL,
+ *     skill_id BIGINT NOT NULL,
  *     resource_path VARCHAR(500) NOT NULL,
  *     resource_content LONGTEXT NOT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  *     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
- *     PRIMARY KEY (skill_name, resource_path),
- *     FOREIGN KEY (skill_name) REFERENCES agentscope_skills(name) ON DELETE CASCADE
+ *     PRIMARY KEY (skill_id, resource_path),
+ *     FOREIGN KEY (skill_id) REFERENCES agentscope_skills(skill_id) ON DELETE CASCADE
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
  *
@@ -83,19 +85,18 @@ import org.slf4j.LoggerFactory;
  * Example usage:
  *
  * <pre>{@code
- * // Using constructor
+ * // Using simple constructor with default database/table names
  * DataSource dataSource = createDataSource();
- * MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true);
+ * MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
  *
- * // Using builder pattern
- * MysqlSkillRepository repo = MysqlSkillRepository.builder()
- *         .dataSource(dataSource)
- *         .databaseName("my_database")
- *         .skillsTableName("my_skills")
- *         .resourcesTableName("my_resources")
- *         .createIfNotExist(true)
- *         .writeable(true)
- *         .build();
+ * // Using full constructor for custom configuration
+ * MysqlSkillRepository repo = new MysqlSkillRepository(
+ *         dataSource,
+ *         "my_database",
+ *         "my_skills",
+ *         "my_resources",
+ *         true,  // createIfNotExist
+ *         true); // writeable
  *
  * // Save a skill
  * AgentSkill skill = new AgentSkill("my-skill", "Description", "Content", resources);
@@ -142,50 +143,29 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     private boolean writeable;
 
     /**
-     * Create a MysqlSkillRepository with default settings.
+     * Create a MysqlSkillRepository with default database and table names.
      *
      * <p>
      * This constructor uses default database name ({@code agentscope}) and table
-     * names,
-     * and does NOT auto-create the database or tables. If the database or tables do
-     * not exist,
-     * an {@link IllegalStateException} will be thrown.
-     *
-     * @param dataSource DataSource for database connections
-     * @throws IllegalArgumentException if dataSource is null
-     * @throws IllegalStateException    if database or tables do not exist
-     */
-    public MysqlSkillRepository(DataSource dataSource) {
-        this(dataSource, false);
-    }
-
-    /**
-     * Create a MysqlSkillRepository with optional auto-creation of database and
-     * tables.
-     *
-     * <p>
-     * This constructor uses default database name ({@code agentscope}) and table
-     * names.
-     * If {@code createIfNotExist} is true, the database and tables will be created
-     * automatically
-     * if they don't exist. If false and the database or tables don't exist, an
-     * {@link IllegalStateException} will be thrown.
+     * names ({@code agentscope_skills} and {@code agentscope_skill_resources}).
      *
      * @param dataSource       DataSource for database connections
      * @param createIfNotExist If true, auto-create database and tables; if false,
      *                         require existing
+     * @param writeable        Whether the repository supports write operations
      * @throws IllegalArgumentException if dataSource is null
      * @throws IllegalStateException    if createIfNotExist is false and
      *                                  database/tables do not exist
      */
-    public MysqlSkillRepository(DataSource dataSource, boolean createIfNotExist) {
+    public MysqlSkillRepository(
+            DataSource dataSource, boolean createIfNotExist, boolean writeable) {
         this(
                 dataSource,
                 DEFAULT_DATABASE_NAME,
                 DEFAULT_SKILLS_TABLE_NAME,
                 DEFAULT_RESOURCES_TABLE_NAME,
                 createIfNotExist,
-                true);
+                writeable);
     }
 
     /**
@@ -290,27 +270,28 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * Create the skills and resources tables if they don't exist.
      */
     private void createTablesIfNotExist() {
-        // Create skills table
+        // Create skills table with skill_id as primary key and name as unique
         String createSkillsTableSql =
                 "CREATE TABLE IF NOT EXISTS "
                         + getFullTableName(skillsTableName)
-                        + " (name VARCHAR(255) NOT NULL PRIMARY KEY, description TEXT NOT NULL,"
+                        + " (skill_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+                        + " name VARCHAR(255) NOT NULL UNIQUE, description TEXT NOT NULL,"
                         + " skill_content LONGTEXT NOT NULL, source VARCHAR(255) NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
                         + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) DEFAULT"
                         + " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
-        // Create resources table with foreign key
+        // Create resources table with skill_id as foreign key
         String createResourcesTableSql =
                 "CREATE TABLE IF NOT EXISTS "
                         + getFullTableName(resourcesTableName)
-                        + " (skill_name VARCHAR(255) NOT NULL, resource_path VARCHAR(500) NOT NULL,"
+                        + " (skill_id BIGINT NOT NULL, resource_path VARCHAR(500) NOT NULL,"
                         + " resource_content LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT"
                         + " CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON"
-                        + " UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (skill_name, resource_path),"
-                        + " FOREIGN KEY (skill_name) REFERENCES "
+                        + " UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (skill_id, resource_path),"
+                        + " FOREIGN KEY (skill_id) REFERENCES "
                         + getFullTableName(skillsTableName)
-                        + "(name) ON DELETE CASCADE)"
+                        + "(skill_id) ON DELETE CASCADE)"
                         + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection()) {
@@ -410,17 +391,18 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         validateSkillName(name);
 
         String selectSkillSql =
-                "SELECT name, description, skill_content, source FROM "
+                "SELECT skill_id, name, description, skill_content, source FROM "
                         + getFullTableName(skillsTableName)
                         + " WHERE name = ?";
 
         String selectResourcesSql =
                 "SELECT resource_path, resource_content FROM "
                         + getFullTableName(resourcesTableName)
-                        + " WHERE skill_name = ?";
+                        + " WHERE skill_id = ?";
 
         try (Connection conn = dataSource.getConnection()) {
             // Load skill metadata
+            long skillId;
             String description;
             String skillContent;
             String source;
@@ -431,16 +413,17 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     if (!rs.next()) {
                         throw new IllegalArgumentException("Skill not found: " + name);
                     }
+                    skillId = rs.getLong("skill_id");
                     description = rs.getString("description");
                     skillContent = rs.getString("skill_content");
                     source = rs.getString("source");
                 }
             }
 
-            // Load skill resources
+            // Load skill resources using skill_id
             Map<String, String> resources = new HashMap<>();
             try (PreparedStatement stmt = conn.prepareStatement(selectResourcesSql)) {
-                stmt.setString(1, name);
+                stmt.setLong(1, skillId);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         String path = rs.getString("resource_path");
@@ -482,21 +465,22 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         String selectAllSkillsSql =
-                "SELECT name, description, skill_content, source FROM "
+                "SELECT skill_id, name, description, skill_content, source FROM "
                         + getFullTableName(skillsTableName)
                         + " ORDER BY name";
 
         String selectAllResourcesSql =
-                "SELECT skill_name, resource_path, resource_content FROM "
+                "SELECT skill_id, resource_path, resource_content FROM "
                         + getFullTableName(resourcesTableName);
 
         try (Connection conn = dataSource.getConnection()) {
-            // Load all skills in one query
-            Map<String, AgentSkill.Builder> skillBuilders = new HashMap<>();
+            // Load all skills in one query, use skill_id as key for mapping resources
+            Map<Long, AgentSkill.Builder> skillBuilders = new HashMap<>();
 
             try (PreparedStatement stmt = conn.prepareStatement(selectAllSkillsSql);
                     ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
+                    long skillId = rs.getLong("skill_id");
                     String name = rs.getString("name");
                     String description = rs.getString("description");
                     String skillContent = rs.getString("skill_content");
@@ -508,24 +492,24 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                                     .description(description)
                                     .skillContent(skillContent)
                                     .source(source);
-                    skillBuilders.put(name, builder);
+                    skillBuilders.put(skillId, builder);
                 }
             }
 
-            // Load all resources in one query and map them to skills
+            // Load all resources in one query and map them to skills using skill_id
             try (PreparedStatement stmt = conn.prepareStatement(selectAllResourcesSql);
                     ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    String skillName = rs.getString("skill_name");
+                    long skillId = rs.getLong("skill_id");
                     String resourcePath = rs.getString("resource_path");
                     String resourceContent = rs.getString("resource_content");
 
-                    AgentSkill.Builder builder = skillBuilders.get(skillName);
+                    AgentSkill.Builder builder = skillBuilders.get(skillId);
                     if (builder != null) {
                         builder.addResource(resourcePath, resourceContent);
                     } else {
                         logger.warn(
-                                "Found orphaned resource for non-existent skill: {}", skillName);
+                                "Found orphaned resource for non-existent skill_id: {}", skillId);
                     }
                 }
             }
@@ -559,9 +543,17 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         }
 
         try (Connection conn = dataSource.getConnection()) {
-            // Pre-check: validate all skill names first
+            // Pre-check: validate all skill names and resource paths before transaction
             for (AgentSkill skill : skills) {
                 validateSkillName(skill.getName());
+
+                // Validate resource paths before transaction to avoid unnecessary rollback
+                Map<String, String> resources = skill.getResources();
+                if (resources != null && !resources.isEmpty()) {
+                    for (String path : resources.keySet()) {
+                        validateResourcePath(path);
+                    }
+                }
             }
 
             // Pre-check: if force=false, check all skills for existence before starting
@@ -599,13 +591,13 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                         logger.debug("Deleted existing skill for overwrite: {}", skillName);
                     }
 
-                    // Insert skill
-                    insertSkill(conn, skill);
+                    // Insert skill and get generated skill_id
+                    long skillId = insertSkill(conn, skill);
 
-                    // Insert resources
-                    insertResources(conn, skillName, skill.getResources());
+                    // Insert resources using skill_id
+                    insertResources(conn, skillId, skill.getResources());
 
-                    logger.info("Successfully saved skill: {}", skillName);
+                    logger.info("Successfully saved skill: {} (skill_id={})", skillName, skillId);
                 }
 
                 conn.commit();
@@ -615,7 +607,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 conn.rollback();
                 throw e;
             } finally {
-                conn.setAutoCommit(true);
+                restoreAutoCommit(conn);
             }
 
         } catch (SQLException e) {
@@ -625,95 +617,106 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     }
 
     /**
-     * Insert a skill into the database.
+     * Insert a skill into the database and return the generated skill_id.
      *
      * @param conn  the database connection
      * @param skill the skill to insert
+     * @return the generated skill_id
      * @throws SQLException if insertion fails
      */
-    private void insertSkill(Connection conn, AgentSkill skill) throws SQLException {
+    private long insertSkill(Connection conn, AgentSkill skill) throws SQLException {
         String insertSql =
                 "INSERT INTO "
                         + getFullTableName(skillsTableName)
                         + " (name, description, skill_content, source) VALUES (?, ?, ?, ?)";
 
-        try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+        try (PreparedStatement stmt =
+                conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
             stmt.setString(1, skill.getName());
             stmt.setString(2, skill.getDescription());
             stmt.setString(3, skill.getSkillContent());
             stmt.setString(4, skill.getSource());
             stmt.executeUpdate();
+
+            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    return generatedKeys.getLong(1);
+                } else {
+                    throw new SQLException(
+                            "Failed to get generated skill_id for skill: " + skill.getName());
+                }
+            }
         }
     }
 
     /**
-     * Insert resources for a skill.
+     * Insert resources for a skill using batch processing.
      *
      * <p>
-     * This method creates a single PreparedStatement outside the loop and reuses it
-     * for all resources to improve performance by avoiding repeated SQL parsing.
+     * This method uses JDBC batch processing to insert all resources in a single
+     * network round-trip, significantly improving performance for skills with
+     * multiple resources.
      *
      * @param conn      the database connection
-     * @param skillName the skill name
+     * @param skillId   the skill_id to associate resources with
      * @param resources the resources to insert
      * @throws SQLException if insertion fails
      */
-    private void insertResources(Connection conn, String skillName, Map<String, String> resources)
+    private void insertResources(Connection conn, long skillId, Map<String, String> resources)
             throws SQLException {
         if (resources == null || resources.isEmpty()) {
-            logger.debug("No resources to insert for skill: {}", skillName);
+            logger.debug("No resources to insert for skill_id: {}", skillId);
             return;
         }
 
-        // Validate all resource paths first
-        for (String path : resources.keySet()) {
-            validateResourcePath(path);
-        }
+        // Note: Resource paths are validated in save() before transaction starts
 
         String insertSql =
                 "INSERT INTO "
                         + getFullTableName(resourcesTableName)
-                        + " (skill_name, resource_path, resource_content) VALUES (?, ?, ?)";
+                        + " (skill_id, resource_path, resource_content) VALUES (?, ?, ?)";
 
-        int insertedCount = 0;
-
-        // Create PreparedStatement once outside the loop and reuse it
+        // Use batch processing for better performance
         try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
             for (Map.Entry<String, String> entry : resources.entrySet()) {
                 String path = entry.getKey();
                 String content = entry.getValue();
 
-                stmt.setString(1, skillName);
+                stmt.setLong(1, skillId);
                 stmt.setString(2, path);
                 stmt.setString(3, content);
 
-                int affected = stmt.executeUpdate();
-                if (affected > 0) {
-                    insertedCount++;
-                    logger.debug("Inserted resource '{}' for skill '{}'", path, skillName);
-                } else {
-                    logger.warn("Failed to insert resource '{}' for skill '{}'", path, skillName);
-                }
-
-                // Clear parameters for next iteration
-                stmt.clearParameters();
+                stmt.addBatch();
             }
-        }
 
-        logger.debug(
-                "Inserted {} resources for skill '{}' (total: {})",
-                insertedCount,
-                skillName,
-                resources.size());
+            // Execute all inserts in one batch
+            int[] results = stmt.executeBatch();
 
-        if (insertedCount != resources.size()) {
-            throw new SQLException(
-                    "Failed to insert all resources for skill '"
-                            + skillName
-                            + "'. Expected: "
-                            + resources.size()
-                            + ", Inserted: "
-                            + insertedCount);
+            // Count successful insertions
+            int insertedCount = 0;
+            for (int i = 0; i < results.length; i++) {
+                if (results[i] > 0 || results[i] == Statement.SUCCESS_NO_INFO) {
+                    insertedCount++;
+                } else if (results[i] == Statement.EXECUTE_FAILED) {
+                    logger.error("Failed to insert resource at batch index {}", i);
+                }
+            }
+
+            logger.debug(
+                    "Batch inserted {} resources for skill_id '{}' (total: {})",
+                    insertedCount,
+                    skillId,
+                    resources.size());
+
+            if (insertedCount != resources.size()) {
+                throw new SQLException(
+                        "Failed to insert all resources for skill_id '"
+                                + skillId
+                                + "'. Expected: "
+                                + resources.size()
+                                + ", Inserted: "
+                                + insertedCount);
+            }
         }
     }
 
@@ -742,7 +745,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 conn.rollback();
                 throw e;
             } finally {
-                conn.setAutoCommit(true);
+                restoreAutoCommit(conn);
             }
 
         } catch (SQLException e) {
@@ -754,21 +757,16 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     /**
      * Delete a skill and its resources from the database.
      *
+     * <p>
+     * Resources are deleted automatically via ON DELETE CASCADE, but we also
+     * delete the skill by name which triggers the cascade.
+     *
      * @param conn      the database connection
      * @param skillName the skill name to delete
      * @throws SQLException if deletion fails
      */
     private void deleteSkillInternal(Connection conn, String skillName) throws SQLException {
-        // Delete resources first (if foreign key doesn't have CASCADE)
-        String deleteResourcesSql =
-                "DELETE FROM " + getFullTableName(resourcesTableName) + " WHERE skill_name = ?";
-
-        try (PreparedStatement stmt = conn.prepareStatement(deleteResourcesSql)) {
-            stmt.setString(1, skillName);
-            stmt.executeUpdate();
-        }
-
-        // Delete skill
+        // Delete skill by name - resources will be deleted via ON DELETE CASCADE
         String deleteSkillSql =
                 "DELETE FROM " + getFullTableName(skillsTableName) + " WHERE name = ?";
 
@@ -877,21 +875,19 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     /**
      * Clear all skills from the database (for testing or cleanup).
      *
+     * <p>
+     * Resources are deleted automatically via ON DELETE CASCADE when skills are deleted.
+     *
      * @return the number of skills deleted
      */
     public int clearAllSkills() {
-        String deleteResourcesSql = "DELETE FROM " + getFullTableName(resourcesTableName);
+        // Resources will be deleted automatically via ON DELETE CASCADE
         String deleteSkillsSql = "DELETE FROM " + getFullTableName(skillsTableName);
 
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                // Delete all resources first
-                try (PreparedStatement stmt = conn.prepareStatement(deleteResourcesSql)) {
-                    stmt.executeUpdate();
-                }
-
-                // Delete all skills
+                // Delete all skills (resources are deleted via CASCADE)
                 int deleted;
                 try (PreparedStatement stmt = conn.prepareStatement(deleteSkillsSql)) {
                     deleted = stmt.executeUpdate();
@@ -905,11 +901,29 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 conn.rollback();
                 throw e;
             } finally {
-                conn.setAutoCommit(true);
+                restoreAutoCommit(conn);
             }
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to clear skills", e);
+        }
+    }
+
+    /**
+     * Safely restore auto-commit mode on a connection.
+     *
+     * <p>
+     * This method catches and logs any SQLException that may occur when restoring
+     * auto-commit mode, preventing it from masking the original exception in a
+     * finally block.
+     *
+     * @param conn the connection to restore auto-commit on
+     */
+    private void restoreAutoCommit(Connection conn) {
+        try {
+            conn.setAutoCommit(true);
+        } catch (SQLException e) {
+            logger.warn("Failed to restore auto-commit mode on connection", e);
         }
     }
 
@@ -980,198 +994,6 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                             + " underscores are allowed, and it must start with a letter or"
                             + " underscore. Invalid value: "
                             + identifier);
-        }
-    }
-
-    /**
-     * Creates a new Builder instance for constructing MysqlSkillRepository.
-     *
-     * <p>
-     * The builder pattern provides a fluent API for configuring the repository
-     * with custom settings.
-     *
-     * <p>
-     * Example usage:
-     *
-     * <pre>{@code
-     * MysqlSkillRepository repo = MysqlSkillRepository.builder()
-     *         .dataSource(dataSource)
-     *         .databaseName("my_database")
-     *         .skillsTableName("my_skills")
-     *         .createIfNotExist(true)
-     *         .writeable(true)
-     *         .build();
-     * }</pre>
-     *
-     * @return a new Builder instance
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
-     * Builder class for constructing MysqlSkillRepository instances.
-     *
-     * <p>
-     * This builder provides a fluent API for configuring all aspects of the
-     * repository,
-     * including database connection, table names, and behavior options.
-     *
-     * <p>
-     * Required fields:
-     * <ul>
-     * <li>{@code dataSource} - Must be set before calling build()
-     * </ul>
-     *
-     * <p>
-     * Optional fields with defaults:
-     * <ul>
-     * <li>{@code databaseName} - defaults to "agentscope"
-     * <li>{@code skillsTableName} - defaults to "agentscope_skills"
-     * <li>{@code resourcesTableName} - defaults to "agentscope_skill_resources"
-     * <li>{@code createIfNotExist} - defaults to false
-     * <li>{@code writeable} - defaults to true
-     * </ul>
-     *
-     * <p>
-     * Example:
-     *
-     * <pre>{@code
-     * MysqlSkillRepository repo = MysqlSkillRepository.builder()
-     *         .dataSource(dataSource)
-     *         .databaseName("custom_db")
-     *         .skillsTableName("custom_skills")
-     *         .resourcesTableName("custom_resources")
-     *         .createIfNotExist(true)
-     *         .writeable(true)
-     *         .build();
-     * }</pre>
-     */
-    public static class Builder {
-
-        private DataSource dataSource;
-        private String databaseName = DEFAULT_DATABASE_NAME;
-        private String skillsTableName = DEFAULT_SKILLS_TABLE_NAME;
-        private String resourcesTableName = DEFAULT_RESOURCES_TABLE_NAME;
-        private boolean createIfNotExist = false;
-        private boolean writeable = true;
-
-        /**
-         * Creates a new Builder instance with default values.
-         */
-        public Builder() {
-            // Default constructor with default values
-        }
-
-        /**
-         * Sets the DataSource for database connections.
-         *
-         * <p>
-         * This is a required field and must be set before calling build().
-         *
-         * @param dataSource the DataSource to use (must not be null)
-         * @return this builder for method chaining
-         */
-        public Builder dataSource(DataSource dataSource) {
-            this.dataSource = dataSource;
-            return this;
-        }
-
-        /**
-         * Sets the database name for storing skills.
-         *
-         * <p>
-         * If not set, defaults to "agentscope".
-         *
-         * @param databaseName the database name (uses default if null or empty)
-         * @return this builder for method chaining
-         */
-        public Builder databaseName(String databaseName) {
-            this.databaseName = databaseName;
-            return this;
-        }
-
-        /**
-         * Sets the table name for storing skills.
-         *
-         * <p>
-         * If not set, defaults to "agentscope_skills".
-         *
-         * @param skillsTableName the skills table name (uses default if null or empty)
-         * @return this builder for method chaining
-         */
-        public Builder skillsTableName(String skillsTableName) {
-            this.skillsTableName = skillsTableName;
-            return this;
-        }
-
-        /**
-         * Sets the table name for storing skill resources.
-         *
-         * <p>
-         * If not set, defaults to "agentscope_skill_resources".
-         *
-         * @param resourcesTableName the resources table name (uses default if null or
-         *                           empty)
-         * @return this builder for method chaining
-         */
-        public Builder resourcesTableName(String resourcesTableName) {
-            this.resourcesTableName = resourcesTableName;
-            return this;
-        }
-
-        /**
-         * Sets whether to automatically create the database and tables if they don't
-         * exist.
-         *
-         * <p>
-         * If set to true, the database and tables will be created during construction
-         * if they don't already exist. If false (default), an exception will be thrown
-         * if the database or tables are missing.
-         *
-         * @param createIfNotExist true to auto-create database and tables
-         * @return this builder for method chaining
-         */
-        public Builder createIfNotExist(boolean createIfNotExist) {
-            this.createIfNotExist = createIfNotExist;
-            return this;
-        }
-
-        /**
-         * Sets whether the repository supports write operations.
-         *
-         * <p>
-         * If set to false, save and delete operations will be rejected.
-         * Defaults to true.
-         *
-         * @param writeable true to allow write operations
-         * @return this builder for method chaining
-         */
-        public Builder writeable(boolean writeable) {
-            this.writeable = writeable;
-            return this;
-        }
-
-        /**
-         * Builds and returns a new MysqlSkillRepository instance.
-         *
-         * <p>
-         * This method validates that all required fields are set and creates
-         * the repository with the configured options.
-         *
-         * @return a new MysqlSkillRepository instance
-         * @throws IllegalArgumentException if dataSource is null
-         * @throws IllegalStateException    if createIfNotExist is false and
-         *                                  database/tables don't exist
-         */
-        public MysqlSkillRepository build() {
-            return new MysqlSkillRepository(
-                    dataSource,
-                    databaseName,
-                    skillsTableName,
-                    resourcesTableName,
-                    createIfNotExist,
-                    writeable);
         }
     }
 }
