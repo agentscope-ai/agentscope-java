@@ -170,8 +170,6 @@ ReActAgent agent = ReActAgent.builder()
 
 Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.
 
-**Lifecycle of Progressively Disclosed Tools**: Tool lifecycle remains consistent with Skill lifecycle. Once a Skill is activated, Tools remain available throughout the entire session, avoiding the call failures caused by Tool deactivation after each conversation round in the old mechanism.
-
 **Example Code**:
 
 ```java
@@ -252,7 +250,7 @@ skillBox.codeExecution()
 
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
-#### File System Storage
+#### File System Storag
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -260,7 +258,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL Database Storage (not yet implemented)
+#### MySQL Database Storage
+
+```java
+// Using simple constructor with default database/table names
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// Using full constructor for custom configuration
+MysqlSkillRepository repo = new MysqlSkillRepository(
+        dataSource,
+        "my_database",
+        "my_skills",
+        "my_resources",
+        true,  // createIfNotExist
+        true); // writeable
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git Repository (not yet implemented)
 

@@ -257,7 +257,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL数据库存储 (暂未实现)
+#### MySQL数据库存储
+
+```java
+// 使用简单构造函数（使用默认数据库/表名）
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// 使用完整构造函数进行自定义配置
+MysqlSkillRepository repo = new MysqlSkillRepository(
+        dataSource,
+        "my_database",
+        "my_skills",
+        "my_resources",
+        true,  // createIfNotExist
+        true); // writeable
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git仓库 (暂未实现)
 
