@@ -15,21 +15,17 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.Part;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,18 +42,17 @@ import java.util.List;
  * </ul>
  */
 public class GeminiMultiAgentFormatter
-        extends AbstractBaseFormatter<
-                Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+        extends AbstractBaseFormatter<GeminiContent, GeminiResponse, GeminiRequest> {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
                     + "The content between <history></history> tags contains your conversation"
                     + " history\n";
 
-    private final GeminiMessageConverter messageConverter;
+    private final GeminiMessageConverter systemMessageConverter;
+    private final GeminiMultiAgentMessageConverter multiAgentMessageConverter;
     private final GeminiResponseParser responseParser;
     private final GeminiToolsHelper toolsHelper;
-    private final GeminiConversationMerger conversationMerger;
     private final GeminiChatFormatter chatFormatter;
 
     /**
@@ -73,154 +68,81 @@ public class GeminiMultiAgentFormatter
      * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public GeminiMultiAgentFormatter(String conversationHistoryPrompt) {
-        this.messageConverter = new GeminiMessageConverter();
+        this.systemMessageConverter = new GeminiMessageConverter();
+        this.multiAgentMessageConverter =
+                new GeminiMultiAgentMessageConverter(conversationHistoryPrompt);
         this.responseParser = new GeminiResponseParser();
         this.toolsHelper = new GeminiToolsHelper();
-        this.conversationMerger = new GeminiConversationMerger(conversationHistoryPrompt);
         this.chatFormatter = new GeminiChatFormatter();
     }
 
     @Override
-    protected List<Content> doFormat(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
-        int startIndex = 0;
-
-        // Process system message first (if any) - convert to user role
-        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Msg systemMsg = msgs.get(0);
-            // Gemini doesn't support system role in contents, convert to user
-            Content systemContent =
-                    Content.builder()
-                            .role("user")
-                            .parts(
-                                    List.of(
-                                            Part.builder()
-                                                    .text(extractTextContent(systemMsg))
-                                                    .build()))
-                            .build();
-            result.add(systemContent);
-            startIndex = 1;
+    protected List<GeminiContent> doFormat(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
         }
 
-        // Group remaining messages and process each group
-        List<MessageGroup> groups =
-                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
-        boolean isFirstAgentMessage = true;
-
-        for (MessageGroup group : groups) {
-            if (group.type == GroupType.AGENT_MESSAGE) {
-                // Format agent messages with conversation history
-                String historyPrompt =
-                        isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
-                result.add(
-                        conversationMerger.mergeToContent(
-                                group.messages,
-                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                                this::convertToolResultToString,
-                                historyPrompt));
-                isFirstAgentMessage = false;
-
-            } else if (group.type == GroupType.TOOL_SEQUENCE) {
-                // Format tool sequence directly using message converter
-                result.addAll(messageConverter.convertMessages(group.messages));
-            }
-        }
-
-        return result;
+        int startIndex = computeStartIndex(msgs);
+        return multiAgentMessageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
     }
 
     @Override
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+    public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerateContentConfig.Builder configBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            GeminiRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Delegate to chat formatter
-        chatFormatter.applyOptions(configBuilder, options, defaultOptions);
+        chatFormatter.applyOptions(request, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
-        chatFormatter.applyTools(configBuilder, tools);
+    public void applyTools(GeminiRequest request, List<ToolSchema> tools) {
+        chatFormatter.applyTools(request, tools);
     }
 
     @Override
-    public void applyToolChoice(
-            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
-        chatFormatter.applyToolChoice(configBuilder, toolChoice);
+    public void applyToolChoice(GeminiRequest request, ToolChoice toolChoice) {
+        chatFormatter.applyToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Apply system instruction to the request if present.
+     *
+     * @param request The Gemini request to configure
+     * @param originalMessages The original message list (used to extract system prompt)
+     */
+    public void applySystemInstruction(GeminiRequest request, List<Msg> originalMessages) {
+        GeminiContent systemInstruction = buildSystemInstruction(originalMessages);
+        if (systemInstruction != null) {
+            request.setSystemInstruction(systemInstruction);
+        } else {
+            request.setSystemInstruction(null);
+        }
     }
 
     // ========== Private Helper Methods ==========
 
-    /**
-     * Group messages sequentially into agent_message and tool_sequence groups.
-     *
-     * @param msgs Messages to group (excluding system message)
-     * @return List of MessageGroup objects in order
-     */
-    private List<MessageGroup> groupMessagesSequentially(List<Msg> msgs) {
-        List<MessageGroup> result = new ArrayList<>();
-        if (msgs.isEmpty()) {
-            return result;
+    private int computeStartIndex(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return 0;
         }
-
-        GroupType currentType = null;
-        List<Msg> currentGroup = new ArrayList<>();
-
-        for (Msg msg : msgs) {
-            boolean isToolRelated =
-                    msg.getRole() == MsgRole.TOOL
-                            || msg.hasContentBlocks(ToolUseBlock.class)
-                            || msg.hasContentBlocks(ToolResultBlock.class);
-
-            GroupType msgType = isToolRelated ? GroupType.TOOL_SEQUENCE : GroupType.AGENT_MESSAGE;
-
-            if (currentType == null) {
-                // First message
-                currentType = msgType;
-                currentGroup.add(msg);
-            } else if (currentType == msgType) {
-                // Same type, add to current group
-                currentGroup.add(msg);
-            } else {
-                // Different type, yield current group and start new one
-                result.add(new MessageGroup(currentType, new ArrayList<>(currentGroup)));
-                currentGroup.clear();
-                currentGroup.add(msg);
-                currentType = msgType;
-            }
-        }
-
-        // Add the last group
-        if (!currentGroup.isEmpty()) {
-            result.add(new MessageGroup(currentType, currentGroup));
-        }
-
-        return result;
+        return msgs.get(0).getRole() == MsgRole.SYSTEM ? 1 : 0;
     }
 
-    // ========== Inner Classes ==========
-
-    /** Type of message group. */
-    private enum GroupType {
-        /** Regular agent conversation messages */
-        AGENT_MESSAGE,
-        /** Tool call and tool result sequence */
-        TOOL_SEQUENCE
-    }
-
-    /** Container for a group of messages. */
-    private static class MessageGroup {
-        final GroupType type;
-        final List<Msg> messages;
-
-        MessageGroup(GroupType type, List<Msg> messages) {
-            this.type = type;
-            this.messages = messages;
+    private GeminiContent buildSystemInstruction(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return null;
         }
+
+        Msg first = msgs.get(0);
+        if (first.getRole() != MsgRole.SYSTEM) {
+            return null;
+        }
+
+        List<GeminiContent> converted = systemMessageConverter.convertMessages(List.of(first));
+        return converted.isEmpty() ? null : converted.get(0);
     }
 }

@@ -25,12 +25,18 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.AnthropicChatModel;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.quarkus.runtime.AgentScopeConfig;
+import io.agentscope.quarkus.runtime.AgentScopeProducer;
 import io.agentscope.quarkus.runtime.AgentScopeRecorder;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
+import io.quarkus.arc.processor.DotNames;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
@@ -84,10 +90,10 @@ public class AgentScopeProcessor {
         reflective.produce(
                 ReflectiveClassBuildItem.builder(
                                 Model.class,
-                                io.agentscope.core.model.DashScopeChatModel.class,
-                                io.agentscope.core.model.OpenAIChatModel.class,
-                                io.agentscope.core.model.GeminiChatModel.class,
-                                io.agentscope.core.model.AnthropicChatModel.class)
+                                DashScopeChatModel.class,
+                                OpenAIChatModel.class,
+                                GeminiChatModel.class,
+                                AnthropicChatModel.class)
                         .methods()
                         .fields()
                         .constructors()
@@ -126,9 +132,9 @@ public class AgentScopeProcessor {
         // Register AgentScopeProducer to enable auto-configuration
         beans.produce(
                 AdditionalBeanBuildItem.builder()
-                        .addBeanClass(io.agentscope.quarkus.runtime.AgentScopeProducer.class)
+                        .addBeanClass(AgentScopeProducer.class)
                         .setUnremovable()
-                        .setDefaultScope(io.quarkus.arc.processor.DotNames.APPLICATION_SCOPED)
+                        .setDefaultScope(DotNames.APPLICATION_SCOPED)
                         .build());
 
         // Make AgentBase unremovable so it can be injected

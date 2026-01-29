@@ -25,6 +25,8 @@ import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -615,10 +617,8 @@ public class AgentSkillExample {
 
             sb.append(
                     "Report Generated: "
-                            + java.time.LocalDateTime.now()
-                                    .format(
-                                            java.time.format.DateTimeFormatter.ofPattern(
-                                                    "yyyy-MM-dd HH:mm:ss"))
+                            + LocalDateTime.now()
+                                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                             + "\n\n");
 
             sb.append("1. EXECUTIVE SUMMARY\n");

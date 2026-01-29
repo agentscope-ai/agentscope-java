@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -465,8 +467,7 @@ class McpClientBuilderTest {
             }
         }
 
-        java.lang.reflect.Field transportConfigField =
-                McpClientBuilder.class.getDeclaredField("transportConfig");
+        Field transportConfigField = McpClientBuilder.class.getDeclaredField("transportConfig");
         transportConfigField.setAccessible(true);
         Object transportConfig = transportConfigField.get(builder);
 
@@ -873,12 +874,12 @@ class McpClientBuilderTest {
                 assertThrows(
                         Exception.class,
                         () -> {
-                            java.lang.reflect.Field transportConfigField =
+                            Field transportConfigField =
                                     McpClientBuilder.class.getDeclaredField("transportConfig");
                             transportConfigField.setAccessible(true);
                             Object transportConfig = transportConfigField.get(builder);
 
-                            java.lang.reflect.Method method =
+                            Method method =
                                     transportConfig
                                             .getClass()
                                             .getSuperclass()
@@ -993,8 +994,7 @@ class McpClientBuilderTest {
                         .customizeSseClient(
                                 clientBuilder -> {
                                     // Second customization should also be applied
-                                    clientBuilder.followRedirects(
-                                            java.net.http.HttpClient.Redirect.NORMAL);
+                                    clientBuilder.followRedirects(HttpClient.Redirect.NORMAL);
                                 })
                         .header("Authorization", "Bearer token")
                         .queryParam("tenant", "test");
@@ -1061,8 +1061,7 @@ class McpClientBuilderTest {
                                 })
                         .customizeStreamableHttpClient(
                                 clientBuilder -> {
-                                    clientBuilder.followRedirects(
-                                            java.net.http.HttpClient.Redirect.ALWAYS);
+                                    clientBuilder.followRedirects(HttpClient.Redirect.ALWAYS);
                                 })
                         .header("X-API-Key", "secret")
                         .queryParam("version", "v1");
@@ -1110,7 +1109,7 @@ class McpClientBuilderTest {
                         .sseTransport("https://mcp.example.com/sse")
                         .customizeSseClient(
                                 clientBuilder -> {
-                                    clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2);
+                                    clientBuilder.version(HttpClient.Version.HTTP_2);
                                 });
 
         McpClientWrapper wrapper = builder.buildAsync().block();
@@ -1124,7 +1123,7 @@ class McpClientBuilderTest {
                         .streamableHttpTransport("https://mcp.example.com/http")
                         .customizeStreamableHttpClient(
                                 clientBuilder -> {
-                                    clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2);
+                                    clientBuilder.version(HttpClient.Version.HTTP_2);
                                 });
 
         McpClientWrapper wrapper = builder.buildSync();
@@ -1147,10 +1146,9 @@ class McpClientBuilderTest {
                         .customizeSseClient(
                                 clientBuilder -> {
                                     clientBuilder
-                                            .version(java.net.http.HttpClient.Version.HTTP_2)
+                                            .version(HttpClient.Version.HTTP_2)
                                             .connectTimeout(Duration.ofSeconds(10))
-                                            .followRedirects(
-                                                    java.net.http.HttpClient.Redirect.NORMAL);
+                                            .followRedirects(HttpClient.Redirect.NORMAL);
                                 })
                         .headers(headers)
                         .queryParams(queryParams)
@@ -1171,7 +1169,7 @@ class McpClientBuilderTest {
                                 clientBuilder -> {
                                     clientBuilder
                                             .connectTimeout(Duration.ofSeconds(15))
-                                            .version(java.net.http.HttpClient.Version.HTTP_1_1);
+                                            .version(HttpClient.Version.HTTP_1_1);
                                 })
                         .header("Authorization", "Bearer secret-token")
                         .header("X-Request-ID", "req-12345")

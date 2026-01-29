@@ -15,6 +15,11 @@
  */
 package io.agentscope.examples.compression.extra;
 
+import com.aayushatharva.brotli4j.Brotli4jLoader;
+import com.aayushatharva.brotli4j.decoder.BrotliInputStream;
+import com.aayushatharva.brotli4j.encoder.BrotliOutputStream;
+import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -304,7 +309,7 @@ public final class CompressionUtils {
 
     private static boolean checkBrotliAvailable() {
         try {
-            Class.forName("com.aayushatharva.brotli4j.Brotli4jLoader");
+            Class.forName(Brotli4jLoader.class.getName());
             // Try to initialize - this will be done in the holder class
             return true;
         } catch (ClassNotFoundException e) {
@@ -324,7 +329,7 @@ public final class CompressionUtils {
 
     private static boolean checkZstdAvailable() {
         try {
-            Class.forName("com.github.luben.zstd.Zstd");
+            Class.forName(Zstd.class.getName());
             return true;
         } catch (ClassNotFoundException e) {
             log.debug(
@@ -356,7 +361,7 @@ public final class CompressionUtils {
             boolean initialized = false;
             String error = null;
             try {
-                com.aayushatharva.brotli4j.Brotli4jLoader.ensureAvailability();
+                Brotli4jLoader.ensureAvailability();
                 initialized = true;
             } catch (UnsatisfiedLinkError e) {
                 error = "Native library load failed: " + e.getMessage();
@@ -373,8 +378,7 @@ public final class CompressionUtils {
             ensureAvailable();
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length);
-            try (com.aayushatharva.brotli4j.encoder.BrotliOutputStream bos =
-                    new com.aayushatharva.brotli4j.encoder.BrotliOutputStream(baos)) {
+            try (BrotliOutputStream bos = new BrotliOutputStream(baos)) {
                 bos.write(data);
             }
             return baos.toByteArray();
@@ -386,8 +390,7 @@ public final class CompressionUtils {
             ByteArrayInputStream bais = new ByteArrayInputStream(data);
             ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length * 2);
 
-            try (com.aayushatharva.brotli4j.decoder.BrotliInputStream bis =
-                    new com.aayushatharva.brotli4j.decoder.BrotliInputStream(bais)) {
+            try (BrotliInputStream bis = new BrotliInputStream(bais)) {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int len;
                 while ((len = bis.read(buffer)) != -1) {
@@ -400,7 +403,7 @@ public final class CompressionUtils {
 
         static InputStream createInputStream(InputStream inputStream) throws IOException {
             ensureAvailable();
-            return new com.aayushatharva.brotli4j.decoder.BrotliInputStream(inputStream);
+            return new BrotliInputStream(inputStream);
         }
 
         private static void ensureAvailable() {
@@ -427,25 +430,23 @@ public final class CompressionUtils {
 
         static byte[] compress(byte[] data) throws IOException {
             ensureAvailable();
-            return com.github.luben.zstd.Zstd.compress(data);
+            return Zstd.compress(data);
         }
 
         static byte[] decompress(byte[] data) throws IOException {
             ensureAvailable();
 
             // Get the decompressed size (stored in the frame header)
-            long decompressedSize = com.github.luben.zstd.Zstd.decompressedSize(data);
+            long decompressedSize = Zstd.decompressedSize(data);
             if (decompressedSize <= 0) {
                 // If size is unknown, use streaming decompression
                 return decompressStreaming(data);
             }
 
             byte[] output = new byte[(int) decompressedSize];
-            long result = com.github.luben.zstd.Zstd.decompress(output, data);
-            if (com.github.luben.zstd.Zstd.isError(result)) {
-                throw new IOException(
-                        "Zstd decompression failed: "
-                                + com.github.luben.zstd.Zstd.getErrorName(result));
+            long result = Zstd.decompress(output, data);
+            if (Zstd.isError(result)) {
+                throw new IOException("Zstd decompression failed: " + Zstd.getErrorName(result));
             }
             return output;
         }
@@ -454,8 +455,7 @@ public final class CompressionUtils {
             ByteArrayInputStream bais = new ByteArrayInputStream(data);
             ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length * 2);
 
-            try (com.github.luben.zstd.ZstdInputStream zis =
-                    new com.github.luben.zstd.ZstdInputStream(bais)) {
+            try (ZstdInputStream zis = new ZstdInputStream(bais)) {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int len;
                 while ((len = zis.read(buffer)) != -1) {
@@ -468,7 +468,7 @@ public final class CompressionUtils {
 
         static InputStream createInputStream(InputStream inputStream) throws IOException {
             ensureAvailable();
-            return new com.github.luben.zstd.ZstdInputStream(inputStream);
+            return new ZstdInputStream(inputStream);
         }
 
         private static void ensureAvailable() {

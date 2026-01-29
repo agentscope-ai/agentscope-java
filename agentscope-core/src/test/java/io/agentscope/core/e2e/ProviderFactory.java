@@ -21,7 +21,12 @@ import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.DeepSeekProvider;
 import io.agentscope.core.e2e.providers.DeepSeekReasonerProvider;
 import io.agentscope.core.e2e.providers.GLMProvider;
-import io.agentscope.core.e2e.providers.GeminiProvider;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini25Flash;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini25FlashMultiAgent;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3Flash;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3FlashMultiAgent;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3Pro;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3ProMultiAgent;
 import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
@@ -104,9 +109,13 @@ public class ProviderFactory {
         providers.add(new DashScopeProvider.Qwen3VlPlusDashScope());
         providers.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
 
-        // Gemini providers
-        providers.add(new GeminiProvider.Gemini25FlashGemini());
-        providers.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        // Gemini providers (Native)
+        providers.add(new Gemini25Flash());
+        providers.add(new Gemini25FlashMultiAgent());
+        providers.add(new Gemini3Pro());
+        providers.add(new Gemini3ProMultiAgent());
+        providers.add(new Gemini3Flash());
+        providers.add(new Gemini3FlashMultiAgent());
 
         // Anthropic providers
         providers.add(new AnthropicProvider.ClaudeHaiku45Anthropic());

@@ -114,7 +114,7 @@ class PlanE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
+    @MethodSource("ProviderFactory#getToolProviders")
     @DisplayName("Should handle planning tools registration")
     void testPlanningToolsRegistration(ModelProvider provider) {
         assumeTrue(
