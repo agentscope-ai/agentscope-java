@@ -89,14 +89,14 @@ import org.slf4j.LoggerFactory;
  * DataSource dataSource = createDataSource();
  * MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
  *
- * // Using full constructor for custom configuration
- * MysqlSkillRepository repo = new MysqlSkillRepository(
- *         dataSource,
- *         "my_database",
- *         "my_skills",
- *         "my_resources",
- *         true,  // createIfNotExist
- *         true); // writeable
+ * // Using Builder for custom configuration
+ * MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+ *         .databaseName("my_database")
+ *         .skillsTableName("my_skills")
+ *         .resourcesTableName("my_resources")
+ *         .createIfNotExist(true)
+ *         .writeable(true)
+ *         .build();
  *
  * // Save a skill
  * AgentSkill skill = new AgentSkill("my-skill", "Description", "Content", resources);
@@ -178,6 +178,10 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * if they don't exist. If false and the database or tables don't exist, an
      * {@link IllegalStateException} will be thrown.
      *
+     * <p>
+     * This constructor is private. Use {@link #builder(DataSource)} to create instances
+     * with custom configuration.
+     *
      * @param dataSource         DataSource for database connections
      * @param databaseName       Custom database name (uses default if null or
      *                           empty)
@@ -193,7 +197,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * @throws IllegalStateException    if createIfNotExist is false and
      *                                  database/tables do not exist
      */
-    public MysqlSkillRepository(
+    private MysqlSkillRepository(
             DataSource dataSource,
             String databaseName,
             String skillsTableName,
@@ -994,6 +998,136 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                             + " underscores are allowed, and it must start with a letter or"
                             + " underscore. Invalid value: "
                             + identifier);
+        }
+    }
+
+    /**
+     * Create a new Builder for MysqlSkillRepository.
+     *
+     * <p>
+     * Example usage:
+     *
+     * <pre>{@code
+     * MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+     *         .databaseName("my_database")
+     *         .skillsTableName("my_skills")
+     *         .resourcesTableName("my_resources")
+     *         .createIfNotExist(true)
+     *         .writeable(true)
+     *         .build();
+     * }</pre>
+     *
+     * @param dataSource DataSource for database connections (required)
+     * @return a new Builder instance
+     * @throws IllegalArgumentException if dataSource is null
+     */
+    public static Builder builder(DataSource dataSource) {
+        return new Builder(dataSource);
+    }
+
+    /**
+     * Builder for creating MysqlSkillRepository instances with custom configuration.
+     *
+     * <p>
+     * This builder provides a fluent API for configuring all aspects of the repository,
+     * including database name, table names, and behavior options.
+     */
+    public static class Builder {
+
+        private final DataSource dataSource;
+        private String databaseName = DEFAULT_DATABASE_NAME;
+        private String skillsTableName = DEFAULT_SKILLS_TABLE_NAME;
+        private String resourcesTableName = DEFAULT_RESOURCES_TABLE_NAME;
+        private boolean createIfNotExist = true;
+        private boolean writeable = true;
+
+        /**
+         * Create a new Builder with the required DataSource.
+         *
+         * @param dataSource DataSource for database connections
+         * @throws IllegalArgumentException if dataSource is null
+         */
+        private Builder(DataSource dataSource) {
+            if (dataSource == null) {
+                throw new IllegalArgumentException("DataSource cannot be null");
+            }
+            this.dataSource = dataSource;
+        }
+
+        /**
+         * Set the database name for storing skills.
+         *
+         * @param databaseName the database name (default: "agentscope")
+         * @return this builder for method chaining
+         */
+        public Builder databaseName(String databaseName) {
+            this.databaseName = databaseName;
+            return this;
+        }
+
+        /**
+         * Set the skills table name.
+         *
+         * @param skillsTableName the skills table name (default: "agentscope_skills")
+         * @return this builder for method chaining
+         */
+        public Builder skillsTableName(String skillsTableName) {
+            this.skillsTableName = skillsTableName;
+            return this;
+        }
+
+        /**
+         * Set the resources table name.
+         *
+         * @param resourcesTableName the resources table name (default:
+         *                           "agentscope_skill_resources")
+         * @return this builder for method chaining
+         */
+        public Builder resourcesTableName(String resourcesTableName) {
+            this.resourcesTableName = resourcesTableName;
+            return this;
+        }
+
+        /**
+         * Set whether to create database and tables if they don't exist.
+         *
+         * @param createIfNotExist true to auto-create, false to require existing
+         *                         (default: true)
+         * @return this builder for method chaining
+         */
+        public Builder createIfNotExist(boolean createIfNotExist) {
+            this.createIfNotExist = createIfNotExist;
+            return this;
+        }
+
+        /**
+         * Set whether the repository supports write operations.
+         *
+         * @param writeable true to enable write operations, false for read-only
+         *                  (default: true)
+         * @return this builder for method chaining
+         */
+        public Builder writeable(boolean writeable) {
+            this.writeable = writeable;
+            return this;
+        }
+
+        /**
+         * Build the MysqlSkillRepository instance.
+         *
+         * @return a new MysqlSkillRepository instance
+         * @throws IllegalArgumentException if identifiers are invalid
+         * @throws IllegalStateException    if createIfNotExist is false and
+         *                                  database/tables do not exist
+         */
+        public MysqlSkillRepository build() {
+            return new MysqlSkillRepository(
+                    dataSource,
+                    databaseName,
+                    skillsTableName,
+                    resourcesTableName,
+                    createIfNotExist,
+                    writeable);
         }
     }
 }

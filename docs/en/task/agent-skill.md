@@ -168,8 +168,6 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Feature 1: Progressive Disclosure of Tools
 
-Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.
-
 **Example Code**:
 
 ```java
@@ -250,7 +248,7 @@ skillBox.codeExecution()
 
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
-#### File System Storag
+#### File System Storage
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -265,14 +263,14 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 DataSource dataSource = createDataSource();
 MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
 
-// Using full constructor for custom configuration
-MysqlSkillRepository repo = new MysqlSkillRepository(
-        dataSource,
-        "my_database",
-        "my_skills",
-        "my_resources",
-        true,  // createIfNotExist
-        true); // writeable
+// Using Builder for custom configuration
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
 
 repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");

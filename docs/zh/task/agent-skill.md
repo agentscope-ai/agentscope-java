@@ -264,14 +264,14 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 DataSource dataSource = createDataSource();
 MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
 
-// 使用完整构造函数进行自定义配置
-MysqlSkillRepository repo = new MysqlSkillRepository(
-        dataSource,
-        "my_database",
-        "my_skills",
-        "my_resources",
-        true,  // createIfNotExist
-        true); // writeable
+// 使用Builder进行自定义配置
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
 
 repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
