@@ -168,6 +168,10 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Feature 1: Progressive Disclosure of Tools
 
+Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.
+
+**Lifecycle of Progressively Disclosed Tools**: Tool lifecycle remains consistent with Skill lifecycle. Once a Skill is activated, Tools remain available throughout the entire session, avoiding the call failures caused by Tool deactivation after each conversation round in the old mechanism.
+
 **Example Code**:
 
 ```java
