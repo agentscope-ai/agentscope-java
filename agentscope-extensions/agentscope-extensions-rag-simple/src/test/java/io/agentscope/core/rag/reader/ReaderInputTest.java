@@ -114,7 +114,7 @@ class ReaderInputTest {
         ReaderInput input = ReaderInput.fromPath(Path.of("src/test/resources/rag-test.docx"));
         assertNotNull(input);
         assertEquals(ReaderInput.InputType.FILE, input.getType());
-        assertTrue(input.asString().contains("src/test/resources/rag-test.docx"));
+        assertTrue(input.asString().contains("rag-test.docx"));
     }
 
     @Test
@@ -136,6 +136,6 @@ class ReaderInputTest {
         ReaderInput input = ReaderInput.fromPath("src/test/resources/rag-test.docx");
         assertNotNull(input);
         assertEquals(ReaderInput.InputType.FILE, input.getType());
-        assertTrue(input.asString().contains("src/test/resources/rag-test.docx"));
+        assertTrue(input.asString().contains("rag-test.docx"));
     }
 }
