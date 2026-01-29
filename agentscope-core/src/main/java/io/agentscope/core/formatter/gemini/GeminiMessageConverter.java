@@ -45,21 +45,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converter for transforming AgentScope Msg objects to Gemini API Content format.
+ * Converter for transforming AgentScope Msg objects to Gemini API Content
+ * format.
  *
- * <p>This converter handles the core message transformation logic, including:
+ * <p>
+ * This converter handles the core message transformation logic, including:
  * <ul>
- *   <li>Text blocks</li>
- *   <li>Tool use blocks (function_call)</li>
- *   <li>Tool result blocks (function_response as independent Content)</li>
- *   <li>Multimodal content (image, audio, video)</li>
+ * <li>Text blocks</li>
+ * <li>Tool use blocks (function_call)</li>
+ * <li>Tool result blocks (function_response as independent Content)</li>
+ * <li>Multimodal content (image, audio, video)</li>
  * </ul>
  *
- * <p><b>Important Conversion Behaviors:</b>
+ * <p>
+ * <b>Important Conversion Behaviors:</b>
  * <ul>
- *   <li>Tool result blocks are converted to independent "user" role Content</li>
- *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
- *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
+ * <li>Tool result blocks are converted to independent "user" role Content</li>
+ * <li>Multiple tool outputs are formatted with "- " prefix per line</li>
+ * <li>System messages are treated as "user" role (Gemini API requirement)</li>
  * </ul>
  */
 public class GeminiMessageConverter {
@@ -86,14 +89,40 @@ public class GeminiMessageConverter {
 
         for (Msg msg : msgs) {
             List<GeminiPart> parts = new ArrayList<>();
+            String currentThinkingSignature = null;
 
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock tb) {
+                if (block instanceof ThinkingBlock tb) {
+                    if (tb.getSignature() != null) {
+                        currentThinkingSignature = tb.getSignature();
+                    }
+                    // We only capture signature. We DO NOT add explicit thought part to history
+                    // to avoid potential API validation issues. The signature on the function call
+                    // is what matters.
+                    continue;
+
+                } else if (block instanceof TextBlock tb) {
                     GeminiPart part = new GeminiPart();
                     part.setText(tb.getText());
                     parts.add(part);
 
                 } else if (block instanceof ToolUseBlock tub) {
+                    // Skip synthetic tool calls - convert to text instead to avoid Gemini
+                    // validation
+                    if (tub.getMetadata() != null
+                            && Boolean.TRUE.equals(tub.getMetadata().get("synthetic"))) {
+                        // Convert synthetic tool call to text description
+                        String syntheticText =
+                                String.format("[Synthetic tool call: %s]", tub.getName());
+                        GeminiPart textPart = new GeminiPart();
+                        textPart.setText(syntheticText);
+                        parts.add(textPart);
+                        log.debug(
+                                "Converted synthetic ToolUseBlock to TextBlock for Gemini"
+                                        + " compatibility");
+                        continue;
+                    }
+
                     // Prioritize using content field (raw arguments string), fallback to input map
                     Map<String, Object> args;
                     if (tub.getContent() != null && !tub.getContent().isEmpty()) {
@@ -121,19 +150,25 @@ public class GeminiMessageConverter {
                     GeminiPart part = new GeminiPart();
                     part.setFunctionCall(functionCall);
 
-                    // Restore thoughtSignature from metadata if present (required for Gemini 2.5+)
+                    // Restore thoughtSignature from metadata OR preceding ThinkingBlock
+                    String signatureToUse = currentThinkingSignature;
+
                     if (tub.getMetadata() != null
                             && tub.getMetadata()
                                     .containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
                         Object thoughtSig =
                                 tub.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
                         if (thoughtSig instanceof String) {
-                            part.setThoughtSignature((String) thoughtSig);
+                            signatureToUse = (String) thoughtSig;
                         } else if (thoughtSig instanceof byte[]) {
                             // Backward compatibility: older metadata stored raw bytes
-                            part.setThoughtSignature(
-                                    Base64.getEncoder().encodeToString((byte[]) thoughtSig));
+                            signatureToUse =
+                                    Base64.getEncoder().encodeToString((byte[]) thoughtSig);
                         }
+                    }
+
+                    if (signatureToUse != null) {
+                        part.setThoughtSignature(signatureToUse);
                     }
 
                     parts.add(part);
@@ -167,11 +202,6 @@ public class GeminiMessageConverter {
 
                 } else if (block instanceof VideoBlock vb) {
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
-
-                } else if (block instanceof ThinkingBlock) {
-                    // Skip ThinkingBlock - not sent to LLM
-                    log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
-                    continue;
 
                 } else {
                     log.warn(

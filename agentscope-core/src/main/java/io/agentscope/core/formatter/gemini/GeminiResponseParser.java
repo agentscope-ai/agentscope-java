@@ -42,16 +42,20 @@ import org.slf4j.LoggerFactory;
 /**
  * Parses Gemini API responses to AgentScope ChatResponse.
  *
- * <p>This parser handles the conversion of Gemini's GenerateContentResponse to AgentScope's
+ * <p>
+ * This parser handles the conversion of Gemini's GenerateContentResponse to
+ * AgentScope's
  * ChatResponse format, including:
  * <ul>
- *   <li>Text blocks from text parts</li>
- *   <li>Thinking blocks from parts with thought=true flag</li>
- *   <li>Tool use blocks from function_call parts</li>
- *   <li>Usage metadata with token counts</li>
+ * <li>Text blocks from text parts</li>
+ * <li>Thinking blocks from parts with thought=true flag</li>
+ * <li>Tool use blocks from function_call parts</li>
+ * <li>Usage metadata with token counts</li>
  * </ul>
  *
- * <p><b>Important:</b> In Gemini API, thinking content is indicated by the "thought" flag
+ * <p>
+ * <b>Important:</b> In Gemini API, thinking content is indicated by the
+ * "thought" flag
  * on Part objects.
  */
 public class GeminiResponseParser {
@@ -61,7 +65,9 @@ public class GeminiResponseParser {
     /**
      * Metadata key for Gemini thought signature.
      *
-     * <p>Gemini thinking models return encrypted thought signatures that must be passed back in
+     * <p>
+     * Gemini thinking models return encrypted thought signatures that must be
+     * passed back in
      * subsequent requests to maintain reasoning context across turns.
      */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
@@ -74,7 +80,7 @@ public class GeminiResponseParser {
     /**
      * Parse Gemini GenerateContentResponse to AgentScope ChatResponse.
      *
-     * @param response Gemini generation response
+     * @param response  Gemini generation response
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */
@@ -98,31 +104,28 @@ public class GeminiResponseParser {
                 }
                 finishReason = candidate.getFinishReason();
 
-                // Log warning if content is empty
+                // Log debug if content is empty (common in streaming or metadata-only updates)
                 if (blocks.isEmpty()) {
-                    log.warn(
-                            "Gemini returned empty content. finishReason={}, "
-                                    + "candidateContent={}, promptFeedback={}",
-                            finishReason,
-                            candidate.getContent(),
-                            response.getPromptFeedback());
-
-                    // Add a text block explaining the empty response
-                    String emptyReason = "Gemini returned empty content";
-                    if (finishReason != null && !finishReason.isEmpty()) {
-                        emptyReason += " (finishReason: " + finishReason + ")";
-                    }
-                    blocks.add(TextBlock.builder().text(emptyReason).build());
+                    log.debug(
+                            "Gemini returned empty content blocks in this chunk/response."
+                                    + " finishReason={}",
+                            finishReason);
                 }
             } else {
                 // No candidates at all
                 log.warn(
                         "Gemini returned no candidates. promptFeedback={}",
                         response.getPromptFeedback());
-                blocks.add(
-                        TextBlock.builder()
-                                .text("Gemini returned no candidates in response")
-                                .build());
+                // Only add error block if genuinely no candidates and likely an error
+                if (finishReason != null && !finishReason.equals("STOP")) {
+                    blocks.add(
+                            TextBlock.builder()
+                                    .text(
+                                            "Gemini returned no candidates (finishReason: "
+                                                    + finishReason
+                                                    + ")")
+                                    .build());
+                }
             }
 
             // Parse usage metadata
@@ -197,21 +200,24 @@ public class GeminiResponseParser {
         for (GeminiPart part : parts) {
             boolean processedAsThought = false;
 
-            // Check for thinking content (parts with thought=true flag)
-            if (Boolean.TRUE.equals(part.getThought()) && part.getText() != null) {
-                String thinkingText = part.getText();
-                if (!thinkingText.isEmpty()) {
-                    // Build metadata if signature is present
-                    Map<String, Object> metadata = null;
-                    if (part.getSignature() != null && !part.getSignature().isEmpty()) {
-                        metadata = new HashMap<>();
-                        metadata.put(METADATA_THOUGHT_SIGNATURE, part.getSignature());
-                    }
+            // Check for thinking content (parts with thought=true flag OR having
+            // thoughtSignature)
+            boolean isThought = Boolean.TRUE.equals(part.getThought());
+            String thoughtSignature = part.getThoughtSignature();
+            if (thoughtSignature == null || thoughtSignature.isEmpty()) {
+                // Fallback for older API or different field name
+                thoughtSignature = part.getSignature();
+            }
+            boolean hasThoughtSignature = thoughtSignature != null && !thoughtSignature.isEmpty();
 
+            if ((isThought || hasThoughtSignature) && part.getText() != null) {
+                String thinkingText = part.getText();
+                // Create block if there is text OR signature (to preserve context)
+                if (!thinkingText.isEmpty() || hasThoughtSignature) {
                     blocks.add(
                             ThinkingBlock.builder()
                                     .thinking(thinkingText)
-                                    .metadata(metadata)
+                                    .signature(thoughtSignature)
                                     .build());
                     processedAsThought = true;
                 }
