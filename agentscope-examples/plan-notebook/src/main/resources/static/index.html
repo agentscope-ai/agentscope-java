@@ -1139,6 +1139,8 @@
 
         // Send chat message
         async function sendMessage() {
+            if (isProcessing) return;
+
             const input = document.getElementById('chatInput');
             const sendBtn = document.getElementById('sendBtn');
             const message = input.value.trim();
@@ -1177,6 +1179,7 @@
 
         // Resume agent execution
         async function resumeAgent() {
+            if (isProcessing) return;
             isProcessing = true;
             controlState = 'stop';
             isPaused = false;

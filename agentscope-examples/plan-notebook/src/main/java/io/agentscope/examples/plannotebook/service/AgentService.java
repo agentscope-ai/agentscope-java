@@ -171,19 +171,18 @@ public class AgentService implements InitializingBean {
      * This is called when user clicks "Continue" button after reviewing/modifying the plan.
      */
     public Flux<String> resume(String sessionId) {
-        if (!isPaused.get()) {
-            log.warn("Tried to resume but agent is not paused");
-            return Flux.just("Agent is not paused.");
+        if (isPaused.compareAndSet(true, false)) {
+            log.info("Resuming agent execution after user review");
+
+            // Resume by calling agent.stream() with no input message
+            return agent.stream(createStreamOptions())
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .map(this::mapEventToString)
+                    .filter(text -> text != null && !text.isEmpty());
+        } else {
+            log.warn("Tried to resume but agent is not paused or already resuming");
+            return Flux.just("Agent is not paused or is already resuming.");
         }
-
-        log.info("Resuming agent execution after user review");
-        isPaused.set(false);
-
-        // Resume by calling agent.stream() with no input message
-        return agent.stream(createStreamOptions())
-                .subscribeOn(Schedulers.boundedElastic())
-                .map(this::mapEventToString)
-                .filter(text -> text != null && !text.isEmpty());
     }
 
     private StreamOptions createStreamOptions() {
