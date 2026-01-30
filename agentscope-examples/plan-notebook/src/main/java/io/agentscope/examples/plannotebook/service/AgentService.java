@@ -100,7 +100,11 @@ public class AgentService implements InitializingBean {
         PlanNotebook planNotebook = PlanNotebook.builder().build();
         planService.setPlanNotebook(planNotebook);
 
-        // Create hook to detect plan changes and pause for user review when stop is requested
+        // Register change hook to broadcast plan changes via SSE
+        planNotebook.addChangeHook(
+                "planServiceBroadcast", (notebook, plan) -> planService.broadcastPlanChange());
+
+        // Create hook to pause agent for user review when stop is requested
         Hook planChangeHook =
                 new Hook() {
                     @Override
@@ -108,8 +112,6 @@ public class AgentService implements InitializingBean {
                         if (event instanceof PostActingEvent postActing) {
                             String toolName = postActing.getToolUse().getName();
                             if (PLAN_TOOL_NAMES.contains(toolName)) {
-                                // Broadcast plan change
-                                planService.broadcastPlanChange();
                                 // Only stop if user has requested it
                                 if (stopRequested.compareAndSet(true, false)) {
                                     log.info(
