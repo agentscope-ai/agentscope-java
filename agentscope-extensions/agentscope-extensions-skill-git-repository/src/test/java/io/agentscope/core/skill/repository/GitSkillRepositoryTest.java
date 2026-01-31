@@ -361,7 +361,7 @@ class GitSkillRepositoryTest {
 
         assertFalse(repository.isWriteable());
 
-        // 尝试设置为可写,应该被忽略
+        // Try to set as writeable, should be ignored
         repository.setWriteable(true);
         assertFalse(repository.isWriteable());
     }

@@ -93,6 +93,8 @@ public class GitSkillRepository implements AgentSkillRepository {
     private final String branch;
     private final Path localPath;
     private final String source;
+    private final boolean tempDirectory;
+    private final Thread shutdownHook;
     private Path skillsPath;
 
     /**
@@ -177,14 +179,18 @@ public class GitSkillRepository implements AgentSkillRepository {
         if (localPath != null) {
             // User-specified path - not temporary, will not be auto-deleted
             this.localPath = localPath;
+            this.tempDirectory = false;
+            this.shutdownHook = null;
             logger.info("Using user-specified directory for Git repository: {}", localPath);
         } else {
             // Create temporary directory using JDK standard API
             try {
                 this.localPath = Files.createTempDirectory("agentscope-git-skills-");
+                this.tempDirectory = true;
                 logger.info("Created temporary directory for Git repository: {}", this.localPath);
 
-                SkillFileSystemHelper.registerTempDirectoryCleanup(this.localPath);
+                this.shutdownHook =
+                        SkillFileSystemHelper.registerTempDirectoryCleanup(this.localPath);
             } catch (IOException e) {
                 throw new RuntimeException(
                         "Failed to create temporary directory for Git repository", e);
@@ -236,6 +242,33 @@ public class GitSkillRepository implements AgentSkillRepository {
     @Override
     public boolean isWriteable() {
         return false;
+    }
+
+    @Override
+    /**
+     * Performs manual cleanup of the temporary local repository directory.
+     *
+     * <p>This is optional: temporary directories are also deleted automatically when the JVM
+     * terminates. Call this method if you want to release disk space earlier.
+     */
+    public void close() {
+        if (!tempDirectory) {
+            return;
+        }
+
+        if (shutdownHook != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            } catch (IllegalStateException e) {
+                logger.debug("JVM is shutting down, cannot remove shutdown hook", e);
+            }
+        }
+
+        try {
+            SkillFileSystemHelper.deleteDirectory(localPath);
+        } catch (IOException e) {
+            logger.warn("Failed to cleanup local repository directory: {}", localPath, e);
+        }
     }
 
     @Override
@@ -518,13 +551,6 @@ public class GitSkillRepository implements AgentSkillRepository {
                     e);
         }
     }
-
-    /**
-     * Recursively deletes a directory and all its contents.
-     *
-     * @param directory The directory to delete
-     * @throws IOException if deletion fails
-     */
 
     /** Custom progress monitor that logs Git operation progress to the logger. */
     private static class LoggingProgressMonitor implements ProgressMonitor {

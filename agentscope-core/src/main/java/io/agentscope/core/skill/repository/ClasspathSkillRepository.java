@@ -162,6 +162,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      * @return The loaded AgentSkill object
      * @throws IllegalStateException if the repository has been closed
      */
+    @Override
     public AgentSkill getSkill(String skillName) {
         checkNotClosed();
         return SkillFileSystemHelper.loadSkill(skillBasePath, skillName, source);
@@ -173,6 +174,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      * @return A sorted list of skill names
      * @throws IllegalStateException if the repository has been closed
      */
+    @Override
     public List<String> getAllSkillNames() {
         checkNotClosed();
         return SkillFileSystemHelper.getAllSkillNames(skillBasePath);
@@ -184,6 +186,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
      * @return A list of all loaded AgentSkill objects
      * @throws IllegalStateException if the repository has been closed
      */
+    @Override
     public List<AgentSkill> getAllSkills() {
         checkNotClosed();
         return SkillFileSystemHelper.getAllSkills(skillBasePath, source);

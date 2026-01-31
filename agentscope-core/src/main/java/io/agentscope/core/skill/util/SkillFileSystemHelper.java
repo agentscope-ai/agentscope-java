@@ -266,9 +266,10 @@ public final class SkillFileSystemHelper {
             throw new IllegalArgumentException("Skill name cannot be null or empty");
         }
 
-        Path resolvedPath = baseDir.resolve(skillName).toAbsolutePath().normalize();
+        Path absoluteBaseDir = baseDir.toAbsolutePath().normalize();
+        Path resolvedPath = absoluteBaseDir.resolve(skillName).normalize();
 
-        if (!resolvedPath.startsWith(baseDir)) {
+        if (!resolvedPath.startsWith(absoluteBaseDir)) {
             throw new IllegalArgumentException(
                     "Invalid skill name: path traversal detected. Skill name '"
                             + skillName
@@ -323,23 +324,24 @@ public final class SkillFileSystemHelper {
      *
      * @param directory The directory to delete at shutdown
      */
-    public static void registerTempDirectoryCleanup(Path directory) {
-        Runtime.getRuntime()
-                .addShutdownHook(
-                        new Thread(
-                                () -> {
-                                    try {
-                                        deleteDirectory(directory);
-                                        logger.debug(
-                                                "Cleaned up temporary directory on shutdown: {}",
-                                                directory);
-                                    } catch (Exception e) {
-                                        logger.warn(
-                                                "Failed to cleanup temp directory on shutdown: {}",
-                                                directory,
-                                                e);
-                                    }
-                                }));
+    public static Thread registerTempDirectoryCleanup(Path directory) {
+        Thread hook =
+                new Thread(
+                        () -> {
+                            try {
+                                deleteDirectory(directory);
+                                logger.debug(
+                                        "Cleaned up temporary directory on shutdown: {}",
+                                        directory);
+                            } catch (Exception e) {
+                                logger.warn(
+                                        "Failed to cleanup temp directory on shutdown: {}",
+                                        directory,
+                                        e);
+                            }
+                        });
+        Runtime.getRuntime().addShutdownHook(hook);
+        return hook;
     }
 
     private static Map<String, String> loadResources(Path skillDir, Path skillFile)
