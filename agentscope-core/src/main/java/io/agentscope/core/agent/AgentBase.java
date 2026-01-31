@@ -39,6 +39,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -672,9 +673,12 @@ public abstract class AgentBase implements StateModule, Agent {
                             // Add temporary hook
                             hooks.add(streamingHook);
 
+                            ContextView ctx = sink.contextView();
+
                             // Execute call and manage hook lifecycle
                             callSupplier
                                     .get()
+                                    .contextWrite(ctx)
                                     .doFinally(
                                             signalType -> {
                                                 // Remove temporary hook
