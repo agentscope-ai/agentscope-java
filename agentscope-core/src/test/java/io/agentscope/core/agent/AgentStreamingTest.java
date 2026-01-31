@@ -221,8 +221,7 @@ class AgentStreamingTest {
         StreamOptions options = StreamOptions.builder().build();
 
         List<Event> events = new ArrayList<>();
-        agent.stream(inputMsgs, options).contextWrite(ctx -> ctx.put("test", "test"))
-                .doOnNext(events::add).blockLast();
+        agent.stream(inputMsgs, options).doOnNext(events::add).blockLast();
 
         assertFalse(events.isEmpty());
         Event lastEvent = events.get(events.size() - 1);
