@@ -192,6 +192,20 @@ class GitSkillRepositoryTest {
     }
 
     @Test
+    @DisplayName("Should require manual sync when autoSync is disabled")
+    void testManualSyncRequiredWhenAutoSyncDisabled() throws Exception {
+        Path localRepo = createLocalGitRepository();
+        repository = new GitSkillRepository("file://" + localRepo.toString(), false);
+
+        assertThrows(IllegalStateException.class, () -> repository.getSkill("test-skill"));
+
+        repository.sync();
+        AgentSkill skill = repository.getSkill("test-skill");
+        assertNotNull(skill);
+        assertEquals("test-skill", skill.getName());
+    }
+
+    @Test
     @DisplayName("Should load skill from skills subdirectory when it exists")
     void testGetSkill_FromSkillsSubdirectory() throws Exception {
         // Create local Git repository with skills in subdirectory

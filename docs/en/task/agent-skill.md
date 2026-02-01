@@ -264,14 +264,23 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 
 #### Git Repository (Read-Only)
 
-Used to load Skills from a Git repository (read-only). Supports HTTPS and SSH and synchronizes
-on each read (clone/pull).
+Used to load Skills from a Git repository (read-only). Supports HTTPS and SSH.
+
+**Update mechanism**
+- By default, each read triggers a lightweight remote reference check; a pull runs only when the
+    remote HEAD changes.
+- You can disable auto-sync via the constructor and call `sync()` manually when you want to
+    refresh.
 
 ```java
 AgentSkillRepository repo = new GitSkillRepository(
     "https://github.com/your-org/your-skills-repo.git");
 AgentSkill skill = repo.getSkill("data-analysis");
 List<AgentSkill> allSkills = repo.getAllSkills();
+
+GitSkillRepository manualRepo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git", false);
+manualRepo.sync();
 ```
 
 If the repository contains a `skills/` subdirectory, it will be used; otherwise the repo root

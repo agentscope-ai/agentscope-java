@@ -261,13 +261,21 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 
 #### Git仓库 (只读)
 
-用于从 Git 仓库加载 Skills (只读)。支持 HTTPS 和 SSH，自动在每次读取时同步（clone/pull）。
+用于从 Git 仓库加载 Skills (只读)。支持 HTTPS 和 SSH。
+
+**更新机制**
+- 默认每次读取都会做轻量化的远端引用检查，仅当远端 HEAD 变化时才会 pull。
+- 可以通过构造函数关闭自动同步，改为手动调用 `sync()` 刷新。
 
 ```java
 AgentSkillRepository repo = new GitSkillRepository(
     "https://github.com/your-org/your-skills-repo.git");
 AgentSkill skill = repo.getSkill("data-analysis");
 List<AgentSkill> allSkills = repo.getAllSkills();
+
+GitSkillRepository manualRepo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git", false);
+manualRepo.sync();
 ```
 
 如果仓库中存在 `skills/` 子目录，会优先从该目录加载，否则使用仓库根目录。

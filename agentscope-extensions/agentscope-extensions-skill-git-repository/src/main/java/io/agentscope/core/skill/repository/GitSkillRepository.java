@@ -21,12 +21,18 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.LsRemoteCommand;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.TransportException;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ProgressMonitor;
+import org.eclipse.jgit.lib.Ref;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +40,15 @@ import org.slf4j.LoggerFactory;
  * Git-based read-only implementation of AgentSkillRepository.
  *
  * <p>This repository clones a remote Git repository to a local temporary directory and accesses
- * skills directly from the file system. The repository is synchronized (clone or pull) on each
- * read operation to ensure up-to-date content.
+ * skills directly from the file system. Synchronization is triggered on read operations
+ * ({@link #getSkill(String)}, {@link #getAllSkillNames()}, {@link #getAllSkills()},
+ * {@link #skillExists(String)}).
+ *
+ * <p>Each read performs a lightweight remote reference check; a pull is only executed when the
+ * remote HEAD changes, keeping freshness with minimal network overhead.
+ *
+ * <p>Auto-sync can be disabled via constructors that accept {@code autoSync=false}. When disabled,
+ * call {@link #sync()} to initialize and refresh before read operations.
  *
  * <p><b>Features:</b>
  *
@@ -93,9 +106,11 @@ public class GitSkillRepository implements AgentSkillRepository {
     private final String branch;
     private final Path localPath;
     private final String source;
+    private final boolean autoSync;
     private final boolean tempDirectory;
     private final Thread shutdownHook;
     private Path skillsPath;
+    private volatile String lastRemoteRef;
 
     /**
      * Creates a GitSkillRepository with the specified remote URL using the default branch.
@@ -105,7 +120,7 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl) {
-        this(remoteUrl, null, null, null);
+        this(remoteUrl, null, null, null, true);
     }
 
     /**
@@ -117,7 +132,7 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl, Path localPath) {
-        this(remoteUrl, null, localPath, null);
+        this(remoteUrl, null, localPath, null, true);
     }
 
     /**
@@ -129,7 +144,7 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl, String branch) {
-        this(remoteUrl, branch, null, null);
+        this(remoteUrl, branch, null, null, true);
     }
 
     /**
@@ -142,7 +157,7 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl, Path localPath, String source) {
-        this(remoteUrl, null, localPath, source);
+        this(remoteUrl, null, localPath, source, true);
     }
 
     /**
@@ -155,7 +170,19 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl, String branch, Path localPath) {
-        this(remoteUrl, branch, localPath, null);
+        this(remoteUrl, branch, localPath, null, true);
+    }
+
+    /**
+     * Creates a GitSkillRepository with the specified remote URL and auto-update option.
+     *
+     * @param remoteUrl The Git repository URL (HTTPS or SSH)
+     * @param autoSync Whether to auto-sync on read operations
+     * @throws IllegalArgumentException if remoteUrl is null or empty
+     * @throws RuntimeException if temporary directory creation fails
+     */
+    public GitSkillRepository(String remoteUrl, boolean autoSync) {
+        this(remoteUrl, null, null, null, autoSync);
     }
 
     /**
@@ -169,12 +196,30 @@ public class GitSkillRepository implements AgentSkillRepository {
      * @throws RuntimeException if temporary directory creation fails
      */
     public GitSkillRepository(String remoteUrl, String branch, Path localPath, String source) {
+        this(remoteUrl, branch, localPath, source, true);
+    }
+
+    /**
+     * Creates a GitSkillRepository with the specified remote URL, branch, local path, source,
+     * and auto-update option.
+     *
+     * @param remoteUrl The Git repository URL (HTTPS or SSH)
+     * @param branch The branch name to clone (null for remote default branch)
+     * @param localPath The local path to clone the repository (null to use temporary directory)
+     * @param source The custom source identifier (null to use default)
+     * @param autoSync Whether to auto-sync on read operations
+     * @throws IllegalArgumentException if remoteUrl is null or empty
+     * @throws RuntimeException if temporary directory creation fails
+     */
+    public GitSkillRepository(
+            String remoteUrl, String branch, Path localPath, String source, boolean autoSync) {
         if (remoteUrl == null || remoteUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("Remote URL cannot be null or empty");
         }
         this.remoteUrl = remoteUrl.trim();
         this.branch = branch;
         this.source = source;
+        this.autoSync = autoSync;
 
         if (localPath != null) {
             // User-specified path - not temporary, will not be auto-deleted
@@ -200,26 +245,33 @@ public class GitSkillRepository implements AgentSkillRepository {
 
     @Override
     public AgentSkill getSkill(String name) {
-        ensureRepositorySynced();
+        ensureAutoSynced();
         return SkillFileSystemHelper.loadSkill(skillsPath, name, getSource());
     }
 
     @Override
     public List<String> getAllSkillNames() {
-        ensureRepositorySynced();
+        ensureAutoSynced();
         return SkillFileSystemHelper.getAllSkillNames(skillsPath);
     }
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        ensureRepositorySynced();
+        ensureAutoSynced();
         return SkillFileSystemHelper.getAllSkills(skillsPath, getSource());
     }
 
     @Override
     public boolean skillExists(String skillName) {
-        ensureRepositorySynced();
+        ensureAutoSynced();
         return SkillFileSystemHelper.skillExists(skillsPath, skillName);
+    }
+
+    /**
+     * Triggers a manual synchronization of the repository.
+     */
+    public void sync() {
+        ensureRepositorySynced();
     }
 
     @Override
@@ -346,8 +398,12 @@ public class GitSkillRepository implements AgentSkillRepository {
                 // Directory does not exist or is empty -> clone
                 cloneRepository();
             } else if (isGitRepository(localPath)) {
-                // Is a Git repository -> pull updates
-                pullRepository();
+                // Is a Git repository -> pull updates only when remote ref changes
+                if (hasRemoteUpdates()) {
+                    pullRepository();
+                } else {
+                    logger.debug("Remote repository has no updates, skipping pull");
+                }
             } else {
                 // Not a Git repository -> error
                 throw new IllegalStateException(
@@ -382,6 +438,17 @@ public class GitSkillRepository implements AgentSkillRepository {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException("Failed to sync Git repository: " + remoteUrl, e);
+        }
+    }
+
+    private void ensureAutoSynced() {
+        if (autoSync) {
+            ensureRepositorySynced();
+            return;
+        }
+        if (skillsPath == null) {
+            throw new IllegalStateException(
+                    "Repository is not synchronized. Call sync() before reading skills.");
         }
     }
 
@@ -430,6 +497,8 @@ public class GitSkillRepository implements AgentSkillRepository {
 
             try (Git git = cloneCommand.call()) {
                 logger.info("Successfully cloned repository: {}", remoteUrl);
+                ObjectId head = git.getRepository().resolve("HEAD");
+                lastRemoteRef = head != null ? head.getName() : null;
             }
 
         } catch (TransportException e) {
@@ -517,6 +586,7 @@ public class GitSkillRepository implements AgentSkillRepository {
             git.pull().setProgressMonitor(new LoggingProgressMonitor()).call();
 
             logger.info("Successfully pulled updates from: {}", remoteUrl);
+            lastRemoteRef = resolveLocalHead();
 
         } catch (org.eclipse.jgit.api.errors.TransportException e) {
             throw new RuntimeException(
@@ -549,6 +619,54 @@ public class GitSkillRepository implements AgentSkillRepository {
                             + "Error details: "
                             + e.getMessage(),
                     e);
+        }
+    }
+
+    private boolean hasRemoteUpdates() {
+        String remoteRef = resolveRemoteHead();
+        if (remoteRef == null) {
+            return true;
+        }
+        if (lastRemoteRef == null) {
+            lastRemoteRef = resolveLocalHead();
+        }
+        return !Objects.equals(remoteRef, lastRemoteRef);
+    }
+
+    private String resolveRemoteHead() {
+        try {
+            LsRemoteCommand command = Git.lsRemoteRepository().setRemote(remoteUrl).setHeads(true);
+            Iterable<Ref> refs = command.call();
+            Optional<Ref> target =
+                    StreamSupport.stream(refs.spliterator(), false)
+                            .filter(this::matchesBranch)
+                            .findFirst();
+            if (target.isEmpty()) {
+                return null;
+            }
+            ObjectId id = target.get().getObjectId();
+            return id != null ? id.getName() : null;
+        } catch (Exception e) {
+            logger.debug("Failed to resolve remote head, will perform pull", e);
+            return null;
+        }
+    }
+
+    private boolean matchesBranch(Ref ref) {
+        if (branch == null || branch.isBlank()) {
+            return true;
+        }
+        String expected = "refs/heads/" + branch;
+        return expected.equals(ref.getName());
+    }
+
+    private String resolveLocalHead() {
+        try (Git git = Git.open(localPath.toFile())) {
+            ObjectId head = git.getRepository().resolve("HEAD");
+            return head != null ? head.getName() : null;
+        } catch (Exception e) {
+            logger.debug("Failed to resolve local head", e);
+            return null;
         }
     }
 
