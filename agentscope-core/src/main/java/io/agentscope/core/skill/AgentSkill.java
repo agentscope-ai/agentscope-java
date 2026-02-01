@@ -235,7 +235,7 @@ public class AgentSkill {
     /**
      * Returns a string representation of this skill.
      *
-     * @return String representation including name and source
+     * @return String representation including name, description, and source
      */
     @Override
     public String toString() {
@@ -243,8 +243,6 @@ public class AgentSkill {
                 + name
                 + "', description='"
                 + description
-                + "', skillContent='"
-                + skillContent
                 + "', source='"
                 + source
                 + "'}";

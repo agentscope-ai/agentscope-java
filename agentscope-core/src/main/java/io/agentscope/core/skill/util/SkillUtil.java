@@ -19,6 +19,7 @@ package io.agentscope.core.skill.util;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -201,15 +202,17 @@ public class SkillUtil {
      * @param source Source identifier for the skill (null defaults to "custom")
      * @return Created AgentSkill instance
      * @throws IllegalArgumentException if zipStream is null
+     * @throws RuntimeException if the zip content cannot be read
      */
     public static AgentSkill createFromZip(InputStream zipStream, String source) {
         if (zipStream == null) {
             throw new IllegalArgumentException("Zip stream cannot be null.");
         }
 
-        Map<String, String> rawEntries = new HashMap<>();
         String skillEntryName = null;
+        String skillMdContent = null;
         String rootDir = null;
+        Map<String, String> resources = new HashMap<>();
 
         try (ZipInputStream zipInputStream = new ZipInputStream(zipStream)) {
             ZipEntry entry;
@@ -231,7 +234,6 @@ public class SkillUtil {
                             "Zip entries must share the same root directory.");
                 }
                 String content = readZipEntryContent(zipInputStream);
-                rawEntries.put(entryName, content);
 
                 String expectedSkillEntry = entryRoot + "/" + SKILL_FILE_NAME;
                 if (entryName.endsWith("/" + SKILL_FILE_NAME)
@@ -245,7 +247,17 @@ public class SkillUtil {
                                 "Multiple SKILL.md entries found in zip content.");
                     }
                     skillEntryName = entryName;
+                    skillMdContent = content;
+                    continue;
                 }
+
+                String rootPrefix = rootDir + "/";
+                if (!entryName.startsWith(rootPrefix)) {
+                    throw new IllegalArgumentException(
+                            "Zip entries must share the same root directory as SKILL.md.");
+                }
+                String resourceName = entryName.substring(rootPrefix.length());
+                resources.put(resourceName, content);
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to read skill zip content.", e);
@@ -255,26 +267,6 @@ public class SkillUtil {
             throw new IllegalArgumentException("SKILL.md not found in zip content.");
         }
 
-        if (rootDir == null) {
-            throw new IllegalArgumentException("Root directory not found in zip content.");
-        }
-        String rootPrefix = rootDir + "/";
-
-        Map<String, String> resources = new HashMap<>();
-        for (Map.Entry<String, String> entry : rawEntries.entrySet()) {
-            String entryName = entry.getKey();
-            if (entryName.equals(skillEntryName)) {
-                continue;
-            }
-            if (!entryName.startsWith(rootPrefix)) {
-                throw new IllegalArgumentException(
-                        "Zip entries must share the same root directory as SKILL.md.");
-            }
-            entryName = entryName.substring(rootPrefix.length());
-            resources.put(entryName, entry.getValue());
-        }
-
-        String skillMdContent = rawEntries.get(skillEntryName);
         return createFrom(skillMdContent, resources, source);
     }
 
@@ -283,13 +275,27 @@ public class SkillUtil {
             throw new IllegalArgumentException("Zip entry name cannot be null or empty.");
         }
         String normalized = entryName.replace('\\', '/');
-        if (normalized.startsWith("/") || normalized.contains("../")) {
+        if (normalized.startsWith("/")) {
             throw new IllegalArgumentException("Zip entry name must be a relative path.");
+        }
+        String[] segments = normalized.split("/");
+        for (String segment : segments) {
+            if ("..".equals(segment)) {
+                throw new IllegalArgumentException(
+                        "Zip entry name must not contain parent directory segments.");
+            }
         }
         return normalized;
     }
 
     private static String readZipEntryContent(ZipInputStream zipInputStream) throws IOException {
-        return new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8);
+        byte[] buffer = new byte[8192];
+        int read;
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            while ((read = zipInputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toString(StandardCharsets.UTF_8);
+        }
     }
 }
