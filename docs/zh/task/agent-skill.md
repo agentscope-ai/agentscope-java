@@ -249,11 +249,7 @@ skillBox.codeExecution()
 
 Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:
 
-- 文件系统存储
-- 数据库存储 (暂未实现)
-- Git 仓库 (暂未实现)
-
-**示例代码**:
+#### 文件系统存储
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -261,9 +257,22 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-这种保护适用于所有仓库操作: `getSkill()`、`save()`、`delete()` 和 `skillExists()`。
+#### MySQL数据库存储 (暂未实现)
 
-详细安全指南请参阅 [Claude Agent Skills 安全考虑](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑)。
+#### Git仓库 (暂未实现)
+
+#### Jar中的resource路径存储 (适配器)
+
+用于从 JAR 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。
+
+```java
+try (JarSkillRepositoryAdapter adapter = new JarSkillRepositoryAdapter("skills")) {
+    AgentSkill skill = adapter.getSkill("data-analysis");
+    List<AgentSkill> allSkills = adapter.getAllSkills();
+} catch //...
+```
+
+资源目录结构: `src/main/resources/skills/` 下放置多个 Skill 子目录,每个子目录包含 `SKILL.md`
 
 ### 性能优化建议
 

@@ -719,8 +719,11 @@ public class PlanNotebook implements StateModule {
             message =
                     String.format(
                             "Subtask (at index %d) named '%s' is marked as done successfully. "
-                                    + "The next subtask named '%s' is activated.",
-                            subtaskIdx, subtasks.get(subtaskIdx).getName(), nextSubtask.getName());
+                                    + "The next subtask (at index %d) named '%s' is activated.",
+                            subtaskIdx,
+                            subtasks.get(subtaskIdx).getName(),
+                            subtaskIdx + 1,
+                            nextSubtask.getName());
         } else {
             message =
                     String.format(
