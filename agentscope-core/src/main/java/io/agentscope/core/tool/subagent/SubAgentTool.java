@@ -259,20 +259,21 @@ public class SubAgentTool implements AgentTool {
                                                 .last()
                                                 .map(
                                                         lastEvent -> {
-                                                            Msg response =
-                                                                    lastEvent.getMessage();
+                                                            Msg response = lastEvent.getMessage();
                                                             return buildResult(response, sessionId);
                                                         })
                                                 .onErrorResume(
                                                         e -> {
                                                             logger.error(
-                                                                    "Error in streaming execution: {}",
+                                                                    "Error in streaming execution:"
+                                                                            + " {}",
                                                                     e.getMessage(),
                                                                     e);
                                                             return Mono.just(
                                                                     ToolResultBlock.error(
                                                                             "Execution error: "
-                                                                                    + e.getMessage()));
+                                                                                    + e
+                                                                                            .getMessage()));
                                                         }))
                                 .contextWrite(context -> context.putAll(ctxView)));
     }
@@ -300,8 +301,7 @@ public class SubAgentTool implements AgentTool {
                                                     "Error in execution: {}", e.getMessage(), e);
                                             return Mono.just(
                                                     ToolResultBlock.error(
-                                                            "Execution error: "
-                                                                    + e.getMessage()));
+                                                            "Execution error: " + e.getMessage()));
                                         })
                                 .contextWrite(context -> context.putAll(ctxView)));
     }
