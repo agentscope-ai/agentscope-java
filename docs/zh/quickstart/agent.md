@@ -44,8 +44,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.annotation.Tool;
-import io.agentscope.core.tool.annotation.ToolParam;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 
 public class QuickStart {
     public static void main(String[] args) {
