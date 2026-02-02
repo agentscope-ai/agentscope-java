@@ -352,6 +352,7 @@ class ToolGroupManager {
      */
     void copyTo(ToolGroupManager target) {
         target.tools.clear();
+        target.toolGroups.clear();
         for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
             String groupName = entry.getKey();
             ToolGroup sourceGroup = entry.getValue();
