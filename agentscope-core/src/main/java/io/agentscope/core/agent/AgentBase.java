@@ -663,43 +663,32 @@ public abstract class AgentBase implements StateModule, Agent {
      * @param callSupplier Supplier that executes the agent call (either single message or list)
      * @return Flux of events emitted during execution
      */
+
     private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
-        return Flux.<Event>create(
-                        sink -> {
-                            // Create streaming hook with options
-                            StreamingHook streamingHook = new StreamingHook(sink, options);
-
-                            // Add temporary hook
-                            hooks.add(streamingHook);
-
-                            // Execute call and manage hook lifecycle
-                            callSupplier
-                                    .get()
-                                    .doFinally(
-                                            signalType -> {
-                                                // Remove temporary hook
-                                                hooks.remove(streamingHook);
-                                            })
-                                    .subscribe(
-                                            finalMsg -> {
-                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
-                                                    Event finalEvent =
-                                                            new Event(
-                                                                    EventType.AGENT_RESULT,
-                                                                    finalMsg,
-                                                                    true);
-                                                    sink.next(finalEvent);
-                                                }
-
-                                                // Complete the stream
-                                                sink.complete();
-                                            },
-                                            sink::error);
-                        },
-                        FluxSink.OverflowStrategy.BUFFER)
-                .publishOn(Schedulers.boundedElastic());
+        return Flux.deferContextual(
+                ctxView -> {
+                    // Use Mono.defer to ensure callSupplier executes in Reactor subscription context
+                    // This allows trace context from ctxView to be propagated to agent.call()
+                    return Mono.defer(() -> callSupplier.get())
+                            .flatMapMany(
+                                    finalMsg -> {
+                                        // Emit final event
+                                        if (options.shouldStream(EventType.AGENT_RESULT)) {
+                                            return Flux.just(
+                                                    new Event(EventType.AGENT_RESULT, finalMsg, true));
+                                        } else {
+                                            return Flux.empty();
+                                        }
+                                    })
+                            .contextWrite(
+                                    context -> {
+                                        // Propagate ctxView to downstream operations
+                                        // This ensures agent.call() can access the trace context
+                                        return context.putAll(ctxView);
+                                    })
+                            .publishOn(Schedulers.boundedElastic());
+                });
     }
-
     @Override
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
