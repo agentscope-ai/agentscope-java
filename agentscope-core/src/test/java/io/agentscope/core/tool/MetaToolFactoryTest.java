@@ -195,7 +195,7 @@ class MetaToolFactoryTest {
 
         AgentTool searchTool = createMockTool("search_tool", "Search function");
         RegisteredToolFunction searchRegistered =
-                new RegisteredToolFunction(searchTool, "search", null, null);
+                new RegisteredToolFunction(searchTool, null, null);
         registry.registerTool("search_tool", searchTool, searchRegistered);
         groupManager.addToolToGroup("search", "search_tool");
 
@@ -226,7 +226,7 @@ class MetaToolFactoryTest {
 
         AgentTool searchTool = createMockTool("search_tool", "Search function");
         RegisteredToolFunction searchRegistered =
-                new RegisteredToolFunction(searchTool, "search", null, null);
+                new RegisteredToolFunction(searchTool, null, null);
         registry.registerTool("search_tool", searchTool, searchRegistered);
         groupManager.addToolToGroup("search", "search_tool");
 
@@ -236,7 +236,6 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("search"));
 
         // Act
-
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
@@ -254,7 +253,6 @@ class MetaToolFactoryTest {
         Map<String, Object> input = new HashMap<>();
 
         // Act
-
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
@@ -275,7 +273,6 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("nonexistent"));
 
         // Act
-
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
@@ -296,7 +293,6 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("analytics", "nonexistent"));
 
         // Act
-
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
@@ -317,7 +313,6 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of());
 
         // Act
-
         ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
@@ -340,8 +335,7 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("group3"));
 
         // Act
-
-        ToolResultBlock result = callTool(metaTool, input);
+        callTool(metaTool, input);
 
         // Assert - group3 should be activated, but group1 and group2 should remain active
         assertTrue(groupManager.getToolGroup("group1").isActive());
@@ -414,12 +408,9 @@ class MetaToolFactoryTest {
         AgentTool tool2 = createMockTool("tool2", "Tool 2");
         AgentTool tool3 = createMockTool("tool3", "Tool 3");
 
-        registry.registerTool(
-                "tool1", tool1, new RegisteredToolFunction(tool1, "group1", null, null));
-        registry.registerTool(
-                "tool2", tool2, new RegisteredToolFunction(tool2, "group1", null, null));
-        registry.registerTool(
-                "tool3", tool3, new RegisteredToolFunction(tool3, "group2", null, null));
+        registry.registerTool("tool1", tool1, new RegisteredToolFunction(tool1, null, null));
+        registry.registerTool("tool2", tool2, new RegisteredToolFunction(tool2, null, null));
+        registry.registerTool("tool3", tool3, new RegisteredToolFunction(tool3, null, null));
 
         groupManager.addToolToGroup("group1", "tool1");
         groupManager.addToolToGroup("group1", "tool2");
