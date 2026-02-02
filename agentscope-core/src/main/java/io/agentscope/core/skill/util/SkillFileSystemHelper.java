@@ -19,10 +19,12 @@ package io.agentscope.core.skill.util;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.io.IOException;
+import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -202,7 +204,14 @@ public final class SkillFileSystemHelper {
                 for (Map.Entry<String, String> entry : resources.entrySet()) {
                     Path resourceFile = skillDir.resolve(entry.getKey());
                     Files.createDirectories(resourceFile.getParent());
-                    Files.writeString(resourceFile, entry.getValue(), StandardCharsets.UTF_8);
+                    String content = entry.getValue();
+                    if (content != null && content.startsWith("base64:")) {
+                        String base64 = content.substring("base64:".length());
+                        byte[] bytes = Base64.getDecoder().decode(base64);
+                        Files.write(resourceFile, bytes);
+                    } else {
+                        Files.writeString(resourceFile, content, StandardCharsets.UTF_8);
+                    }
                 }
 
                 logger.info("Successfully saved skill: {}", skillName);
@@ -352,11 +361,20 @@ public final class SkillFileSystemHelper {
                     .filter(p -> !p.equals(skillFile))
                     .forEach(
                             p -> {
+                                String relativePath =
+                                        skillDir.relativize(p).toString().replace('\\', '/');
                                 try {
-                                    String relativePath =
-                                            skillDir.relativize(p).toString().replace('\\', '/');
                                     String content = Files.readString(p, StandardCharsets.UTF_8);
                                     resources.put(relativePath, content);
+                                } catch (MalformedInputException e) {
+                                    try {
+                                        byte[] bytes = Files.readAllBytes(p);
+                                        String base64 = Base64.getEncoder().encodeToString(bytes);
+                                        resources.put(relativePath, "base64:" + base64);
+                                    } catch (IOException ex) {
+                                        logger.warn(
+                                                "Failed to read binary resource file: {}", p, ex);
+                                    }
                                 } catch (IOException e) {
                                     logger.warn("Failed to read resource file: {}", p, e);
                                 }

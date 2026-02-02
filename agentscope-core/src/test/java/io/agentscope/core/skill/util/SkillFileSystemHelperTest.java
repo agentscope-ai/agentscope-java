@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill.util;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,6 +27,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -205,6 +207,52 @@ class SkillFileSystemHelperTest {
 
         SkillFileSystemHelper.deleteDirectory(dir);
         assertFalse(Files.exists(dir));
+    }
+
+    @Test
+    @DisplayName("Should encode binary resources as Base64 on load")
+    void testLoadResources_EncodesBinaryAsBase64() throws IOException {
+        Path skillDir = skillsBaseDir.resolve("binary-skill");
+        Files.createDirectories(skillDir.resolve("assets"));
+        Files.writeString(
+                skillDir.resolve("SKILL.md"),
+                "---\nname: binary-skill\ndescription: Binary\n---\nContent",
+                StandardCharsets.UTF_8);
+
+        byte[] original = new byte[] {0x00, 0x01, (byte) 0xFF};
+        Path binaryFile = skillDir.resolve("assets/data.bin");
+        Files.write(binaryFile, original);
+
+        AgentSkill skill = SkillFileSystemHelper.loadSkill(skillsBaseDir, "binary-skill", "src");
+        String encoded = skill.getResources().get("assets/data.bin");
+
+        assertNotNull(encoded);
+        assertTrue(encoded.startsWith("base64:"));
+
+        String base64 = encoded.substring("base64:".length());
+        byte[] decoded = Base64.getDecoder().decode(base64);
+        assertArrayEquals(original, decoded);
+    }
+
+    @Test
+    @DisplayName("Should decode Base64 resources when saving")
+    void testSaveSkills_DecodesBase64ToBinary() throws IOException {
+        byte[] original = new byte[] {0x10, 0x20, (byte) 0x80, (byte) 0xFF};
+        String base64 = Base64.getEncoder().encodeToString(original);
+
+        Map<String, String> resources =
+                Map.of("bin/data.bin", "base64:" + base64, "readme.txt", "plain text");
+        AgentSkill newSkill = new AgentSkill("binary-save", "Binary Save", "Content", resources);
+
+        boolean result = SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(newSkill), false);
+        assertTrue(result);
+
+        Path savedBinary = skillsBaseDir.resolve("binary-save/bin/data.bin");
+        byte[] savedBytes = Files.readAllBytes(savedBinary);
+        assertArrayEquals(original, savedBytes);
+
+        Path savedText = skillsBaseDir.resolve("binary-save/readme.txt");
+        assertEquals("plain text", Files.readString(savedText, StandardCharsets.UTF_8));
     }
 
     private void createSampleSkill(String name, String description, String content)
