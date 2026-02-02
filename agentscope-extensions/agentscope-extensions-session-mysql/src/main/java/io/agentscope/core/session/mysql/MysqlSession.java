@@ -196,13 +196,14 @@ public class MysqlSession implements Session {
 
     /**
      * Create the sessions table if it doesn't exist.
+     *
+     * <p>Uses backtick escaping for the table name to safely handle identifiers with special
+     * characters like hyphens.
      */
     private void createTableIfNotExist() {
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
-                        + databaseName
-                        + "."
-                        + tableName
+                        + getFullTableName()
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
