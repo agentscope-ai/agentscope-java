@@ -66,7 +66,7 @@ public class TrinityClient {
      * Submit Feedback (reward feedback)
      *
      * @param request Feedback request (containing msg_ids and reward)
-     * @return Status response
+     * @return Mono&lt;Void&gt; that completes when feedback is submitted
      */
     public Mono<Void> feedback(FeedbackRequest request) {
         return Mono.fromCallable(
@@ -120,7 +120,7 @@ public class TrinityClient {
      * Submit Commit to trigger training
      *
      * @param request Commit request (containing task_id and run_id)
-     * @return Status response
+     * @return Mono&lt;Void&gt; that completes when commit is successful
      */
     public Mono<Void> commit(CommitRequest request) {
         return Mono.fromCallable(

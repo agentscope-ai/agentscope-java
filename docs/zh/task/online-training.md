@@ -94,7 +94,7 @@ TrainingSelectionStrategy strategy = SamplingRateStrategy.of(0.1);  // 10%
 TrainingSelectionStrategy strategy = ExplicitMarkingStrategy.create();
 
 // 在你的应用代码中显示标记请求用于训练
-TrainingContext.markForTraining("high-quality", "user-feedback");
+TrainingContext.mark("high-quality", "user-feedback");
 agent.call(msg).block();  // 这个请求会被用于训练
 ```
 #### 自定义策略

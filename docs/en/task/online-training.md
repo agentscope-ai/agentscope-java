@@ -93,7 +93,7 @@ TrainingSelectionStrategy strategy = SamplingRateStrategy.of(0.1);  // 10%
 TrainingSelectionStrategy strategy = ExplicitMarkingStrategy.create();
 
 // In your application code, explicitly mark requests for training
-TrainingContext.markForTraining("high-quality", "user-feedback");
+TrainingContext.mark("high-quality", "user-feedback");
 agent.call(msg).block();  // This request will be used for training
 ```
 #### Custom Strategy
