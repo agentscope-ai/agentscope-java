@@ -237,23 +237,6 @@ class ReActAgentRAGConfigTest {
     }
 
     @Test
-    @DisplayName("Should configure enableOnlyForUserQueries")
-    void testEnableOnlyForUserQueries() {
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(mockModel)
-                        .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
-                        .knowledge(mockKnowledge)
-                        .ragMode(RAGMode.GENERIC)
-                        .enableOnlyForUserQueries(false)
-                        .build();
-
-        assertNotNull(agent);
-    }
-
-    @Test
     @DisplayName("Should use default RAG mode as GENERIC")
     void testDefaultRAGMode() {
         ReActAgent agent =

@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.7-SNAPSHOT</revision>
+        <revision>1.0.9-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -69,7 +69,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <spotless.version>3.1.0</spotless.version>
+        <spotless.version>3.2.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -119,6 +119,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Chat Completions Web -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-chat-completions-web</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -213,6 +220,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Kotlin -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-kotlin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Higress Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -273,6 +287,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Chat Completions Web Spring Boot Starter -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-chat-completions-web-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

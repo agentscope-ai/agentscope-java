@@ -303,7 +303,15 @@ public class PlanNotebook implements StateModule {
         for (Map<String, Object> subtaskMap : subtasks) {
             subtaskList.add(mapToSubTask(subtaskMap));
         }
-
+        // Validate subtask count against maxSubtasks limit
+        // Check BEFORE creating the plan to enforce the configured limit
+        if (maxSubtasks != null && subtaskList.size() > maxSubtasks) {
+            return Mono.just(
+                    String.format(
+                            "Cannot create plan: the number of subtasks (%d) exceeds the maximum"
+                                    + " limit of %d. Please reduce the number of subtasks.",
+                            subtaskList.size(), maxSubtasks));
+        }
         Plan plan = new Plan(name, description, expectedOutcome, subtaskList);
 
         String message;
@@ -500,6 +508,16 @@ public class PlanNotebook implements StateModule {
                                 "Invalid subtask_idx '%d' for action 'add'. Must be between 0 and"
                                         + " %d.",
                                 subtaskIdx, subtasks.size()));
+            }
+            // Validate subtask count against maxSubtasks limit BEFORE adding
+            // Use >= because we check before addition: if already at limit, cannot add more
+            if (maxSubtasks != null && subtasks.size() >= maxSubtasks) {
+                return Mono.just(
+                        String.format(
+                                "Cannot add more subtasks: the current plan has reached the"
+                                        + " maximum limit of %d subtasks. Please delete some"
+                                        + " existing subtasks first.",
+                                maxSubtasks));
             }
         } else {
             if (subtaskIdx < 0 || subtaskIdx >= subtasks.size()) {
@@ -701,8 +719,11 @@ public class PlanNotebook implements StateModule {
             message =
                     String.format(
                             "Subtask (at index %d) named '%s' is marked as done successfully. "
-                                    + "The next subtask named '%s' is activated.",
-                            subtaskIdx, subtasks.get(subtaskIdx).getName(), nextSubtask.getName());
+                                    + "The next subtask (at index %d) named '%s' is activated.",
+                            subtaskIdx,
+                            subtasks.get(subtaskIdx).getName(),
+                            subtaskIdx + 1,
+                            nextSubtask.getName());
         } else {
             message =
                     String.format(
@@ -951,7 +972,7 @@ public class PlanNotebook implements StateModule {
      *     applicable
      */
     public Mono<Msg> getCurrentHint() {
-        String hintContent = planToHint.generateHint(currentPlan, needUserConfirm);
+        String hintContent = planToHint.generateHint(currentPlan, this);
         if (hintContent != null && !hintContent.isEmpty()) {
             return Mono.just(
                     Msg.builder()
@@ -979,6 +1000,15 @@ public class PlanNotebook implements StateModule {
      */
     public boolean isNeedUserConfirm() {
         return needUserConfirm;
+    }
+
+    /**
+     * Gets the maximum number of subtasks allowed per plan.
+     *
+     * @return maximum number of subtasks
+     */
+    public Integer getMaxSubtasks() {
+        return maxSubtasks;
     }
 
     private Mono<Void> triggerPlanChangeHooks() {

@@ -18,11 +18,14 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.tool.AgentTool;
@@ -30,6 +33,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -170,7 +174,16 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                                         // Extract result from hook's output
                                         Msg hookResult = hook.getResultMsg();
                                         if (hookResult != null) {
-                                            return Mono.just(extractStructuredResult(hookResult));
+                                            Msg extracted = extractStructuredResult(hookResult);
+                                            // Merge aggregated metadata from reasoning rounds
+                                            if (extracted != null) {
+                                                extracted =
+                                                        mergeCollectedMetadata(
+                                                                extracted,
+                                                                hook.getAggregatedUsage(),
+                                                                hook.getAggregatedThinking());
+                                            }
+                                            return Mono.just(extracted);
                                         }
                                         return Mono.just(result);
                                     })
@@ -283,9 +296,10 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         if (responseMsg.getMetadata() != null
                 && responseMsg.getMetadata().containsKey("response")) {
             Object responseData = responseMsg.getMetadata().get("response");
-            // Store structured output under dedicated key to avoid conflicts with other metadata
-            Map<String, Object> metadata = new HashMap<>();
+            // Preserve all original metadata and add structured output under dedicated key
+            Map<String, Object> metadata = new HashMap<>(responseMsg.getMetadata());
             metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT, responseData);
+            metadata.remove("response"); // Remove temp key, use standard key
             return Msg.builder()
                     .name(responseMsg.getName())
                     .role(responseMsg.getRole())
@@ -294,5 +308,38 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                     .build();
         }
         return responseMsg;
+    }
+
+    /**
+     * Merge collected metadata (ChatUsage and ThinkingBlock) into the message.
+     */
+    private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
+        // Merge ChatUsage into metadata
+        Map<String, Object> metadata =
+                new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
+        if (chatUsage != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        }
+
+        // Merge ThinkingBlock into content
+        List<ContentBlock> newContent;
+        if (thinking != null) {
+            newContent = new ArrayList<>();
+            newContent.add(thinking); // ThinkingBlock first
+            if (msg.getContent() != null) {
+                newContent.addAll(msg.getContent());
+            }
+        } else {
+            newContent = msg.getContent();
+        }
+
+        return Msg.builder()
+                .id(msg.getId())
+                .name(msg.getName())
+                .role(msg.getRole())
+                .content(newContent)
+                .metadata(metadata)
+                .timestamp(msg.getTimestamp())
+                .build();
     }
 }

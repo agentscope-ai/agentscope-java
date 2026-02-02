@@ -230,6 +230,10 @@ public class Mem0SearchRequest {
             return this;
         }
 
+        public Map<String, Object> getFilters() {
+            return this.filters;
+        }
+
         /**
          * Convenience method to add agent_id to filters.
          *

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.plan.hint;
 
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
 
 /**
@@ -32,15 +33,15 @@ public interface PlanToHint {
      * @return The generated hint message, or null if no hint is applicable
      */
     default String generateHint(Plan plan) {
-        return generateHint(plan, true);
+        return generateHint(plan, PlanNotebook.builder().needUserConfirm(true).build());
     }
 
     /**
-     * Generate a hint message based on the current plan state with confirmation control.
+     * Generate a hint message based on the current plan state with planNoteBook control.
      *
      * @param plan The current plan (can be null if no plan exists)
-     * @param needUserConfirm Whether to include the "wait for user confirmation" rule in hints
+     * @param planNotebook related planNoteBook configuration
      * @return The generated hint message, or null if no hint is applicable
      */
-    String generateHint(Plan plan, boolean needUserConfirm);
+    String generateHint(Plan plan, PlanNotebook planNotebook);
 }

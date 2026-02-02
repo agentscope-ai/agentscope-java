@@ -15,29 +15,38 @@
  */
 package io.agentscope.core.skill;
 
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.CommandValidator;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Mono;
 
 public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
+    private final SkillToolFactory skillToolFactory;
     private Toolkit toolkit;
+    private Path codeExecutionWorkDir;
 
     public SkillBox() {
         this(null);
@@ -45,6 +54,7 @@ public class SkillBox implements StateModule {
 
     public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
+        this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
 
@@ -86,6 +96,13 @@ public class SkillBox implements StateModule {
     /**
      * Binds a toolkit to the skill box.
      *
+     * <p>
+     * This method binds the toolkit to both the skill box and its internal skill
+     * tool factory.
+     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
+     * ensure the
+     * skill tool factory references the correct toolkit instance.
+     *
      * @param toolkit The toolkit to bind to the skill box
      * @throws IllegalArgumentException if the toolkit is null
      */
@@ -94,6 +111,8 @@ public class SkillBox implements StateModule {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
         this.toolkit = toolkit;
+        // ReActAgent uses a deep copy of Toolkit, so we need to rebind it here
+        this.skillToolFactory.bindToolkit(toolkit);
     }
 
     /**
@@ -183,6 +202,14 @@ public class SkillBox implements StateModule {
         skillRegistry.registerSkill(skillId, skill, registered);
 
         logger.info("Registered skill '{}'", skillId);
+    }
+
+    /**
+     * Gets all skill IDs.
+     * @return All skill IDs
+     */
+    public Set<String> getAllSkillIds() {
+        return skillRegistry.getSkillIds();
     }
 
     /**
@@ -488,196 +515,468 @@ public class SkillBox implements StateModule {
         }
     }
 
-    // ==================== Skill Access Tools ====================
+    // ==================== Skill Build-In Tools ====================
 
     /**
-     * Load the markdown content of a skill by its ID.
+     * Registers skill access tools to the provided toolkit.
      *
-     * <p>This will activate the skill and return its full content including
-     * name, description, and implementation details.
+     * <p>This method registers the following tool:
+     * <ul>
+     *   <li>load_skill_through_path - Load skill resources or SKILL.md content. When a resource
+     *       is not found, it automatically returns a list of available resources with SKILL.md
+     *       as the first item.</li>
+     * </ul>
      *
-     * @param skillId The unique identifier of the skill to load
-     * @return Skill markdown content with metadata
-     * @throws IllegalArgumentException if skill doesn't exist
+     * @throws IllegalArgumentException if toolkit is null
      */
-    @Tool(
-            name = "skill_md_load_tool",
-            description =
-                    "Load the markdown content of a skill by its ID. "
-                            + "This will activate the skill and return its full content including "
-                            + "name, description, and implementation details.")
-    public Mono<ToolResultBlock> loadSkillMd(
-            @ToolParam(
-                            name = "skillId",
-                            description = "The unique identifier of the skill to load.")
-                    String skillId) {
-        try {
-            // Validate parameter
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
+    public void registerSkillLoadTool() {
+        if (toolkit == null) {
+            throw new IllegalArgumentException("Toolkit cannot be null");
+        }
+
+        if (toolkit.getToolGroup("skill-build-in-tools") == null) {
+            toolkit.createToolGroup(
+                    "skill-build-in-tools",
+                    "skill build-in tools, could contain(load_skill_through_path)");
+        }
+
+        toolkit.registration()
+                .agentTool(skillToolFactory.createSkillAccessToolAgentTool())
+                .group("skill-build-in-tools")
+                .apply();
+
+        logger.info("Registered skill load tools to toolkit");
+    }
+
+    // ==================== Code Execution ====================
+
+    /**
+     * Create a fluent builder for configuring code execution with custom options.
+     *
+     * <p>This is the recommended way to enable code execution capabilities for skills.
+     * The builder allows selective enabling of tools and customization of ShellCommandTool.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * // Simple - enable all tools with default configuration
+     * skillBox.codeExecution()
+     *     .withShell()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Custom shell tool with approval callback
+     * ShellCommandTool customShell = new ShellCommandTool(
+     *     null,  // baseDir will be overridden
+     *     Set.of("python3", "node", "npm"),
+     *     command -> askUserApproval(command)
+     * );
+     *
+     * skillBox.codeExecution()
+     *     .workDir("/path/to/workdir")
+     *     .withShell(customShell)  // Clone with workDir
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Only enable read and write tools
+     * skillBox.codeExecution()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     * }</pre>
+     *
+     * @return A new CodeExecutionBuilder for configuration
+     */
+    public CodeExecutionBuilder codeExecution() {
+        return new CodeExecutionBuilder(this);
+    }
+
+    /**
+     * Checks if code execution is enabled.
+     *
+     * @return true if code execution is enabled, false otherwise
+     */
+    public boolean isCodeExecutionEnabled() {
+        return toolkit != null && toolkit.getToolGroup("skill_code_execution_tool_group") != null;
+    }
+
+    /**
+     * Gets the working directory for code execution.
+     *
+     * @return The working directory path, or null if using temporary directory
+     */
+    public Path getCodeExecutionWorkDir() {
+        return codeExecutionWorkDir;
+    }
+
+    /**
+     * Ensures the working directory exists, creating it if necessary.
+     *
+     * @return The working directory path
+     * @throws RuntimeException if failed to create the directory
+     */
+    private Path ensureWorkDirExists() {
+        Path workDir;
+
+        if (codeExecutionWorkDir == null) {
+            // Create temporary directory
+            try {
+                workDir = Files.createTempDirectory("agentscope-code-execution-");
+
+                // Register shutdown hook to clean up temporary directory
+                Runtime.getRuntime()
+                        .addShutdownHook(
+                                new Thread(
+                                        () -> {
+                                            try {
+                                                deleteTempDirectory(workDir);
+                                                logger.info(
+                                                        "Cleaned up temporary working directory:"
+                                                                + " {}",
+                                                        workDir);
+                                            } catch (IOException e) {
+                                                logger.warn(
+                                                        "Failed to clean up temporary directory:"
+                                                                + " {}",
+                                                        e.getMessage());
+                                            }
+                                        }));
+
+                logger.info("Created temporary working directory: {}", workDir);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to create temporary working directory", e);
             }
+        } else {
+            workDir = codeExecutionWorkDir;
+            // Create directory if it doesn't exist
+            if (!Files.exists(workDir)) {
+                try {
+                    Files.createDirectories(workDir);
+                    logger.info("Created working directory: {}", workDir);
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to create working directory", e);
+                }
+            }
+        }
 
-            AgentSkill skill = validatedActiveSkill(skillId);
+        return workDir;
+    }
 
-            // Build response
-            StringBuilder result = new StringBuilder();
-            result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
-            result.append("Name: ").append(skill.getName()).append("\n");
-            result.append("Description: ").append(skill.getDescription()).append("\n");
-            result.append("Source: ").append(skill.getSource()).append("\n\n");
-            result.append("Content:\n");
-            result.append("---\n");
-            result.append(skill.getSkillContent());
-            result.append("\n---\n");
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error loading skill markdown: {}", skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
+    /**
+     * Deletes the temporary working directory if it was created.
+     *
+     * <p>
+     * This method only deletes directories that were created as temporary
+     * directories
+     * by this SkillBox instance. User-specified directories are never deleted.
+     *
+     * @throws IOException if deletion fails
+     */
+    private void deleteTempDirectory(Path temporaryWorkDir) throws IOException {
+        if (temporaryWorkDir != null && Files.exists(temporaryWorkDir)) {
+            Files.walk(temporaryWorkDir)
+                    .sorted(
+                            (a, b) ->
+                                    -a.compareTo(
+                                            b)) // Reverse order to delete files before directories
+                    .forEach(
+                            path -> {
+                                try {
+                                    Files.delete(path);
+                                } catch (IOException e) {
+                                    logger.warn("Failed to delete: {}", path);
+                                }
+                            });
         }
     }
 
     /**
-     * Load a specific resource file from a skill by its ID and resource path.
+     * Writes all skill scripts to the code execution working directory.
      *
-     * <p>This will activate the skill and return the content of the requested resource.
+     * <p>This method iterates through all registered skills and writes their script
+     * resources to the working directory. Scripts are organized by skill ID:
+     * <ul>
+     *   <li>Scripts are written to workDir/skillId/relativePath</li>
+     *   <li>Scripts are identified by being in "scripts/" directory OR having script extension (.py, .js, .sh)</li>
+     * </ul>
      *
-     * @param skillId The unique identifier of the skill
-     * @param path The path to the resource file within the skill (e.g., 'config.json')
-     * @return Resource content
-     * @throws IllegalArgumentException if skill or resource doesn't exist
+     * <p>If a script file already exists, it will be overwritten.
+     *
+     * @throws IllegalStateException if code execution is not enabled
      */
-    @Tool(
-            name = "skill_resources_load_tool",
-            description =
-                    "Load a specific resource file from a skill by its ID and resource path. This"
-                            + " will activate the skill and return the content of the requested"
-                            + " resource.")
-    public Mono<ToolResultBlock> loadSkillResource(
-            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-                    String skillId,
-            @ToolParam(
-                            name = "path",
-                            description =
-                                    "The path to the resource file within the skill (e.g.,"
-                                            + " 'config.json').")
-                    String path) {
-        try {
-            // Validate parameters
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
-            }
-
-            if (path == null || path.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: path"));
-            }
-
-            // Get resource
-            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
-            if (resources == null || !resources.containsKey(path)) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "Resource not found: '%s' in skill '%s'. "
-                                        + "Use get_all_resources_path_tool to see available"
-                                        + " resources.",
-                                path, skillId));
-            }
-
-            String resourceContent = resources.get(path);
-
-            // Build response
-            StringBuilder result = new StringBuilder();
-            result.append("Successfully loaded resource from skill: ").append(skillId).append("\n");
-            result.append("Resource path: ").append(path).append("\n\n");
-            result.append("Content:\n");
-            result.append("---\n");
-            result.append(resourceContent);
-            result.append("\n---\n");
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error loading skill resource: {} from {}", path, skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
+    public void writeSkillScriptsToWorkDir() {
+        if (!isCodeExecutionEnabled()) {
+            throw new IllegalStateException("Code execution is not enabled");
         }
+
+        Path workDir = ensureWorkDirExists();
+        int scriptCount = 0;
+
+        for (String skillId : getAllSkillIds()) {
+            AgentSkill skill = getSkill(skillId);
+            Map<String, String> scripts = skill.getScriptResources();
+
+            if (scripts.isEmpty()) {
+                continue;
+            }
+
+            // Create skill-specific directory
+            Path skillDir = workDir.resolve(skillId);
+
+            for (Map.Entry<String, String> entry : scripts.entrySet()) {
+                String relativePath = entry.getKey();
+                String content = entry.getValue();
+                Path targetPath = skillDir.resolve(relativePath).normalize();
+
+                // Security check: Prevent path traversal attacks
+                if (!targetPath.startsWith(skillDir)) {
+                    logger.warn(
+                            "Skipping script with invalid path (path traversal attempt): {}",
+                            relativePath);
+                    continue;
+                }
+
+                try {
+                    // Create parent directories if they don't exist
+                    if (targetPath.getParent() != null) {
+                        Files.createDirectories(targetPath.getParent());
+                    }
+                    Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                    logger.debug("Wrote script: {}", targetPath);
+                    scriptCount++;
+                } catch (IOException e) {
+                    logger.error("Failed to write script {}: {}", relativePath, e.getMessage());
+                }
+            }
+        }
+        logger.info("Wrote {} skill scripts to workDir: {}", scriptCount, workDir);
     }
 
-    /**
-     * Get a list of all resource file paths available in a skill.
-     *
-     * <p>This will activate the skill and return the paths of all its resources.
-     *
-     * @param skillId The unique identifier of the skill
-     * @return List of resource paths formatted as a string
-     * @throws IllegalArgumentException if skill doesn't exist
-     */
-    @Tool(
-            name = "get_all_resources_path_tool",
-            description =
-                    "Get a list of all resource file paths available in a skill. "
-                            + "This will activate the skill and return the paths of all its"
-                            + " resources.")
-    public Mono<ToolResultBlock> getAllResourcesPath(
-            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-                    String skillId) {
-        try {
-            // Validate parameter
-            if (skillId == null || skillId.trim().isEmpty()) {
-                return Mono.just(
-                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
-            }
-
-            // Get resource paths
-            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
-            if (resources == null || resources.isEmpty()) {
-                return Mono.just(ToolResultBlock.text("No resources available for this skill."));
-            }
-
-            List<String> resourcePaths = new ArrayList<>(resources.keySet());
-
-            // Format resource paths
-            StringBuilder result = new StringBuilder();
-            result.append(
-                    String.format(
-                            "Available resource paths (%d total):\n\n", resourcePaths.size()));
-
-            for (int i = 0; i < resourcePaths.size(); i++) {
-                result.append(i + 1).append(". ").append(resourcePaths.get(i)).append("\n");
-            }
-
-            return Mono.just(ToolResultBlock.text(result.toString()));
-        } catch (Exception e) {
-            logger.error("Error getting resources for skill: {}", skillId, e);
-            return Mono.just(ToolResultBlock.error(e.getMessage()));
-        }
-    }
+    // ==================== Code Execution Builder ====================
 
     /**
-     * validate skill is not null and can get successfully, and set skill as active.
-     * @param skillId The unique identifier of the skill
-     * @return The skill instance get by skill ID
+     * Fluent builder for configuring code execution with custom options.
+     *
+     * <p>This builder provides a flexible way to enable code execution capabilities
+     * with selective tool enabling and custom ShellCommandTool configuration.
+     *
+     * <p>Key features:
+     * <ul>
+     *   <li>Selective tool enabling: choose which tools (shell/read/write) to enable</li>
+     *   <li>Custom ShellCommandTool: provide your own tool with custom security policies</li>
+     *   <li>WorkDir enforcement: all tools use the same working directory</li>
+     *   <li>Tool cloning: custom ShellCommandTool is cloned with workDir override</li>
+     * </ul>
      */
-    private AgentSkill validatedActiveSkill(String skillId) {
-        if (!skillRegistry.exists(skillId)) {
-            throw new IllegalArgumentException(
-                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
+    public static class CodeExecutionBuilder {
+        private final SkillBox skillBox;
+        private String workDir;
+        private ShellCommandTool customShellTool;
+        private boolean withShellCalled = false;
+        private boolean enableRead = false;
+        private boolean enableWrite = false;
+
+        CodeExecutionBuilder(SkillBox skillBox) {
+            this.skillBox = skillBox;
         }
 
-        // Set skill as active
-        skillRegistry.setSkillActive(skillId, true);
-        logger.debug("Activated skill: {}", skillId);
-
-        // Get skill
-        AgentSkill skill = skillRegistry.getSkill(skillId);
-        if (skill == null) {
-            throw new IllegalStateException(
-                    String.format(
-                            "Failed to load skill '%s' after validation. This is an internal"
-                                    + " error.",
-                            skillId));
+        /**
+         * Set the working directory for code execution.
+         *
+         * <p>All code execution tools (shell, read, write) will use this directory.
+         * If not set, a temporary directory will be created when scripts are written.
+         *
+         * @param workDir The working directory path (null or empty for temporary directory)
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder workDir(String workDir) {
+            this.workDir = workDir;
+            return this;
         }
-        return skill;
+
+        /**
+         * Enable shell command execution with default configuration.
+         *
+         * <p>Default configuration:
+         * <ul>
+         *   <li>Allowed commands: python, python3, node, nodejs</li>
+         *   <li>No approval callback</li>
+         *   <li>Platform-specific validator (Unix or Windows)</li>
+         * </ul>
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withShell() {
+            this.withShellCalled = true;
+            this.customShellTool = null;
+            return this;
+        }
+
+        /**
+         * Enable shell command execution with a custom ShellCommandTool.
+         *
+         * <p>The provided tool will be cloned with the following behavior:
+         * <ul>
+         *   <li>allowedCommands: copied from the source tool</li>
+         *   <li>approvalCallback: copied from the source tool</li>
+         *   <li>commandValidator: copied from the source tool</li>
+         *   <li>baseDir: OVERRIDDEN with the builder's workDir</li>
+         * </ul>
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving your custom security policies.
+         *
+         * @param shellTool The custom ShellCommandTool to clone (must not be null)
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if shellTool is null
+         */
+        public CodeExecutionBuilder withShell(ShellCommandTool shellTool) {
+            if (shellTool == null) {
+                throw new IllegalArgumentException("ShellCommandTool cannot be null");
+            }
+            this.withShellCalled = true;
+            this.customShellTool = shellTool;
+            return this;
+        }
+
+        /**
+         * Enable file reading capabilities.
+         *
+         * <p>Registers ReadFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withRead() {
+            this.enableRead = true;
+            return this;
+        }
+
+        /**
+         * Enable file writing capabilities.
+         *
+         * <p>Registers WriteFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withWrite() {
+            this.enableWrite = true;
+            return this;
+        }
+
+        /**
+         * Apply the configuration and enable code execution.
+         *
+         * <p>This method:
+         * <ul>
+         *   <li>Validates toolkit is bound</li>
+         *   <li>Removes existing code execution configuration if present</li>
+         *   <li>Creates the code execution tool group</li>
+         *   <li>Registers selected tools (shell, read, write)</li>
+         * </ul>
+         *
+         * @throws IllegalStateException if toolkit is not bound
+         */
+        public void enable() {
+            if (skillBox.toolkit == null) {
+                throw new IllegalStateException("Must bind toolkit before enabling code execution");
+            }
+
+            // Handle replacement: remove existing tool group if present
+            if (skillBox.isCodeExecutionEnabled()) {
+                skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
+                logger.info("Replacing existing code execution configuration");
+            }
+
+            // Set workDir
+            if (workDir == null || workDir.isEmpty()) {
+                skillBox.codeExecutionWorkDir = null;
+            } else {
+                skillBox.codeExecutionWorkDir = Paths.get(workDir).toAbsolutePath().normalize();
+            }
+
+            // Create tool group
+            skillBox.toolkit.createToolGroup(
+                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
+
+            String workDirStr =
+                    skillBox.codeExecutionWorkDir != null
+                            ? skillBox.codeExecutionWorkDir.toString()
+                            : null;
+
+            boolean shellEnabled = false;
+
+            // Shell Tool - check if withShell() was called
+            if (withShellCalled) {
+                ShellCommandTool shellTool;
+                if (customShellTool != null) {
+                    // Clone custom tool with workDir override
+                    shellTool = cloneShellToolWithWorkDir(customShellTool, workDirStr);
+                } else {
+                    // Create default shell tool
+                    shellTool =
+                            new ShellCommandTool(
+                                    workDirStr,
+                                    Set.of("python", "python3", "node", "nodejs"),
+                                    null);
+                }
+                skillBox.toolkit
+                        .registration()
+                        .agentTool(shellTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+                shellEnabled = true;
+            }
+
+            // Read Tool
+            if (enableRead) {
+                ReadFileTool readTool = new ReadFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(readTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            // Write Tool
+            if (enableWrite) {
+                WriteFileTool writeTool = new WriteFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(writeTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            logger.info(
+                    "Code execution enabled with workDir: {}, tools: [shell={}, read={}, write={}]",
+                    skillBox.codeExecutionWorkDir != null
+                            ? skillBox.codeExecutionWorkDir
+                            : "temporary",
+                    shellEnabled,
+                    enableRead,
+                    enableWrite);
+        }
+
+        /**
+         * Clone a ShellCommandTool with a new base directory.
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving the custom security policies from the source tool.
+         *
+         * @param source The source ShellCommandTool to clone
+         * @param workDir The new working directory (can be null for temporary)
+         * @return A new ShellCommandTool with the same configuration but different baseDir
+         */
+        private ShellCommandTool cloneShellToolWithWorkDir(
+                ShellCommandTool source, String workDir) {
+            // Get configuration from source tool
+            Set<String> allowedCommands = source.getAllowedCommands();
+            Function<String, Boolean> approvalCallback = source.getApprovalCallback();
+            CommandValidator validator = source.getCommandValidator();
+
+            // Create new instance with workDir override
+            return new ShellCommandTool(workDir, allowedCommands, approvalCallback, validator);
+        }
     }
 }

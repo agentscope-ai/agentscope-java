@@ -59,6 +59,12 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
+        <!-- DashScope SDK for MultiModalTool -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+        </dependency>
+
         <!-- RAG Extensions -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -79,6 +85,24 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-rag-haystack</artifactId>
+        </dependency>
+
+        <!-- Simple RAG Extension (includes PgVectorStore, DashScopeTextEmbedding, etc.) -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-rag-simple</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL Driver for PgVectorStore -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- PGvector JDBC Extension -->
+        <dependency>
+            <groupId>com.pgvector</groupId>
+            <artifactId>pgvector</artifactId>
         </dependency>
 
         <dependency>

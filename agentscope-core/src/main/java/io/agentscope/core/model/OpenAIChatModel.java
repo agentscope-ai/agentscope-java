@@ -20,6 +20,7 @@ import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
+import io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
@@ -29,6 +30,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Chat Model using native HTTP API.
@@ -122,8 +124,7 @@ public class OpenAIChatModel extends ChatModelBase {
         // This ensures token usage information is available in the final response chunk
         // Required by OpenAI-compatible APIs like DashScope, Bailian, etc.
         if (stream) {
-            requestBuilder.streamOptions(
-                    new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
+            requestBuilder.streamOptions(new OpenAIStreamOptions(true));
         }
 
         OpenAIRequest request = requestBuilder.build();
@@ -150,21 +151,23 @@ public class OpenAIChatModel extends ChatModelBase {
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
-                    () -> {
-                        try {
-                            OpenAIResponse response =
-                                    client.call(apiKey, baseUrl, request, effectiveOptions);
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            return Flux.error(
-                                    new ModelException(
-                                            "Failed to call OpenAI API: " + e.getMessage(),
-                                            e,
-                                            modelName,
-                                            "openai"));
-                        }
-                    });
+                            () -> {
+                                try {
+                                    OpenAIResponse response =
+                                            client.call(apiKey, baseUrl, request, effectiveOptions);
+                                    ChatResponse chatResponse =
+                                            formatter.parseResponse(response, start);
+                                    return Flux.just(chatResponse);
+                                } catch (Exception e) {
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "Failed to call OpenAI API: " + e.getMessage(),
+                                                    e,
+                                                    modelName,
+                                                    "openai"));
+                                }
+                            })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
     }
 
