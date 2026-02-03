@@ -29,6 +29,8 @@ package io.agentscope.core.skill;
  */
 public class AgentSkillPromptProvider {
     private final SkillRegistry skillRegistry;
+    private final String instruction;
+    private final String template;
 
     public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
             """
@@ -45,6 +47,13 @@ public class AgentSkillPromptProvider {
             Usage notes:
             - Only use skills listed in <available_skills> below
             - Loading SKILL.md activates the skill and will make its tools available
+
+            Code execution guidance:
+            - If a task requires running code, use the code execution tools (shell/read/write)
+                when they are available
+            - Code execution tools operate in workDir; skill scripts are uploaded to
+                workDir/skills/<skill-id>/scripts (for example: workDir/skills/skill-ID/scripts/shell.sh)
+            - Example (shell): execute_shell_command(command="skills/skill-ID/scripts/shell.sh")
 
             Template fields explanation:
             - <name>: The skill's display name. Use it along with <description> to determine if this skill is relevant to your current task
@@ -73,7 +82,24 @@ public class AgentSkillPromptProvider {
      * @param registry The skill registry containing registered skills
      */
     public AgentSkillPromptProvider(SkillRegistry registry) {
+        this(registry, null, null);
+    }
+
+    /**
+     * Creates a skill prompt provider with custom instruction and template.
+     *
+     * @param registry The skill registry containing registered skills
+     * @param instruction Custom instruction header (null or blank uses default)
+     * @param template Custom skill template (null or blank uses default)
+     */
+    public AgentSkillPromptProvider(SkillRegistry registry, String instruction, String template) {
         this.skillRegistry = registry;
+        this.instruction =
+                instruction == null || instruction.isBlank()
+                        ? DEFAULT_AGENT_SKILL_INSTRUCTION
+                        : instruction;
+        this.template =
+                template == null || template.isBlank() ? DEFAULT_AGENT_SKILL_TEMPLATE : template;
     }
 
     /**
@@ -92,17 +118,14 @@ public class AgentSkillPromptProvider {
         }
 
         // Add instruction header
-        sb.append(DEFAULT_AGENT_SKILL_INSTRUCTION);
+        sb.append(instruction);
 
         // Add each skill
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
             sb.append(
                     String.format(
-                            DEFAULT_AGENT_SKILL_TEMPLATE,
-                            skill.getName(),
-                            skill.getDescription(),
-                            skill.getSkillId()));
+                            template, skill.getName(), skill.getDescription(), skill.getSkillId()));
         }
 
         // Close available_skills tag
