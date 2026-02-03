@@ -26,6 +26,8 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JarSkillRepositoryAdapter - Adapter that enables FileSystemSkillRepository to load skills from
@@ -73,6 +75,8 @@ import java.util.List;
  */
 public class JarSkillRepositoryAdapter implements AutoCloseable {
 
+    private final Logger logger = LoggerFactory.getLogger(JarSkillRepositoryAdapter.class);
+
     private final FileSystem fileSystem;
     private final Path skillBasePath;
     private final FileSystemSkillRepository repository;
@@ -100,6 +104,7 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
             throws IOException {
         try {
             URL resourceUrl = classLoader.getResource(resourcePath);
+            logger.info("Resource URL: {}", resourceUrl);
 
             if (resourceUrl == null) {
                 throw new IOException("Resource not found: " + resourcePath);
@@ -111,13 +116,16 @@ public class JarSkillRepositoryAdapter implements AutoCloseable {
                 // JAR environment: create virtual file system
                 this.isJar = true;
                 this.fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
-                this.skillBasePath = fileSystem.getPath("/" + resourcePath);
+                String actualResourcePath = uri.getSchemeSpecificPart().split("!")[1];
+                logger.info("Actual resource path: {}", actualResourcePath);
+                this.skillBasePath = fileSystem.getPath(actualResourcePath);
             } else {
                 // Development environment: use file system path directly
                 this.isJar = false;
                 this.fileSystem = null;
                 this.skillBasePath = Path.of(uri);
             }
+            logger.info("is in Jar environment: {}", this.isJar);
 
             // Use FileSystemSkillRepository for actual skill loading
             this.repository = new FileSystemSkillRepository(skillBasePath, false);

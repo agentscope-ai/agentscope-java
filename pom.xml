@@ -27,13 +27,13 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.8-SNAPSHOT</revision>
+        <revision>1.0.9-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
-        <spotless.version>3.1.0</spotless.version>
+        <spotless.version>3.2.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>

@@ -14,6 +14,11 @@ Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含�
 
 **工作流程:** 用户提问 → AI 识别相关 Skill → 调用 `load_skill_through_path` 工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务
 
+**统一加载工具**: `load_skill_through_path(skillId, resourcePath)` 提供单一入口加载技能资源
+- `skillId` 使用枚举字段, 确保只能从已注册的 Skill 中选择, 保证准确性
+- `resourcePath` 是相对于 Skill 根目录的资源路径(如 `references/api-doc.md`)
+- 路径错误时会返回所有可用的资源路径列表,帮助 LLM 纠正
+
 ### 适应性设计
 
 我们将 Skill 进行了进一步的抽象,使其的发现和内容加载不再依赖于文件系统,而是 LLM 通过 Tool 来发现和加载 Skill 的内容和资源。同时为了兼容已有的 Skill 生态与资源,Skill 的组织形式依旧按照文件系统的结构来组织它的内容和资源。
@@ -162,6 +167,8 @@ ReActAgent agent = ReActAgent.builder()
 
 将 Tool 与 Skill 绑定,实现按需激活。避免预先注册所有 Tool 导致的上下文污染,仅在 Skill 被 LLM 使用时才传递相关 Tool。
 
+**渐进式暴露的Tool的生命周期**: Tool 与 Skill 生命周期保持一致, Skill 激活后 Tool 在整个会话期间保持可用, 避免了旧机制中每轮对话后 Tool 失活导致的调用失败问题。
+
 **示例代码**:
 
 ```java
@@ -189,17 +196,60 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-### 功能 2: Skill 持久化存储
+### 功能 2: 代码执行能力
+
+为 Skill 提供隔离的代码执行文件夹,支持 Shell 命令、文件读写等操作。使用 Builder 模式灵活配置所需工具。
+
+**基础用法**:
+
+```java
+SkillBox skillBox = new SkillBox(toolkit);
+
+// 启用所有代码执行工具(Shell、读文件、写文件)
+skillBox.codeExecution()
+    .withShell()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+**自定义配置**:
+
+```java
+// 自定义工作目录和 Shell 命令白名单
+ShellCommandTool customShell = new ShellCommandTool(
+    null,  // baseDir 会被自动设置为 workDir
+    Set.of("python3", "node", "npm"),
+    command -> askUserApproval(command)  // 可选的命令审批回调
+);
+
+skillBox.codeExecution()
+    .workDir("/path/to/workdir")  // 指定工作目录
+    .withShell(customShell)       // 使用自定义 Shell 工具
+    .withRead()                   // 启用文件读取
+    .withWrite()                  // 启用文件写入
+    .enable();
+
+// 或仅启用文件操作,不启用 Shell
+skillBox.codeExecution()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+**核心特性**:
+- **统一工作目录**: 所有工具共享同一 `workDir`,确保文件隔离
+- **选择性启用**: 根据需求灵活组合 Shell、读文件、写文件工具
+- **灵活配置**: 支持自定义 ShellCommandTool, 满足定制化的ShellCommandTool需求
+- **自动管理**: 未指定 `workDir` 时自动创建临时目录,程序退出时自动清理
+
+### 功能 3: Skill 持久化存储
 
 **为什么需要这个功能?**
 
 Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:
 
-- 文件系统存储
-- 数据库存储 (暂未实现)
-- Git 仓库 (暂未实现)
-
-**示例代码**:
+#### 文件系统存储
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -207,9 +257,22 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-这种保护适用于所有仓库操作: `getSkill()`、`save()`、`delete()` 和 `skillExists()`。
+#### MySQL数据库存储 (暂未实现)
 
-详细安全指南请参阅 [Claude Agent Skills 安全考虑](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑)。
+#### Git仓库 (暂未实现)
+
+#### Jar中的resource路径存储 (适配器)
+
+用于从 JAR 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。
+
+```java
+try (JarSkillRepositoryAdapter adapter = new JarSkillRepositoryAdapter("skills")) {
+    AgentSkill skill = adapter.getSkill("data-analysis");
+    List<AgentSkill> allSkills = adapter.getAllSkills();
+} catch //...
+```
+
+资源目录结构: `src/main/resources/skills/` 下放置多个 Skill 子目录,每个子目录包含 `SKILL.md`
 
 ### 性能优化建议
 

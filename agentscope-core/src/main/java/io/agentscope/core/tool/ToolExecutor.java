@@ -61,7 +61,6 @@ class ToolExecutor {
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
-    private final ToolMethodInvoker methodInvoker;
     private final ExecutorService executorService;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
@@ -72,9 +71,8 @@ class ToolExecutor {
             Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
-            ToolkitConfig config,
-            ToolMethodInvoker methodInvoker) {
-        this(toolkit, toolRegistry, groupManager, config, methodInvoker, null);
+            ToolkitConfig config) {
+        this(toolkit, toolRegistry, groupManager, config, null);
     }
 
     /**
@@ -85,13 +83,11 @@ class ToolExecutor {
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
             ToolkitConfig config,
-            ToolMethodInvoker methodInvoker,
             ExecutorService executorService) {
         this.toolkit = toolkit;
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;
         this.config = config;
-        this.methodInvoker = methodInvoker;
         this.executorService = executorService;
     }
 
@@ -100,7 +96,6 @@ class ToolExecutor {
      */
     void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         this.chunkCallback = callback;
-        methodInvoker.setChunkCallback(callback);
     }
 
     // ==================== Single Tool Execution ====================
@@ -249,7 +244,7 @@ class ToolExecutor {
 
         // Parallel or sequential execution
         if (parallel) {
-            return Flux.merge(monos).collectList();
+            return Flux.mergeSequential(monos).collectList();
         }
         return Flux.concat(monos).collectList();
     }
