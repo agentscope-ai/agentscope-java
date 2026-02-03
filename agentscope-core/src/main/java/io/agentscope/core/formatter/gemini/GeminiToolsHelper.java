@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.gemini;
 
+import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool.GeminiFunctionDeclaration;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
@@ -23,6 +24,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -89,6 +91,17 @@ public class GeminiToolsHelper {
                 // NOTE: Gemini API is sensitive to empty parameter schemas
                 // For tools with no parameters, omit the parameters field entirely
                 Map<String, Object> parameters = toolSchema.getParameters();
+
+                // Special handling for generate_response tool:
+                // Gemini doesn't understand the nested {response: {...}} wrapper format.
+                // We need to unwrap the inner schema so Gemini can call the tool correctly.
+                if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                        toolSchema.getName())) {
+                    parameters = unwrapResponseSchema(parameters);
+                    log.debug(
+                            "Unwrapped 'response' wrapper from generate_response tool schema for"
+                                    + " Gemini compatibility");
+                }
 
                 // Only set parameters if not null and not empty
                 // Gemini rejects tools with empty parameter schemas
@@ -175,5 +188,59 @@ public class GeminiToolsHelper {
         GeminiToolConfig toolConfig = new GeminiToolConfig();
         toolConfig.setFunctionCallingConfig(config);
         return toolConfig;
+    }
+
+    /**
+     * Unwrap the "response" wrapper from generate_response tool schema.
+     *
+     * <p>The StructuredOutputCapableAgent creates a tool schema like:
+     * <pre>
+     * {
+     *   "type": "object",
+     *   "properties": {
+     *     "response": { ... actual schema ... }
+     *   },
+     *   "required": ["response"]
+     * }
+     * </pre>
+     *
+     * <p>But Gemini doesn't understand this nested format and fails with
+     * "未找到所需属性'response'" (Missing required property "response").
+     * This method extracts the inner schema so Gemini receives:
+     * <pre>
+     * { ... actual schema ... }
+     * </pre>
+     *
+     * @param parameters The original tool parameters with response wrapper
+     * @return The unwrapped inner schema, or original if not wrapped
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> unwrapResponseSchema(Map<String, Object> parameters) {
+        if (parameters == null) {
+            return parameters;
+        }
+
+        Object propertiesObj = parameters.get("properties");
+        if (!(propertiesObj instanceof Map)) {
+            return parameters;
+        }
+
+        Map<String, Object> properties = (Map<String, Object>) propertiesObj;
+
+        // Check if this is the wrapped format: only has "response" property
+        if (properties.size() == 1 && properties.containsKey("response")) {
+            Object responseSchema = properties.get("response");
+            if (responseSchema instanceof Map) {
+                Map<String, Object> innerSchema = (Map<String, Object>) responseSchema;
+                // Return the inner schema directly
+                log.info(
+                        "Unwrapping generate_response schema: {} -> {}",
+                        parameters.keySet(),
+                        innerSchema.keySet());
+                return new HashMap<>(innerSchema);
+            }
+        }
+
+        return parameters;
     }
 }

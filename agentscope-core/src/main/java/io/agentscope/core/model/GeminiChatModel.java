@@ -22,6 +22,7 @@ import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig.GeminiThinkingConfig;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
 import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.ContentBlock;
@@ -199,6 +200,13 @@ public class GeminiChatModel extends ChatModelBase {
 
                                 // Format messages
                                 List<GeminiContent> contents = formatter.format(messages);
+
+                                // Multi-agent fix: If conversation ends with "model" role,
+                                // add a synthetic "user" message to prompt a response.
+                                // This handles cases where other agents' ASSISTANT messages
+                                // become "model" role and Gemini doesn't know to respond.
+                                contents = ensureConversationEndsWithUserRole(contents);
+
                                 requestDto.setContents(contents);
 
                                 // Apply system instruction if formatter supports it
@@ -291,13 +299,27 @@ public class GeminiChatModel extends ChatModelBase {
                                 }
 
                                 // 3. Build HTTP Request
+                                boolean forceUnaryForStructuredOutput = false;
+                                if (tools != null) {
+                                    for (ToolSchema tool : tools) {
+                                        if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME
+                                                .equals(tool.getName())) {
+                                            forceUnaryForStructuredOutput = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                boolean streamForRequest =
+                                        streamEnabled && !forceUnaryForStructuredOutput;
+
                                 String endpoint =
-                                        streamEnabled
+                                        streamForRequest
                                                 ? ":streamGenerateContent"
                                                 : ":generateContent";
                                 String url = this.baseUrl + modelName + endpoint;
 
-                                if (streamEnabled) {
+                                if (streamForRequest) {
                                     url += "?alt=sse";
                                 }
 
@@ -317,7 +339,7 @@ public class GeminiChatModel extends ChatModelBase {
 
                                 // 4. Send Request and Handle Response
                                 Flux<ChatResponse> responseFlux;
-                                if (streamEnabled) {
+                                if (streamForRequest) {
                                     responseFlux = handleStreamResponse(httpRequest, startTime);
                                 } else {
                                     responseFlux = handleUnaryResponse(httpRequest, startTime);
@@ -552,15 +574,89 @@ public class GeminiChatModel extends ChatModelBase {
 
         List<ContentBlock> blocks = response.getContent();
 
-        boolean toolCalled =
-                blocks.stream()
-                        .anyMatch(
-                                b ->
-                                        b instanceof ToolUseBlock
-                                                && targetToolName.equals(
-                                                        ((ToolUseBlock) b).getName()));
+        ToolUseBlock targetToolUse = null;
+        boolean targetToolCalled = false;
+        boolean anyOtherToolCalled = false;
+        for (ContentBlock block : blocks) {
+            if (block instanceof ToolUseBlock toolUse) {
+                if (targetToolName.equals(toolUse.getName())) {
+                    targetToolCalled = true;
+                    targetToolUse = toolUse;
+                } else {
+                    // A different tool was called (e.g., "add" before "generate_response")
+                    anyOtherToolCalled = true;
+                }
+            }
+        }
 
-        if (toolCalled) {
+        // If a different tool was called (not generate_response), don't apply structured output
+        // fixups.
+        // The agent will execute that tool first and call generate_response later.
+        if (anyOtherToolCalled && !targetToolCalled) {
+            log.debug(
+                    "Other tool called, skipping structured output fixup. generate_response will be"
+                            + " called later.");
+            return response;
+        }
+
+        if (targetToolCalled) {
+            Map<String, Object> input = targetToolUse != null ? targetToolUse.getInput() : null;
+            boolean missingInput = input == null || input.isEmpty();
+            boolean missingResponseWrapper = false;
+            if (!missingInput && tools != null) {
+                for (ToolSchema tool : tools) {
+                    if (!targetToolName.equals(tool.getName())) {
+                        continue;
+                    }
+                    Map<String, Object> parameters = tool.getParameters();
+                    if (parameters == null || !parameters.containsKey("properties")) {
+                        break;
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> properties =
+                            (Map<String, Object>) parameters.get("properties");
+                    if (properties != null) {
+                        boolean usesResponseWrapper =
+                                properties.containsKey("response")
+                                        && (properties.size() == 1
+                                                || isRequired(parameters, "response"));
+                        missingResponseWrapper =
+                                usesResponseWrapper && !input.containsKey("response");
+                    }
+                    break;
+                }
+            }
+
+            if (missingInput || missingResponseWrapper) {
+                String textContent = extractTextFromBlocks(blocks);
+                Map<String, Object> extracted =
+                        extractStructuredOutputFromText(textContent, tools, targetToolName);
+                if (extracted != null && !extracted.isEmpty()) {
+                    Map<String, Object> normalized =
+                            normalizeStructuredOutputInput(extracted, tools, targetToolName);
+                    ToolUseBlock fixedToolUse =
+                            ToolUseBlock.builder()
+                                    .id(targetToolUse.getId())
+                                    .name(targetToolUse.getName())
+                                    .input(normalized)
+                                    .content(JsonUtils.getJsonCodec().toJson(normalized))
+                                    .metadata(targetToolUse.getMetadata())
+                                    .build();
+                    List<ContentBlock> newBlocks = new ArrayList<>(blocks);
+                    int index = newBlocks.indexOf(targetToolUse);
+                    if (index >= 0) {
+                        newBlocks.set(index, fixedToolUse);
+                        return ChatResponse.builder()
+                                .id(response.getId())
+                                .content(newBlocks)
+                                .usage(response.getUsage())
+                                .finishReason(response.getFinishReason())
+                                .metadata(response.getMetadata())
+                                .build();
+                    }
+                }
+            }
+
             return response;
         }
 
@@ -608,114 +704,36 @@ public class GeminiChatModel extends ChatModelBase {
             }
         }
 
-        if (!looksLikeJson) {
-            return response;
-        }
-
         try {
-            log.info(
-                    "Attempting to fix Gemini response: converting text to tool call '{}'",
-                    targetToolName);
-
-            Object parsed = JsonUtils.getJsonCodec().fromJson(textContent, Object.class);
             Map<String, Object> inputMap;
+            if (looksLikeJson) {
+                log.info(
+                        "Attempting to fix Gemini response: converting text to tool call '{}'",
+                        targetToolName);
 
-            if (parsed instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> map = (Map<String, Object>) parsed;
-                inputMap = new HashMap<>(map);
-            } else {
-                log.warn(
-                        "Parsed JSON is not a Map, skipping fix. Type: {}",
-                        parsed.getClass().getName());
-                return response;
-            }
-
-            if (tools != null) {
-                for (ToolSchema tool : tools) {
-                    if (!targetToolName.equals(tool.getName())) {
-                        continue;
-                    }
-
-                    Map<String, Object> parameters = tool.getParameters();
-                    if (parameters == null || !parameters.containsKey("properties")) {
-                        break;
-                    }
-
+                Object parsed = JsonUtils.getJsonCodec().fromJson(textContent, Object.class);
+                if (parsed instanceof Map) {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> properties =
-                            (Map<String, Object>) parameters.get("properties");
-                    if (properties == null) {
-                        break;
-                    }
-
-                    boolean usesResponseWrapper =
-                            properties.containsKey("response")
-                                    && (properties.size() == 1
-                                            || isRequired(parameters, "response"));
-                    if (usesResponseWrapper) {
-                        Object responseValue = inputMap.get("response");
-                        boolean hasOtherKeys =
-                                inputMap.keySet().stream().anyMatch(k -> !"response".equals(k));
-                        if (!inputMap.containsKey("response")
-                                || (responseValue == null && hasOtherKeys)) {
-                            Map<String, Object> inner = new HashMap<>(inputMap);
-                            inner.remove("response");
-                            Map<String, Object> wrapped = new HashMap<>();
-                            wrapped.put("response", inner);
-                            inputMap = wrapped;
-                        }
-                    }
-
-                    for (String key : properties.keySet()) {
-                        if (!inputMap.containsKey(key)) {
-                            // Use type-appropriate default value instead of null
-                            Object defaultValue = getDefaultValueForSchemaType(properties.get(key));
-                            inputMap.put(key, defaultValue);
-                            log.debug(
-                                    "Added missing field '{}' with default: {}", key, defaultValue);
-                        }
-                    }
-
-                    if (usesResponseWrapper && properties.get("response") instanceof Map<?, ?>) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> responseSchema =
-                                (Map<String, Object>) properties.get("response");
-                        Object responsePropsObj = responseSchema.get("properties");
-                        if (responsePropsObj instanceof Map<?, ?>) {
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> responseProps =
-                                    (Map<String, Object>) responsePropsObj;
-                            Map<String, Object> responseMap;
-                            Object responseValue = inputMap.get("response");
-                            if (responseValue instanceof Map<?, ?> responseValueMap) {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> typedResponse =
-                                        (Map<String, Object>) responseValueMap;
-                                responseMap = new HashMap<>(typedResponse);
-                            } else {
-                                responseMap = new HashMap<>();
-                            }
-
-                            for (String key : responseProps.keySet()) {
-                                if (!responseMap.containsKey(key)) {
-                                    // Use type-appropriate default value instead of null
-                                    Object defaultValue =
-                                            getDefaultValueForSchemaType(responseProps.get(key));
-                                    responseMap.put(key, defaultValue);
-                                    log.debug(
-                                            "Added missing response field '{}' with default: {}",
-                                            key,
-                                            defaultValue);
-                                }
-                            }
-
-                            inputMap.put("response", responseMap);
-                        }
-                    }
-                    break;
+                    Map<String, Object> map = (Map<String, Object>) parsed;
+                    inputMap = new HashMap<>(map);
+                } else {
+                    log.warn(
+                            "Parsed JSON is not a Map, skipping fix. Type: {}",
+                            parsed.getClass().getName());
+                    return response;
                 }
+            } else {
+                inputMap = extractStructuredOutputFromText(textContent, tools, targetToolName);
+                if (inputMap == null || inputMap.isEmpty()) {
+                    return response;
+                }
+                log.info(
+                        "Attempting to fix Gemini response: parsed structured output from text for"
+                                + " tool '{}'",
+                        targetToolName);
             }
+
+            inputMap = normalizeStructuredOutputInput(inputMap, tools, targetToolName);
 
             String callId =
                     "call_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -725,6 +743,7 @@ public class GeminiChatModel extends ChatModelBase {
                             .id(callId)
                             .name(targetToolName)
                             .input(inputMap)
+                            .content(JsonUtils.getJsonCodec().toJson(inputMap))
                             .metadata(Map.of("synthetic", true))
                             .build();
 
@@ -745,6 +764,347 @@ public class GeminiChatModel extends ChatModelBase {
         }
     }
 
+    private Map<String, Object> normalizeStructuredOutputInput(
+            Map<String, Object> inputMap, List<ToolSchema> tools, String targetToolName) {
+        if (inputMap == null) {
+            return null;
+        }
+        Map<String, Object> normalized = new HashMap<>(inputMap);
+        if (tools != null) {
+            for (ToolSchema tool : tools) {
+                if (!targetToolName.equals(tool.getName())) {
+                    continue;
+                }
+
+                Map<String, Object> parameters = tool.getParameters();
+                if (parameters == null || !parameters.containsKey("properties")) {
+                    break;
+                }
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> properties = (Map<String, Object>) parameters.get("properties");
+                if (properties == null) {
+                    break;
+                }
+
+                boolean usesResponseWrapper =
+                        properties.containsKey("response")
+                                && (properties.size() == 1 || isRequired(parameters, "response"));
+
+                if (usesResponseWrapper && !normalized.containsKey("response")) {
+                    Map<String, Object> wrappedInput = new HashMap<>();
+                    wrappedInput.put("response", new HashMap<>(normalized));
+                    normalized = wrappedInput;
+                    log.debug(
+                            "Wrapped Gemini response in 'response' property for tool schema"
+                                    + " compatibility");
+                }
+
+                for (String key : properties.keySet()) {
+                    if (!normalized.containsKey(key)) {
+                        Object defaultValue = getDefaultValueForSchemaType(properties.get(key));
+                        normalized.put(key, defaultValue);
+                        log.debug("Added missing field '{}' with default: {}", key, defaultValue);
+                    }
+                }
+
+                if (usesResponseWrapper && properties.get("response") instanceof Map<?, ?>) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> responseSchema =
+                            (Map<String, Object>) properties.get("response");
+                    Object responsePropsObj = responseSchema.get("properties");
+                    if (responsePropsObj instanceof Map<?, ?>) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> responseProps = (Map<String, Object>) responsePropsObj;
+                        Object responseValue = normalized.get("response");
+                        if (responseValue instanceof Map<?, ?> responseMap) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> typedResponse =
+                                    new HashMap<>((Map<String, Object>) responseMap);
+                            for (String key : responseProps.keySet()) {
+                                if (!typedResponse.containsKey(key)) {
+                                    Object defaultValue =
+                                            getDefaultValueForSchemaType(responseProps.get(key));
+                                    typedResponse.put(key, defaultValue);
+                                    log.debug(
+                                            "Added missing response field '{}' with default: {}",
+                                            key,
+                                            defaultValue);
+                                }
+                            }
+                            normalized.put("response", typedResponse);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        return normalized;
+    }
+
+    private Map<String, Object> extractStructuredOutputFromText(
+            String textContent, List<ToolSchema> tools, String targetToolName) {
+        if (textContent == null || textContent.isBlank()) {
+            return null;
+        }
+        if (tools == null) {
+            return null;
+        }
+
+        Map<String, Object> properties = null;
+        boolean usesResponseWrapper = false;
+        for (ToolSchema tool : tools) {
+            if (!targetToolName.equals(tool.getName())) {
+                continue;
+            }
+            Map<String, Object> parameters = tool.getParameters();
+            if (parameters == null || !parameters.containsKey("properties")) {
+                break;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> props = (Map<String, Object>) parameters.get("properties");
+            if (props == null) {
+                break;
+            }
+            usesResponseWrapper =
+                    props.containsKey("response")
+                            && (props.size() == 1 || isRequired(parameters, "response"));
+            if (usesResponseWrapper && props.get("response") instanceof Map<?, ?>) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> responseSchema = (Map<String, Object>) props.get("response");
+                Object responsePropsObj = responseSchema.get("properties");
+                if (responsePropsObj instanceof Map<?, ?>) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> responseProps = (Map<String, Object>) responsePropsObj;
+                    properties = responseProps;
+                }
+            } else {
+                properties = props;
+            }
+            break;
+        }
+
+        if (properties == null || properties.isEmpty()) {
+            return null;
+        }
+
+        Map<String, Object> extracted = new HashMap<>();
+        boolean foundAny = false;
+        for (Map.Entry<String, Object> entry : properties.entrySet()) {
+            String key = entry.getKey();
+            Object schemaProperty = entry.getValue();
+            Object value = extractValueForKey(textContent, key, schemaProperty);
+            if (value != null) {
+                extracted.put(key, value);
+                foundAny = true;
+            }
+        }
+
+        if (!foundAny) {
+            return null;
+        }
+
+        if (usesResponseWrapper) {
+            Map<String, Object> wrapped = new HashMap<>();
+            wrapped.put("response", extracted);
+            return wrapped;
+        }
+        return extracted;
+    }
+
+    private String extractTextFromBlocks(List<ContentBlock> blocks) {
+        if (blocks == null || blocks.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (ContentBlock block : blocks) {
+            if (block instanceof TextBlock textBlock) {
+                String text = textBlock.getText();
+                if (text != null && !text.isBlank()) {
+                    if (builder.length() > 0) {
+                        builder.append('\n');
+                    }
+                    builder.append(text.trim());
+                }
+            }
+        }
+        return builder.length() == 0 ? null : builder.toString();
+    }
+
+    private Object extractValueForKey(String text, String key, Object schemaProperty) {
+        if (text == null || key == null || key.isBlank()) {
+            return null;
+        }
+        String pattern =
+                "(?is)(?:^|\\R)\\s*(?:[-*]\\s*)?(?:\\*\\*)?"
+                        + java.util.regex.Pattern.quote(key)
+                        + "(?:\\*\\*)?\\s*[:：]\\s*(.+?)(?=\\R|$)";
+        java.util.regex.Pattern regex = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher matcher = regex.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        String rawValue = matcher.group(1).trim();
+        if (rawValue.isEmpty()) {
+            return null;
+        }
+
+        String type = getSchemaType(schemaProperty);
+        if (type == null) {
+            return rawValue;
+        }
+
+        switch (type) {
+            case "integer" -> {
+                Integer parsed = parseFirstInteger(rawValue);
+                return parsed != null ? parsed : rawValue;
+            }
+            case "number" -> {
+                Double parsed = parseFirstDouble(rawValue);
+                return parsed != null ? parsed : rawValue;
+            }
+            case "boolean" -> {
+                Boolean parsed = parseBoolean(rawValue);
+                return parsed != null ? parsed : rawValue;
+            }
+            case "array" -> {
+                return parseArrayValue(rawValue, schemaProperty);
+            }
+            case "object" -> {
+                Map<String, Object> parsed = parseJsonObject(rawValue);
+                return parsed != null ? parsed : rawValue;
+            }
+            default -> {
+                return rawValue;
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String getSchemaType(Object schemaProperty) {
+        if (schemaProperty instanceof Map<?, ?>) {
+            Map<String, Object> schema = (Map<String, Object>) schemaProperty;
+            Object typeObj = schema.get("type");
+            if (typeObj instanceof String type) {
+                return type.toLowerCase();
+            }
+        }
+        return null;
+    }
+
+    private Integer parseFirstInteger(String value) {
+        if (value == null) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("-?\\d+").matcher(value);
+        if (matcher.find()) {
+            try {
+                return Integer.parseInt(matcher.group());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Double parseFirstDouble(String value) {
+        if (value == null) {
+            return null;
+        }
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("-?\\d+(?:\\.\\d+)?").matcher(value);
+        if (matcher.find()) {
+            try {
+                return Double.parseDouble(matcher.group());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Boolean parseBoolean(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase();
+        if (normalized.startsWith("true") || normalized.startsWith("yes")) {
+            return true;
+        }
+        if (normalized.startsWith("false") || normalized.startsWith("no")) {
+            return false;
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object parseArrayValue(String rawValue, Object schemaProperty) {
+        if (rawValue == null) {
+            return null;
+        }
+        String trimmed = rawValue.trim();
+        Object itemsType = null;
+        if (schemaProperty instanceof Map<?, ?>) {
+            Map<String, Object> schema = (Map<String, Object>) schemaProperty;
+            itemsType = schema.get("items");
+        }
+        String itemType = getSchemaType(itemsType);
+
+        List<Object> results = new ArrayList<>();
+        if ("integer".equals(itemType)) {
+            java.util.regex.Matcher matcher =
+                    java.util.regex.Pattern.compile("-?\\d+").matcher(trimmed);
+            while (matcher.find()) {
+                try {
+                    results.add(Integer.parseInt(matcher.group()));
+                } catch (NumberFormatException ignored) {
+                    // Skip invalid numbers
+                }
+            }
+        } else if ("number".equals(itemType)) {
+            java.util.regex.Matcher matcher =
+                    java.util.regex.Pattern.compile("-?\\d+(?:\\.\\d+)?").matcher(trimmed);
+            while (matcher.find()) {
+                try {
+                    results.add(Double.parseDouble(matcher.group()));
+                } catch (NumberFormatException ignored) {
+                    // Skip invalid numbers
+                }
+            }
+        } else {
+            String cleaned = trimmed.replace("[", "").replace("]", "");
+            String[] parts = cleaned.split("[,;]");
+            for (String part : parts) {
+                String item = part.trim();
+                if (!item.isEmpty()) {
+                    results.add(item);
+                }
+            }
+        }
+
+        return results.isEmpty() ? null : results;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJsonObject(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String trimmed = rawValue.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return null;
+        }
+        try {
+            Object parsed = JsonUtils.getJsonCodec().fromJson(trimmed, Object.class);
+            if (parsed instanceof Map) {
+                return new HashMap<>((Map<String, Object>) parsed);
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+        return null;
+    }
+
     private ChatResponse ensureStructuredOutputMetadata(ChatResponse response) {
         if (response == null || response.getContent() == null) {
             return response;
@@ -755,21 +1115,54 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         Object structuredOutput = null;
+        ToolUseBlock originalToolUse = null;
         for (ContentBlock block : response.getContent()) {
             if (block instanceof ToolUseBlock toolUse
                     && StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
                             toolUse.getName())) {
                 Map<String, Object> input = toolUse.getInput();
+                log.debug(
+                        "Found generate_response tool call, input keys: {}",
+                        input != null ? input.keySet() : "null");
                 if (input != null && !input.isEmpty()) {
+                    // Gemini returns data without "response" wrapper, but the tool expects it.
+                    // Extract the actual data: if input has "response" key, use it; otherwise
+                    // wrap the entire input as "response" for compatibility with the tool schema.
                     Object responseValue = input.get("response");
                     structuredOutput = responseValue != null ? responseValue : input;
+                    originalToolUse = toolUse;
+                    log.info(
+                            "Extracted structured output from generate_response:"
+                                    + " hasResponseWrapper={}",
+                            responseValue != null);
                 }
                 break;
             }
         }
 
         if (structuredOutput == null) {
+            log.debug("No structured output found in response");
             return response;
+        }
+
+        // If Gemini returned unwrapped data, we need to wrap it for the tool to process correctly
+        List<ContentBlock> fixedContent = new ArrayList<>(response.getContent());
+        if (originalToolUse != null && !originalToolUse.getInput().containsKey("response")) {
+            // Wrap the input in "response" for compatibility with StructuredOutputCapableAgent
+            Map<String, Object> wrappedInput = Map.of("response", structuredOutput);
+            ToolUseBlock fixedToolUse =
+                    ToolUseBlock.builder()
+                            .id(originalToolUse.getId())
+                            .name(originalToolUse.getName())
+                            .input(wrappedInput)
+                            .content(JsonUtils.getJsonCodec().toJson(wrappedInput))
+                            .metadata(originalToolUse.getMetadata())
+                            .build();
+            int index = fixedContent.indexOf(originalToolUse);
+            if (index >= 0) {
+                fixedContent.set(index, fixedToolUse);
+                log.info("Wrapped Gemini tool call input in 'response' property");
+            }
         }
 
         Map<String, Object> metadata =
@@ -778,11 +1171,58 @@ public class GeminiChatModel extends ChatModelBase {
 
         return ChatResponse.builder()
                 .id(response.getId())
-                .content(response.getContent())
+                .content(fixedContent)
                 .usage(response.getUsage())
                 .finishReason(response.getFinishReason())
                 .metadata(metadata)
                 .build();
+    }
+
+    /**
+     * Ensure the conversation ends with "user" role to prompt a response.
+     *
+     * <p>In multi-agent scenarios, other agents' ASSISTANT messages become "model" role.
+     * If the conversation ends with "model" (without function_call), Gemini may not
+     * understand it should generate a new response. This method adds a synthetic
+     * "user" message to prompt continuation.
+     *
+     * @param contents List of Content objects
+     * @return List with synthetic user message added if needed
+     */
+    private List<GeminiContent> ensureConversationEndsWithUserRole(List<GeminiContent> contents) {
+        if (contents == null || contents.isEmpty()) {
+            return contents;
+        }
+
+        GeminiContent lastContent = contents.get(contents.size() - 1);
+
+        // Only add synthetic message if:
+        // 1. Last message is "model" role
+        // 2. It doesn't contain function_call (which expects function_response, not text)
+        // 3. The conversation has at least 2 messages (real conversation, not single message)
+        if ("model".equals(lastContent.getRole())
+                && !hasFunctionCall(lastContent)
+                && contents.size() >= 2) {
+            List<GeminiContent> result = new ArrayList<>(contents);
+            GeminiPart part = new GeminiPart();
+            part.setText("Please continue with your response.");
+            GeminiContent syntheticUserContent = new GeminiContent("user", List.of(part));
+            result.add(syntheticUserContent);
+            log.debug("Added synthetic user message to prompt response after model message");
+            return result;
+        }
+
+        return contents;
+    }
+
+    /**
+     * Check if a Content contains function_call.
+     */
+    private boolean hasFunctionCall(GeminiContent content) {
+        if (content == null || content.getParts() == null) {
+            return false;
+        }
+        return content.getParts().stream().anyMatch(part -> part.getFunctionCall() != null);
     }
 
     private ChatResponse ensureMeaningfulContent(ChatResponse response) {
@@ -993,6 +1433,7 @@ public class GeminiChatModel extends ChatModelBase {
                         .id(callId)
                         .name(targetToolName)
                         .input(inputMap)
+                        .content(JsonUtils.getJsonCodec().toJson(inputMap))
                         .metadata(metadata)
                         .build();
 

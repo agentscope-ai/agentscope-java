@@ -101,11 +101,26 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 }
             }
 
+            // Build content string: prefer raw content, fall back to serialized args
+            String contentStr;
+            if (!rawContentStr.isEmpty()) {
+                contentStr = rawContentStr;
+            } else if (!finalArgs.isEmpty()) {
+                // Serialize the args map to JSON for validation
+                try {
+                    contentStr = JsonUtils.getJsonCodec().toJson(finalArgs);
+                } catch (Exception e) {
+                    contentStr = "{}";
+                }
+            } else {
+                contentStr = "{}";
+            }
+
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
-                    .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
+                    .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }

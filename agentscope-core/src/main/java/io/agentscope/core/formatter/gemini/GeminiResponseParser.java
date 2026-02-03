@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.gemini;
 
+import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart;
@@ -245,6 +246,11 @@ public class GeminiResponseParser {
     /**
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
+     * <p>For the generate_response tool (used for structured output), Gemini receives
+     * an unwrapped schema (via GeminiToolsHelper.unwrapResponseSchema) but the tool
+     * validation expects wrapped input with a "response" property. This method wraps
+     * the args back to match the expected schema format.
+     *
      * @param functionCall     Gemini FunctionCall object
      * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks           List to add parsed ToolUseBlock to
@@ -268,10 +274,32 @@ public class GeminiResponseParser {
             String rawContent = null;
 
             if (functionCall.getArgs() != null && !functionCall.getArgs().isEmpty()) {
-                argsMap.putAll(functionCall.getArgs());
-                // Convert to JSON string for raw content
+                Map<String, Object> originalArgs = functionCall.getArgs();
+
+                // Special handling for generate_response tool:
+                // Gemini receives unwrapped schema (via GeminiToolsHelper.unwrapResponseSchema),
+                // so it returns unwrapped args. But the tool validation expects wrapped format
+                // with a "response" property. Wrap the args back to match the expected schema.
+                if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(name)) {
+                    if (!originalArgs.containsKey("response")) {
+                        argsMap.put("response", new HashMap<>(originalArgs));
+                        log.debug(
+                                "Wrapped generate_response args. Original keys: {}, Wrapped: {}",
+                                originalArgs.keySet(),
+                                argsMap.keySet());
+                    } else {
+                        argsMap.putAll(originalArgs);
+                        log.debug(
+                                "generate_response args already wrapped. Keys: {}",
+                                originalArgs.keySet());
+                    }
+                } else {
+                    argsMap.putAll(originalArgs);
+                }
+
+                // Convert to JSON string for raw content (use the wrapped args)
                 try {
-                    rawContent = JsonUtils.getJsonCodec().toJson(functionCall.getArgs());
+                    rawContent = JsonUtils.getJsonCodec().toJson(argsMap);
                 } catch (Exception e) {
                     log.warn("Failed to serialize function call arguments: {}", e.getMessage());
                 }
@@ -282,6 +310,14 @@ public class GeminiResponseParser {
             if (thoughtSignature != null && !thoughtSignature.isEmpty()) {
                 metadata = new HashMap<>();
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+            }
+
+            if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(name)
+                    && (argsMap == null || argsMap.isEmpty())) {
+                log.debug(
+                        "Skipping generate_response tool call with empty args to avoid invalid"
+                                + " execution.");
+                return;
             }
 
             blocks.add(

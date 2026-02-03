@@ -218,7 +218,66 @@ public class GeminiMessageConverter {
             }
         }
 
-        return result;
+        // Merge adjacent messages with the same role (Gemini API requirement)
+        return mergeAdjacentSameRoleContents(result);
+    }
+
+    /**
+     * Merge adjacent Content objects with the same role.
+     *
+     * <p>Gemini API requires alternating user/model roles. This method merges
+     * consecutive messages with the same role into a single Content object.
+     *
+     * <p>Note: Contents containing function_call or function_response are NOT merged
+     * to preserve tool call/result semantics.
+     *
+     * @param contents List of Content objects to merge
+     * @return List with adjacent same-role contents merged
+     */
+    private List<GeminiContent> mergeAdjacentSameRoleContents(List<GeminiContent> contents) {
+        if (contents == null || contents.size() <= 1) {
+            return contents;
+        }
+
+        List<GeminiContent> merged = new ArrayList<>();
+        GeminiContent current = contents.get(0);
+
+        for (int i = 1; i < contents.size(); i++) {
+            GeminiContent next = contents.get(i);
+
+            // Don't merge if either content contains function_call or function_response
+            boolean currentHasFunction = hasFunction(current);
+            boolean nextHasFunction = hasFunction(next);
+
+            if (current.getRole().equals(next.getRole())
+                    && !currentHasFunction
+                    && !nextHasFunction) {
+                // Merge: combine parts from both contents
+                List<GeminiPart> combinedParts = new ArrayList<>(current.getParts());
+                combinedParts.addAll(next.getParts());
+                current = new GeminiContent(current.getRole(), combinedParts);
+            } else {
+                merged.add(current);
+                current = next;
+            }
+        }
+        merged.add(current);
+
+        return merged;
+    }
+
+    /**
+     * Check if a Content contains function_call or function_response.
+     */
+    private boolean hasFunction(GeminiContent content) {
+        if (content == null || content.getParts() == null) {
+            return false;
+        }
+        return content.getParts().stream()
+                .anyMatch(
+                        part ->
+                                part.getFunctionCall() != null
+                                        || part.getFunctionResponse() != null);
     }
 
     /**
