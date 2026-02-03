@@ -185,8 +185,8 @@ public class SkillUtil {
         if (zipPath == null) {
             throw new IllegalArgumentException("Zip path cannot be null.");
         }
-        try {
-            return createFromZip(Files.readAllBytes(zipPath), source);
+        try (InputStream inputStream = Files.newInputStream(zipPath)) {
+            return createFromZip(inputStream, source);
         } catch (IOException e) {
             throw new RuntimeException("Failed to read skill zip content.", e);
         }
