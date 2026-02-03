@@ -193,6 +193,45 @@ class JarSkillRepositoryAdapterTest {
         }
     }
 
+    @Test
+    @DisplayName("Should load skills from Spring Boot Fat JAR (BOOT-INF/classes/)")
+    void testLoadFromSpringBootJar() throws Exception {
+        Path jarPath = createSpringBootTestJar("sb-skill", "SB Skill", "SB content");
+
+        // Create a custom ClassLoader that simulates Spring Boot's LaunchedURLClassLoader behavior
+        // In Spring Boot, classLoader.getResource("jar-skills") will automatically resolve to
+        // "BOOT-INF/classes/jar-skills" and return a valid URL
+        try (URLClassLoader baseClassLoader =
+                new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
+            ClassLoader springBootClassLoader =
+                    new ClassLoader(baseClassLoader) {
+                        @Override
+                        public URL getResource(String name) {
+                            // Simulate Spring Boot behavior: automatically prepend
+                            // BOOT-INF/classes/
+                            URL resource = super.getResource("BOOT-INF/classes/" + name);
+                            if (resource != null) {
+                                return resource;
+                            }
+                            // Fallback to original behavior
+                            return super.getResource(name);
+                        }
+                    };
+
+            adapter =
+                    new JarSkillRepositoryAdapterWithClassLoader(
+                            "jar-skills", springBootClassLoader);
+
+            assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
+
+            AgentSkill skill = adapter.getSkill("sb-skill");
+            assertNotNull(skill);
+            assertEquals("sb-skill", skill.getName());
+            assertEquals("SB Skill", skill.getDescription());
+            assertTrue(skill.getSkillContent().contains("SB content"));
+        }
+    }
+
     // ==================== Error Handling Tests ====================
 
     @Test
@@ -408,6 +447,47 @@ class JarSkillRepositoryAdapterTest {
             JarEntry entry2 = new JarEntry("jar-skills/skill-two/SKILL.md");
             jos.putNextEntry(entry2);
             jos.write(skill2Md.getBytes(StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        return jarPath;
+    }
+
+    /**
+     * Creates a test JAR file with Spring Boot structure (BOOT-INF/classes/).
+     */
+    private Path createSpringBootTestJar(String skillName, String description, String content)
+            throws IOException {
+        Path jarPath = tempDir.resolve(skillName + "-springboot.jar");
+
+        try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            // Add Spring Boot structure
+            jos.putNextEntry(new JarEntry("BOOT-INF/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("BOOT-INF/classes/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("BOOT-INF/classes/jar-skills/"));
+            jos.closeEntry();
+
+            // Add skill directory
+            jos.putNextEntry(new JarEntry("BOOT-INF/classes/jar-skills/" + skillName + "/"));
+            jos.closeEntry();
+
+            // Add SKILL.md
+            String skillMd =
+                    "---\n"
+                            + "name: "
+                            + skillName
+                            + "\n"
+                            + "description: "
+                            + description
+                            + "\n"
+                            + "---\n"
+                            + content;
+
+            JarEntry entry = new JarEntry("BOOT-INF/classes/jar-skills/" + skillName + "/SKILL.md");
+            jos.putNextEntry(entry);
+            jos.write(skillMd.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 

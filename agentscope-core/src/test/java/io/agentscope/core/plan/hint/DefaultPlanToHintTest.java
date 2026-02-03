@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
@@ -244,7 +245,9 @@ class DefaultPlanToHintTest {
 
     @Test
     void testNoPlanHint_WithUserConfirmation() {
-        String hint = hintGenerator.generateHint(null, true);
+        String hint =
+                hintGenerator.generateHint(
+                        null, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertNotNull(hint);
         assertTrue(hint.startsWith("<system-hint>"));
@@ -254,7 +257,9 @@ class DefaultPlanToHintTest {
 
     @Test
     void testNoPlanHint_WithoutUserConfirmation() {
-        String hint = hintGenerator.generateHint(null, false);
+        String hint =
+                hintGenerator.generateHint(
+                        null, PlanNotebook.builder().needUserConfirm(false).build());
 
         assertNotNull(hint);
         assertTrue(hint.startsWith("<system-hint>"));
@@ -265,10 +270,23 @@ class DefaultPlanToHintTest {
     }
 
     @Test
+    void testNoPlanHint_WithMaxSubtasks() {
+        String hint =
+                hintGenerator.generateHint(null, PlanNotebook.builder().maxSubtasks(5).build());
+
+        assertNotNull(hint);
+        assertTrue(hint.startsWith("<system-hint>"));
+        assertTrue(hint.endsWith("</system-hint>"));
+        assertTrue(hint.contains("Subtask Limit"));
+    }
+
+    @Test
     void testDefaultMethodDelegatesToOverload() {
         // Test that the default method generateHint(plan) calls generateHint(plan, true)
         String hintDefault = hintGenerator.generateHint(null);
-        String hintWithConfirm = hintGenerator.generateHint(null, true);
+        String hintWithConfirm =
+                hintGenerator.generateHint(
+                        null, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertEquals(hintDefault, hintWithConfirm);
     }
@@ -281,7 +299,9 @@ class DefaultPlanToHintTest {
                                 createSubTask("Task1", SubTaskState.TODO),
                                 createSubTask("Task2", SubTaskState.TODO)));
 
-        String hint = hintGenerator.generateHint(plan, true);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("The current plan"));
@@ -298,7 +318,9 @@ class DefaultPlanToHintTest {
                                 createSubTask("Task1", SubTaskState.TODO),
                                 createSubTask("Task2", SubTaskState.TODO)));
 
-        String hint = hintGenerator.generateHint(plan, false);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(false).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("Mark the first subtask as 'in_progress'"));
@@ -312,7 +334,9 @@ class DefaultPlanToHintTest {
         SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
         Plan plan = createPlan(List.of(task1, task2));
 
-        String hint = hintGenerator.generateHint(plan, true);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("Now the subtask at index 0"));
@@ -327,7 +351,9 @@ class DefaultPlanToHintTest {
         SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
         Plan plan = createPlan(List.of(task1, task2));
 
-        String hint = hintGenerator.generateHint(plan, false);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(false).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("Now the subtask at index 0"));
@@ -340,7 +366,9 @@ class DefaultPlanToHintTest {
         SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
         Plan plan = createPlan(List.of(task1, task2));
 
-        String hint = hintGenerator.generateHint(plan, true);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("The first 1 subtasks are done"));
@@ -356,7 +384,9 @@ class DefaultPlanToHintTest {
                                 createSubTask("Task1", SubTaskState.DONE),
                                 createSubTask("Task2", SubTaskState.DONE)));
 
-        String hint = hintGenerator.generateHint(plan, true);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(true).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("All the subtasks are done"));
@@ -373,7 +403,9 @@ class DefaultPlanToHintTest {
                                 createSubTask("Task1", SubTaskState.DONE),
                                 createSubTask("Task2", SubTaskState.DONE)));
 
-        String hint = hintGenerator.generateHint(plan, false);
+        String hint =
+                hintGenerator.generateHint(
+                        plan, PlanNotebook.builder().needUserConfirm(false).build());
 
         assertNotNull(hint);
         assertTrue(hint.contains("All the subtasks are done"));
