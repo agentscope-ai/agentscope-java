@@ -248,34 +248,32 @@ public class SubAgentTool implements AgentTool {
 
         return Mono.deferContextual(
                 ctxView ->
-                        Mono.from(
-                                        agent.stream(List.of(userMsg), streamOptions)
-                                                .doOnNext(
-                                                        event ->
-                                                                forwardEvent(
-                                                                        event, emitter, agent,
-                                                                        sessionId))
-                                                .filter(Event::isLast)
-                                                .last()
-                                                .map(
-                                                        lastEvent -> {
-                                                            Msg response = lastEvent.getMessage();
-                                                            return buildResult(response, sessionId);
-                                                        })
-                                                .onErrorResume(
-                                                        e -> {
-                                                            logger.error(
-                                                                    "Error in streaming execution:"
-                                                                            + " {}",
-                                                                    e.getMessage(),
-                                                                    e);
-                                                            return Mono.just(
-                                                                    ToolResultBlock.error(
-                                                                            "Execution error: "
-                                                                                    + e
-                                                                                            .getMessage()));
-                                                        }))
-                                .contextWrite(context -> context.putAll(ctxView)));
+                        agent.stream(List.of(userMsg), streamOptions)
+                                .doOnNext(
+                                        event ->
+                                                forwardEvent(
+                                                        event, emitter, agent,
+                                                        sessionId))
+                                .filter(Event::isLast)
+                                .last()
+                                .map(
+                                        lastEvent -> {
+                                            Msg response = lastEvent.getMessage();
+                                            return buildResult(response, sessionId);
+                                        })
+                                .contextWrite(context -> context.putAll(ctxView))
+                                .onErrorResume(
+                                        e -> {
+                                            logger.error(
+                                                    "Error in streaming execution:"
+                                                            + " {}",
+                                                    e.getMessage(),
+                                                    e);
+                                            return Mono.just(
+                                                    ToolResultBlock.error(
+                                                            "Execution error: "
+                                                                    + e.getMessage()));
+                                        }));
     }
 
     /**
