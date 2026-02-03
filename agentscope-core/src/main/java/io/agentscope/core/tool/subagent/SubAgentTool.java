@@ -249,11 +249,7 @@ public class SubAgentTool implements AgentTool {
         return Mono.deferContextual(
                 ctxView ->
                         agent.stream(List.of(userMsg), streamOptions)
-                                .doOnNext(
-                                        event ->
-                                                forwardEvent(
-                                                        event, emitter, agent,
-                                                        sessionId))
+                                .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
                                 .filter(Event::isLast)
                                 .last()
                                 .map(
@@ -265,14 +261,12 @@ public class SubAgentTool implements AgentTool {
                                 .onErrorResume(
                                         e -> {
                                             logger.error(
-                                                    "Error in streaming execution:"
-                                                            + " {}",
+                                                    "Error in streaming execution:" + " {}",
                                                     e.getMessage(),
                                                     e);
                                             return Mono.just(
                                                     ToolResultBlock.error(
-                                                            "Execution error: "
-                                                                    + e.getMessage()));
+                                                            "Execution error: " + e.getMessage()));
                                         }));
     }
 
