@@ -79,11 +79,13 @@ public class MysqlSession implements Session {
     private static final int SINGLE_STATE_INDEX = 0;
 
     /**
-     * Pattern for validating database and table names. Only allows alphanumeric characters and
-     * underscores, must start with letter or underscore. This prevents SQL injection attacks
-     * through malicious database/table names.
+     * Pattern for validating database and table names. Only allows alphanumeric characters,
+     * underscores, and hyphens, must start with letter or underscore. This prevents SQL injection
+     * attacks through malicious database/table names.
+     *
+     * <p>Note: Identifiers containing hyphens require backtick escaping in SQL queries.
      */
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_-]*$");
 
     private static final int MAX_IDENTIFIER_LENGTH = 64; // MySQL identifier length limit
 
@@ -175,13 +177,14 @@ public class MysqlSession implements Session {
      * Create the database if it doesn't exist.
      *
      * <p>Creates the database with UTF-8 (utf8mb4) character set and unicode collation for proper
-     * internationalization support.
+     * internationalization support. Uses backticks to escape the database name for safe handling of
+     * special characters like hyphens.
      */
     private void createDatabaseIfNotExist() {
         String createDatabaseSql =
-                "CREATE DATABASE IF NOT EXISTS "
+                "CREATE DATABASE IF NOT EXISTS `"
                         + databaseName
-                        + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+                        + "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createDatabaseSql)) {
@@ -193,13 +196,14 @@ public class MysqlSession implements Session {
 
     /**
      * Create the sessions table if it doesn't exist.
+     *
+     * <p>Uses backtick escaping for the table name to safely handle identifiers with special
+     * characters like hyphens.
      */
     private void createTableIfNotExist() {
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
-                        + databaseName
-                        + "."
-                        + tableName
+                        + getFullTableName()
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
@@ -270,12 +274,15 @@ public class MysqlSession implements Session {
     }
 
     /**
-     * Get the full table name with database prefix.
+     * Get the full table name with database prefix, properly escaped with backticks.
      *
-     * @return The full table name (database.table)
+     * <p>Uses backticks to escape identifiers that may contain special characters like hyphens,
+     * which is required by MySQL for identifiers containing characters outside the standard set.
+     *
+     * @return The full table name with backtick escaping (`database`.`table`)
      */
     private String getFullTableName() {
-        return databaseName + "." + tableName;
+        return "`" + databaseName + "`.`" + tableName + "`";
     }
 
     @Override
@@ -742,9 +749,9 @@ public class MysqlSession implements Session {
     /**
      * Validate a database or table identifier to prevent SQL injection.
      *
-     * <p>This method ensures that identifiers only contain safe characters (alphanumeric and
-     * underscores) and start with a letter or underscore. This is critical for security since
-     * database and table names cannot be parameterized in prepared statements.
+     * <p>This method ensures that identifiers only contain safe characters (alphanumeric,
+     * underscores, and hyphens) and start with a letter or underscore. This is critical for
+     * security since database and table names cannot be parameterized in prepared statements.
      *
      * @param identifier The identifier to validate (database name or table name)
      * @param identifierType Description of the identifier type for error messages
@@ -761,9 +768,9 @@ public class MysqlSession implements Session {
         if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException(
                     identifierType
-                            + " contains invalid characters. Only alphanumeric characters and"
-                            + " underscores are allowed, and it must start with a letter or"
-                            + " underscore. Invalid value: "
+                            + " contains invalid characters. Only alphanumeric characters,"
+                            + " underscores, and hyphens are allowed, and it must start with a"
+                            + " letter or underscore. Invalid value: "
                             + identifier);
         }
     }

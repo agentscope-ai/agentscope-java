@@ -67,25 +67,6 @@ public class DashScopeChatModel extends ChatModelBase {
     private final DashScopeHttpClient httpClient;
 
     /**
-     * Check if model requires MultiModal API based on model name.
-     *
-     * <p>Model names starting with "qvq" or containing "-vl" use the MultiModal API:
-     * <ul>
-     *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-7b) → MultiModal API</li>
-     *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen-vl-max) → MultiModal API</li>
-     *   <li>All other models → Text Generation API</li>
-     * </ul>
-     *
-     * @return true if model requires MultiModal API
-     */
-    private boolean requiresMultiModalApi() {
-        if (modelName == null) {
-            return false;
-        }
-        return modelName.startsWith("qvq") || modelName.contains("-vl");
-    }
-
-    /**
      * Creates a new DashScope chat model instance.
      *
      * @param apiKey the API key for DashScope authentication
@@ -168,8 +149,10 @@ public class DashScopeChatModel extends ChatModelBase {
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
-        log.debug(
-                "DashScope API call: model={}, multimodal={}", modelName, requiresMultiModalApi());
+        if (log.isDebugEnabled()) {
+            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
+            log.debug("DashScope API call: model={}, multimodal={}", modelName, useMultimodal);
+        }
 
         Flux<ChatResponse> responseFlux = streamWithHttpClient(messages, tools, options);
 
@@ -186,10 +169,10 @@ public class DashScopeChatModel extends ChatModelBase {
     private Flux<ChatResponse> streamWithHttpClient(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant start = Instant.now();
-        boolean useMultimodal = requiresMultiModalApi();
+        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
 
-        // Get effective options
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        // Merge options with defaultOptions (options takes precedence)
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
         ToolChoice toolChoice = effectiveOptions.getToolChoice();
 
         // Format messages using formatter
@@ -260,7 +243,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                 } catch (Exception e) {
                                     log.error("DashScope HTTP client error: {}", e.getMessage(), e);
                                     return Flux.error(
-                                            new RuntimeException(
+                                            new ModelException(
                                                     "DashScope API call failed: " + e.getMessage(),
                                                     e));
                                 }
