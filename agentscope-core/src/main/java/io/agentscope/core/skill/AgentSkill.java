@@ -217,6 +217,22 @@ public class AgentSkill {
     }
 
     /**
+     * Returns a string representation of this skill.
+     *
+     * @return String representation including name, description, and source
+     */
+    @Override
+    public String toString() {
+        return "AgentSkill{name='"
+                + name
+                + "', description='"
+                + description
+                + "', source='"
+                + source
+                + "'}";
+    }
+
+    /**
      * Builder for creating AgentSkill instances.
      *
      * <p>This builder allows selective modification of skill fields to create
