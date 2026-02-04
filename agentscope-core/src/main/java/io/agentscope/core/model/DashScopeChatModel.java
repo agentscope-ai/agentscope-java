@@ -188,8 +188,8 @@ public class DashScopeChatModel extends ChatModelBase {
         Instant start = Instant.now();
         boolean useMultimodal = requiresMultiModalApi();
 
-        // Get effective options
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        // Merge options with defaultOptions (options takes precedence)
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
         ToolChoice toolChoice = effectiveOptions.getToolChoice();
 
         // Format messages using formatter
