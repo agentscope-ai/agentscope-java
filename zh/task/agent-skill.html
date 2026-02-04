@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-27T02:09:06+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-02-04T02:32:26+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -676,18 +676,38 @@
 <h4>MySQL数据库存储 (暂未实现)<a class="headerlink" href="#mysql" title="Link to this heading">¶</a></h4>
 </section>
 <section id="git">
-<h4>Git仓库 (暂未实现)<a class="headerlink" href="#git" title="Link to this heading">¶</a></h4>
+<h4>Git仓库 (只读)<a class="headerlink" href="#git" title="Link to this heading">¶</a></h4>
+<p>用于从 Git 仓库加载 Skills (只读)。支持 HTTPS 和 SSH。</p>
+<p><strong>更新机制</strong></p>
+<ul class="simple">
+<li><p>默认每次读取都会做轻量化的远端引用检查，仅当远端 HEAD 变化时才会 pull。</p></li>
+<li><p>可以通过构造函数关闭自动同步，改为手动调用 <code class="docutils literal notranslate"><span class="pre">sync()</span></code> 刷新。</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;https://github.com/your-org/your-skills-repo.git&quot;</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
+
+<span class="n">GitSkillRepository</span><span class="w"> </span><span class="n">manualRepo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">GitSkillRepository</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;https://github.com/your-org/your-skills-repo.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="n">manualRepo</span><span class="p">.</span><span class="na">sync</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>如果仓库中存在 <code class="docutils literal notranslate"><span class="pre">skills/</span></code> 子目录，会优先从该目录加载，否则使用仓库根目录。</p>
 </section>
-<section id="jarresource">
-<h4>Jar中的resource路径存储 (适配器)<a class="headerlink" href="#jarresource" title="Link to this heading">¶</a></h4>
-<p>用于从 JAR 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">JarSkillRepositoryAdapter</span><span class="w"> </span><span class="n">adapter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">JarSkillRepositoryAdapter</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">adapter</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
+<section id="classpath">
+<h4>Classpath 仓库 (只读)<a class="headerlink" href="#classpath" title="Link to this heading">¶</a></h4>
+<p>用于从 classpath 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">ClasspathSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ClasspathSkillRepository</span><span class="p">(</span><span class="s">&quot;skills&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AgentSkill</span><span class="o">&gt;</span><span class="w"> </span><span class="n">allSkills</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getAllSkills</span><span class="p">();</span>
 <span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
 </pre></div>
 </div>
 <p>资源目录结构: <code class="docutils literal notranslate"><span class="pre">src/main/resources/skills/</span></code> 下放置多个 Skill 子目录,每个子目录包含 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code></p>
+<blockquote>
+<div><p>注意: <code class="docutils literal notranslate"><span class="pre">JarSkillRepositoryAdapter</span></code> 已废弃,请使用 <code class="docutils literal notranslate"><span class="pre">ClasspathSkillRepository</span></code>。</p>
+</div></blockquote>
 </section>
 </section>
 <section id="id14">
@@ -763,7 +783,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-27</div>
+              Last updated on 2026-02-04</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -828,8 +848,8 @@
 <li><a class="reference internal" href="#id12">功能 3: Skill 持久化存储</a><ul>
 <li><a class="reference internal" href="#id13">文件系统存储</a></li>
 <li><a class="reference internal" href="#mysql">MySQL数据库存储 (暂未实现)</a></li>
-<li><a class="reference internal" href="#git">Git仓库 (暂未实现)</a></li>
-<li><a class="reference internal" href="#jarresource">Jar中的resource路径存储 (适配器)</a></li>
+<li><a class="reference internal" href="#git">Git仓库 (只读)</a></li>
+<li><a class="reference internal" href="#classpath">Classpath 仓库 (只读)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id14">性能优化建议</a></li>
