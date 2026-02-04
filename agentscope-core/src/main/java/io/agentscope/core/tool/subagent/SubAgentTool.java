@@ -15,23 +15,29 @@
  */
 package io.agentscope.core.tool.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -51,6 +57,13 @@ import reactor.core.publisher.Mono;
  *   <li>{@code session_id} - Optional. Omit to start a new session, provide to continue an
  *       existing one.
  *   <li>{@code message} - Required. The message to send to the agent.
+ * </ul>
+ *
+ * <p><b>HITL Support (Human-in-the-Loop):</b>
+ * <ul>
+ *   <li>Enables sub-agent to pause and wait for user confirmation when internal tools require it.
+ *   <li>User can provide confirmation results to resume sub-agent execution.
+ *   <li>Supports multi-round human-computer interaction within the same session.
  * </ul>
  */
 public class SubAgentTool implements AgentTool {
@@ -83,7 +96,42 @@ public class SubAgentTool implements AgentTool {
         this.name = resolveToolName(sampleAgent, this.config);
         this.description = resolveDescription(sampleAgent, this.config);
 
+        // Check HITL compatibility if enabled
+        if (this.config.isEnableHITL()) {
+            checkHITLCompatibility(agentProvider);
+            checkParentAgentHITLSupport(agentProvider);
+        }
+
         logger.debug("Created SubAgentTool: name={}, description={}", name, description);
+    }
+
+    /**
+     * Checks if the agent is compatible with HITL (Human-in-the-Loop) support.
+     *
+     * @param agentProvider The agent provider to check
+     * @throws IllegalArgumentException if the agent is not a ReActAgent instance
+     */
+    private void checkHITLCompatibility(SubAgentProvider<?> agentProvider) {
+        Agent agent = agentProvider.provide();
+        if (!(agent instanceof ReActAgent)) {
+            throw new IllegalArgumentException("HITL is only supported with ReActAgent");
+        }
+    }
+
+    private void checkParentAgentHITLSupport(SubAgentProvider<?> agentProvider) {
+        Agent agent = agentProvider.provide();
+        if (agent instanceof ReActAgent parentReActAgent) {
+            // Assuming ReActAgent has a method to check HITL support
+            if (!parentReActAgent.isEnableSubAgentHITL()) {
+                logger.warn(
+                        "SubAgentTool '{}' has HITL enabled but parent agent '{}' has HITL"
+                            + " disabled. If the subagent suspends, the parent agent cannot resume"
+                            + " it. Consider enabling HITL on the parent agent or disabling it on"
+                            + " the subagent.",
+                        name,
+                        parentReActAgent.getName());
+            }
+        }
     }
 
     @Override
@@ -116,6 +164,15 @@ public class SubAgentTool implements AgentTool {
      *   <li>Agent state loading for continued sessions
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
+     *   <li>HITL support: detecting suspended state and resuming with injected results
+     * </ul>
+     *
+     * <p><b>HITL Behavior:</b>
+     * <ul>
+     *   <li>When HITL is enabled, suspended states are returned with special metadata
+     *       for resumption with user-provided results</li>
+     *   <li>When HITL is disabled, suspended states are converted to normal text responses
+     *       to ensure conversation continues without interruption</li>
      * </ul>
      *
      * @param param The tool call parameters containing input and emitter
@@ -126,12 +183,23 @@ public class SubAgentTool implements AgentTool {
                 () -> {
                     try {
                         Map<String, Object> input = param.getInput();
+                        ToolUseBlock toolUseBlock = param.getToolUseBlock();
 
                         // Get or create session ID
                         String sessionId = (String) input.get(PARAM_SESSION_ID);
-                        boolean isNewSession = sessionId == null;
+                        boolean isNewSession = sessionId == null || sessionId.trim().isEmpty();
                         if (isNewSession) {
                             sessionId = UUID.randomUUID().toString();
+                        }
+
+                        // Check if there's an injected result from SubAgentHook
+                        if (config.isEnableHITL()
+                                && toolUseBlock
+                                        .getMetadata()
+                                        .containsKey(SubAgentHook.PREVIOUS_TOOL_RESULT)) {
+                            Optional<List<ToolResultBlock>> toolResults =
+                                    extractToolResults(toolUseBlock);
+                            return resume(sessionId, toolResults.orElse(null), param);
                         }
 
                         // Get message
@@ -165,12 +233,16 @@ public class SubAgentTool implements AgentTool {
                         // Get emitter for event forwarding
                         ToolEmitter emitter = param.getEmitter();
 
-                        // Execute and save state after completion
+                        // Execute and handle potential suspension
                         Mono<ToolResultBlock> result;
                         if (config.isForwardEvents()) {
-                            result = executeWithStreaming(agent, userMsg, finalSessionId, emitter);
+                            result =
+                                    executeWithStreaming(
+                                            agent, List.of(userMsg), finalSessionId, emitter);
                         } else {
-                            result = executeWithoutStreaming(agent, userMsg, finalSessionId);
+                            result =
+                                    executeWithoutStreaming(
+                                            agent, List.of(userMsg), finalSessionId);
                         }
 
                         // Save state after execution
@@ -184,6 +256,92 @@ public class SubAgentTool implements AgentTool {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
                                 ToolResultBlock.error("Session setup failed: " + e.getMessage()));
+                    }
+                });
+    }
+
+    /**
+     * Extracts injected result from tool use block input.
+     *
+     * <p>This is used when SubAgentHook has injected a pending result for resumption.
+     *
+     * @param toolUseBlock The tool use block
+     * @return Optional containing the injected result
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<List<ToolResultBlock>> extractToolResults(ToolUseBlock toolUseBlock) {
+        if (toolUseBlock == null || toolUseBlock.getInput() == null) {
+            return Optional.empty();
+        }
+
+        Object toolResult = toolUseBlock.getMetadata().get(SubAgentHook.PREVIOUS_TOOL_RESULT);
+
+        if (toolResult instanceof List) {
+            List<?> list = (List<?>) toolResult;
+
+            List<ToolResultBlock> resultList =
+                    list.stream()
+                            .filter(ToolResultBlock.class::isInstance)
+                            .map(ToolResultBlock.class::cast)
+                            .collect(Collectors.toList());
+
+            return resultList.isEmpty() ? Optional.empty() : Optional.of(resultList);
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Resume execution using injected tool results.
+     *
+     * <p>This method is called when a sub-agent was previously paused and the user provides tool results.
+     * It loads the agent state and continues execution.
+     *
+     * <p>For hook-triggered pauses, if toolResults is null or empty, it continues execution with an empty message list.
+     * For tool suspensions, tool results must be provided.
+     *
+     * @param sessionId Session ID
+     * @param toolResults Injected tool results from the user
+     * @param param Original tool call parameter
+     * @return Mono emitting tool result blocks
+     */
+    private Mono<ToolResultBlock> resume(
+            String sessionId, List<ToolResultBlock> toolResults, ToolCallParam param) {
+        logger.debug(
+                "Resuming sub-agent session {} with tool result, HITL enabled: {}",
+                sessionId,
+                config.isEnableHITL());
+
+        Agent agent = agentProvider.provide();
+
+        // Load existing state
+        if (agent instanceof StateModule) {
+            loadAgentState(sessionId, (StateModule) agent);
+        }
+
+        ToolEmitter emitter = param.getEmitter();
+
+        // Build messages from tool results, each ToolResultBlock becomes a separate Msg
+        List<Msg> messages = List.of();
+        if (toolResults != null && !toolResults.isEmpty()) {
+            messages =
+                    toolResults.stream()
+                            .map(result -> Msg.builder().role(MsgRole.TOOL).content(result).build())
+                            .collect(Collectors.toList());
+        }
+
+        // Continue execution
+        Mono<ToolResultBlock> result;
+        if (config.isForwardEvents()) {
+            result = executeWithStreaming(agent, messages, sessionId, emitter);
+        } else {
+            result = executeWithoutStreaming(agent, messages, sessionId);
+        }
+
+        return result.doOnSuccess(
+                r -> {
+                    if (agent instanceof StateModule) {
+                        saveAgentState(sessionId, (StateModule) agent);
                     }
                 });
     }
@@ -227,26 +385,27 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Executes agent call with streaming, forwarding events to the emitter.
+     * Executes agent call using streaming and with HITL support.
      *
      * <p>Uses the agent's streaming API and forwards each event to the provided emitter as JSON.
      * The final response is extracted from the last event.
      *
      * @param agent The agent to execute
-     * @param userMsg The user message to send
+     * @param userMsgs The user messages to send
      * @param sessionId The session ID for result building
      * @param emitter The emitter to forward events to
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeWithStreaming(
-            Agent agent, Msg userMsg, String sessionId, ToolEmitter emitter) {
+            Agent agent, List<Msg> userMsgs, String sessionId, ToolEmitter emitter) {
 
         StreamOptions streamOptions =
                 config.getStreamOptions() != null
                         ? config.getStreamOptions()
                         : StreamOptions.defaults();
 
-        return agent.stream(List.of(userMsg), streamOptions)
+        List<Msg> msgs = userMsgs != null && !userMsgs.isEmpty() ? userMsgs : List.of();
+        return agent.stream(msgs, streamOptions)
                 .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
                 .filter(Event::isLast)
                 .last()
@@ -264,19 +423,22 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Executes agent call without streaming.
+     * Execute agent call without streaming but with HITL support.
      *
-     * <p>Uses the agent's standard call API. No events are forwarded to the emitter.
+     * <p>Uses the standard calling API of the agent. If the sub-agent returns a pause status,
+     * this method constructs a suspended result containing the session ID and internal tool information.
      *
-     * @param agent The agent to execute
-     * @param userMsg The user message to send
-     * @param sessionId The session ID for result building
-     * @return A Mono emitting the tool result block
+     * @param agent The agent to be executed
+     * @param userMsgs The input messages to send; if null or empty, calls agent.call() without parameters
+     * @param sessionId The session ID used to construct the result
+     * @return A Mono emitting a tool result block
      */
     private Mono<ToolResultBlock> executeWithoutStreaming(
-            Agent agent, Msg userMsg, String sessionId) {
+            Agent agent, List<Msg> userMsgs, String sessionId) {
 
-        return agent.call(List.of(userMsg))
+        List<Msg> messages = userMsgs != null && !userMsgs.isEmpty() ? userMsgs : List.of();
+
+        return agent.call(messages)
                 .map(response -> buildResult(response, sessionId))
                 .onErrorResume(
                         e -> {
@@ -284,6 +446,35 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(
                                     ToolResultBlock.error("Execution error: " + e.getMessage()));
                         });
+    }
+
+    /**
+     * Build a suspended tool result from a paused sub-agent response.
+     *
+     * <p>Extracts internal tool usage blocks from the response and creates a suspended result,
+     * which the main agent can use to request user input.
+     *
+     * @param response The paused response from the sub-agent
+     * @param sessionId Session ID
+     * @return A suspended tool result block
+     */
+    private ToolResultBlock buildSuspendedResult(Msg response, String sessionId) {
+        // Extract inner tool use blocks and text blocks from the response
+        List<ToolUseBlock> toolUses = response.getContentBlocks(ToolUseBlock.class);
+        List<TextBlock> textBlocks = response.getContentBlocks(TextBlock.class);
+
+        // Combine text blocks and tool use blocks as content
+        List<io.agentscope.core.message.ContentBlock> contentBlocks = new ArrayList<>();
+        contentBlocks.addAll(textBlocks);
+        contentBlocks.addAll(toolUses);
+
+        // Create metadata for the suspended result
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolResultBlock.METADATA_SUSPENDED, true);
+        metadata.put(SubAgentContext.METADATA_SUBAGENT_SESSION_ID, sessionId);
+        metadata.put(SubAgentContext.METADATA_GENERATE_REASON, response.getGenerateReason());
+
+        return new ToolResultBlock(null, null, contentBlocks, metadata);
     }
 
     /**
@@ -316,14 +507,28 @@ public class SubAgentTool implements AgentTool {
     /**
      * Builds the final tool result with session context.
      *
-     * <p>Formats the response to include the session ID, allowing callers to continue the
+     * <p>Formats the response to include the session ID in metadata, allowing callers to continue the
      * conversation by passing the session ID in subsequent calls.
      *
+     * <p>If HITL is disabled, suspended states will be converted to normal text responses
+     * without special metadata.
+     *
      * @param response The agent's response message
-     * @param sessionId The session ID to include in the result
+     * @param sessionId The session ID to include in the result metadata
      * @return A tool result block containing the formatted response
      */
     private ToolResultBlock buildResult(Msg response, String sessionId) {
+        // Check if sub-agent is suspended
+        GenerateReason reason = response.getGenerateReason();
+        boolean isSuspended =
+                reason == GenerateReason.TOOL_SUSPENDED
+                        || reason == GenerateReason.REASONING_STOP_REQUESTED
+                        || reason == GenerateReason.ACTING_STOP_REQUESTED;
+
+        if (config.isEnableHITL() && isSuspended) {
+            return buildSuspendedResult(response, sessionId);
+        }
+
         String textContent = response.getTextContent();
 
         // Return response with session context
