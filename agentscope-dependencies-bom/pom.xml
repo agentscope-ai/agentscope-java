@@ -109,7 +109,7 @@
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
-        <jgit.version>6.10.0.202406032230-r</jgit.version>
+        <jgit.version>7.5.0.202512021534-r</jgit.version>
 
 
         <spotless.version>3.2.1</spotless.version>
