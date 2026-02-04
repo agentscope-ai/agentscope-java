@@ -194,7 +194,7 @@ class SkillHookTest {
     @Test
     @DisplayName("Should return correct hook priority")
     void testHookPriority() {
-        assertEquals(55, skillHook.priority(), "Skill hook should have high priority (10)");
+        assertEquals(55, skillHook.priority(), "Skill hook should have priority (55)");
     }
 
     @Test
@@ -237,9 +237,6 @@ class SkillHookTest {
 
         PreReasoningEvent result = notifyHooks(event, hooks).block();
 
-        // Verify bug: SkillHook runs first (p=10), appends message.
-        // StructuredOutputHook runs second (p=50), checks last message (now skill prompt), finds no
-        // reminder.
         assertNotNull(result);
         assertInstanceOf(
                 ToolChoice.Specific.class,
