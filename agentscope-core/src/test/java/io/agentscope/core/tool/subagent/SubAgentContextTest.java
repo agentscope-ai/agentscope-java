@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.subagent;
 
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -267,20 +268,6 @@ class SubAgentContextTest {
 
             assertFalse(context.hasPendingResult("tool-1"));
             assertFalse(context.getSessionId("tool-2").isPresent());
-        }
-
-        @Test
-        @DisplayName("Should clear only pending results when specified")
-        void testClearPendingResults() {
-            context.setSessionId("tool-1", "session-1");
-            context.submitSubAgentResult("tool-1", createToolResultBlock("tool-1", "Result 1"));
-            context.setSessionId("tool-2", "session-2");
-
-            // Clear all pending results
-            context.clearToolResult("tool-1");
-
-            assertFalse(context.hasPendingResult("tool-1"));
-            assertTrue(context.getSessionId("tool-2").isPresent());
         }
 
         @Test
@@ -699,10 +686,12 @@ class SubAgentContextTest {
 
             // Should not throw exception
             SubAgentContext newContext = new SubAgentContext();
-            newContext.loadFrom(session, nonExistentKey);
+            SubAgentPendingStore oldStore = newContext.getPendingStore();
 
+            newContext.loadFrom(session, nonExistentKey);
+            SubAgentPendingStore newStore = newContext.getPendingStore();
             // Context should remain empty
-            assertNull(newContext.getPendingStore());
+            assertSame(oldStore, newStore);
         }
 
         @Test

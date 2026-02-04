@@ -213,7 +213,7 @@ while (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
                     .map(t -> ToolResultBlock.of(t.getId(), t.getName(),
                             TextBlock.builder().text("操作已取消").build()))
                     .toList();
-            mainAgent.submitSubAgentResult(resultBlock.getId(), cancelResults);
+            mainAgent.submitSubAgentResults(resultBlock.getId(), cancelResults);
         }
         response = mainAgent.call().block();
     }
@@ -237,4 +237,4 @@ System.out.println(response.getTextContent());
 
 **恢复方法**：
 - `ReActAgent.submitSubAgentResult(String, ToolResultBlock)` — 提交单个工具结果
-- `ReActAgent.submitSubAgentResult(String, List<ToolResultBlock>)` — 批量提交工具结果
+- `ReActAgent.submitSubAgentResults(String, List<ToolResultBlock>)` — 批量提交工具结果

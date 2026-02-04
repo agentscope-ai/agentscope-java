@@ -138,7 +138,6 @@ public class SubAgentHook implements Hook {
         metadata.put(PREVIOUS_TOOL_RESULT, pendingResult.get());
         Map<String, Object> newInput = new HashMap<>(toolUse.getInput());
         newInput.put("session_id", pendingContext.get().sessionId());
-        context.clearToolResult(toolUse.getId());
 
         ToolUseBlock modifiedToolUse =
                 ToolUseBlock.builder()

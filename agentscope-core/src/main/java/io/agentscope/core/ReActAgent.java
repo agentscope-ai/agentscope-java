@@ -286,7 +286,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (!isEnableSubAgentHITL()) {
             throw new IllegalStateException(
                     "SubAgent HITL is not enabled. Please enable it via"
-                            + " builder.enableSubAgentHitl(true)");
+                            + " builder.enableSubAgentHITL(true)");
         }
 
         if (pendingResult == null) {
@@ -311,7 +311,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (!isEnableSubAgentHITL()) {
             throw new IllegalStateException(
                     "SubAgent HITL is not enabled. Please enable it via"
-                            + " builder.enableSubAgentHitl(true)");
+                            + " builder.enableSubAgentHITL(true)");
         }
 
         if (pendingResults == null || pendingResults.isEmpty()) {
@@ -1489,7 +1489,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * to handle sub-agent suspension and resumption. This allows sub-agents to be
          * suspended when they need user input and resumed when the user provides results.
          *
-         * @param enableSubAgentHITL true to enable sub-agent HITL support (default: true)
+         * @param enableSubAgentHITL true to enable sub-agent HITL support (default: false)
          * @return This builder instance for method chaining
          * @see SubAgentHook
          */

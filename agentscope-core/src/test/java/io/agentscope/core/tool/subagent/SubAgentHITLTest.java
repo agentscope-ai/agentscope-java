@@ -308,7 +308,7 @@ class SubAgentHITLTest {
             registerSubAgent(mockSubAgent);
 
             MockModel mainModel =
-                    createSequentialToolModel("call_pausablesubagent", 2, "All done!");
+                    createSequentialToolModel("call_pausablesubagent", 1, "All done!");
             ReActAgent mainAgent = createHitlAgent(mainModel, context);
 
             Msg response1 = mainAgent.call(userMessage("Start task")).block(TEST_TIMEOUT);

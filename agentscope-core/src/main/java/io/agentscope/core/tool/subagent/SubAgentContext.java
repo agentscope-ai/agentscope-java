@@ -152,27 +152,10 @@ public class SubAgentContext implements StateModule {
      * @return An Optional containing the pending context, or empty if none exist
      */
     public Optional<SubAgentPendingContext> consumePendingResult(String toolId) {
-        if (!pendingStore.contains(toolId)) {
+        if (toolId == null) {
             return Optional.empty();
         }
-        SubAgentPendingContext pending =
-                new SubAgentPendingContext(
-                        toolId,
-                        pendingStore.getSessionId(toolId),
-                        pendingStore.getPendingResults(toolId));
-        clearToolResult(toolId);
-        return Optional.of(pending);
-    }
-
-    /**
-     * Clears the pending context for a tool.
-     *
-     * <p>This removes both the session ID and all pending results for the tool.
-     *
-     * @param toolId The tool ID
-     */
-    public void clearToolResult(String toolId) {
-        pendingStore.remove(toolId);
+        return Optional.ofNullable(pendingStore.remove(toolId));
     }
 
     /**
@@ -304,7 +287,6 @@ public class SubAgentContext implements StateModule {
      */
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
-        this.pendingStore = null;
         session.get(sessionKey, "subagent_context", SubAgentPendingStore.class)
                 .ifPresent(state -> this.pendingStore = state);
     }

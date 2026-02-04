@@ -213,7 +213,7 @@ while (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
                     .map(t -> ToolResultBlock.of(t.getId(), t.getName(),
                             TextBlock.builder().text("Operation cancelled").build()))
                     .toList();
-            mainAgent.submitSubAgentResult(resultBlock.getId(), cancelResults);
+            mainAgent.submitSubAgentResults(resultBlock.getId(), cancelResults);
         }
         response = mainAgent.call().block();
     }
@@ -238,4 +238,4 @@ System.out.println(response.getTextContent());
 **Resume methods**:
 - `mainAgent.call()` — Continue executing pending tools
 - `mainAgent.submitSubAgentResult(String, ToolResultBlock)` — Submit single tool result
-- `mainAgent.submitSubAgentResult(String, List<ToolResultBlock>)` — Submit multiple tool results
+- `mainAgent.submitSubAgentResults(String, List<ToolResultBlock>)` — Submit multiple tool results

@@ -200,10 +200,11 @@ public class SubAgentPendingStore implements State {
      *
      * @param toolId The tool ID
      */
-    public void remove(String toolId) {
+    public SubAgentPendingContext remove(String toolId) {
         if (toolId != null) {
-            toolIdToContext.remove(toolId);
+            return toolIdToContext.remove(toolId);
         }
+        return null;
     }
 
     /**
