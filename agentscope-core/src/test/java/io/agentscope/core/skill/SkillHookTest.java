@@ -239,10 +239,7 @@ class SkillHookTest {
 
         assertNotNull(result);
         assertInstanceOf(
-                ToolChoice.Specific.class,
-                result.getEffectiveGenerateOptions().getToolChoice(),
-                "Structured output tool choice should not be forced because SkillHook displaced the"
-                        + " reminder");
+                ToolChoice.Specific.class, result.getEffectiveGenerateOptions().getToolChoice());
         assertEquals(
                 "generate_response",
                 ((ToolChoice.Specific) result.getEffectiveGenerateOptions().getToolChoice())
