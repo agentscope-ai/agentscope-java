@@ -811,6 +811,83 @@ class SkillBoxTest {
     }
 
     @Test
+    @DisplayName("Should allow shared tool across multiple skills")
+    void testSharedToolAcrossSkillsActivation() {
+        skillBox.registerSkillLoadTool();
+
+        AgentSkill skillA = new AgentSkill("skill_a", "Skill A", "# A", null);
+        AgentSkill skillB = new AgentSkill("skill_b", "Skill B", "# B", null);
+        AgentTool sharedTool = createTestTool("shared_tool");
+
+        skillBox.registration().skill(skillA).agentTool(sharedTool).apply();
+        skillBox.registration().skill(skillB).agentTool(sharedTool).apply();
+
+        String groupA = skillA.getSkillId() + "_skill_tools";
+        String groupB = skillB.getSkillId() + "_skill_tools";
+
+        assertNotNull(toolkit.getToolGroup(groupA));
+        assertNotNull(toolkit.getToolGroup(groupB));
+        assertFalse(toolkit.getToolGroup(groupA).isActive());
+        assertFalse(toolkit.getToolGroup(groupB).isActive());
+
+        Map<String, Object> loadInputA = Map.of("skillId", skillA.getSkillId(), "path", "SKILL.md");
+        ToolUseBlock loadCallA =
+                ToolUseBlock.builder()
+                        .id("load-a")
+                        .name("load_skill_through_path")
+                        .input(loadInputA)
+                        .content(
+                                "{\"skillId\":\""
+                                        + skillA.getSkillId()
+                                        + "\",\"path\":\"SKILL.md\"}")
+                        .build();
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallA).input(loadInputA).build())
+                .block();
+
+        assertTrue(toolkit.getToolGroup(groupA).isActive());
+        assertFalse(toolkit.getToolGroup(groupB).isActive());
+
+        ToolResultBlock resultWithGroupA = callSharedTool();
+        assertNotNull(resultWithGroupA);
+        assertFalse(isErrorResult(resultWithGroupA));
+
+        skillBox.deactivateAllSkills();
+        skillBox.syncToolGroupStates();
+
+        ToolResultBlock resultWithNone = callSharedTool();
+        assertNotNull(resultWithNone);
+        assertTrue(isErrorResult(resultWithNone));
+
+        Map<String, Object> loadInputB = Map.of("skillId", skillB.getSkillId(), "path", "SKILL.md");
+        ToolUseBlock loadCallB =
+                ToolUseBlock.builder()
+                        .id("load-b")
+                        .name("load_skill_through_path")
+                        .input(loadInputB)
+                        .content(
+                                "{\"skillId\":\""
+                                        + skillB.getSkillId()
+                                        + "\",\"path\":\"SKILL.md\"}")
+                        .build();
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallB).input(loadInputB).build())
+                .block();
+
+        assertTrue(toolkit.getToolGroup(groupB).isActive());
+
+        ToolResultBlock resultWithGroupB = callSharedTool();
+        assertNotNull(resultWithGroupB);
+        assertFalse(isErrorResult(resultWithGroupB));
+
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallA).input(loadInputA).build())
+                .block();
+        assertTrue(toolkit.getToolGroup(groupA).isActive());
+        assertTrue(toolkit.getToolGroup(groupB).isActive());
+        ToolResultBlock resultWithBoth = callSharedTool();
+        assertNotNull(resultWithBoth);
+        assertFalse(isErrorResult(resultWithBoth));
+    }
+
+    @Test
     @DisplayName("Should throw exception when binding null toolkit")
     void testBindToolkitWithNullThrowsException() {
         assertThrows(
@@ -848,6 +925,29 @@ class SkillBoxTest {
                         ToolResultBlock.of(TextBlock.builder().text("Test result").build()));
             }
         };
+    }
+
+    private ToolResultBlock callSharedTool() {
+        Map<String, Object> input = Map.of();
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-shared")
+                        .name("shared_tool")
+                        .input(input)
+                        .content("{}")
+                        .build();
+        return toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).input(input).build())
+                .block();
+    }
+
+    private boolean isErrorResult(ToolResultBlock result) {
+        if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
+            return false;
+        }
+        return result.getOutput().stream()
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
+                .anyMatch(text -> text != null && text.startsWith("Error:"));
     }
 
     /**

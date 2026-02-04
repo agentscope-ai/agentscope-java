@@ -78,11 +78,10 @@ class RegisteredToolFunctionTest {
 
         // Act
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(mockTool, "group1", extendedModel, "mcpClient1");
+                new RegisteredToolFunction(mockTool, extendedModel, "mcpClient1");
 
         // Assert
         assertEquals(mockTool, registered.getTool());
-        assertEquals("group1", registered.getGroupName());
         assertEquals(extendedModel, registered.getExtendedModel());
         assertEquals("mcpClient1", registered.getMcpClientName());
     }
@@ -90,11 +89,10 @@ class RegisteredToolFunctionTest {
     @Test
     void testConstructorWithNullOptionalParameters() {
         // Act
-        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null);
 
         // Assert
         assertEquals(mockTool, registered.getTool());
-        assertNull(registered.getGroupName());
         assertNull(registered.getExtendedModel());
         assertNull(registered.getMcpClientName());
     }
@@ -102,7 +100,7 @@ class RegisteredToolFunctionTest {
     @Test
     void testGetExtendedParametersWithoutExtendedModel() {
         // Arrange
-        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null);
 
         // Act
         Map<String, Object> params = registered.getExtendedParameters();
@@ -125,7 +123,7 @@ class RegisteredToolFunctionTest {
         ExtendedModel extendedModel = new SimpleExtendedModel(additionalProps, List.of("param2"));
 
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(mockTool, "group1", extendedModel, null);
+                new RegisteredToolFunction(mockTool, extendedModel, null);
 
         // Act
         Map<String, Object> merged = registered.getExtendedParameters();
@@ -153,7 +151,7 @@ class RegisteredToolFunctionTest {
         ExtendedModel extendedModel = new SimpleExtendedModel(conflictingProps, List.of());
 
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(mockTool, "group1", extendedModel, null);
+                new RegisteredToolFunction(mockTool, extendedModel, null);
 
         // Act & Assert
         IllegalStateException exception =
@@ -307,34 +305,21 @@ class RegisteredToolFunctionTest {
     }
 
     @Test
-    void testGroupedTool() {
-        // Act
-        RegisteredToolFunction registered =
-                new RegisteredToolFunction(mockTool, "analytics", null, null);
-
-        // Assert
-        assertEquals("analytics", registered.getGroupName());
-        assertNull(registered.getMcpClientName());
-    }
-
-    @Test
     void testMcpTool() {
         // Act
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(mockTool, "group1", null, "filesystem");
+                new RegisteredToolFunction(mockTool, null, "filesystem");
 
         // Assert
-        assertEquals("group1", registered.getGroupName());
         assertEquals("filesystem", registered.getMcpClientName());
     }
 
     @Test
     void testUngroupedNonMcpTool() {
         // Act
-        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(mockTool, null, null);
 
         // Assert
-        assertNull(registered.getGroupName());
         assertNull(registered.getMcpClientName());
     }
 
