@@ -178,16 +178,16 @@ public class ChatResponse {
         /**
          * Builds a new ChatResponse instance with the set values.
          * <p>
-         * If no id was set, a random UUID will be generated automatically.
+         * If no id was set (or is empty), a random UUID will be generated automatically.
          * This ensures compatibility with LLM providers (like Ollama) that don't
          * return an id field in their API responses.
          *
          * @return a new ChatResponse instance
          */
         public ChatResponse build() {
-            // Auto-generate id if not set (for providers like Ollama that don't return id)
+            // Auto-generate id if not set or empty (for providers like Ollama)
             String responseId = this.id;
-            if (responseId == null) {
+            if (responseId == null || responseId.isEmpty()) {
                 responseId = UUID.randomUUID().toString();
             }
             return new ChatResponse(responseId, content, usage, metadata, finishReason);
