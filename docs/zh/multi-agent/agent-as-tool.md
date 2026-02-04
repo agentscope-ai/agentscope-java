@@ -151,3 +151,90 @@ toolkit.registration()
         .group("experts")
         .apply();
 ```
+
+## 人机交互支持（HITL）
+
+子智能体支持人机交互（Human-in-the-Loop），允许子智能体在执行过程中遇到需要人工确认的操作时，将挂起状态传递给主智能体和用户，并在用户确认后恢复执行。目前只支持使用ReactAgent作为子Agent。
+
+### 启用 HITL
+
+```java
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+
+// 配置子智能体工具并启用 HITL
+toolkit.registration()
+        .subAgent(() -> ReActAgent.builder()
+                .name("DataAnalyst")
+                .sysPrompt("你是一个数据分析专家。")
+                .model(model)
+                .build())
+        .config(SubAgentConfig.builder()
+                .enableHITL(true)  // 启用人机交互
+                .build())
+        .apply();
+
+// 创建主智能体，启用 HITL 支持
+ReActAgent mainAgent = ReActAgent.builder()
+        .name("Coordinator")
+        .sysPrompt("你是一个协调员，负责调用数据分析专家。")
+        .model(model)
+        .toolkit(toolkit)
+        .enableSubAgentHITL(true)  // 主智能体也需要启用 HITL 支持
+        .build();
+```
+
+### 处理挂起和恢复
+
+当子智能体挂起时，返回的消息会包含待执行的工具信息。你需要展示给用户，并根据用户选择决定下一步：
+
+```java
+import io.agentscope.core.tool.subagent.SubAgentContext;
+
+Msg response = mainAgent.call(userMsg).block();
+
+// 检查是否有子智能体挂起
+while (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+    List<ToolResultBlock> toolResults = response.getContentBlocks(ToolResultBlock.class);
+    
+    for (ToolResultBlock resultBlock : toolResults) {
+        if (!SubAgentContext.isSubAgentResult(resultBlock)) {
+            continue;
+        }
+        
+        // 获取子智能体被阻塞的工具调用
+        List<ToolUseBlock> pendingTools = resultBlock.getOutput().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .toList();
+        
+        if (!userConfirms(pendingTools)) {
+            // 用户拒绝，提交取消结果
+            List<ToolResultBlock> cancelResults = pendingTools.stream()
+                    .map(t -> ToolResultBlock.of(t.getId(), t.getName(),
+                            TextBlock.builder().text("操作已取消").build()))
+                    .toList();
+            mainAgent.submitSubAgentResult(resultBlock.getId(), cancelResults);
+        }
+        response = mainAgent.call().block();
+    }
+}
+
+// 最终响应
+System.out.println(response.getTextContent());
+```
+
+## API 速查
+
+**配置方法**：
+- `SubAgentConfig.enableHITL(boolean)` — 启用/禁用子智能体 HITL 支持
+- `ReActAgent.enableSubAgentHITL(boolean)` — 启用/禁用主智能体 HITL 支持
+- `ReActAgent.isEnableSubAgentHITL()` — 主智能体是/否支持 HITL 
+
+**检测方法**：
+- `SubAgentContext.isSubAgentResult(ToolResultBlock)` — 判断是否是子智能体结果
+- `SubAgentContext.getSubAgentGenerateReason(ToolResultBlock)` — 获取子智能体生成原因
+- `SubAgentContext.extractSessionId(ToolResultBlock)` — 提取会话 ID
+
+**恢复方法**：
+- `ReActAgent.submitSubAgentResult(String, ToolResultBlock)` — 提交单个工具结果
+- `ReActAgent.submitSubAgentResult(String, List<ToolResultBlock>)` — 批量提交工具结果

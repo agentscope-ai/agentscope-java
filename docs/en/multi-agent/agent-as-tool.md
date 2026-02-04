@@ -45,9 +45,9 @@ DashScopeChatModel model = DashScopeChatModel.builder()
         .modelName("qwen-plus")
         .build();
 
-// Create sub-agent Provider (factory)
+        // Create sub-agent Provider (factory)
 // Note: Must use lambda to ensure new instance is created for each call
-Toolkit toolkit = new Toolkit();
+        Toolkit toolkit = new Toolkit();
 toolkit.registration()
         .subAgent(() -> ReActAgent.builder()
                 .name("Expert")
@@ -56,16 +56,16 @@ toolkit.registration()
                 .build())
         .apply();
 
-// Create main agent with toolkit
-ReActAgent mainAgent = ReActAgent.builder()
-        .name("Coordinator")
-        .sysPrompt("You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert.")
-        .model(model)
-        .toolkit(toolkit)
-        .build();
+        // Create main agent with toolkit
+        ReActAgent mainAgent = ReActAgent.builder()
+                .name("Coordinator")
+                .sysPrompt("You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert.")
+                .model(model)
+                .toolkit(toolkit)
+                .build();
 
-// Main agent will automatically call expert agent when needed
-Msg response = mainAgent.call(userMsg).block();
+        // Main agent will automatically call expert agent when needed
+        Msg response = mainAgent.call(userMsg).block();
 ```
 
 ## Configuration Options
@@ -151,3 +151,91 @@ toolkit.registration()
         .group("experts")
         .apply();
 ```
+
+## Human-in-the-Loop (HITL) Support
+
+Sub-agents support Human-in-the-Loop (HITL), allowing sub-agents to pass suspend state to the parent agent and user when encountering operations requiring human confirmation, and resume execution after user confirmation. Currently, only ReactAgent is supported as a sub-Agent.
+
+### Enabling HITL
+
+```java
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+
+// Configure sub-agent tool with HITL enabled
+toolkit.registration()
+        .subAgent(() -> ReActAgent.builder()
+                .name("DataAnalyst")
+                .sysPrompt("You are a data analysis expert.")
+                .model(model)
+                .build())
+        .config(SubAgentConfig.builder()
+                .enableHITL(true)  // Enable human-in-the-loop
+                .build())
+        .apply();
+
+// Create main agent with HITL support enabled
+ReActAgent mainAgent = ReActAgent.builder()
+        .name("Coordinator")
+        .sysPrompt("You are a coordinator responsible for calling the data analyst.")
+        .model(model)
+        .toolkit(toolkit)
+        .enableSubAgentHITL(true)  // Main agent also needs HITL support enabled
+        .build();
+```
+
+### Handling Suspend and Resume
+
+When a sub-agent is suspended, the returned message contains the pending tool information. Display it to the user and decide next steps based on their choice:
+
+```java
+import io.agentscope.core.tool.subagent.SubAgentContext;
+
+Msg response = mainAgent.call(userMsg).block();
+
+// Check if sub-agent is suspended
+while (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+    List<ToolResultBlock> toolResults = response.getContentBlocks(ToolResultBlock.class);
+    
+    for (ToolResultBlock resultBlock : toolResults) {
+        if (!SubAgentContext.isSubAgentResult(resultBlock)) {
+            continue;
+        }
+        
+        // Get the blocked tool calls from sub-agent
+        List<ToolUseBlock> pendingTools = resultBlock.getOutput().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .toList();
+        
+        if (!userConfirms(pendingTools)) {
+            // User declined, submit cancellation results
+            List<ToolResultBlock> cancelResults = pendingTools.stream()
+                    .map(t -> ToolResultBlock.of(t.getId(), t.getName(),
+                            TextBlock.builder().text("Operation cancelled").build()))
+                    .toList();
+            mainAgent.submitSubAgentResult(resultBlock.getId(), cancelResults);
+        }
+        response = mainAgent.call().block();
+    }
+}
+
+// Final response
+System.out.println(response.getTextContent());
+```
+
+## Quick Reference
+
+**Configuration methods**:
+- `SubAgentConfig.enableHITL(boolean)` — Enable/disable sub-agent HITL support
+- `ReActAgent.enableSubAgentHITL(boolean)` — Enable/disable main agent HITL support
+- `ReActAgent.isEnableSubAgentHITL()` — Whether the main agent supports sub-agent HITL
+
+**Detection methods**:
+- `SubAgentContext.isSubAgentResult(ToolResultBlock)` — Check if result is from sub-agent
+- `SubAgentContext.getSubAgentGenerateReason(ToolResultBlock)` — Get generate reason of sub-agent
+- `SubAgentContext.extractSessionId(ToolResultBlock)` — Extract session ID
+
+**Resume methods**:
+- `mainAgent.call()` — Continue executing pending tools
+- `mainAgent.submitSubAgentResult(String, ToolResultBlock)` — Submit single tool result
+- `mainAgent.submitSubAgentResult(String, List<ToolResultBlock>)` — Submit multiple tool results
