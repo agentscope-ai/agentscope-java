@@ -16,10 +16,10 @@
 
 package io.agentscope.core.training.backend;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.training.backend.dto.CommitRequest;
 import io.agentscope.core.training.backend.dto.FeedbackRequest;
 import io.agentscope.core.training.backend.dto.StatusResponse;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -46,7 +46,6 @@ import reactor.core.publisher.Mono;
  */
 public class TrinityClient {
     private static final Logger logger = LoggerFactory.getLogger(TrinityClient.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String baseUrl;
@@ -79,7 +78,7 @@ public class TrinityClient {
                                     request.getTaskId(),
                                     request.getRunId());
 
-                            String jsonBody = objectMapper.writeValueAsString(request);
+                            String jsonBody = JsonUtils.getJsonCodec().toJson(request);
                             String endpoint = baseUrl + "/feedback";
 
                             // Print actual JSON sent for debugging
@@ -99,7 +98,8 @@ public class TrinityClient {
 
                                 String responseBody = response.body().string();
                                 StatusResponse statusResponse =
-                                        objectMapper.readValue(responseBody, StatusResponse.class);
+                                        JsonUtils.getJsonCodec()
+                                                .fromJson(responseBody, StatusResponse.class);
 
                                 logger.info(
                                         "Feedback submitted: msgIds={}, reward={}, taskId={},"
@@ -130,7 +130,7 @@ public class TrinityClient {
                                     request.getTaskId(),
                                     request.getRunId());
 
-                            String jsonBody = objectMapper.writeValueAsString(request);
+                            String jsonBody = JsonUtils.getJsonCodec().toJson(request);
                             String endpoint = baseUrl + "/commit";
 
                             Request httpRequest =
@@ -147,7 +147,8 @@ public class TrinityClient {
 
                                 String responseBody = response.body().string();
                                 StatusResponse statusResponse =
-                                        objectMapper.readValue(responseBody, StatusResponse.class);
+                                        JsonUtils.getJsonCodec()
+                                                .fromJson(responseBody, StatusResponse.class);
 
                                 logger.info(
                                         "Training committed: taskId={}, runId={}, timeThreshold={}",
