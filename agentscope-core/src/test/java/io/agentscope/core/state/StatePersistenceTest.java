@@ -167,7 +167,7 @@ class StatePersistenceTest {
         @Test
         @DisplayName("Constructor should accept all boolean values")
         void testConstructor() {
-            StatePersistence persistence = new StatePersistence(true, false, true, false);
+            StatePersistence persistence = new StatePersistence(true, false, true, false, false);
             assertTrue(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
