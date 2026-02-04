@@ -78,7 +78,7 @@
         <dashscope-sdk-java.version>2.22.7</dashscope-sdk-java.version>
         <bailian.version>2.8.1</bailian.version>
         <openai-java.version>4.17.0</openai-java.version>
-        <anthropic.version>2.11.1</anthropic.version>
+        <anthropic.version>2.12.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
