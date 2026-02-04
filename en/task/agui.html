@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-26T02:17:40+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio (Visual Debugging)" href="studio.html">
+    <meta property="article:modified_time" content="2026-02-04T02:34:45+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="A2A (Agent2Agent)" href="a2a.html"><link rel="prev" title="Studio (Visual Debugging)" href="studio.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agui.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -474,7 +474,7 @@
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentConfiguration</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Bean</span>
-<span class="w">    </span><span class="nd">@AguiAgent</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="nd">@AguiAgentId</span><span class="p">(</span><span class="s">&quot;default&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Agent</span><span class="w"> </span><span class="nf">agent</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
@@ -642,7 +642,7 @@ mvn<span class="w"> </span>spring-boot:run
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-26</div>
+              Last updated on 2026-02-04</div>
           </div>
           <div class="right-details">
             <div class="icons">
