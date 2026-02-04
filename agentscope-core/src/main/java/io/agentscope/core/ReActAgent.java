@@ -64,6 +64,8 @@ import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.subagent.SubAgentContext;
+import io.agentscope.core.tool.subagent.SubAgentHook;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -71,6 +73,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -91,6 +94,7 @@ import reactor.core.publisher.Mono;
  *   <li><b>Reactive Streaming:</b> Uses Project Reactor for non-blocking execution
  *   <li><b>Hook System:</b> Extensible hooks for monitoring and intercepting agent execution
  *   <li><b>HITL Support:</b> Human-in-the-loop via stopAgent() in PostReasoningEvent/PostActingEvent
+ *   <li><b>SubAgent HITL:</b> Supports human-in-the-loop interactions for sub-agents via SubAgentTool
  *   <li><b>Structured Output:</b> StructuredOutputCapableAgent provides type-safe output generation
  * </ul>
  *
@@ -141,6 +145,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
+    private final SubAgentContext subAgentContext;
 
     // ==================== Constructor ====================
 
@@ -165,6 +170,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
+        this.subAgentContext = builder.subAgentContext;
     }
 
     // ==================== New StateModule API ====================
@@ -180,6 +186,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      *   <li>Memory messages (if memoryManaged is true)
      *   <li>Toolkit activeGroups (if toolkitManaged is true)
      *   <li>PlanNotebook state (if planNotebookManaged is true)
+     *   <li>SubAgentContext state (if subAgentContextManaged is true)
      * </ul>
      *
      * @param session the session to save state to
@@ -210,6 +217,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (statePersistence.planNotebookManaged() && planNotebook != null) {
             planNotebook.saveTo(session, sessionKey);
         }
+
+        // Save SubAgentContext if managed
+        if (statePersistence.subAgentContextManaged() && subAgentContext != null) {
+            subAgentContext.saveTo(session, sessionKey);
+        }
     }
 
     /**
@@ -238,6 +250,75 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (statePersistence.planNotebookManaged() && planNotebook != null) {
             planNotebook.loadFrom(session, sessionKey);
         }
+
+        // Load SubAgentContext if managed
+        if (statePersistence.subAgentContextManaged() && subAgentContext != null) {
+            subAgentContext.loadFrom(session, sessionKey);
+        }
+    }
+
+    // ==================== Sub-Agent API ====================
+
+    /**
+     * Check if SubAgent HITL (Human-in-the-Loop) is enabled.
+     *
+     * <p>This method checks whether the sub-agent human-in-the-loop functionality is available
+     * based on the presence of a sub-agent context.
+     *
+     * @return true if SubAgent HITL is enabled, false otherwise
+     */
+    public boolean isEnableSubAgentHITL() {
+        return subAgentContext != null;
+    }
+
+    /**
+     * Submit the execution result of a single sub-agent's tool.
+     *
+     * <p>This interface is used to submit confirmation information when a sub-agent requires user
+     * approval.
+     *
+     * @param subAgentToolId The ID of the sub-agent tool
+     * @param pendingResult The execution result of the sub-agent tool
+     * @throws IllegalStateException If SubAgent HITL is not enabled
+     * @throws IllegalArgumentException If the tool result is null
+     */
+    public void submitSubAgentResult(String subAgentToolId, ToolResultBlock pendingResult) {
+        if (!isEnableSubAgentHITL()) {
+            throw new IllegalStateException(
+                    "SubAgent HITL is not enabled. Please enable it via"
+                            + " builder.enableSubAgentHitl(true)");
+        }
+
+        if (pendingResult == null) {
+            throw new IllegalArgumentException("Tool result cannot be null");
+        }
+
+        subAgentContext.submitSubAgentResult(subAgentToolId, pendingResult);
+    }
+
+    /**
+     * Submit multiple tool execution results for a single sub-agent at once.
+     *
+     * <p>This method should be called when users provide multiple confirmations or results
+     * for already suspended sub-agents.
+     *
+     * @param subAgentToolId The ID of the sub-agent tool
+     * @param pendingResults A list of tool execution results from the sub-agent
+     * @throws IllegalStateException If SubAgent HITL is not enabled
+     * @throws IllegalArgumentException If the results list is null or empty
+     */
+    public void submitSubAgentResults(String subAgentToolId, List<ToolResultBlock> pendingResults) {
+        if (!isEnableSubAgentHITL()) {
+            throw new IllegalStateException(
+                    "SubAgent HITL is not enabled. Please enable it via"
+                            + " builder.enableSubAgentHitl(true)");
+        }
+
+        if (pendingResults == null || pendingResults.isEmpty()) {
+            throw new IllegalArgumentException("pendingResults cannot be null or empty");
+        }
+
+        subAgentContext.submitSubAgentResults(subAgentToolId, pendingResults);
     }
 
     // ==================== Protected API ====================
@@ -567,10 +648,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     /**
-     * Build a message containing suspended tool calls for user execution.
-     *
-     * <p>The message contains both the ToolUseBlocks and corresponding pending ToolResultBlocks
+     * Build a suspended message containing the tool calls and their pending results. This is used
      * for the suspended tools.
+     *
+     * <p>This method also registers SubAgentTool sessionIds in SubAgentContext so that
+     * when users provide tool results, the framework can automatically inject the sessionId
+     * without requiring users to be aware of it.
      *
      * @param pendingPairs List of (ToolUseBlock, pending ToolResultBlock) pairs
      * @return Msg with GenerateReason.TOOL_SUSPENDED
@@ -578,8 +661,16 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private Msg buildSuspendedMsg(List<Map.Entry<ToolUseBlock, ToolResultBlock>> pendingPairs) {
         List<ContentBlock> content = new ArrayList<>();
         for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : pendingPairs) {
-            content.add(pair.getKey());
-            content.add(pair.getValue());
+            ToolUseBlock toolUse = pair.getKey();
+            ToolResultBlock result = pair.getValue();
+
+            content.add(toolUse);
+            ToolResultBlock resultWithIdAndName =
+                    result.withIdAndName(toolUse.getId(), toolUse.getName());
+            content.add(resultWithIdAndName);
+
+            // Register SubAgentTool sessionId in SubAgentContext if this is a sub-agent suspension
+            registerSubAgentSessionIfNeeded(toolUse, result);
         }
         return Msg.builder()
                 .name(getName())
@@ -587,6 +678,32 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .content(content)
                 .generateReason(GenerateReason.TOOL_SUSPENDED)
                 .build();
+    }
+
+    /**
+     * Registers SubAgentTool sessionId in SubAgentContext if the suspended tool is a SubAgentTool.
+     *
+     * <p>This allows the framework to automatically inject sessionId when users provide
+     * tool results, making the sessionId transparent to external users.
+     *
+     * @param toolUse The tool use block
+     * @param result The suspended tool result block
+     */
+    private void registerSubAgentSessionIfNeeded(ToolUseBlock toolUse, ToolResultBlock result) {
+        if (subAgentContext == null || result == null || result.getMetadata() == null) {
+            return;
+        }
+
+        // Check if this is a SubAgentTool suspension by looking for the session ID in metadata
+        Optional<String> sessionIdOpt = SubAgentContext.extractSessionId(result);
+        if (sessionIdOpt.isPresent()) {
+            String sessionId = sessionIdOpt.get();
+            subAgentContext.setSessionId(toolUse.getId(), sessionId);
+            log.debug(
+                    "Registered SubAgentTool sessionId {} for tool {}",
+                    sessionId,
+                    toolUse.getName());
+        }
     }
 
     /**
@@ -1000,6 +1117,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private RetrieveConfig retrieveConfig =
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
 
+        // SubAgent HITL configuration
+        private SubAgentContext subAgentContext;
+        private boolean enableSubAgentHITL = false;
+
         private Builder() {}
 
         /**
@@ -1346,6 +1467,38 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Sets the SubAgentContext for managing sub-agent HITL interactions.
+         *
+         * <p>The SubAgentContext is used to store and retrieve pending tool results
+         * when a sub-agent is suspended waiting for user input. If not set, a new
+         * context will be created automatically when sub-agent HITL is enabled.
+         *
+         * @param subAgentContext The SubAgentContext instance
+         * @return This builder instance for method chaining
+         * @see SubAgentContext
+         */
+        public Builder subAgentContext(SubAgentContext subAgentContext) {
+            this.subAgentContext = subAgentContext;
+            return this;
+        }
+
+        /**
+         * Enables or disables sub-agent HITL (Human-in-the-Loop) support.
+         *
+         * <p>When enabled (default), the agent will automatically register a SubAgentHook
+         * to handle sub-agent suspension and resumption. This allows sub-agents to be
+         * suspended when they need user input and resumed when the user provides results.
+         *
+         * @param enableSubAgentHITL true to enable sub-agent HITL support (default: true)
+         * @return This builder instance for method chaining
+         * @see SubAgentHook
+         */
+        public Builder enableSubAgentHITL(boolean enableSubAgentHITL) {
+            this.enableSubAgentHITL = enableSubAgentHITL;
+            return this;
+        }
+
+        /**
          * Builds and returns a new ReActAgent instance with the configured settings.
          *
          * @return A new ReActAgent instance
@@ -1379,7 +1532,30 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 configureSkillBox(agentToolkit);
             }
 
+            // Configure SubAgent HITL support if enabled
+            if (enableSubAgentHITL) {
+                configureSubAgentHitl();
+            }
+
             return new ReActAgent(this, agentToolkit);
+        }
+
+        /**
+         * Configures SubAgent HITL (Human-in-the-Loop) support.
+         *
+         * <p>This method automatically:
+         * <ul>
+         *   <li>Creates a SubAgentContext if not provided</li>
+         *   <li>Registers a SubAgentHook to handle sub-agent suspension and resumption</li>
+         * </ul>
+         */
+        private void configureSubAgentHitl() {
+            if (this.subAgentContext == null) {
+                this.subAgentContext = new SubAgentContext();
+            }
+
+            // Add SubAgentHook with the context
+            hooks.add(new SubAgentHook(this.subAgentContext));
         }
 
         /**
