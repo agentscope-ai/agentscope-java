@@ -23,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.exception.CompositeAgentException;
@@ -32,6 +35,7 @@ import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -212,5 +216,222 @@ class FanoutPipelineTest {
                 .memory(new InMemoryMemory()) // Each agent gets independent memory for thread
                 // safety
                 .build();
+    }
+
+    // ==================== Streaming Tests ====================
+
+    @Test
+    @DisplayName("Should stream events from all agents when running concurrently")
+    void shouldStreamEventsConcurrently() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2));
+
+        Msg input = TestUtils.createUserMessage("User", "stream fanout");
+        List<Event> events = pipeline.stream(input).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Streaming pipeline should produce events");
+        assertFalse(events.isEmpty(), "Events should not be empty");
+
+        // Verify we got AGENT_RESULT events from both agents
+        long agentResultCount =
+                events.stream().filter(e -> e.getType() == EventType.AGENT_RESULT).count();
+        assertEquals(2, agentResultCount, "Expected AGENT_RESULT from each agent");
+
+        // Verify models were called
+        assertEquals(1, model1.getCallCount(), "First model should be invoked once");
+        assertEquals(1, model2.getCallCount(), "Second model should be invoked once");
+    }
+
+    @Test
+    @DisplayName("Should stream events sequentially when configured")
+    void shouldStreamEventsSequentially() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2), false);
+
+        Msg input = TestUtils.createUserMessage("User", "sequential stream");
+        List<Event> events = pipeline.stream(input).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Sequential streaming should return events");
+        assertFalse(pipeline.isConcurrentEnabled(), "Pipeline should be sequential");
+
+        // Verify we got AGENT_RESULT events
+        long agentResultCount =
+                events.stream().filter(e -> e.getType() == EventType.AGENT_RESULT).count();
+        assertEquals(2, agentResultCount, "Expected AGENT_RESULT from each agent");
+
+        // Find agent result events and verify order
+        List<Event> agentResults =
+                events.stream().filter(e -> e.getType() == EventType.AGENT_RESULT).toList();
+
+        assertEquals(
+                "Agent1",
+                agentResults.get(0).getMessage().getName(),
+                "First agent response should lead");
+        assertEquals(
+                "Agent2",
+                agentResults.get(1).getMessage().getName(),
+                "Second agent response should follow");
+    }
+
+    @Test
+    @DisplayName("Should stream with custom StreamOptions")
+    void shouldStreamWithCustomOptions() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2));
+
+        // Only stream AGENT_RESULT events
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.AGENT_RESULT)
+                        .incremental(true)
+                        .build();
+
+        Msg input = TestUtils.createUserMessage("User", "options test");
+        List<Event> events = pipeline.stream(input, options).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Streaming with options should return events");
+
+        // All events should be AGENT_RESULT type
+        boolean allAgentResults =
+                events.stream().allMatch(e -> e.getType() == EventType.AGENT_RESULT);
+        assertTrue(allAgentResults, "All events should be AGENT_RESULT");
+    }
+
+    @Test
+    @DisplayName("Should return empty flux for empty pipeline")
+    void shouldReturnEmptyFluxForEmptyPipeline() {
+        FanoutPipeline pipeline = new FanoutPipeline(List.of());
+
+        Msg input = TestUtils.createUserMessage("User", "empty pipeline");
+        List<Event> events = pipeline.stream(input).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Should return empty list");
+        assertTrue(events.isEmpty(), "Empty pipeline should produce no events");
+    }
+
+    @Test
+    @DisplayName("Should stream events through builder-created pipeline")
+    void shouldStreamEventsViaBuilder() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+        ReActAgent agent3 = createAgent("Agent3", model3);
+
+        FanoutPipeline pipeline =
+                FanoutPipeline.builder()
+                        .addAgent(agent1)
+                        .addAgents(List.of(agent2, agent3))
+                        .sequential()
+                        .build();
+
+        Msg input = TestUtils.createUserMessage("User", "builder stream");
+        List<Event> events = pipeline.stream(input).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Builder-produced pipeline should stream events");
+
+        // Verify agent results in order (sequential mode)
+        List<String> agentNames =
+                events.stream()
+                        .filter(e -> e.getType() == EventType.AGENT_RESULT)
+                        .map(e -> e.getMessage().getName())
+                        .toList();
+
+        assertEquals(
+                List.of("Agent1", "Agent2", "Agent3"),
+                agentNames,
+                "Sequential streaming should maintain insertion order");
+    }
+
+    @Test
+    @DisplayName("Should collect events count correctly in concurrent streaming")
+    void shouldCollectCorrectEventCountConcurrently() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+        ReActAgent agent3 = createAgent("Agent3", model3);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2, agent3));
+
+        Msg input = TestUtils.createUserMessage("User", "count test");
+
+        AtomicInteger eventCount = new AtomicInteger(0);
+        pipeline.stream(input).doOnNext(event -> eventCount.incrementAndGet()).blockLast(TIMEOUT);
+
+        assertTrue(
+                eventCount.get() >= 3,
+                "Should have at least 3 AGENT_RESULT events (one per agent)");
+    }
+
+    @Test
+    @DisplayName("Should stream with null options using defaults")
+    void shouldStreamWithNullOptions() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2));
+
+        Msg input = TestUtils.createUserMessage("User", "null options test");
+        // Pass null options explicitly to test the null handling branch
+        List<Event> events = pipeline.stream(input, null, null).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Should handle null options gracefully");
+        assertFalse(events.isEmpty(), "Events should not be empty");
+    }
+
+    @Test
+    @DisplayName("Should stream with structured output class in concurrent mode")
+    void shouldStreamWithStructuredOutputConcurrent() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2), true);
+
+        Msg input = TestUtils.createUserMessage("User", "structured output test");
+        StreamOptions options = StreamOptions.defaults();
+
+        // Test with a structured output class
+        List<Event> events =
+                pipeline.stream(input, options, String.class).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Should handle structured output class");
+    }
+
+    @Test
+    @DisplayName("Should stream with structured output class in sequential mode")
+    void shouldStreamWithStructuredOutputSequential() {
+        ReActAgent agent1 = createAgent("Agent1", model1);
+        ReActAgent agent2 = createAgent("Agent2", model2);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(agent1, agent2), false);
+
+        Msg input = TestUtils.createUserMessage("User", "sequential structured test");
+        StreamOptions options = StreamOptions.defaults();
+
+        // Test sequential mode with structured output class
+        List<Event> events =
+                pipeline.stream(input, options, String.class).collectList().block(TIMEOUT);
+
+        assertNotNull(events, "Should handle structured output in sequential mode");
+    }
+
+    @Test
+    @DisplayName("Should handle streaming errors and collect them")
+    void shouldHandleStreamingErrors() {
+        MockModel errorModel = new MockModel("Error response").withError("Streaming error");
+        ReActAgent successAgent = createAgent("SuccessAgent", model1);
+        ReActAgent failingAgent = createAgent("ErrorAgent", errorModel);
+
+        FanoutPipeline pipeline = new FanoutPipeline(List.of(successAgent, failingAgent));
+        Msg input = TestUtils.createUserMessage("User", "streaming error test");
+
+        // The streaming should complete but may throw on complete if errors occurred
+        assertThrows(
+                CompositeAgentException.class,
+                () -> pipeline.stream(input).collectList().block(TIMEOUT),
+                "Should throw CompositeAgentException when agent streaming fails");
     }
 }

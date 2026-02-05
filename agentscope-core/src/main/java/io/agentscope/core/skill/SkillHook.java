@@ -54,8 +54,8 @@ public class SkillHook implements Hook {
 
     @Override
     public int priority() {
-        // High priority (10) to ensure skills system prompt is added early
+        // High priority (55) to ensure skills system prompt is added early
         // before other hooks that might depend on skill system prompt
-        return 10;
+        return 55;
     }
 }

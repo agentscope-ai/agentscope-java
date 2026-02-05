@@ -40,45 +40,80 @@ jobs:
           ./.github/scripts/check-shade-and-bom-sync.sh
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        include:
+          - os: ubuntu-latest
+            repo-cache-path: '~/.m2/repository'
+            mvnd-cache-path: '~/.mvnd'
+          - os: windows-latest
+            repo-cache-path: '~\.m2\repository'
+            mvnd-cache-path: '~\.mvnd'
+
     env:
       MVND_VERSION: '1.0.3'
+      JAVA_VERSION: '17'
+
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
+          cache: 'maven'
 
-      - name: Cache Maven repository
+      - name: Cache Maven repository [${{ runner.os }}]
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
+          path: ${{ matrix.repo-cache-path }}
           key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             maven-${{ runner.os }}-
 
-      - name: Cache mvnd
+      - name: Cache mvnd [${{ runner.os }}]
         id: cache-mvnd
         uses: actions/cache@v4
         with:
-          path: ~/.mvnd
-          key: mvnd-${{ env.MVND_VERSION }}-linux
+          path: ${{ matrix.mvnd-cache-path }}
+          key: mvnd-${{ env.MVND_VERSION }}-${{ runner.os }}
 
-      - name: Install mvnd
-        if: steps.cache-mvnd.outputs.cache-hit != 'true'
+      - name: Install mvnd [Linux]
+        if: steps.cache-mvnd.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        shell: bash
         run: |
           curl -fsSL https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64.tar.gz | tar xz
           mkdir -p ~/.mvnd
           mv maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64/* ~/.mvnd/
 
-      - name: Build and Test with Coverage
+      - name: Install mvnd [Windows]
+        if: steps.cache-mvnd.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-windows-amd64.zip" `
+            -OutFile "mvnd.zip"
+          mkdir -Path "~\.mvnd" -Force
+          Expand-Archive -Path "mvnd.zip" -DestinationPath "mvnd" -FORCE
+          Copy-Item -Path "mvnd\maven-mvnd-${{ env.MVND_VERSION }}-windows-amd64\*" -Destination "~\.mvnd\" -Recurse
+          Remove-Item -Path "mvnd", "mvnd.zip" -Recurse -Force
+
+      - name: Build and Test with Coverage [Linux]
+        if: runner.os == 'Linux'
         run: |
           export PATH="$HOME/.mvnd/bin:$PATH"
           mvnd -B clean verify
 
+      - name: Build and Test with Coverage [Windows]
+        if: runner.os == 'Windows'
+        run: |
+          & "~\.mvnd\bin\mvnd.cmd" -B clean verify
+
       - name: Upload coverage reports to Codecov
+        if: runner.os == 'Linux'
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

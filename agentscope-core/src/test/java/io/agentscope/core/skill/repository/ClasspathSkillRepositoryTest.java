@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.skill.util;
+package io.agentscope.core.skill.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Unit tests for JarSkillRepositoryAdapter.
+ * Unit tests for ClasspathSkillRepository.
  *
  * <p>Tests the adapter's ability to load skills from both:
  * <ul>
@@ -49,17 +49,17 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>Tagged as "unit" - fast running tests without external dependencies.
  */
 @Tag("unit")
-@DisplayName("JarSkillRepositoryAdapter Unit Tests")
-class JarSkillRepositoryAdapterTest {
+@DisplayName("ClasspathSkillRepository Unit Tests")
+class ClasspathSkillRepositoryTest {
 
     @TempDir Path tempDir;
 
-    private JarSkillRepositoryAdapter adapter;
+    private ClasspathSkillRepository repository;
 
     @AfterEach
     void tearDown() throws IOException {
-        if (adapter != null) {
-            adapter.close();
+        if (repository != null) {
+            repository.close();
         }
     }
 
@@ -68,11 +68,11 @@ class JarSkillRepositoryAdapterTest {
     @Test
     @DisplayName("Should load single skill from file system")
     void testLoadSingleSkillFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills");
+        repository = new ClasspathSkillRepository("test-skills");
 
-        assertFalse(adapter.isJarEnvironment(), "Should detect file system environment");
+        assertFalse(repository.isJarEnvironment(), "Should detect file system environment");
 
-        AgentSkill skill = adapter.getSkill("writing-skill");
+        AgentSkill skill = repository.getSkill("writing-skill");
         assertNotNull(skill);
         assertEquals("writing-skill", skill.getName());
         assertEquals("A skill for writing and content creation", skill.getDescription());
@@ -82,9 +82,9 @@ class JarSkillRepositoryAdapterTest {
     @Test
     @DisplayName("Should load skill with nested resources from file system")
     void testLoadSkillWithResourcesFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills");
+        repository = new ClasspathSkillRepository("test-skills");
 
-        AgentSkill skill = adapter.getSkill("writing-skill");
+        AgentSkill skill = repository.getSkill("writing-skill");
         assertNotNull(skill);
 
         // Verify nested resource is loaded
@@ -97,17 +97,17 @@ class JarSkillRepositoryAdapterTest {
     @Test
     @DisplayName("Should load all skills from file system")
     void testLoadAllSkillsFromFileSystem() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills");
+        repository = new ClasspathSkillRepository("test-skills");
 
         // Test getAllSkillNames()
-        List<String> skillNames = adapter.getAllSkillNames();
+        List<String> skillNames = repository.getAllSkillNames();
         assertNotNull(skillNames);
         assertEquals(2, skillNames.size());
         assertTrue(skillNames.contains("writing-skill"));
         assertTrue(skillNames.contains("calculation-skill"));
 
         // Test getAllSkills()
-        List<AgentSkill> skills = adapter.getAllSkills();
+        List<AgentSkill> skills = repository.getAllSkills();
         assertNotNull(skills);
         assertEquals(2, skills.size());
         List<String> loadedNames = skills.stream().map(AgentSkill::getName).toList();
@@ -123,11 +123,11 @@ class JarSkillRepositoryAdapterTest {
         Path jarPath = createTestJarInFolder("test-skill", "Test Skill", "Test content");
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
+            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
 
-            assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
+            assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
 
-            AgentSkill skill = adapter.getSkill("test-skill");
+            AgentSkill skill = repository.getSkill("test-skill");
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test Skill", skill.getDescription());
@@ -141,11 +141,11 @@ class JarSkillRepositoryAdapterTest {
         Path jarPath = createTestJarWithResources();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
+            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
 
-            assertTrue(adapter.isJarEnvironment());
+            assertTrue(repository.isJarEnvironment());
 
-            AgentSkill skill = adapter.getSkill("jar-skill");
+            AgentSkill skill = repository.getSkill("jar-skill");
             assertNotNull(skill);
             assertEquals("jar-skill", skill.getName());
 
@@ -164,29 +164,29 @@ class JarSkillRepositoryAdapterTest {
         Path jarPath = createTestJarWithMultipleSkills();
 
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
+            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
 
-            assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
+            assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
 
             // Test getAllSkillNames()
-            List<String> skillNames = adapter.getAllSkillNames();
+            List<String> skillNames = repository.getAllSkillNames();
             assertNotNull(skillNames);
             assertEquals(2, skillNames.size());
             assertTrue(skillNames.contains("skill-one"));
             assertTrue(skillNames.contains("skill-two"));
 
             // Test getAllSkills()
-            List<AgentSkill> skills = adapter.getAllSkills();
+            List<AgentSkill> skills = repository.getAllSkills();
             assertNotNull(skills);
             assertEquals(2, skills.size());
 
             // Test getSkill() for individual skills
-            AgentSkill skill1 = adapter.getSkill("skill-one");
+            AgentSkill skill1 = repository.getSkill("skill-one");
             assertNotNull(skill1);
             assertEquals("skill-one", skill1.getName());
             assertEquals("First skill", skill1.getDescription());
 
-            AgentSkill skill2 = adapter.getSkill("skill-two");
+            AgentSkill skill2 = repository.getSkill("skill-two");
             assertNotNull(skill2);
             assertEquals("skill-two", skill2.getName());
             assertEquals("Second skill", skill2.getDescription());
@@ -218,13 +218,13 @@ class JarSkillRepositoryAdapterTest {
                         }
                     };
 
-            adapter =
-                    new JarSkillRepositoryAdapterWithClassLoader(
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader(
                             "jar-skills", springBootClassLoader);
 
-            assertTrue(adapter.isJarEnvironment(), "Should detect JAR environment");
+            assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
 
-            AgentSkill skill = adapter.getSkill("sb-skill");
+            AgentSkill skill = repository.getSkill("sb-skill");
             assertNotNull(skill);
             assertEquals("sb-skill", skill.getName());
             assertEquals("SB Skill", skill.getDescription());
@@ -239,18 +239,18 @@ class JarSkillRepositoryAdapterTest {
     void testResourceNotFound() {
         assertThrows(
                 IOException.class,
-                () -> new JarSkillRepositoryAdapter("non-existent-skill"),
+                () -> new ClasspathSkillRepository("non-existent-skill"),
                 "Should throw IOException for non-existent resource");
     }
 
     @Test
     @DisplayName("Should throw exception when skill directory not found")
     void testSkillDirectoryNotFound() throws IOException {
-        adapter = new JarSkillRepositoryAdapter("test-skills");
+        repository = new ClasspathSkillRepository("test-skills");
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> adapter.getSkill("non-existent"),
+                () -> repository.getSkill("non-existent"),
                 "Should throw exception when skill directory doesn't exist");
     }
 
@@ -260,16 +260,16 @@ class JarSkillRepositoryAdapterTest {
     @DisplayName("Should correctly detect environment type")
     void testEnvironmentDetection() throws Exception {
         // File system environment
-        try (JarSkillRepositoryAdapter fsAdapter = new JarSkillRepositoryAdapter("test-skills")) {
-            assertFalse(fsAdapter.isJarEnvironment());
+        try (ClasspathSkillRepository fsRepository = new ClasspathSkillRepository("test-skills")) {
+            assertFalse(fsRepository.isJarEnvironment());
         }
 
         // JAR environment
         Path jarPath = createTestJarInFolder("env-test", "Env Test", "Content");
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            try (JarSkillRepositoryAdapter jarAdapter =
-                    new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader)) {
-                assertTrue(jarAdapter.isJarEnvironment());
+            try (ClasspathSkillRepository jarRepository =
+                    new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader)) {
+                assertTrue(jarRepository.isJarEnvironment());
             }
         }
     }
@@ -278,45 +278,45 @@ class JarSkillRepositoryAdapterTest {
     @DisplayName("Should handle close properly for both environments")
     void testCloseHandling() throws Exception {
         // Test file system adapter close
-        adapter = new JarSkillRepositoryAdapter("test-skills");
-        assertFalse(adapter.isJarEnvironment());
-        adapter.close();
-        adapter.close(); // Idempotent close
+        repository = new ClasspathSkillRepository("test-skills");
+        assertFalse(repository.isJarEnvironment());
+        repository.close();
+        repository.close(); // Idempotent close
 
         // Test JAR adapter close
         Path jarPath = createTestJarInFolder("closeable-skill", "Closeable", "Content");
         try (URLClassLoader classLoader = new URLClassLoader(new URL[] {jarPath.toUri().toURL()})) {
-            adapter = new JarSkillRepositoryAdapterWithClassLoader("jar-skills", classLoader);
-            assertTrue(adapter.isJarEnvironment());
+            repository = new ClasspathSkillRepositoryWithClassLoader("jar-skills", classLoader);
+            assertTrue(repository.isJarEnvironment());
 
-            adapter.getSkill("closeable-skill"); // Load skill to ensure file system is created
-            adapter.close();
-            adapter.close(); // Idempotent close
+            repository.getSkill("closeable-skill"); // Load skill to ensure file system is created
+            repository.close();
+            repository.close(); // Idempotent close
         }
     }
 
     @Test
     @DisplayName("Should throw exception when using closed adapter")
     void testOperationsAfterClose() throws Exception {
-        adapter = new JarSkillRepositoryAdapter("test-skills");
+        repository = new ClasspathSkillRepository("test-skills");
 
         // Close the adapter
-        adapter.close();
+        repository.close();
 
         // All operations should throw IllegalStateException
         assertThrows(
                 IllegalStateException.class,
-                () -> adapter.getSkill("writing-skill"),
+                () -> repository.getSkill("writing-skill"),
                 "Should throw exception when getting skill after close");
 
         assertThrows(
                 IllegalStateException.class,
-                () -> adapter.getAllSkillNames(),
+                () -> repository.getAllSkillNames(),
                 "Should throw exception when getting all skill names after close");
 
         assertThrows(
                 IllegalStateException.class,
-                () -> adapter.getAllSkills(),
+                () -> repository.getAllSkills(),
                 "Should throw exception when getting all skills after close");
     }
 
@@ -497,11 +497,10 @@ class JarSkillRepositoryAdapterTest {
     /**
      * Custom adapter that uses a specific ClassLoader for testing JAR loading.
      */
-    private static class JarSkillRepositoryAdapterWithClassLoader
-            extends JarSkillRepositoryAdapter {
+    private static class ClasspathSkillRepositoryWithClassLoader extends ClasspathSkillRepository {
 
-        public JarSkillRepositoryAdapterWithClassLoader(
-                String resourcePath, ClassLoader classLoader) throws IOException {
+        public ClasspathSkillRepositoryWithClassLoader(String resourcePath, ClassLoader classLoader)
+                throws IOException {
             super(resourcePath, classLoader);
         }
     }
