@@ -278,10 +278,15 @@ public class OpenAIConversationMerger {
                 // Include ThinkingBlock in conversation history for models that support reasoning
                 if (includePrefix) {
                     appendNamePrefix(textBuffer, agentName);
-                }
-                String thinking = thinkingBlock.getThinking();
-                if (thinking != null && !thinking.isEmpty()) {
-                    textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    }
+                } else {
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    }
                 }
             } else if (block instanceof ToolResultBlock toolResult) {
                 // Use provided converter to handle multimodal content in tool results

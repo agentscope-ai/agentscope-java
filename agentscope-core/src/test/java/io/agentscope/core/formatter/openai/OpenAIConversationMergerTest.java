@@ -423,8 +423,7 @@ class OpenAIConversationMergerTest {
 
         // Verify roleLabel is NOT present
         assertTrue(
-                !content.contains("TOOL ToolAgent"),
-                "Should not contain 'TOOL ToolAgent' format");
+                !content.contains("TOOL ToolAgent"), "Should not contain 'TOOL ToolAgent' format");
     }
 
     @Test
@@ -467,8 +466,7 @@ class OpenAIConversationMergerTest {
             assertTrue(
                     content.contains("Alice: Look at this"),
                     "Should format as 'Alice: Look at this'");
-            assertTrue(
-                    content.contains("Bob: Interesting"), "Should format as 'Bob: Interesting'");
+            assertTrue(content.contains("Bob: Interesting"), "Should format as 'Bob: Interesting'");
         }
     }
 
@@ -477,12 +475,20 @@ class OpenAIConversationMergerTest {
     void testThinkingBlockFormatWithNameOnly() {
         List<Msg> messages = new ArrayList<>();
 
+        // Add a first message to make thinking message part of history
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(List.of(TextBlock.builder().text("Question").build()))
+                        .build();
+
         io.agentscope.core.message.ThinkingBlock thinkingBlock =
                 io.agentscope.core.message.ThinkingBlock.builder()
                         .thinking("Let me analyze this...")
                         .build();
 
-        Msg msg =
+        Msg msg2 =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
                         .name("Thinker")
@@ -492,11 +498,12 @@ class OpenAIConversationMergerTest {
                                         TextBlock.builder().text("My conclusion").build()))
                         .build();
 
-        messages.add(msg);
+        messages.add(msg1);
+        messages.add(msg2);
 
         OpenAIMessage result =
                 merger.mergeToUserMessage(
-                        messages, msg2 -> msg2.getRole().toString(), blocks -> "Tool result");
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
 
         assertNotNull(result);
         String content = result.getContentAsString();
@@ -506,7 +513,6 @@ class OpenAIConversationMergerTest {
                 content.contains("Thinker: [Thinking]: Let me analyze this..."),
                 "Should include thinking with name prefix");
         assertTrue(
-                content.contains("Thinker: My conclusion"),
-                "Should include text with name prefix");
+                content.contains("Thinker: My conclusion"), "Should include text with name prefix");
     }
 }
