@@ -810,10 +810,11 @@ class ToolMethodInvokerTest {
         Assertions.assertFalse(
                 ToolTestUtils.isErrorResponse(response), "Should not fail with ClassCastException");
         String content = ToolTestUtils.extractContent(response);
-        // The order of map entries is not guaranteed, so check for both possibilities
+        // The order of map entries is not guaranteed, so check that both key-value pairs are
+        // present.
         Assertions.assertTrue(
-                content.contains("ProductA") && content.contains("ProductB"),
-                "Response should contain both product names");
+                content.contains("key1=ProductA") && content.contains("key2=ProductB"),
+                "Response should contain both key-value pairs. Actual: " + content);
     }
 
     /** Test nested generic types like List&lt;List&lt;Integer&gt;&gt;. */
