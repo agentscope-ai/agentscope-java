@@ -131,14 +131,52 @@ class FileSystemSkillRepositoryTest {
     // ==================== getSource Tests ====================
 
     @Test
-    @DisplayName("Should return correct source format")
-    void testGetSource() {
-        String source = repository.getSource();
-        assertNotNull(source);
-        assertTrue(source.startsWith("filesystem_"));
-        String expectedSuffix =
-                skillsBaseDir.getParent().getFileName() + "/" + skillsBaseDir.getFileName();
-        assertEquals("filesystem_" + expectedSuffix, source);
+    @DisplayName("Should return default source with format: filesystem:parent_child")
+    void testGetSource_DefaultSource() {
+        assertTrue(repository.getSource().matches("filesystem:[^_]+_skills"));
+    }
+
+    @Test
+    @DisplayName("Should return custom source when provided")
+    void testGetSource_CustomSource() {
+        FileSystemSkillRepository repo =
+                new FileSystemSkillRepository(skillsBaseDir, true, "custom-source");
+        assertEquals("custom-source", repo.getSource());
+    }
+
+    @Test
+    @DisplayName("Should use default source when null")
+    void testGetSource_Null() {
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(skillsBaseDir, true, null);
+        assertTrue(repo.getSource().startsWith("filesystem:"));
+    }
+
+    // ==================== buildDefaultSourceSuffix Tests ====================
+
+    @Test
+    @DisplayName("Should build source: parent_child")
+    void testBuildSourceSuffix_TwoLevels() throws IOException {
+        Path dir = tempDir.resolve("parent").resolve("child");
+        Files.createDirectories(dir);
+        assertEquals("filesystem:parent_child", new FileSystemSkillRepository(dir).getSource());
+    }
+
+    @Test
+    @DisplayName("Should use last two levels for deep paths")
+    void testBuildSourceSuffix_DeepPath() throws IOException {
+        Path dir = tempDir.resolve("a/b/c/d");
+        Files.createDirectories(dir);
+        assertEquals("filesystem:c_d", new FileSystemSkillRepository(dir).getSource());
+    }
+
+    @Test
+    @DisplayName("Should preserve special chars in path")
+    void testBuildSourceSuffix_SpecialChars() throws IOException {
+        Path dir = tempDir.resolve("my-project").resolve("skills_v1.0");
+        Files.createDirectories(dir);
+        assertEquals(
+                "filesystem:my-project_skills_v1.0",
+                new FileSystemSkillRepository(dir).getSource());
     }
 
     // ==================== getRepositoryInfo Tests ====================
