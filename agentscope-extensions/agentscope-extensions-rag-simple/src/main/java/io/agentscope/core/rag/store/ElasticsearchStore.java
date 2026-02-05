@@ -17,6 +17,7 @@ package io.agentscope.core.rag.store;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.mapping.DenseVectorProperty;
+import co.elastic.clients.elasticsearch._types.mapping.DenseVectorSimilarity;
 import co.elastic.clients.elasticsearch._types.mapping.KeywordProperty;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.mapping.TextProperty;
@@ -31,7 +32,8 @@ import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
-import co.elastic.clients.transport.rest_client.RestClientTransport;
+import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
+import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -44,13 +46,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
-import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.ssl.SSLContextBuilder;
-import org.elasticsearch.client.RestClient;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -94,7 +96,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
 
     private final String indexName;
     private final int dimensions;
-    private final RestClient restClient;
+    private final Rest5Client restClient;
     private final ElasticsearchTransport transport;
     private final ElasticsearchClient client;
     private final boolean disableSslVerification;
@@ -110,8 +112,9 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
             BasicCredentialsProvider credsProv = new BasicCredentialsProvider();
             if (builder.username != null && builder.password != null) {
                 credsProv.setCredentials(
-                        AuthScope.ANY,
-                        new UsernamePasswordCredentials(builder.username, builder.password));
+                        new AuthScope(null, -1),
+                        new UsernamePasswordCredentials(
+                                builder.username, builder.password.toCharArray()));
             }
 
             final SSLContext sslContext;
@@ -127,29 +130,30 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
             HttpHost host = HttpHost.create(builder.url);
 
             this.restClient =
-                    RestClient.builder(host)
+                    Rest5Client.builder(host)
                             .setHttpClientConfigCallback(
                                     httpClientBuilder -> {
                                         if (builder.username != null) {
                                             httpClientBuilder.setDefaultCredentialsProvider(
                                                     credsProv);
                                         }
-
+                                    })
+                            .setConnectionManagerCallback(
+                                    connectionManager -> {
                                         if (builder.url != null
-                                                && builder.url.startsWith("https")) {
-                                            httpClientBuilder.setSSLContext(sslContext);
-                                            if (builder.disableSslVerification) {
-                                                httpClientBuilder.setSSLHostnameVerifier(
-                                                        NoopHostnameVerifier.INSTANCE);
-                                            }
+                                                && builder.url.startsWith("https")
+                                                && builder.disableSslVerification) {
+                                            connectionManager.setTlsStrategy(
+                                                    new DefaultClientTlsStrategy(
+                                                            sslContext,
+                                                            NoopHostnameVerifier.INSTANCE));
                                         }
-                                        return httpClientBuilder;
                                     })
                             .build();
 
             // 2. Create Transport and Client
             this.transport =
-                    new RestClientTransport(restClient, new JacksonJsonpMapper(OBJECT_MAPPER));
+                    new Rest5ClientTransport(restClient, new JacksonJsonpMapper(OBJECT_MAPPER));
             this.client = new ElasticsearchClient(transport);
 
             // 3. Ensure Index Exists
@@ -348,7 +352,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
                                     new DenseVectorProperty.Builder()
                                             .dims(dimensions)
                                             .index(true)
-                                            .similarity("cosine")
+                                            .similarity(DenseVectorSimilarity.Cosine)
                                             .build())
                             .build();
 
