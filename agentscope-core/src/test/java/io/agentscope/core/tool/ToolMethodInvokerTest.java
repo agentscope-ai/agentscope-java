@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.Assert.assertThrows;
+
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -120,6 +122,24 @@ class ToolMethodInvokerTest {
         public int parsableIntString(
                 @ToolParam(name = "value", description = "value") String value) {
             return Integer.parseInt(value);
+        }
+
+        public String suspendTool(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            throw new ToolSuspendException(reason);
+        }
+
+        public java.util.concurrent.CompletableFuture<String> suspendToolAsync(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            return java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> {
+                        throw new ToolSuspendException(reason);
+                    });
+        }
+
+        public reactor.core.publisher.Mono<String> suspendToolMono(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            return reactor.core.publisher.Mono.error(new ToolSuspendException(reason));
         }
     }
 
@@ -491,6 +511,54 @@ class ToolMethodInvokerTest {
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response2));
         Assertions.assertEquals(
                 String.valueOf(Double.MAX_VALUE), ToolTestUtils.extractContent(response2));
+    }
+
+    @Test
+    void testToolSuspendException_SyncMethod() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("suspendTool", String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("reason", "Waiting for external API");
+
+        assertThrows(
+                ToolSuspendException.class,
+                () -> {
+                    invokeWithParam(tools, method, input);
+                });
+    }
+
+    @Test
+    void testToolSuspendException_CompletableFuture() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("suspendToolAsync", String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("reason", "Async suspension required");
+
+        assertThrows(
+                ToolSuspendException.class,
+                () -> {
+                    invokeWithParam(tools, method, input);
+                });
+    }
+
+    @Test
+    void testToolSuspendException_Mono() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("suspendToolMono", String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("reason", "Reactive suspension needed");
+
+        try {
+            ToolResultBlock response = invokeWithParam(tools, method, input);
+            Assertions.fail("Should throw ToolSuspendException");
+        } catch (ToolSuspendException e) {
+            Assertions.assertEquals("Reactive suspension needed", e.getReason());
+        } catch (Exception e) {
+            Assertions.fail("Unexpected exception: " + e.getMessage());
+        }
     }
 
     @Test
