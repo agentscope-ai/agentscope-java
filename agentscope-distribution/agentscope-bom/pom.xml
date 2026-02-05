@@ -241,6 +241,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Training Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-training</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Micronaut Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
