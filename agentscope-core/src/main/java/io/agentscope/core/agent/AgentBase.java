@@ -664,40 +664,46 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Flux of events emitted during execution
      */
     private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
-        return Flux.<Event>create(
-                        sink -> {
-                            // Create streaming hook with options
-                            StreamingHook streamingHook = new StreamingHook(sink, options);
+        return Flux.deferContextual(
+                ctxView ->
+                        Flux.<Event>create(
+                                        sink -> {
+                                            // Create streaming hook with options
+                                            StreamingHook streamingHook =
+                                                    new StreamingHook(sink, options);
 
-                            // Add temporary hook
-                            hooks.add(streamingHook);
+                                            // Add temporary hook
+                                            hooks.add(streamingHook);
 
-                            // Execute call and manage hook lifecycle
-                            callSupplier
-                                    .get()
-                                    .doFinally(
-                                            signalType -> {
-                                                // Remove temporary hook
-                                                hooks.remove(streamingHook);
-                                            })
-                                    .subscribe(
-                                            finalMsg -> {
-                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
-                                                    Event finalEvent =
-                                                            new Event(
-                                                                    EventType.AGENT_RESULT,
-                                                                    finalMsg,
-                                                                    true);
-                                                    sink.next(finalEvent);
-                                                }
+                                            // Use Mono.defer to ensure trace context propagation
+                                            // while maintaining streaming hook functionality
+                                            Mono.defer(() -> callSupplier.get())
+                                                    .contextWrite(
+                                                            context -> context.putAll(ctxView))
+                                                    .doFinally(
+                                                            signalType -> {
+                                                                // Remove temporary hook
+                                                                hooks.remove(streamingHook);
+                                                            })
+                                                    .subscribe(
+                                                            finalMsg -> {
+                                                                if (options.shouldStream(
+                                                                        EventType.AGENT_RESULT)) {
+                                                                    sink.next(
+                                                                            new Event(
+                                                                                    EventType
+                                                                                            .AGENT_RESULT,
+                                                                                    finalMsg,
+                                                                                    true));
+                                                                }
 
-                                                // Complete the stream
-                                                sink.complete();
-                                            },
-                                            sink::error);
-                        },
-                        FluxSink.OverflowStrategy.BUFFER)
-                .publishOn(Schedulers.boundedElastic());
+                                                                // Complete the stream
+                                                                sink.complete();
+                                                            },
+                                                            sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .publishOn(Schedulers.boundedElastic()));
     }
 
     @Override
