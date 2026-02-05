@@ -53,7 +53,7 @@ public class AgentConfiguration {
 public class AgentConfiguration {
 
     @Bean
-    @AguiAgent("default")
+    @AguiAgentId("default")
     public Agent agent() {
         return ReActAgent.builder()
                 .name("Assistant")

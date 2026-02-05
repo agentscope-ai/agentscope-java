@@ -41,6 +41,8 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -268,7 +270,7 @@ class SkillBoxTest {
         void testEnableCodeExecutionWithDefaultTempDir() {
             skillBox.codeExecution().withShell().withRead().withWrite().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             // workDir is null, meaning temporary directory will be created later
             assertNull(skillBox.getCodeExecutionWorkDir());
 
@@ -284,12 +286,102 @@ class SkillBoxTest {
 
             skillBox.codeExecution().workDir(customDir).withShell().withRead().withWrite().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertEquals(
                     Path.of(customDir).toAbsolutePath().normalize(),
                     skillBox.getCodeExecutionWorkDir());
             // Directory should not be created until scripts are written
             assertFalse(Files.exists(skillBox.getCodeExecutionWorkDir()));
+        }
+
+        @Test
+        @DisplayName("Should default uploadDir to workDir/skills")
+        void testUploadDirDefaultsToWorkDirSkills() {
+            String customDir = tempDir.resolve("default-upload").toString();
+
+            skillBox.codeExecution().workDir(customDir).withShell().withRead().withWrite().enable();
+
+            Path expectedUploadDir =
+                    Path.of(customDir).toAbsolutePath().normalize().resolve("skills");
+            assertEquals(expectedUploadDir, skillBox.getUploadDir());
+            assertFalse(Files.exists(expectedUploadDir));
+        }
+
+        @Test
+        @DisplayName("Should allow custom uploadDir independent from workDir")
+        void testCustomUploadDir() throws IOException {
+            String customWorkDir = tempDir.resolve("custom-work").toString();
+            String customUploadDir = tempDir.resolve("custom-upload").toString();
+
+            skillBox.codeExecution()
+                    .workDir(customWorkDir)
+                    .uploadDir(customUploadDir)
+                    .withShell()
+                    .withRead()
+                    .withWrite()
+                    .enable();
+
+            assertEquals(
+                    Path.of(customUploadDir).toAbsolutePath().normalize(), skillBox.getUploadDir());
+
+            Map<String, String> resources = new HashMap<>();
+            resources.put("scripts/main.py", "print('ok')");
+            AgentSkill skill = new AgentSkill("skill", "desc", "content", resources);
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            Path uploadPath = Path.of(customUploadDir);
+            assertTrue(Files.exists(uploadPath.resolve("skill_custom/scripts/main.py")));
+        }
+
+        @Test
+        @DisplayName("Should reject conflicting filter configuration")
+        void testFileFilterMutualExclusion() {
+            SkillFileFilter filter = path -> true;
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            skillBox.codeExecution()
+                                    .fileFilter(filter)
+                                    .includeFolders(Set.of("scripts"))
+                                    .enable());
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            skillBox.codeExecution()
+                                    .fileFilter(filter)
+                                    .includeExtensions(Set.of(".json"))
+                                    .enable());
+        }
+
+        @Test
+        @DisplayName("Should apply include folders and extensions with OR logic")
+        void testIncludeFoldersAndExtensionsOrLogic() throws IOException {
+            String workDir = tempDir.resolve("filter-or").toString();
+            skillBox.codeExecution()
+                    .workDir(workDir)
+                    .includeFolders(Set.of("scripts"))
+                    .includeExtensions(Set.of("json"))
+                    .withWrite()
+                    .enable();
+
+            Map<String, String> resources = new HashMap<>();
+            resources.put("scripts/data.txt", "folder match");
+            resources.put("config.json", "extension match");
+            resources.put("main.py", "no match");
+
+            AgentSkill skill = new AgentSkill("skill", "desc", "content", resources);
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            Path uploadPath = Path.of(workDir).resolve("skills/skill_custom");
+            assertTrue(Files.exists(uploadPath.resolve("scripts/data.txt")));
+            assertTrue(Files.exists(uploadPath.resolve("config.json")));
+            assertFalse(Files.exists(uploadPath.resolve("main.py")));
         }
 
         @Test
@@ -306,7 +398,7 @@ class SkillBoxTest {
                     .withWrite()
                     .enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertEquals(
                     Path.of(existingDir).toAbsolutePath().normalize(),
                     skillBox.getCodeExecutionWorkDir());
@@ -329,8 +421,8 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should write skill scripts to working directory organized by skill ID")
-        void testWriteSkillScriptsToWorkDir() throws IOException {
+        @DisplayName("Should upload skill files to upload directory organized by skill ID")
+        void testUploadSkillFilesToUploadDir() throws IOException {
             String workDir = tempDir.resolve("scripts").toString();
             skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
@@ -353,43 +445,61 @@ class SkillBoxTest {
             skillBox.registerSkill(skill1);
             skillBox.registerSkill(skill2);
 
-            // Write scripts - directory should be created now
-            skillBox.writeSkillScriptsToWorkDir();
+            // Upload files - directory should be created now
+            skillBox.uploadSkillFiles();
 
             // Verify directory created
-            Path workPath = Path.of(workDir);
-            assertTrue(Files.exists(workPath));
+            Path uploadPath = Path.of(workDir).resolve("skills");
+            assertTrue(Files.exists(uploadPath));
 
-            // Verify scripts are written to workDir/skillId/
-            assertTrue(Files.exists(workPath.resolve("skill1_custom/scripts/process.py")));
-            assertTrue(Files.exists(workPath.resolve("skill1_custom/scripts/analyze.js")));
-            assertTrue(Files.exists(workPath.resolve("skill2_custom/main.py")));
-            assertTrue(Files.exists(workPath.resolve("skill2_custom/util.sh")));
-            assertFalse(
-                    Files.exists(workPath.resolve("skill1_custom/config.json"))); // Not a script
+            // Verify files are uploaded to workDir/skills/skillId/
+            assertTrue(Files.exists(uploadPath.resolve("skill1_custom/scripts/process.py")));
+            assertTrue(Files.exists(uploadPath.resolve("skill1_custom/scripts/analyze.js")));
+            assertTrue(Files.exists(uploadPath.resolve("skill2_custom/main.py")));
+            assertTrue(Files.exists(uploadPath.resolve("skill2_custom/util.sh")));
+            assertFalse(Files.exists(uploadPath.resolve("skill1_custom/config.json"))); // Filtered
 
             // Verify content
             String pythonContent =
-                    Files.readString(workPath.resolve("skill1_custom/scripts/process.py"));
+                    Files.readString(uploadPath.resolve("skill1_custom/scripts/process.py"));
             assertEquals("print('hello from python')", pythonContent);
         }
 
         @Test
-        @DisplayName("Should throw exception when writing scripts without enabling code execution")
-        void testWriteScriptsWithoutEnabling() {
-            AgentSkill skill = new AgentSkill("skill", "desc", "content", null);
+        @DisplayName("Should decode base64 resources on upload")
+        void testUploadBase64ResourceDecoding() throws IOException {
+            String workDir = tempDir.resolve("base64-upload").toString();
+            skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
+
+            byte[] original = new byte[] {0x01, 0x02, 0x03, 0x04, 0x05};
+            String encoded = "base64:" + Base64.getEncoder().encodeToString(original);
+
+            Map<String, String> resources = new HashMap<>();
+            resources.put("scripts/binary.bin", encoded);
+            AgentSkill skill = new AgentSkill("skill", "desc", "content", resources);
             skillBox.registerSkill(skill);
 
-            IllegalStateException exception =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> skillBox.writeSkillScriptsToWorkDir());
-            assertEquals("Code execution is not enabled", exception.getMessage());
+            skillBox.uploadSkillFiles();
+
+            Path uploadPath = Path.of(workDir).resolve("skills/skill_custom/scripts/binary.bin");
+            assertTrue(Files.exists(uploadPath));
+            byte[] written = Files.readAllBytes(uploadPath);
+            assertEquals(original.length, written.length);
+            assertTrue(Arrays.equals(original, written));
         }
 
         @Test
-        @DisplayName("Should handle empty scripts gracefully and not create skill directory")
-        void testWriteEmptyScripts() throws IOException {
+        @DisplayName("Should upload even without enabling code execution")
+        void testUploadWithoutEnabling() {
+            AgentSkill skill = new AgentSkill("skill", "desc", "content", null);
+            skillBox.registerSkill(skill);
+
+            assertDoesNotThrow(() -> skillBox.uploadSkillFiles());
+        }
+
+        @Test
+        @DisplayName("Should handle empty uploads and not create skill directory")
+        void testUploadEmptyFiles() throws IOException {
             String workDir = tempDir.resolve("empty-scripts").toString();
             skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
@@ -402,23 +512,23 @@ class SkillBoxTest {
             skillBox.registerSkill(skill);
 
             // Should not throw exception
-            assertDoesNotThrow(() -> skillBox.writeSkillScriptsToWorkDir());
+            assertDoesNotThrow(() -> skillBox.uploadSkillFiles());
 
-            // Verify workDir is created but skill directory is not (no scripts)
-            Path workPath = Path.of(workDir);
-            assertTrue(Files.exists(workPath));
-            // No skill directory should be created since there are no scripts
-            assertFalse(Files.exists(workPath.resolve("skill_custom")));
+            // Verify uploadDir is created but skill directory is not (no files)
+            Path uploadPath = Path.of(workDir).resolve("skills");
+            assertTrue(Files.exists(uploadPath));
+            // No skill directory should be created since there are no files
+            assertFalse(Files.exists(uploadPath.resolve("skill_custom")));
         }
 
         @Test
-        @DisplayName("Should overwrite existing scripts in skill directory")
-        void testOverwriteExistingScripts() throws IOException {
+        @DisplayName("Should overwrite existing files in skill directory")
+        void testOverwriteExistingFiles() throws IOException {
             String workDir = tempDir.resolve("overwrite").toString();
             skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
 
             // Create initial script in skill directory
-            Path scriptPath = Path.of(workDir).resolve("skill_custom/test.py");
+            Path scriptPath = Path.of(workDir).resolve("skills/skill_custom/test.py");
             Files.createDirectories(scriptPath.getParent());
             Files.writeString(scriptPath, "print('old content')");
 
@@ -428,7 +538,7 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("skill", "desc", "content", resources);
             skillBox.registerSkill(skill);
 
-            skillBox.writeSkillScriptsToWorkDir();
+            skillBox.uploadSkillFiles();
 
             // Verify content is overwritten
             String content = Files.readString(scriptPath);
@@ -436,7 +546,7 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should create nested directories for scripts in skill directory")
+        @DisplayName("Should create nested directories for uploaded files")
         void testNestedDirectories() throws IOException {
             String workDir = tempDir.resolve("nested").toString();
             skillBox.codeExecution().workDir(workDir).withShell().withRead().withWrite().enable();
@@ -448,11 +558,11 @@ class SkillBoxTest {
             AgentSkill skill = new AgentSkill("skill", "desc", "content", resources);
             skillBox.registerSkill(skill);
 
-            skillBox.writeSkillScriptsToWorkDir();
+            skillBox.uploadSkillFiles();
 
-            Path workPath = Path.of(workDir);
-            assertTrue(Files.exists(workPath.resolve("skill_custom/scripts/utils/helper.py")));
-            assertTrue(Files.exists(workPath.resolve("skill_custom/scripts/data/loader.js")));
+            Path uploadPath = Path.of(workDir).resolve("skills");
+            assertTrue(Files.exists(uploadPath.resolve("skill_custom/scripts/utils/helper.py")));
+            assertTrue(Files.exists(uploadPath.resolve("skill_custom/scripts/data/loader.js")));
         }
 
         @Test
@@ -473,7 +583,7 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should create temporary directory when workDir is null and verify it exists")
+        @DisplayName("Should create temporary directory when workDir is null")
         void testCreateTemporaryDirectory() throws IOException {
             skillBox.codeExecution().withShell().withRead().withWrite().enable(); // null workDir
 
@@ -483,13 +593,14 @@ class SkillBoxTest {
             skillBox.registerSkill(skill);
 
             // Write scripts - should create temporary directory
-            assertDoesNotThrow(() -> skillBox.writeSkillScriptsToWorkDir());
+            assertDoesNotThrow(() -> skillBox.uploadSkillFiles());
 
             // Verify temporary directory was created and script exists
             // We can't get the exact temp dir path, but we can verify the script was
             // written
             // by checking that no exception was thrown and the operation completed
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
+            assertNotNull(skillBox.getUploadDir());
         }
 
         @Test
@@ -508,14 +619,14 @@ class SkillBoxTest {
             skillBox.registerSkill(skill);
 
             // Write scripts - malicious paths should be skipped
-            skillBox.writeSkillScriptsToWorkDir();
+            skillBox.uploadSkillFiles();
 
-            Path workPath = Path.of(workDir);
+            Path uploadPath = Path.of(workDir).resolve("skills");
             // Verify malicious files were NOT created
-            assertFalse(Files.exists(workPath.resolve("scripts/../../../test/passwd")));
-            assertFalse(Files.exists(workPath.resolve("../../outside.py")));
+            assertFalse(Files.exists(uploadPath.resolve("scripts/../../../test/passwd")));
+            assertFalse(Files.exists(uploadPath.resolve("../../outside.py")));
             // Verify safe file WAS created
-            assertTrue(Files.exists(workPath.resolve("malicious_custom/normal.py")));
+            assertTrue(Files.exists(uploadPath.resolve("malicious_custom/normal.py")));
         }
 
         @Test
@@ -524,7 +635,7 @@ class SkillBoxTest {
             // Initial configuration - enable all three tools
             skillBox.codeExecution().withShell().withRead().withWrite().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertNotNull(toolkit.getTool("execute_shell_command"));
             assertNotNull(toolkit.getTool("view_text_file"));
             assertNotNull(toolkit.getTool("write_text_file"));
@@ -532,7 +643,7 @@ class SkillBoxTest {
             // Replace configuration - only enable read and write
             skillBox.codeExecution().withRead().withWrite().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             // Shell tool should be removed
             assertNull(toolkit.getTool("execute_shell_command"));
             // Read and write tools should still exist
@@ -546,7 +657,7 @@ class SkillBoxTest {
             // Enable only read and write, not shell
             skillBox.codeExecution().withRead().withWrite().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertNull(toolkit.getTool("execute_shell_command"));
             assertNotNull(toolkit.getTool("view_text_file"));
             assertNotNull(toolkit.getTool("write_text_file"));
@@ -557,7 +668,7 @@ class SkillBoxTest {
         void testEnableOnlyShellTool() {
             skillBox.codeExecution().withShell().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertNotNull(toolkit.getTool("execute_shell_command"));
             assertNull(toolkit.getTool("view_text_file"));
             assertNull(toolkit.getTool("write_text_file"));
@@ -568,7 +679,7 @@ class SkillBoxTest {
         void testEmptyToolGroupWhenNoToolsEnabled() {
             skillBox.codeExecution().enable();
 
-            assertTrue(skillBox.isCodeExecutionEnabled());
+            assertNotNull(toolkit.getToolGroup("skill_code_execution_tool_group"));
             assertNull(toolkit.getTool("execute_shell_command"));
             assertNull(toolkit.getTool("view_text_file"));
             assertNull(toolkit.getTool("write_text_file"));
@@ -700,6 +811,83 @@ class SkillBoxTest {
     }
 
     @Test
+    @DisplayName("Should allow shared tool across multiple skills")
+    void testSharedToolAcrossSkillsActivation() {
+        skillBox.registerSkillLoadTool();
+
+        AgentSkill skillA = new AgentSkill("skill_a", "Skill A", "# A", null);
+        AgentSkill skillB = new AgentSkill("skill_b", "Skill B", "# B", null);
+        AgentTool sharedTool = createTestTool("shared_tool");
+
+        skillBox.registration().skill(skillA).agentTool(sharedTool).apply();
+        skillBox.registration().skill(skillB).agentTool(sharedTool).apply();
+
+        String groupA = skillA.getSkillId() + "_skill_tools";
+        String groupB = skillB.getSkillId() + "_skill_tools";
+
+        assertNotNull(toolkit.getToolGroup(groupA));
+        assertNotNull(toolkit.getToolGroup(groupB));
+        assertFalse(toolkit.getToolGroup(groupA).isActive());
+        assertFalse(toolkit.getToolGroup(groupB).isActive());
+
+        Map<String, Object> loadInputA = Map.of("skillId", skillA.getSkillId(), "path", "SKILL.md");
+        ToolUseBlock loadCallA =
+                ToolUseBlock.builder()
+                        .id("load-a")
+                        .name("load_skill_through_path")
+                        .input(loadInputA)
+                        .content(
+                                "{\"skillId\":\""
+                                        + skillA.getSkillId()
+                                        + "\",\"path\":\"SKILL.md\"}")
+                        .build();
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallA).input(loadInputA).build())
+                .block();
+
+        assertTrue(toolkit.getToolGroup(groupA).isActive());
+        assertFalse(toolkit.getToolGroup(groupB).isActive());
+
+        ToolResultBlock resultWithGroupA = callSharedTool();
+        assertNotNull(resultWithGroupA);
+        assertFalse(isErrorResult(resultWithGroupA));
+
+        skillBox.deactivateAllSkills();
+        skillBox.syncToolGroupStates();
+
+        ToolResultBlock resultWithNone = callSharedTool();
+        assertNotNull(resultWithNone);
+        assertTrue(isErrorResult(resultWithNone));
+
+        Map<String, Object> loadInputB = Map.of("skillId", skillB.getSkillId(), "path", "SKILL.md");
+        ToolUseBlock loadCallB =
+                ToolUseBlock.builder()
+                        .id("load-b")
+                        .name("load_skill_through_path")
+                        .input(loadInputB)
+                        .content(
+                                "{\"skillId\":\""
+                                        + skillB.getSkillId()
+                                        + "\",\"path\":\"SKILL.md\"}")
+                        .build();
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallB).input(loadInputB).build())
+                .block();
+
+        assertTrue(toolkit.getToolGroup(groupB).isActive());
+
+        ToolResultBlock resultWithGroupB = callSharedTool();
+        assertNotNull(resultWithGroupB);
+        assertFalse(isErrorResult(resultWithGroupB));
+
+        toolkit.callTool(ToolCallParam.builder().toolUseBlock(loadCallA).input(loadInputA).build())
+                .block();
+        assertTrue(toolkit.getToolGroup(groupA).isActive());
+        assertTrue(toolkit.getToolGroup(groupB).isActive());
+        ToolResultBlock resultWithBoth = callSharedTool();
+        assertNotNull(resultWithBoth);
+        assertFalse(isErrorResult(resultWithBoth));
+    }
+
+    @Test
     @DisplayName("Should throw exception when binding null toolkit")
     void testBindToolkitWithNullThrowsException() {
         assertThrows(
@@ -737,6 +925,29 @@ class SkillBoxTest {
                         ToolResultBlock.of(TextBlock.builder().text("Test result").build()));
             }
         };
+    }
+
+    private ToolResultBlock callSharedTool() {
+        Map<String, Object> input = Map.of();
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-shared")
+                        .name("shared_tool")
+                        .input(input)
+                        .content("{}")
+                        .build();
+        return toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).input(input).build())
+                .block();
+    }
+
+    private boolean isErrorResult(ToolResultBlock result) {
+        if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
+            return false;
+        }
+        return result.getOutput().stream()
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
+                .anyMatch(text -> text != null && text.startsWith("Error:"));
     }
 
     /**

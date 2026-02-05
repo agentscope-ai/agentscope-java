@@ -234,6 +234,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Git Skill Repository Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-skill-git-repository</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Micronaut Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>

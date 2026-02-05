@@ -20,16 +20,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Wrapper for AgentTool with metadata for group management and schema extension.
+ * Wrapper for AgentTool with metadata for schema extension and execution.
  *
- * <p>This class wraps an AgentTool and adds additional metadata such as group membership, extended
- * schema information, and MCP client association. It enables tools to be organized into groups and
- * have their schemas extended dynamically.
+ * <p>This class wraps an AgentTool and adds additional metadata such as extended schema
+ * information, MCP client association, and preset parameters.
  */
 class RegisteredToolFunction {
 
     private final AgentTool tool;
-    private final String groupName; // null for ungrouped tools
     private final ExtendedModel extendedModel; // null if no extensions
     private final String mcpClientName; // null for non-MCP tools
     private volatile Map<String, Object>
@@ -49,20 +47,18 @@ class RegisteredToolFunction {
      * Creates a new registered tool function with metadata.
      *
      * @param tool The underlying agent tool
-     * @param groupName The tool group name (null for ungrouped tools)
      * @param extendedModel Extended model for schema extension (null if no extensions)
      * @param mcpClientName MCP client name for MCP tools (null for non-MCP tools)
      */
     public RegisteredToolFunction(
-            AgentTool tool, String groupName, ExtendedModel extendedModel, String mcpClientName) {
-        this(tool, groupName, extendedModel, mcpClientName, null);
+            AgentTool tool, ExtendedModel extendedModel, String mcpClientName) {
+        this(tool, extendedModel, mcpClientName, null);
     }
 
     /**
      * Creates a new registered tool function with metadata and preset parameters.
      *
      * @param tool The underlying agent tool
-     * @param groupName The tool group name (null for ungrouped tools)
      * @param extendedModel Extended model for schema extension (null if no extensions)
      * @param mcpClientName MCP client name for MCP tools (null for non-MCP tools)
      * @param presetParameters Preset parameters that will be automatically injected during tool
@@ -70,12 +66,10 @@ class RegisteredToolFunction {
      */
     public RegisteredToolFunction(
             AgentTool tool,
-            String groupName,
             ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
         this.tool = tool;
-        this.groupName = groupName;
         this.extendedModel = extendedModel;
         this.mcpClientName = mcpClientName;
         this.presetParameters = normalizePresetParameters(presetParameters);
@@ -88,15 +82,6 @@ class RegisteredToolFunction {
      */
     public AgentTool getTool() {
         return tool;
-    }
-
-    /**
-     * Gets the tool group name.
-     *
-     * @return The group name, or null if ungrouped
-     */
-    public String getGroupName() {
-        return groupName;
     }
 
     /**
