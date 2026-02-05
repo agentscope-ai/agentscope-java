@@ -332,4 +332,181 @@ class OpenAIConversationMergerTest {
         assertTrue(content.contains("Message 1"), "Should contain first message");
         assertTrue(content.contains("Message 2"), "Should contain second message");
     }
+
+    @Test
+    @DisplayName("Should format history with only name prefix without roleLabel")
+    void testHistoryFormatWithNameOnly() {
+        List<Msg> messages = new ArrayList<>();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Hi there").build()))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+
+        // Verify format is "name: text" without roleLabel
+        assertTrue(content.contains("Alice: Hello"), "Should format as 'Alice: Hello'");
+        assertTrue(content.contains("Bob: Hi there"), "Should format as 'Bob: Hi there'");
+
+        // Verify roleLabel (USER/ASSISTANT) is NOT present
+        int userIndex = content.indexOf("USER");
+        int assistantIndex = content.indexOf("ASSISTANT");
+        assertTrue(
+                userIndex == -1 || userIndex > content.indexOf("Alice: Hello"),
+                "Should not contain USER roleLabel before Alice's message");
+        assertTrue(
+                assistantIndex == -1 || assistantIndex > content.indexOf("Bob: Hi there"),
+                "Should not contain ASSISTANT roleLabel before Bob's message");
+    }
+
+    @Test
+    @DisplayName("Should format ToolResultBlock with name only")
+    void testToolResultFormatWithNameOnly() {
+        List<Msg> messages = new ArrayList<>();
+
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                io.agentscope.core.message.ToolResultBlock.builder()
+                        .name("search_tool")
+                        .output(List.of(TextBlock.builder().text("Search completed").build()))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("ToolAgent")
+                        .content(List.of(toolResult))
+                        .build();
+
+        messages.add(msg);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages,
+                        msg2 -> msg2.getRole().toString(),
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (var block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    sb.append(tb.getText());
+                                }
+                            }
+                            return sb.toString();
+                        });
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+
+        // Verify format is "name (tool_name): result"
+        assertTrue(
+                content.contains("ToolAgent (search_tool): Search completed"),
+                "Should format as 'ToolAgent (search_tool): Search completed'");
+
+        // Verify roleLabel is NOT present
+        assertTrue(
+                !content.contains("TOOL ToolAgent"),
+                "Should not contain 'TOOL ToolAgent' format");
+    }
+
+    @Test
+    @DisplayName("Should format multimodal content with name prefix only")
+    void testMultimodalFormatWithNameOnly() {
+        List<Msg> messages = new ArrayList<>();
+
+        URLSource imageSource = URLSource.builder().url("http://example.com/pic.jpg").build();
+        ImageBlock imageBlock = ImageBlock.builder().source(imageSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Look at this").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Interesting").build(),
+                                        imageBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        assertTrue(result.isMultimodal() || result.getContentAsString() != null);
+
+        if (!result.isMultimodal()) {
+            String content = result.getContentAsString();
+            assertTrue(
+                    content.contains("Alice: Look at this"),
+                    "Should format as 'Alice: Look at this'");
+            assertTrue(
+                    content.contains("Bob: Interesting"), "Should format as 'Bob: Interesting'");
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle ThinkingBlock with name prefix only")
+    void testThinkingBlockFormatWithNameOnly() {
+        List<Msg> messages = new ArrayList<>();
+
+        io.agentscope.core.message.ThinkingBlock thinkingBlock =
+                io.agentscope.core.message.ThinkingBlock.builder()
+                        .thinking("Let me analyze this...")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Thinker")
+                        .content(
+                                List.of(
+                                        thinkingBlock,
+                                        TextBlock.builder().text("My conclusion").build()))
+                        .build();
+
+        messages.add(msg);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg2 -> msg2.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+
+        assertTrue(
+                content.contains("Thinker: [Thinking]: Let me analyze this..."),
+                "Should include thinking with name prefix");
+        assertTrue(
+                content.contains("Thinker: My conclusion"),
+                "Should include text with name prefix");
+    }
 }
