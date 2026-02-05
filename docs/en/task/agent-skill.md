@@ -28,7 +28,7 @@ We have further abstracted skills so that their discovery and content loading ar
 Taking the [Skill Structure](#skill-structure) as an example, this directory-structured skill is represented in our system as:
 
 ```java
-AgentSkill skill = new AgentSkill.builder()
+AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use this skill when analyzing data, calculating statistics, or generating reports")
     .skillContent("# Data Analysis\n...")
