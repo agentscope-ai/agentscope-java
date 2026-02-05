@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.lang.reflect.Type;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -144,6 +145,11 @@ class JsonUtilsTest {
 
         @Override
         public <T> T convertValue(Object from, TypeReference<T> toTypeRef) {
+            return null;
+        }
+
+        @Override
+        public Object convertValue(Object from, Type toType) {
             return null;
         }
     }

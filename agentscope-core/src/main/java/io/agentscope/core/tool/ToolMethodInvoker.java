@@ -295,19 +295,23 @@ class ToolMethodInvoker {
             return null;
         }
 
-        Class<?> paramType = parameter.getType();
+        Class<?> rawType = parameter.getType();
+        Type paramType = parameter.getParameterizedType();
 
-        // Direct assignment if types match
-        if (paramType.isAssignableFrom(value.getClass())) {
+        // Direct assignment only if:
+        // 1. Raw types match, AND
+        // 2. The parameter is not a parameterized type (no generic info to preserve)
+        if (rawType.isAssignableFrom(value.getClass())
+                && !(paramType instanceof ParameterizedType)) {
             return value;
         }
 
-        // Try JsonCodec conversion first
+        // Use JsonCodec conversion with full type information to preserve generics.
         try {
             return JsonUtils.getJsonCodec().convertValue(value, paramType);
         } catch (Exception e) {
             // Fallback to string-based conversion for primitives
-            return convertFromString(value.toString(), paramType);
+            return convertFromString(value.toString(), rawType);
         }
     }
 
