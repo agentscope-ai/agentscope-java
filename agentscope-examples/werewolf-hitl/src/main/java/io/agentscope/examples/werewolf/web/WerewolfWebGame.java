@@ -314,8 +314,7 @@ public class WerewolfWebGame {
         }
 
         // Assign random TTS voice to each player (independent of roles)
-        List<Qwen3TTSFlashVoice> voices =
-                new ArrayList<>(List.of(Qwen3TTSFlashVoice.values()));
+        List<Qwen3TTSFlashVoice> voices = new ArrayList<>(List.of(Qwen3TTSFlashVoice.values()));
         Collections.shuffle(voices);
         for (int i = 0; i < players.size(); i++) {
             Player player = players.get(i);
@@ -1176,8 +1175,7 @@ public class WerewolfWebGame {
         }
 
         // Resolve voice for this player (fallback to a default if not assigned)
-        Qwen3TTSFlashVoice voice =
-                playerVoices != null ? playerVoices.get(playerName) : null;
+        Qwen3TTSFlashVoice voice = playerVoices != null ? playerVoices.get(playerName) : null;
         if (voice == null) {
             voice = Qwen3TTSFlashVoice.CHERRY;
         }
