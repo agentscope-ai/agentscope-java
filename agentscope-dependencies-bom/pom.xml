@@ -432,6 +432,12 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.fasterxml.jackson.core</groupId>
+                        <artifactId>jackson-core</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- Victools JSON Schema Module for Jackson annotations support -->
