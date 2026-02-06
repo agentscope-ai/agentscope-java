@@ -427,6 +427,80 @@ class OpenAIConversationMergerTest {
     }
 
     @Test
+    @DisplayName("Should handle ImageBlock with null source")
+    void testImageBlockWithNullSource() {
+        List<Msg> messages = new ArrayList<>();
+
+        ImageBlock imageBlock = ImageBlock.builder().source(null).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(imageBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Image - null source]"),
+                "Should handle null image source with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle ImageBlock processing failure")
+    void testImageBlockProcessingFailure() {
+        List<Msg> messages = new ArrayList<>();
+
+        // Create an invalid Base64Source that will cause processing to fail
+        Base64Source invalidSource = Base64Source.builder().data("invalid!!!").build();
+        ImageBlock imageBlock = ImageBlock.builder().source(invalidSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(imageBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Image - processing failed:"),
+                "Should handle image processing failure with name prefix");
+    }
+
+    @Test
     @DisplayName("Should format multimodal content with name prefix only")
     void testMultimodalFormatWithNameOnly() {
         List<Msg> messages = new ArrayList<>();
@@ -514,5 +588,354 @@ class OpenAIConversationMergerTest {
                 "Should include thinking with name prefix");
         assertTrue(
                 content.contains("Thinker: My conclusion"), "Should include text with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle VideoBlock with null source")
+    void testVideoBlockWithNullSource() {
+        List<Msg> messages = new ArrayList<>();
+
+        io.agentscope.core.message.VideoBlock videoBlock =
+                io.agentscope.core.message.VideoBlock.builder().source(null).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(videoBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Video - null source]"),
+                "Should handle null video source with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle AudioBlock with null source")
+    void testAudioBlockWithNullSource() {
+        List<Msg> messages = new ArrayList<>();
+
+        AudioBlock audioBlock = AudioBlock.builder().source(null).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(audioBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Audio - null source]"),
+                "Should handle null audio source with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle AudioBlock with empty Base64 data")
+    void testAudioBlockWithEmptyBase64Data() {
+        List<Msg> messages = new ArrayList<>();
+
+        Base64Source audioSource = Base64Source.builder().data("").mediaType("audio/wav").build();
+        AudioBlock audioBlock = AudioBlock.builder().source(audioSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(audioBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Audio - null or empty data]"),
+                "Should handle empty audio data with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle AudioBlock with empty URL")
+    void testAudioBlockWithEmptyURL() {
+        List<Msg> messages = new ArrayList<>();
+
+        URLSource audioSource = URLSource.builder().url("").build();
+        AudioBlock audioBlock = AudioBlock.builder().source(audioSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(audioBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Audio - null or empty URL]"),
+                "Should handle empty audio URL with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle AudioBlock with valid URL")
+    void testAudioBlockWithValidURL() {
+        List<Msg> messages = new ArrayList<>();
+
+        URLSource audioSource = URLSource.builder().url("http://example.com/audio.mp3").build();
+        AudioBlock audioBlock = AudioBlock.builder().source(audioSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(audioBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Audio URL: http://example.com/audio.mp3]"),
+                "Should handle valid audio URL with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle VideoBlock processing failure")
+    void testVideoBlockProcessingFailure() {
+        List<Msg> messages = new ArrayList<>();
+
+        // Create an invalid source that will cause processing to fail
+        Base64Source invalidSource = Base64Source.builder().data("invalid!!!").build();
+        io.agentscope.core.message.VideoBlock videoBlock =
+                io.agentscope.core.message.VideoBlock.builder().source(invalidSource).build();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(videoBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Video - processing failed:"),
+                "Should handle video processing failure with name prefix");
+    }
+
+    @Test
+    @DisplayName("Should handle message with null content blocks")
+    void testMessageWithNullContentBlocks() {
+        List<Msg> messages = new ArrayList<>();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content((List<io.agentscope.core.message.ContentBlock>) null)
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+    }
+
+    @Test
+    @DisplayName("Should handle ToolResultBlock with empty result")
+    void testToolResultBlockWithEmptyResult() {
+        List<Msg> messages = new ArrayList<>();
+
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                io.agentscope.core.message.ToolResultBlock.builder()
+                        .name("empty_tool")
+                        .output(List.of())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("ToolAgent")
+                        .content(List.of(toolResult))
+                        .build();
+
+        messages.add(msg);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(messages, m -> m.getRole().toString(), blocks -> "");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("ToolAgent (empty_tool): [Empty tool result]"),
+                "Should handle empty tool result");
+    }
+
+    @Test
+    @DisplayName("Should handle appendNamePrefix with null agentName")
+    void testAppendNamePrefixWithNullAgentName() {
+        List<Msg> messages = new ArrayList<>();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name(null)
+                        .content(List.of(TextBlock.builder().text("No name").build()))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(content.contains("No name"), "Should handle null agent name");
+    }
+
+    @Test
+    @DisplayName("Should handle appendNamePrefix with empty agentName")
+    void testAppendNamePrefixWithEmptyAgentName() {
+        List<Msg> messages = new ArrayList<>();
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("")
+                        .content(List.of(TextBlock.builder().text("Empty name").build()))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(content.contains("Empty name"), "Should handle empty agent name");
     }
 }
