@@ -166,4 +166,16 @@ public class GameEvent {
                 GameEventType.USER_INPUT_RECEIVED,
                 Map.of("inputType", inputType, "content", content));
     }
+
+    /**
+     * Create an audio chunk event for TTS.
+     *
+     * @param playerName The name of the player speaking
+     * @param audioBase64 Base64 encoded audio data
+     * @return The event
+     */
+    public static GameEvent audioChunk(String playerName, String audioBase64) {
+        return new GameEvent(
+                GameEventType.AUDIO_CHUNK, Map.of("player", playerName, "audio", audioBase64));
+    }
 }
