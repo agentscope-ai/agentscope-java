@@ -247,6 +247,9 @@ public class AnthropicMessageConverter {
             case USER -> Role.USER;
             case ASSISTANT -> Role.ASSISTANT;
             case TOOL -> Role.USER; // Tool results are always user messages
+            case CONTROL ->
+                    throw new IllegalArgumentException(
+                            "Control messages are not supported in Anthropic formatter");
         };
     }
 
