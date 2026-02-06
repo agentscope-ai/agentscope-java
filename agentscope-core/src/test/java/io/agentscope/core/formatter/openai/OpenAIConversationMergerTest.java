@@ -431,7 +431,17 @@ class OpenAIConversationMergerTest {
     void testImageBlockWithNullSource() {
         List<Msg> messages = new ArrayList<>();
 
-        ImageBlock imageBlock = ImageBlock.builder().source(null).build();
+        // Use reflection to create ImageBlock with null source
+        ImageBlock imageBlock;
+        try {
+            java.lang.reflect.Field sourceField = ImageBlock.class.getDeclaredField("source");
+            sourceField.setAccessible(true);
+            imageBlock =
+                    ImageBlock.builder().source(URLSource.builder().url("temp").build()).build();
+            sourceField.set(imageBlock, null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create test ImageBlock", e);
+        }
 
         Msg msg1 =
                 Msg.builder()
@@ -467,8 +477,8 @@ class OpenAIConversationMergerTest {
     void testImageBlockProcessingFailure() {
         List<Msg> messages = new ArrayList<>();
 
-        // Create an invalid Base64Source that will cause processing to fail
-        Base64Source invalidSource = Base64Source.builder().data("invalid!!!").build();
+        // Create Base64Source with empty data to trigger processing failure
+        Base64Source invalidSource = Base64Source.builder().data("").mediaType("image/png").build();
         ImageBlock imageBlock = ImageBlock.builder().source(invalidSource).build();
 
         Msg msg1 =
@@ -595,8 +605,20 @@ class OpenAIConversationMergerTest {
     void testVideoBlockWithNullSource() {
         List<Msg> messages = new ArrayList<>();
 
-        io.agentscope.core.message.VideoBlock videoBlock =
-                io.agentscope.core.message.VideoBlock.builder().source(null).build();
+        // Use reflection to create VideoBlock with null source
+        io.agentscope.core.message.VideoBlock videoBlock;
+        try {
+            java.lang.reflect.Field sourceField =
+                    io.agentscope.core.message.VideoBlock.class.getDeclaredField("source");
+            sourceField.setAccessible(true);
+            videoBlock =
+                    io.agentscope.core.message.VideoBlock.builder()
+                            .source(URLSource.builder().url("temp").build())
+                            .build();
+            sourceField.set(videoBlock, null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create test VideoBlock", e);
+        }
 
         Msg msg1 =
                 Msg.builder()
@@ -632,7 +654,17 @@ class OpenAIConversationMergerTest {
     void testAudioBlockWithNullSource() {
         List<Msg> messages = new ArrayList<>();
 
-        AudioBlock audioBlock = AudioBlock.builder().source(null).build();
+        // Use reflection to create AudioBlock with null source
+        AudioBlock audioBlock;
+        try {
+            java.lang.reflect.Field sourceField = AudioBlock.class.getDeclaredField("source");
+            sourceField.setAccessible(true);
+            audioBlock =
+                    AudioBlock.builder().source(URLSource.builder().url("temp").build()).build();
+            sourceField.set(audioBlock, null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create test AudioBlock", e);
+        }
 
         Msg msg1 =
                 Msg.builder()
@@ -775,12 +807,61 @@ class OpenAIConversationMergerTest {
     }
 
     @Test
+    @DisplayName("Should handle AudioBlock with unsupported source type")
+    void testAudioBlockWithUnsupportedSourceType() {
+        List<Msg> messages = new ArrayList<>();
+
+        // Use reflection to create AudioBlock with custom Source subclass
+        AudioBlock audioBlock;
+        try {
+            java.lang.reflect.Field sourceField = AudioBlock.class.getDeclaredField("source");
+            sourceField.setAccessible(true);
+            audioBlock =
+                    AudioBlock.builder().source(URLSource.builder().url("temp").build()).build();
+            // Create an anonymous Source subclass (neither URLSource nor Base64Source)
+            io.agentscope.core.message.Source customSource =
+                    new io.agentscope.core.message.Source() {};
+            sourceField.set(audioBlock, customSource);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create test AudioBlock", e);
+        }
+
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("First").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(audioBlock))
+                        .build();
+
+        messages.add(msg1);
+        messages.add(msg2);
+
+        OpenAIMessage result =
+                merger.mergeToUserMessage(
+                        messages, msg -> msg.getRole().toString(), blocks -> "Tool result");
+
+        assertNotNull(result);
+        String content = result.getContentAsString();
+        assertNotNull(content);
+        assertTrue(
+                content.contains("Bob: [Audio - unsupported source type]"),
+                "Should handle unsupported audio source type with name prefix");
+    }
+
+    @Test
     @DisplayName("Should handle VideoBlock processing failure")
     void testVideoBlockProcessingFailure() {
         List<Msg> messages = new ArrayList<>();
 
-        // Create an invalid source that will cause processing to fail
-        Base64Source invalidSource = Base64Source.builder().data("invalid!!!").build();
+        // Create Base64Source with empty data to trigger processing failure
+        Base64Source invalidSource = Base64Source.builder().data("").mediaType("video/mp4").build();
         io.agentscope.core.message.VideoBlock videoBlock =
                 io.agentscope.core.message.VideoBlock.builder().source(invalidSource).build();
 
