@@ -209,17 +209,19 @@ public class GeminiResponseParser {
             }
             boolean hasThoughtSignature = thoughtSignature != null && !thoughtSignature.isEmpty();
 
-            if ((isThought || hasThoughtSignature) && part.getText() != null) {
-                String thinkingText = part.getText();
-                // Create block if there is text OR signature (to preserve context)
-                if (!thinkingText.isEmpty() || hasThoughtSignature) {
-                    blocks.add(
-                            ThinkingBlock.builder()
-                                    .thinking(thinkingText)
-                                    .signature(thoughtSignature)
-                                    .build());
-                    processedAsThought = true;
-                }
+            // 1. Handle explicit thinking content
+            if (isThought && part.getText() != null) {
+                blocks.add(
+                        ThinkingBlock.builder()
+                                .thinking(part.getText())
+                                .signature(thoughtSignature)
+                                .build());
+                processedAsThought = true;
+            } else if (hasThoughtSignature) {
+                // 2. Handle signature without explicit thought (context preservation)
+                // Do not mark as processedAsThought so text can be handled as TextBlock
+                blocks.add(
+                        ThinkingBlock.builder().thinking("").signature(thoughtSignature).build());
             }
 
             // Check for standard text content (only if not processed as thought)
@@ -312,13 +314,9 @@ public class GeminiResponseParser {
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }
 
-            if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(name)
-                    && (argsMap == null || argsMap.isEmpty())) {
-                log.debug(
-                        "Skipping generate_response tool call with empty args to avoid invalid"
-                                + " execution.");
-                return;
-            }
+            // Note: We intentionally DO NOT skip generate_response with empty args here.
+            // Let the ToolUseBlock be created so that validation fails and the model retries.
+            // The StructuredOutputHook will handle retry logic.
 
             blocks.add(
                     ToolUseBlock.builder()
