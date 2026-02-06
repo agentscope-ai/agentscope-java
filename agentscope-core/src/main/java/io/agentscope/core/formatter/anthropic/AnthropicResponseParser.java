@@ -15,10 +15,9 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.core.JsonValue;
-import com.anthropic.core.ObjectMappers;
-import com.anthropic.models.messages.Message;
-import com.anthropic.models.messages.RawMessageStreamEvent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicStreamEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -36,7 +35,8 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * Parses Anthropic API responses (both streaming and non-streaming) into AgentScope ChatResponse
+ * Parses Anthropic API responses (both streaming and non-streaming) into
+ * AgentScope ChatResponse
  * objects.
  */
 public class AnthropicResponseParser {
@@ -44,64 +44,75 @@ public class AnthropicResponseParser {
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
 
     /**
-     * Parse non-streaming Anthropic Message to ChatResponse.
+     * Parse non-streaming Anthropic response to ChatResponse.
      */
-    public static ChatResponse parseMessage(Message message, Instant startTime) {
+    public static ChatResponse parseMessage(AnthropicResponse message, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (com.anthropic.models.messages.ContentBlock block : message.content()) {
-            // Text block
-            block.text()
-                    .ifPresent(
-                            textBlock ->
-                                    contentBlocks.add(
-                                            TextBlock.builder().text(textBlock.text()).build()));
+        if (message.getContent() != null) {
+            for (AnthropicContent block : message.getContent()) {
+                String type = block.getType();
+                if (type == null) continue;
 
-            // Tool use block
-            block.toolUse()
-                    .ifPresent(
-                            toolUse -> {
-                                Map<String, Object> input =
-                                        parseJsonInput(toolUse._input(), toolUse.name());
-                                contentBlocks.add(
-                                        ToolUseBlock.builder()
-                                                .id(toolUse.id())
-                                                .name(toolUse.name())
-                                                .input(input)
-                                                .content(
-                                                        toolUse._input() != null
-                                                                ? toolUse._input().toString()
-                                                                : "")
-                                                .build());
-                            });
-
-            // Thinking block (extended thinking)
-            block.thinking()
-                    .ifPresent(
-                            thinking ->
-                                    contentBlocks.add(
-                                            ThinkingBlock.builder()
-                                                    .thinking(thinking.thinking())
-                                                    .build()));
+                switch (type) {
+                    case "text" -> {
+                        if (block.getText() != null) {
+                            contentBlocks.add(TextBlock.builder().text(block.getText()).build());
+                        }
+                    }
+                    case "tool_use" -> {
+                        Map<String, Object> input = parseInput(block.getInput(), block.getName());
+                        contentBlocks.add(
+                                ToolUseBlock.builder()
+                                        .id(block.getId())
+                                        .name(block.getName())
+                                        .input(input)
+                                        .content(
+                                                block.getInput() != null
+                                                        ? block.getInput().toString()
+                                                        : "")
+                                        .build());
+                    }
+                    case "thinking" -> {
+                        if (block.getThinking() != null) {
+                            contentBlocks.add(
+                                    ThinkingBlock.builder().thinking(block.getThinking()).build());
+                        }
+                    }
+                }
+            }
         }
 
         // Parse usage
-        ChatUsage usage =
-                ChatUsage.builder()
-                        .inputTokens((int) message.usage().inputTokens())
-                        .outputTokens((int) message.usage().outputTokens())
-                        .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
-                        .build();
+        ChatUsage usage = null;
+        if (message.getUsage() != null) {
+            usage =
+                    ChatUsage.builder()
+                            .inputTokens(
+                                    message.getUsage().getInputTokens() != null
+                                            ? message.getUsage().getInputTokens()
+                                            : 0)
+                            .outputTokens(
+                                    message.getUsage().getOutputTokens() != null
+                                            ? message.getUsage().getOutputTokens()
+                                            : 0)
+                            .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
+                            .build();
+        }
 
-        return ChatResponse.builder().id(message.id()).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder()
+                .id(message.getId())
+                .content(contentBlocks)
+                .usage(usage)
+                .build();
     }
 
     /**
      * Parse streaming Anthropic events to ChatResponse Flux.
      */
     public static Flux<ChatResponse> parseStreamEvents(
-            Flux<RawMessageStreamEvent> eventFlux, Instant startTime) {
+            Flux<AnthropicStreamEvent> eventFlux, Instant startTime) {
         return eventFlux
                 .flatMap(
                         event -> {
@@ -118,92 +129,91 @@ public class AnthropicResponseParser {
     /**
      * Parse single stream event.
      */
-    private static ChatResponse parseStreamEvent(RawMessageStreamEvent event, Instant startTime) {
+    private static ChatResponse parseStreamEvent(AnthropicStreamEvent event, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
         String messageId = null;
 
-        // Message start
-        if (event.isMessageStart()) {
-            messageId = event.asMessageStart().message().id();
+        String eventType = event.getType();
+        if (eventType == null) {
+            return ChatResponse.builder().content(contentBlocks).build();
         }
 
-        // Content block delta - text
-        if (event.isContentBlockDelta()) {
-            var deltaEvent = event.asContentBlockDelta();
-
-            deltaEvent
-                    .delta()
-                    .text()
-                    .ifPresent(
-                            textDelta ->
-                                    contentBlocks.add(
-                                            TextBlock.builder().text(textDelta.text()).build()));
-
-            // Input JSON delta (tool calling)
-            deltaEvent
-                    .delta()
-                    .inputJson()
-                    .ifPresent(
-                            jsonDelta -> {
-                                // Create fragment ToolUseBlock for accumulation
-                                contentBlocks.add(
-                                        ToolUseBlock.builder()
-                                                .id("") // Empty ID indicates fragment
-                                                .name("__fragment__") // Fragment marker
-                                                .content(jsonDelta.partialJson())
-                                                .input(Map.of())
-                                                .build());
-                            });
-        }
-
-        // Content block start - tool use
-        if (event.isContentBlockStart()) {
-            var startEvent = event.asContentBlockStart();
-
-            startEvent
-                    .contentBlock()
-                    .toolUse()
-                    .ifPresent(
-                            toolUse -> {
-                                contentBlocks.add(
-                                        ToolUseBlock.builder()
-                                                .id(toolUse.id())
-                                                .name(toolUse.name())
-                                                .input(Map.of())
-                                                .content("")
-                                                .build());
-                            });
-        }
-
-        // Message delta - usage information
-        if (event.isMessageDelta()) {
-            var messageDelta = event.asMessageDelta();
-            usage =
-                    ChatUsage.builder()
-                            .outputTokens((int) messageDelta.usage().outputTokens())
-                            .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
-                            .build();
+        switch (eventType) {
+            case "message_start" -> {
+                if (event.getMessage() != null) {
+                    messageId = event.getMessage().getId();
+                }
+            }
+            case "content_block_start" -> {
+                AnthropicContent block = event.getContentBlock();
+                if (block != null && "tool_use".equals(block.getType())) {
+                    contentBlocks.add(
+                            ToolUseBlock.builder()
+                                    .id(block.getId())
+                                    .name(block.getName())
+                                    .input(Map.of())
+                                    .content("")
+                                    .build());
+                }
+            }
+            case "content_block_delta" -> {
+                AnthropicStreamEvent.Delta delta = event.getDelta();
+                if (delta != null) {
+                    // Text delta
+                    if (delta.getText() != null) {
+                        contentBlocks.add(TextBlock.builder().text(delta.getText()).build());
+                    }
+                    // Tool input JSON delta
+                    if (delta.getPartialJson() != null) {
+                        contentBlocks.add(
+                                ToolUseBlock.builder()
+                                        .id("") // Empty ID indicates fragment
+                                        .name("__fragment__") // Fragment marker
+                                        .content(delta.getPartialJson())
+                                        .input(Map.of())
+                                        .build());
+                    }
+                }
+            }
+            case "message_delta" -> {
+                if (event.getUsage() != null) {
+                    usage =
+                            ChatUsage.builder()
+                                    .outputTokens(
+                                            event.getUsage().getOutputTokens() != null
+                                                    ? event.getUsage().getOutputTokens()
+                                                    : 0)
+                                    .time(
+                                            Duration.between(startTime, Instant.now()).toMillis()
+                                                    / 1000.0)
+                                    .build();
+                }
+            }
         }
 
         return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
     }
 
     /**
-     * Parse JsonValue to Map for tool input.
+     * Parse input object to Map for tool input.
      */
-    private static Map<String, Object> parseJsonInput(JsonValue jsonValue, String toolName) {
-        if (jsonValue == null) {
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseInput(Object input, String toolName) {
+        if (input == null) {
             return Map.of();
         }
 
         try {
-            String jsonString = ObjectMappers.jsonMapper().writeValueAsString(jsonValue);
-            @SuppressWarnings("unchecked")
+            if (input instanceof Map) {
+                return (Map<String, Object>) input;
+            }
+            // Convert to JSON string and back to Map
+            String jsonString = JsonUtils.getJsonCodec().toJson(input);
             Map<String, Object> result = JsonUtils.getJsonCodec().fromJson(jsonString, Map.class);
             return result != null ? result : Map.of();
         } catch (Exception e) {
-            log.warn("Failed to parse tool input JSON for tool {}: {}", toolName, e.getMessage());
+            log.warn("Failed to parse tool input for tool {}: {}", toolName, e.getMessage());
             return Map.of();
         }
     }

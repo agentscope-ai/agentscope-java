@@ -16,10 +16,14 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.anthropic.core.ObjectMappers;
-import com.anthropic.models.messages.MessageParam;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -35,7 +39,10 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/** Ground truth tests for AnthropicChatFormatter - compares with Python implementation. */
+/**
+ * Ground truth tests for AnthropicChatFormatter - compares with expected JSON
+ * structure.
+ */
 class AnthropicChatFormatterGroundTruthTest {
 
     private AnthropicChatFormatter formatter;
@@ -46,10 +53,28 @@ class AnthropicChatFormatterGroundTruthTest {
     private List<Msg> msgsTools;
 
     @BeforeEach
-    void setUp() {
-        formatter = new AnthropicChatFormatter();
+    void setUp() throws Exception {
         jsonCodec = JsonUtils.getJsonCodec();
         imageUrl = "https://www.example.com/image.png";
+
+        // Mock media converter to return fixed base64
+        AnthropicMediaConverter mediaConverter = mock(AnthropicMediaConverter.class);
+        when(mediaConverter.convertImageBlock(any()))
+                .thenReturn(new AnthropicContent.ImageSource("image/png", "fake_base64_data"));
+
+        // Use custom converter with mocked media converter
+        AnthropicMessageConverter messageConverter =
+                new AnthropicMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock b : blocks) {
+                                if (b instanceof TextBlock tb) sb.append(tb.getText());
+                            }
+                            return sb.toString();
+                        },
+                        mediaConverter);
+
+        formatter = new AnthropicChatFormatter(messageConverter);
 
         // System message
         msgsSystem =
@@ -127,8 +152,9 @@ class AnthropicChatFormatterGroundTruthTest {
                                                                 TextBlock.builder()
                                                                         .text(
                                                                                 "The capital of"
-                                                                                    + " Japan is"
-                                                                                    + " Tokyo.")
+                                                                                        + " Japan"
+                                                                                        + " is"
+                                                                                        + " Tokyo.")
                                                                         .build())
                                                         .build()))
                                 .build(),
@@ -144,20 +170,20 @@ class AnthropicChatFormatterGroundTruthTest {
     }
 
     @Test
-    void testChatFormatterFullHistory() throws Exception {
+    void testChatFormatterFullHistory() {
         // Full history: system + conversation + tools
         List<Msg> allMsgs = new ArrayList<>();
         allMsgs.addAll(msgsSystem);
         allMsgs.addAll(msgsConversation);
         allMsgs.addAll(msgsTools);
 
-        List<MessageParam> result = formatter.format(allMsgs);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
 
         // Convert to JSON string for comparison
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
-        // Ground truth from Python implementation
+        // Ground truth
         String groundTruthJson =
                 """
                 [
@@ -180,8 +206,9 @@ class AnthropicChatFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "fake_base64_data"
                         }
                       }
                     ]
@@ -208,8 +235,8 @@ class AnthropicChatFormatterGroundTruthTest {
                     "role": "assistant",
                     "content": [
                       {
-                        "id": "1",
                         "type": "tool_use",
+                        "id": "1",
                         "name": "get_capital",
                         "input": {
                           "country": "Japan"
@@ -250,14 +277,14 @@ class AnthropicChatFormatterGroundTruthTest {
     }
 
     @Test
-    void testChatFormatterWithoutSystemMessage() throws Exception {
+    void testChatFormatterWithoutSystemMessage() {
         // Without system message
         List<Msg> allMsgs = new ArrayList<>();
         allMsgs.addAll(msgsConversation);
         allMsgs.addAll(msgsTools);
 
-        List<MessageParam> result = formatter.format(allMsgs);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         // Ground truth should be the same as full history, but without first message
@@ -274,8 +301,9 @@ class AnthropicChatFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "fake_base64_data"
                         }
                       }
                     ]
@@ -302,8 +330,8 @@ class AnthropicChatFormatterGroundTruthTest {
                     "role": "assistant",
                     "content": [
                       {
-                        "id": "1",
                         "type": "tool_use",
+                        "id": "1",
                         "name": "get_capital",
                         "input": {
                           "country": "Japan"
@@ -343,14 +371,14 @@ class AnthropicChatFormatterGroundTruthTest {
     }
 
     @Test
-    void testChatFormatterWithoutConversation() throws Exception {
+    void testChatFormatterWithoutConversation() {
         // Without conversation messages: system + tools only
         List<Msg> allMsgs = new ArrayList<>();
         allMsgs.addAll(msgsSystem);
         allMsgs.addAll(msgsTools);
 
-        List<MessageParam> result = formatter.format(allMsgs);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
@@ -369,8 +397,8 @@ class AnthropicChatFormatterGroundTruthTest {
                     "role": "assistant",
                     "content": [
                       {
-                        "id": "1",
                         "type": "tool_use",
+                        "id": "1",
                         "name": "get_capital",
                         "input": {
                           "country": "Japan"
@@ -410,14 +438,14 @@ class AnthropicChatFormatterGroundTruthTest {
     }
 
     @Test
-    void testChatFormatterWithoutTools() throws Exception {
+    void testChatFormatterWithoutTools() {
         // Without tool messages: system + conversation only
         List<Msg> allMsgs = new ArrayList<>();
         allMsgs.addAll(msgsSystem);
         allMsgs.addAll(msgsConversation);
 
-        List<MessageParam> result = formatter.format(allMsgs);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
@@ -442,8 +470,9 @@ class AnthropicChatFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "fake_base64_data"
                         }
                       }
                     ]
@@ -475,7 +504,7 @@ class AnthropicChatFormatterGroundTruthTest {
 
     @Test
     void testChatFormatterEmptyMessages() {
-        List<MessageParam> result = formatter.format(List.of());
+        List<AnthropicMessage> result = formatter.format(List.of());
         assertEquals(0, result.size(), "Empty input should produce empty output");
     }
 }

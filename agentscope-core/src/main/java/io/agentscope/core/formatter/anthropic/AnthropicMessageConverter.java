@@ -15,14 +15,8 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.core.JsonValue;
-import com.anthropic.models.messages.ContentBlockParam;
-import com.anthropic.models.messages.ImageBlockParam;
-import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.MessageParam.Role;
-import com.anthropic.models.messages.TextBlockParam;
-import com.anthropic.models.messages.ToolResultBlockParam;
-import com.anthropic.models.messages.ToolUseBlockParam;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -32,6 +26,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -39,12 +34,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converts AgentScope Msg objects to Anthropic SDK MessageParam types.
+ * Converts AgentScope Msg objects to Anthropic DTO types.
  *
- * <p>This class handles all message role conversions including system, user, assistant, and tool
- * messages. It supports multimodal content (text, images) and tool calling functionality.
+ * <p>
+ * This class handles all message role conversions including system, user,
+ * assistant, and tool
+ * messages. It supports multimodal content (text, images) and tool calling
+ * functionality.
  *
- * <p>Important: In Anthropic API, only the first message can be a system message. Non-first system
+ * <p>
+ * Important: In Anthropic API, only the first message can be a system message.
+ * Non-first system
  * messages are converted to user messages.
  */
 public class AnthropicMessageConverter {
@@ -60,19 +60,48 @@ public class AnthropicMessageConverter {
      * @param toolResultConverter Function to convert tool result blocks to strings
      */
     public AnthropicMessageConverter(Function<List<ContentBlock>, String> toolResultConverter) {
-        this.mediaConverter = new AnthropicMediaConverter();
-        this.toolResultConverter = toolResultConverter;
+        this(toolResultConverter, new AnthropicMediaConverter());
     }
 
     /**
-     * Convert list of Msg to list of Anthropic MessageParam. Handles the special case where tool
+     * Create an AnthropicMessageConverter with custom media converter and default
+     * tool result converter.
+     *
+     * @param mediaConverter Custom AnthropicMediaConverter
+     */
+    public AnthropicMessageConverter(AnthropicMediaConverter mediaConverter) {
+        this(
+                blocks -> {
+                    StringBuilder sb = new StringBuilder();
+                    if (blocks != null) {
+                        for (ContentBlock block : blocks) {
+                            if (block instanceof TextBlock tb) {
+                                sb.append(tb.getText());
+                            }
+                        }
+                    }
+                    return sb.toString();
+                },
+                mediaConverter);
+    }
+
+    public AnthropicMessageConverter(
+            Function<List<ContentBlock>, String> toolResultConverter,
+            AnthropicMediaConverter mediaConverter) {
+        this.toolResultConverter = toolResultConverter;
+        this.mediaConverter = mediaConverter;
+    }
+
+    /**
+     * Convert list of Msg to list of Anthropic messages. Handles the special case
+     * where tool
      * results need to be in separate user messages.
      *
      * @param messages The messages to convert
-     * @return List of MessageParam for Anthropic API
+     * @return List of AnthropicMessage for Anthropic API
      */
-    public List<MessageParam> convert(List<Msg> messages) {
-        List<MessageParam> result = new ArrayList<>();
+    public List<AnthropicMessage> convert(List<Msg> messages) {
+        List<AnthropicMessage> result = new ArrayList<>();
 
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
@@ -94,7 +123,7 @@ public class AnthropicMessageConverter {
 
                 // Add regular content if present
                 if (!nonToolBlocks.isEmpty()) {
-                    MessageParam regularMsg = convertMessageContent(msg, nonToolBlocks, i == 0);
+                    AnthropicMessage regularMsg = convertMessageContent(msg, nonToolBlocks, i == 0);
                     if (regularMsg != null) {
                         result.add(regularMsg);
                     }
@@ -105,9 +134,10 @@ public class AnthropicMessageConverter {
                     result.add(convertToolResult(toolResult));
                 }
             } else {
-                MessageParam param = convertMessageContent(msg, msg.getContent(), isFirstMessage);
-                if (param != null) {
-                    result.add(param);
+                AnthropicMessage anthropicMsg =
+                        convertMessageContent(msg, msg.getContent(), isFirstMessage);
+                if (anthropicMsg != null) {
+                    result.add(anthropicMsg);
                 }
             }
         }
@@ -116,52 +146,35 @@ public class AnthropicMessageConverter {
     }
 
     /**
-     * Convert message content to MessageParam.
+     * Convert message content to AnthropicMessage.
      */
-    private MessageParam convertMessageContent(
+    private AnthropicMessage convertMessageContent(
             Msg msg, List<ContentBlock> blocks, boolean isFirstMessage) {
-        Role role = convertRole(msg.getRole(), isFirstMessage);
-        List<ContentBlockParam> contentBlocks = new ArrayList<>();
+        String role = convertRole(msg.getRole(), isFirstMessage);
+        List<AnthropicContent> contentBlocks = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder().text(tb.getText()).build()));
+                contentBlocks.add(AnthropicContent.text(tb.getText()));
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Anthropic supports thinking blocks natively
-                contentBlocks.add(
-                        ContentBlockParam.ofText(
-                                TextBlockParam.builder()
-                                        .text(thinkingBlock.getThinking())
-                                        .build()));
+                contentBlocks.add(AnthropicContent.thinking(thinkingBlock.getThinking()));
             } else if (block instanceof ImageBlock ib) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    AnthropicContent.ImageSource imageSource = mediaConverter.convertImageBlock(ib);
+                    contentBlocks.add(
+                            AnthropicContent.image(
+                                    imageSource.getMediaType(), imageSource.getData()));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock: {}", e.getMessage());
                     contentBlocks.add(
-                            ContentBlockParam.ofText(
-                                    TextBlockParam.builder()
-                                            .text(
-                                                    "[Image - processing failed: "
-                                                            + e.getMessage()
-                                                            + "]")
-                                            .build()));
+                            AnthropicContent.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof ToolUseBlock tub) {
-                contentBlocks.add(
-                        ContentBlockParam.ofToolUse(
-                                ToolUseBlockParam.builder()
-                                        .id(tub.getId())
-                                        .name(tub.getName())
-                                        .input(
-                                                JsonValue.from(
-                                                        tub.getInput() != null
-                                                                ? tub.getInput()
-                                                                : Map.of()))
-                                        .build()));
+                Map<String, Object> input =
+                        tub.getInput() != null ? tub.getInput() : new HashMap<>();
+                contentBlocks.add(AnthropicContent.toolUse(tub.getId(), tub.getName(), input));
             }
             // ToolResultBlock is handled separately in convert() method
         }
@@ -170,43 +183,42 @@ public class AnthropicMessageConverter {
             return null;
         }
 
-        return MessageParam.builder()
-                .role(role)
-                .content(MessageParam.Content.ofBlockParams(contentBlocks))
-                .build();
+        return new AnthropicMessage(role, contentBlocks);
     }
 
     /**
      * Convert tool result to separate user message.
      */
-    private MessageParam convertToolResult(ToolResultBlock toolResult) {
-        // Convert output to content blocks
-        List<ToolResultBlockParam.Content.Block> blocks = new ArrayList<>();
-
+    private AnthropicMessage convertToolResult(ToolResultBlock toolResult) {
+        // Convert output to content string or blocks
         Object output = toolResult.getOutput();
+        Object contentValue;
+
         if (output == null) {
-            blocks.add(
-                    ToolResultBlockParam.Content.Block.ofText(
-                            TextBlockParam.builder().text((String) null).build()));
+            contentValue = "";
         } else if (output instanceof List) {
-            // Multi-block output
+            // Multi-block output - convert to list of content blocks
             List<?> outputList = (List<?>) output;
+            List<AnthropicContent> blocks = new ArrayList<>();
+
             for (Object item : outputList) {
                 if (item instanceof ContentBlock cb) {
                     if (cb instanceof TextBlock tb) {
-                        blocks.add(
-                                ToolResultBlockParam.Content.Block.ofText(
-                                        TextBlockParam.builder().text(tb.getText()).build()));
+                        blocks.add(AnthropicContent.text(tb.getText()));
                     } else if (cb instanceof ImageBlock ib) {
                         try {
-                            ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
-                            blocks.add(ToolResultBlockParam.Content.Block.ofImage(imageParam));
+                            AnthropicContent.ImageSource imageSource =
+                                    mediaConverter.convertImageBlock(ib);
+                            blocks.add(
+                                    AnthropicContent.image(
+                                            imageSource.getMediaType(), imageSource.getData()));
                         } catch (Exception e) {
                             log.warn("Failed to process ImageBlock in tool result: {}", e);
                         }
                     }
                 }
             }
+            contentValue = blocks.isEmpty() ? "" : blocks;
         } else {
             // String output
             String outputStr =
@@ -215,38 +227,30 @@ public class AnthropicMessageConverter {
                             : (output instanceof ContentBlock
                                     ? toolResultConverter.apply(List.of((ContentBlock) output))
                                     : output.toString());
-            blocks.add(
-                    ToolResultBlockParam.Content.Block.ofText(
-                            TextBlockParam.builder().text(outputStr).build()));
+            contentValue = outputStr;
         }
 
-        // Create tool result block
-        ToolResultBlockParam toolResultParam =
-                ToolResultBlockParam.builder()
-                        .toolUseId(toolResult.getId())
-                        .content(ToolResultBlockParam.Content.ofBlocks(blocks))
-                        .build();
+        // Create tool result content
+        AnthropicContent toolResultContent =
+                AnthropicContent.toolResult(toolResult.getId(), contentValue, null);
 
         // Wrap in user message
-        return MessageParam.builder()
-                .role(Role.USER)
-                .content(
-                        MessageParam.Content.ofBlockParams(
-                                List.of(ContentBlockParam.ofToolResult(toolResultParam))))
-                .build();
+        AnthropicMessage message = new AnthropicMessage("user");
+        message.addContent(toolResultContent);
+        return message;
     }
 
     /**
-     * Convert AgentScope MsgRole to Anthropic Role. Important: Anthropic only allows the first
-     * message to be system. Non-first system messages are converted to user.
+     * Convert AgentScope MsgRole to Anthropic role string. Important: Anthropic
+     * only allows the
+     * first message to be system. Non-first system messages are converted to user.
      */
-    private Role convertRole(MsgRole msgRole, boolean isFirstMessage) {
+    private String convertRole(MsgRole msgRole, boolean isFirstMessage) {
         return switch (msgRole) {
-            case SYSTEM -> isFirstMessage ? Role.USER : Role.USER; // Anthropic uses user for
-            // system messages
-            case USER -> Role.USER;
-            case ASSISTANT -> Role.ASSISTANT;
-            case TOOL -> Role.USER; // Tool results are always user messages
+            case SYSTEM -> "user"; // Anthropic uses user for system messages
+            case USER -> "user";
+            case ASSISTANT -> "assistant";
+            case TOOL -> "user"; // Tool results are always user messages
         };
     }
 

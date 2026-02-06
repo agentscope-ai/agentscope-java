@@ -15,11 +15,9 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.models.messages.ContentBlockParam;
-import com.anthropic.models.messages.ImageBlockParam;
-import com.anthropic.models.messages.Message;
-import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.TextBlockParam;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,15 +31,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Multi-agent formatter for Anthropic Messages API. Converts AgentScope Msg objects to Anthropic
- * SDK MessageParam objects with multi-agent support.
+ * Multi-agent formatter for Anthropic Messages API. Converts AgentScope Msg
+ * objects to Anthropic
+ * DTO objects with multi-agent support.
  *
- * <p>This formatter handles conversations between multiple agents by:
+ * <p>
+ * This formatter handles conversations between multiple agents by:
  *
  * <ul>
- *   <li>Grouping multi-agent messages into conversation history
- *   <li>Using special markup (history tags) to structure conversations
- *   <li>Consolidating multi-agent conversations into single user messages
+ * <li>Grouping multi-agent messages into conversation history
+ * <li>Using special markup (history tags) to structure conversations
+ * <li>Consolidating multi-agent conversations into single user messages
  * </ul>
  */
 public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
@@ -57,24 +57,53 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     private final String conversationHistoryPrompt;
     private boolean isFirstAgentMessageGroup = true;
 
-    /** Create an AnthropicMultiAgentFormatter with default conversation history prompt. */
+    /**
+     * Create an AnthropicMultiAgentFormatter with default conversation history
+     * prompt.
+     */
     public AnthropicMultiAgentFormatter() {
-        this(DEFAULT_CONVERSATION_HISTORY_PROMPT);
+        this(DEFAULT_CONVERSATION_HISTORY_PROMPT, new AnthropicMediaConverter());
     }
 
     /**
-     * Create an AnthropicMultiAgentFormatter with custom conversation history prompt.
+     * Create an AnthropicMultiAgentFormatter with custom conversation history
+     * prompt.
      *
-     * @param conversationHistoryPrompt The prompt to prepend before conversation history
+     * @param conversationHistoryPrompt The prompt to prepend before conversation
+     *                                  history
      */
     public AnthropicMultiAgentFormatter(String conversationHistoryPrompt) {
-        this.mediaConverter = new AnthropicMediaConverter();
+        this(conversationHistoryPrompt, new AnthropicMediaConverter());
+    }
+
+    /**
+     * Create an AnthropicMultiAgentFormatter with custom media converter for
+     * testing.
+     *
+     * @param mediaConverter Custom AnthropicMediaConverter (e.g. mock)
+     */
+    public AnthropicMultiAgentFormatter(AnthropicMediaConverter mediaConverter) {
+        this(DEFAULT_CONVERSATION_HISTORY_PROMPT, mediaConverter);
+    }
+
+    /**
+     * Create an AnthropicMultiAgentFormatter with custom conversation history
+     * prompt and media converter.
+     *
+     * @param conversationHistoryPrompt The prompt to prepend before conversation
+     *                                  history
+     * @param mediaConverter            Custom AnthropicMediaConverter
+     */
+    public AnthropicMultiAgentFormatter(
+            String conversationHistoryPrompt, AnthropicMediaConverter mediaConverter) {
+        super(new AnthropicMessageConverter(mediaConverter));
+        this.mediaConverter = mediaConverter;
         this.conversationHistoryPrompt = conversationHistoryPrompt;
     }
 
     @Override
-    public List<MessageParam> doFormat(List<Msg> msgs) {
-        List<MessageParam> result = new ArrayList<>();
+    public List<AnthropicMessage> doFormat(List<Msg> msgs) {
+        List<AnthropicMessage> result = new ArrayList<>();
         this.isFirstAgentMessageGroup = true;
 
         // Group messages
@@ -95,12 +124,8 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     }
 
     @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
-        if (response instanceof Message message) {
-            return AnthropicResponseParser.parseMessage(message, startTime);
-        } else {
-            throw new IllegalArgumentException("Unsupported response type: " + response.getClass());
-        }
+    public ChatResponse parseResponse(AnthropicResponse response, Instant startTime) {
+        return AnthropicResponseParser.parseMessage(response, startTime);
     }
 
     // ========== Private Helper Methods ==========
@@ -174,12 +199,12 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     }
 
     /** Format tool sequence (tool calls and results). */
-    private List<MessageParam> formatToolSequence(List<Msg> messages) {
+    private List<AnthropicMessage> formatToolSequence(List<Msg> messages) {
         return messageConverter.convert(messages);
     }
 
     /** Format agent conversation messages with history tags. */
-    private List<MessageParam> formatAgentConversation(List<Msg> messages) {
+    private List<AnthropicMessage> formatAgentConversation(List<Msg> messages) {
         boolean isFirst = isFirstAgentMessageGroup;
         isFirstAgentMessageGroup = false;
 
@@ -189,17 +214,18 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
         List<Object> conversationBlocks =
                 AnthropicConversationMerger.mergeConversation(messages, prompt);
 
-        // Convert to ContentBlockParam list
-        List<ContentBlockParam> contentBlocks = new ArrayList<>();
+        // Convert to AnthropicContent list
+        List<AnthropicContent> contentBlocks = new ArrayList<>();
 
         for (Object block : conversationBlocks) {
             if (block instanceof String text) {
-                contentBlocks.add(
-                        ContentBlockParam.ofText(TextBlockParam.builder().text(text).build()));
+                contentBlocks.add(AnthropicContent.text(text));
             } else if (block instanceof ImageBlock ib) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertImageBlock(ib);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    AnthropicContent.ImageSource imageSource = mediaConverter.convertImageBlock(ib);
+                    contentBlocks.add(
+                            AnthropicContent.image(
+                                    imageSource.getMediaType(), imageSource.getData()));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock in multi-agent conversation: {}", e);
                 }
@@ -210,10 +236,6 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
             return List.of();
         }
 
-        return List.of(
-                MessageParam.builder()
-                        .role(MessageParam.Role.USER)
-                        .content(MessageParam.Content.ofBlockParams(contentBlocks))
-                        .build());
+        return List.of(new AnthropicMessage("user", contentBlocks));
     }
 }

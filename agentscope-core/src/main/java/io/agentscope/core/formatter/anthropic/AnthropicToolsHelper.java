@@ -15,16 +15,14 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import com.anthropic.core.JsonValue;
-import com.anthropic.core.ObjectMappers;
-import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.Tool;
-import com.anthropic.models.messages.ToolChoiceAny;
-import com.anthropic.models.messages.ToolChoiceAuto;
-import com.anthropic.models.messages.ToolChoiceTool;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicTool;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -38,162 +36,138 @@ public class AnthropicToolsHelper {
     private static final Logger log = LoggerFactory.getLogger(AnthropicToolsHelper.class);
 
     /**
-     * Apply tools to the message create params builder.
+     * Apply tools to the Anthropic request.
      *
-     * @param builder The message create params builder
-     * @param tools List of tool schemas
+     * @param request The Anthropic request
+     * @param tools   List of tool schemas
      * @param options Generate options containing tool choice
      */
     public static void applyTools(
-            MessageCreateParams.Builder builder, List<ToolSchema> tools, GenerateOptions options) {
+            AnthropicRequest request, List<ToolSchema> tools, GenerateOptions options) {
         if (tools == null || tools.isEmpty()) {
             return;
         }
 
         // Convert and add tools
+        List<AnthropicTool> anthropicTools = new ArrayList<>();
         for (ToolSchema schema : tools) {
-            Tool tool =
-                    Tool.builder()
-                            .name(schema.getName())
-                            .description(schema.getDescription())
-                            .inputSchema(convertToJsonValue(schema.getParameters()))
-                            .build();
+            Map<String, Object> inputSchema = schema.getParameters();
 
-            builder.addTool(tool);
+            AnthropicTool tool =
+                    new AnthropicTool(schema.getName(), schema.getDescription(), inputSchema);
+            anthropicTools.add(tool);
         }
+
+        request.setTools(anthropicTools);
 
         // Apply tool choice if specified
         if (options != null && options.getToolChoice() != null) {
-            applyToolChoice(builder, options.getToolChoice());
+            applyToolChoice(request, options.getToolChoice());
         }
     }
 
     /**
-     * Convert tool parameters map to Anthropic JsonValue.
+     * Convert tool parameters to Map.
      */
-    private static JsonValue convertToJsonValue(Object parameters) {
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> convertToMap(Object parameters) {
         try {
-            return JsonValue.from(ObjectMappers.jsonMapper().valueToTree(parameters));
+            if (parameters == null) {
+                return new HashMap<>();
+            }
+            // Convert to JSON string and back to Map
+            String json = JsonUtils.getJsonCodec().toJson(parameters);
+            return JsonUtils.getJsonCodec().fromJson(json, Map.class);
         } catch (Exception e) {
-            log.error("Failed to convert tool parameters to JsonValue", e);
-            return JsonValue.from(null);
+            log.error("Failed to convert tool parameters to Map", e);
+            return new HashMap<>();
         }
     }
 
     /**
-     * Apply tool choice to the builder.
+     * Apply tool choice to the request.
      */
-    private static void applyToolChoice(
-            MessageCreateParams.Builder builder, ToolChoice toolChoice) {
+    private static void applyToolChoice(AnthropicRequest request, ToolChoice toolChoice) {
         if (toolChoice instanceof ToolChoice.Auto) {
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAuto(
-                            ToolChoiceAuto.builder().build()));
+            Map<String, String> choice = new HashMap<>();
+            choice.put("type", "auto");
+            request.setToolChoice(choice);
         } else if (toolChoice instanceof ToolChoice.None) {
             // Anthropic doesn't have None, use Any instead
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAny(
-                            ToolChoiceAny.builder().build()));
+            Map<String, String> choice = new HashMap<>();
+            choice.put("type", "any");
+            request.setToolChoice(choice);
         } else if (toolChoice instanceof ToolChoice.Required) {
-            // Anthropic doesn't have a direct "required" option, use "any" which forces tool
+            // Anthropic doesn't have a direct "required" option, use "any" which forces
+            // tool
             // use
             log.warn(
                     "Anthropic API doesn't support ToolChoice.Required directly, using 'any'"
                             + " instead");
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofAny(
-                            ToolChoiceAny.builder().build()));
+            Map<String, String> choice = new HashMap<>();
+            choice.put("type", "any");
+            request.setToolChoice(choice);
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            builder.toolChoice(
-                    com.anthropic.models.messages.ToolChoice.ofTool(
-                            ToolChoiceTool.builder().name(specific.toolName()).build()));
+            Map<String, String> choice = new HashMap<>();
+            choice.put("type", "tool");
+            choice.put("name", specific.toolName());
+            request.setToolChoice(choice);
         } else {
             log.warn("Unknown tool choice type: {}", toolChoice);
         }
     }
 
     /**
-     * Apply generation options to the builder.
+     * Apply generation options to the request.
      *
-     * @param builder The message create params builder
-     * @param options Generate options
+     * @param request        The Anthropic request
+     * @param options        Generate options
      * @param defaultOptions Default generate options
      */
     public static void applyOptions(
-            MessageCreateParams.Builder builder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            AnthropicRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Temperature
         Double temperature = getOption(options, defaultOptions, GenerateOptions::getTemperature);
         if (temperature != null) {
-            builder.temperature(temperature);
+            request.setTemperature(temperature);
         }
 
         // Top P
         Double topP = getOption(options, defaultOptions, GenerateOptions::getTopP);
         if (topP != null) {
-            builder.topP(topP);
+            request.setTopP(topP);
         }
 
         // Top K
         Integer topK = getOption(options, defaultOptions, GenerateOptions::getTopK);
         if (topK != null) {
-            builder.topK(topK.longValue());
+            request.setTopK(topK);
         }
 
         // Max tokens
         Integer maxTokens = getOption(options, defaultOptions, GenerateOptions::getMaxTokens);
         if (maxTokens != null) {
-            builder.maxTokens(maxTokens);
+            request.setMaxTokens(maxTokens);
         }
 
-        // Apply additional parameters (merge defaultOptions first, then options to override)
-        // Apply additional headers
-        applyAdditionalHeaders(builder, defaultOptions);
-        applyAdditionalHeaders(builder, options);
-
-        // Apply additional body params
-        applyAdditionalBodyParams(builder, defaultOptions);
-        applyAdditionalBodyParams(builder, options);
-
-        // Apply additional query params
-        applyAdditionalQueryParams(builder, defaultOptions);
-        applyAdditionalQueryParams(builder, options);
+        // Note: Additional headers and query params are handled by the client, not the
+        // request
+        // Additional body params can be added to metadata if needed
+        applyAdditionalBodyParams(request, defaultOptions);
+        applyAdditionalBodyParams(request, options);
     }
 
-    private static void applyAdditionalHeaders(
-            MessageCreateParams.Builder builder, GenerateOptions opts) {
-        if (opts == null) return;
-        Map<String, String> headers = opts.getAdditionalHeaders();
-        if (headers != null && !headers.isEmpty()) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                builder.putAdditionalHeader(entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional headers to Anthropic request", headers.size());
-        }
-    }
-
-    private static void applyAdditionalBodyParams(
-            MessageCreateParams.Builder builder, GenerateOptions opts) {
+    private static void applyAdditionalBodyParams(AnthropicRequest request, GenerateOptions opts) {
         if (opts == null) return;
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
-                builder.putAdditionalBodyProperty(entry.getKey(), JsonValue.from(entry.getValue()));
+            Map<String, Object> metadata = request.getMetadata();
+            if (metadata == null) {
+                metadata = new HashMap<>();
+                request.setMetadata(metadata);
             }
+            metadata.putAll(params);
             log.debug("Applied {} additional body params to Anthropic request", params.size());
-        }
-    }
-
-    private static void applyAdditionalQueryParams(
-            MessageCreateParams.Builder builder, GenerateOptions opts) {
-        if (opts == null) return;
-        Map<String, String> params = opts.getAdditionalQueryParams();
-        if (params != null && !params.isEmpty()) {
-            for (Map.Entry<String, String> entry : params.entrySet()) {
-                builder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional query params to Anthropic request", params.size());
         }
     }
 
