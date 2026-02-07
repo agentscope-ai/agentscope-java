@@ -35,6 +35,7 @@ import io.agentscope.core.model.ChatUsage;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -57,7 +58,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithTextBlock() {
+    void testParseMessageWithTextBlock() throws Exception {
         // Create mock Message with text content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -81,11 +82,11 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_123", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
-
-        io.agentscope.core.message.TextBlock parsedText =
-                (io.agentscope.core.message.TextBlock) response.getContent().get(0);
-        assertEquals("Hello, world!", parsedText.getText());
+        Object parsedTextBlock = response.getContent().get(0);
+        assertEquals("TextBlock", parsedTextBlock.getClass().getSimpleName());
+        String parsedText =
+                (String) parsedTextBlock.getClass().getMethod("getText").invoke(parsedTextBlock);
+        assertEquals("Hello, world!", parsedText);
 
         ChatUsage responseUsage = response.getUsage();
         assertNotNull(responseUsage);
@@ -94,7 +95,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithToolUseBlock() {
+    void testParseMessageWithToolUseBlock() throws Exception {
         // Create mock Message with tool use content
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
         Message message = mock(Message.class);
@@ -122,19 +123,29 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_456", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.ToolUseBlock);
-
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
-        assertEquals("tool_call_123", parsedToolUse.getId());
-        assertEquals("search", parsedToolUse.getName());
-        assertNotNull(parsedToolUse.getInput());
+        Object parsedToolUseBlock = response.getContent().get(0);
+        assertEquals("ToolUseBlock", parsedToolUseBlock.getClass().getSimpleName());
+        assertEquals(
+                "tool_call_123",
+                parsedToolUseBlock.getClass().getMethod("getId").invoke(parsedToolUseBlock));
+        assertEquals(
+                "search",
+                parsedToolUseBlock.getClass().getMethod("getName").invoke(parsedToolUseBlock));
+        assertNotNull(
+                parsedToolUseBlock.getClass().getMethod("getInput").invoke(parsedToolUseBlock));
         // Null input should result in empty map
-        assertTrue(parsedToolUse.getInput().isEmpty());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parsedInput =
+                (Map<String, Object>)
+                        parsedToolUseBlock
+                                .getClass()
+                                .getMethod("getInput")
+                                .invoke(parsedToolUseBlock);
+        assertTrue(parsedInput.isEmpty());
     }
 
     @Test
-    void testParseMessageWithThinkingBlock() {
+    void testParseMessageWithThinkingBlock() throws Exception {
         // Create mock Message with thinking content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -158,12 +169,14 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_789", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(
-                response.getContent().get(0) instanceof io.agentscope.core.message.ThinkingBlock);
-
-        io.agentscope.core.message.ThinkingBlock parsedThinking =
-                (io.agentscope.core.message.ThinkingBlock) response.getContent().get(0);
-        assertEquals("Let me think about this...", parsedThinking.getThinking());
+        Object parsedThinkingBlock = response.getContent().get(0);
+        assertEquals("ThinkingBlock", parsedThinkingBlock.getClass().getSimpleName());
+        assertEquals(
+                "Let me think about this...",
+                parsedThinkingBlock
+                        .getClass()
+                        .getMethod("getThinking")
+                        .invoke(parsedThinkingBlock));
     }
 
     @Test
@@ -205,8 +218,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals("msg_mixed", response.getId());
         assertEquals(2, response.getContent().size());
 
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
-        assertTrue(response.getContent().get(1) instanceof io.agentscope.core.message.ToolUseBlock);
+        assertEquals("TextBlock", response.getContent().get(0).getClass().getSimpleName());
+        assertEquals("ToolUseBlock", response.getContent().get(1).getClass().getSimpleName());
     }
 
     @Test
@@ -230,7 +243,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithNullToolInput() {
+    void testParseMessageWithNullToolInput() throws Exception {
         // Create mock Message with null tool input
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -257,13 +270,24 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals(1, response.getContent().size());
 
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
-        assertEquals("tool_null", parsedToolUse.getId());
-        assertEquals("test_tool", parsedToolUse.getName());
+        Object parsedToolUseBlock = response.getContent().get(0);
+        assertEquals(
+                "tool_null",
+                parsedToolUseBlock.getClass().getMethod("getId").invoke(parsedToolUseBlock));
+        assertEquals(
+                "test_tool",
+                parsedToolUseBlock.getClass().getMethod("getName").invoke(parsedToolUseBlock));
         // Null input should result in empty map
-        assertNotNull(parsedToolUse.getInput());
-        assertTrue(parsedToolUse.getInput().isEmpty());
+        assertNotNull(
+                parsedToolUseBlock.getClass().getMethod("getInput").invoke(parsedToolUseBlock));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parsedInput =
+                (Map<String, Object>)
+                        parsedToolUseBlock
+                                .getClass()
+                                .getMethod("getInput")
+                                .invoke(parsedToolUseBlock);
+        assertTrue(parsedInput.isEmpty());
     }
 
     @Test

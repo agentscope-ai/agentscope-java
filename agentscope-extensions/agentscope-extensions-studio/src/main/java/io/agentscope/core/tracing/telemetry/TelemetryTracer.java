@@ -44,10 +44,10 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tracing.Tracer;
 import io.agentscope.core.tracing.telemetry.AttributesExtractors.FormatterConverter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.api.trace.TracerProvider;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -64,11 +64,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.context.ContextView;
 
-public class TelemetryTracer implements Tracer {
+public class TelemetryTracer implements io.agentscope.core.tracing.Tracer {
 
-    private final io.opentelemetry.api.trace.Tracer tracer;
+    private final Tracer tracer;
 
-    public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
+    public TelemetryTracer(Tracer tracer) {
         this.tracer = tracer;
     }
 
@@ -232,13 +232,13 @@ public class TelemetryTracer implements Tracer {
 
     public static class Builder {
         private final String INSTRUMENTATION_NAME = "agentscope-java";
-        private final io.opentelemetry.api.trace.Tracer NOOP_TRACER =
+        private final Tracer NOOP_TRACER =
                 TracerProvider.noop().get(INSTRUMENTATION_NAME, Version.VERSION);
 
         private boolean enabled = true;
         private String endpoint;
         private Map<String, String> headers = new HashMap<>();
-        private io.opentelemetry.api.trace.Tracer tracer;
+        private Tracer tracer;
 
         public Builder enabled(boolean enabled) {
             this.enabled = enabled;
@@ -269,11 +269,11 @@ public class TelemetryTracer implements Tracer {
          * @return This builder
          */
         public Builder headers(Map<String, String> headers) {
-            this.headers = new java.util.HashMap<>(headers);
+            this.headers = new HashMap<>(headers);
             return this;
         }
 
-        public Builder tracer(io.opentelemetry.api.trace.Tracer tracer) {
+        public Builder tracer(Tracer tracer) {
             this.tracer = tracer;
             return this;
         }

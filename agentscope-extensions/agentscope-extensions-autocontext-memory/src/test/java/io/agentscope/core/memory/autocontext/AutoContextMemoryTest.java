@@ -36,7 +36,10 @@ import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -919,7 +922,7 @@ class AutoContextMemoryTest {
 
         // Use reflection to set the plan (since PlanNotebook doesn't expose a setter)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -980,7 +983,7 @@ class AutoContextMemoryTest {
                         ToolUseBlock.builder()
                                 .name(toolName)
                                 .id(callId)
-                                .input(new java.util.HashMap<>())
+                                .input(new HashMap<>())
                                 .build())
                 .build();
     }
@@ -1075,7 +1078,7 @@ class AutoContextMemoryTest {
 
         // Manually set the plan (using reflection for testing)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -1438,8 +1441,7 @@ class AutoContextMemoryTest {
         AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1454,8 +1456,7 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1473,13 +1474,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1517,13 +1517,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1553,13 +1552,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1580,13 +1578,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1610,13 +1607,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1641,13 +1637,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         // Test with IN_PROGRESS state

@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import reactor.core.publisher.Flux;
 
 /**
@@ -96,8 +97,7 @@ public class ChatCompletionsStreamingAdapter {
                         .build();
 
         // Track if we've seen non-last REASONING events (indicates incremental mode)
-        java.util.concurrent.atomic.AtomicBoolean hasSeenIncrementalReasoning =
-                new java.util.concurrent.atomic.AtomicBoolean(false);
+        AtomicBoolean hasSeenIncrementalReasoning = new AtomicBoolean(false);
 
         return agent.stream(messages, options)
                 .filter(event -> event.getMessage() != null)
