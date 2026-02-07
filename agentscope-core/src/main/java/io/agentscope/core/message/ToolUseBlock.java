@@ -50,12 +50,8 @@ public final class ToolUseBlock extends ContentBlock {
      * @param input Input parameters for the tool (will be defensively copied)
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
-    @JsonCreator
     public ToolUseBlock(
-            @JsonProperty("id") String id,
-            @JsonProperty("name") String name,
-            @JsonProperty("input") Map<String, Object> input,
-            @JsonProperty("metadata") Map<String, Object> metadata) {
+            String id, String name, Map<String, Object> input, Map<String, Object> metadata) {
         this(id, name, input, null, metadata);
     }
 
@@ -79,12 +75,13 @@ public final class ToolUseBlock extends ContentBlock {
      * @param content Raw content for streaming tool calls
      * @param metadata Provider-specific metadata (will be defensively copied)
      */
+    @JsonCreator
     public ToolUseBlock(
-            String id,
-            String name,
-            Map<String, Object> input,
-            String content,
-            Map<String, Object> metadata) {
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("input") Map<String, Object> input,
+            @JsonProperty("content") String content,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         this.id = id;
         this.name = name;
         // Defensive copy to prevent external modifications
