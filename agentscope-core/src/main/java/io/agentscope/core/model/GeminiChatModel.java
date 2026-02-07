@@ -221,12 +221,64 @@ public class GeminiChatModel extends ChatModelBase {
                                 // Apply options, tools, tool choice
                                 formatter.applyOptions(requestDto, options, defaultOptions);
 
+                                // CRITICAL FIX: For Gemini 3 Flash + structured output, disable
+                                // thinking immediately after applyOptions
+                                // This must happen BEFORE the general Gemini 3 compatibility logic
+                                // to prevent being overridden
+                                boolean isGemini3FlashStructuredOutput = false;
+                                if (modelName.toLowerCase().contains("gemini-3-flash")
+                                        && tools != null) {
+                                    for (ToolSchema tool : tools) {
+                                        if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME
+                                                .equals(tool.getName())) {
+                                            isGemini3FlashStructuredOutput = true;
+                                            GeminiGenerationConfig genConfig =
+                                                    requestDto.getGenerationConfig();
+                                            if (genConfig == null) {
+                                                genConfig = new GeminiGenerationConfig();
+                                                requestDto.setGenerationConfig(genConfig);
+                                            }
+                                            // CRITICAL: Set thinkingConfig to null to completely
+                                            // remove it
+                                            // Setting includeThoughts=false doesn't work - we must
+                                            // remove the entire config
+                                            genConfig.setThinkingConfig(null);
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 // Compatibility fix for Gemini 3 models
                                 // Disable thinking mode when tools are present to avoid
                                 // MALFORMED_FUNCTION_CALL
-                                if (modelName.toLowerCase().contains("gemini-3")) {
+                                if (modelName.toLowerCase().contains("gemini-3")
+                                        && !isGemini3FlashStructuredOutput) {
+
+                                    // Check if there are non-structured-output tools
+                                    boolean hasNonStructuredOutputTools = false;
                                     if (tools != null && !tools.isEmpty()) {
-                                        // When tools are present, ensure genConfig exists and
+                                        log.info(
+                                                "Tools present for Gemini 3, count: {}",
+                                                tools.size());
+                                        for (ToolSchema tool : tools) {
+                                            log.info("Tool name: {}", tool.getName());
+                                            if (!StructuredOutputCapableAgent
+                                                    .STRUCTURED_OUTPUT_TOOL_NAME
+                                                    .equals(tool.getName())) {
+                                                hasNonStructuredOutputTools = true;
+                                                log.info(
+                                                        "Found non-structured-output tool: {}",
+                                                        tool.getName());
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        log.info("No tools present for Gemini 3");
+                                    }
+
+                                    if (hasNonStructuredOutputTools) {
+                                        // When non-structured-output tools are present, ensure
+                                        // genConfig exists and
                                         // completely disable thinking mode
                                         GeminiGenerationConfig genConfig =
                                                 requestDto.getGenerationConfig();
@@ -236,28 +288,85 @@ public class GeminiChatModel extends ChatModelBase {
                                         }
                                         // The combination of extended reasoning and tool calls
                                         // causes MALFORMED_FUNCTION_CALL API errors in Gemini 3
-                                        log.debug(
+                                        log.info(
                                                 "Disabling thinking mode for Gemini 3 model when"
-                                                        + " tools are present");
+                                                    + " non-structured-output tools are present");
                                         GeminiThinkingConfig thinkingConfig =
                                                 new GeminiThinkingConfig();
                                         thinkingConfig.setIncludeThoughts(false);
                                         genConfig.setThinkingConfig(thinkingConfig);
                                     } else {
-                                        // For non-tool requests, adjust thinking config
-                                        GeminiGenerationConfig genConfig =
-                                                requestDto.getGenerationConfig();
-                                        if (genConfig != null) {
-                                            GeminiThinkingConfig thinkingConfig =
-                                                    genConfig.getThinkingConfig();
-                                            if (thinkingConfig != null) {
-                                                if (thinkingConfig.getThinkingBudget() != null) {
-                                                    log.debug(
-                                                            "Removing thinkingBudget for Gemini 3"
-                                                                    + " model compatibility");
-                                                    thinkingConfig.setThinkingBudget(null);
+                                        // For structured output or non-tool requests, adjust
+                                        // thinking config
+                                        // BUT: Don't enable thinking for Gemini 3 Flash with
+                                        // structured output
+                                        // as it causes tool hallucination
+                                        boolean isGemini3Flash =
+                                                modelName.toLowerCase().contains("gemini-3-flash");
+                                        boolean hasStructuredOutputTool = false;
+                                        if (tools != null) {
+                                            for (ToolSchema tool : tools) {
+                                                if (StructuredOutputCapableAgent
+                                                        .STRUCTURED_OUTPUT_TOOL_NAME
+                                                        .equals(tool.getName())) {
+                                                    hasStructuredOutputTool = true;
+                                                    break;
                                                 }
-                                                thinkingConfig.setIncludeThoughts(true);
+                                            }
+                                        }
+
+                                        if (isGemini3Flash && hasStructuredOutputTool) {
+                                            log.info(
+                                                    "Disabling thinking config for Gemini 3 Flash"
+                                                            + " structured output to avoid tool"
+                                                            + " hallucination");
+                                            // CRITICAL: Actively disable thinking for Gemini 3
+                                            // Flash structured output
+                                            GeminiGenerationConfig genConfig =
+                                                    requestDto.getGenerationConfig();
+                                            if (genConfig == null) {
+                                                genConfig = new GeminiGenerationConfig();
+                                                requestDto.setGenerationConfig(genConfig);
+                                            }
+                                            GeminiThinkingConfig thinkingConfig =
+                                                    new GeminiThinkingConfig();
+                                            thinkingConfig.setIncludeThoughts(false);
+                                            thinkingConfig.setThinkingBudget(null);
+                                            genConfig.setThinkingConfig(thinkingConfig);
+                                        } else {
+                                            log.info(
+                                                    "Adjusting thinking config for Gemini 3"
+                                                            + " (structured output or no tools)");
+                                            GeminiGenerationConfig genConfig =
+                                                    requestDto.getGenerationConfig();
+                                            log.info("Current genConfig: {}", genConfig);
+                                            if (genConfig != null) {
+                                                GeminiThinkingConfig thinkingConfig =
+                                                        genConfig.getThinkingConfig();
+                                                log.info(
+                                                        "Current thinkingConfig: {}",
+                                                        thinkingConfig);
+                                                if (thinkingConfig != null) {
+                                                    if (thinkingConfig.getThinkingBudget()
+                                                            != null) {
+                                                        log.info(
+                                                                "Removing thinkingBudget for Gemini"
+                                                                        + " 3 model compatibility");
+                                                        thinkingConfig.setThinkingBudget(null);
+                                                    }
+                                                    thinkingConfig.setIncludeThoughts(true);
+                                                    log.info(
+                                                            "Set includeThoughts=true for Gemini"
+                                                                    + " 3");
+                                                } else {
+                                                    log.warn(
+                                                            "thinkingConfig is null, cannot enable"
+                                                                    + " thinking mode");
+                                                }
+                                            } else {
+                                                log.warn(
+                                                        "genConfig is null, cannot adjust thinking"
+                                                                + " config");
                                             }
                                         }
                                     }
@@ -273,7 +382,9 @@ public class GeminiChatModel extends ChatModelBase {
 
                                 // 2. Serialize Request
                                 String requestJson = jsonCodec.toJson(requestDto);
-                                log.trace("Gemini Request JSON: {}", requestJson);
+                                log.info(
+                                        "Gemini Request JSON: {}",
+                                        requestJson); // Changed to INFO for debugging
                                 log.debug(
                                         "Gemini request: model={}, system_instruction={},"
                                                 + " contents_count={}",
@@ -305,6 +416,25 @@ public class GeminiChatModel extends ChatModelBase {
                                         if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME
                                                 .equals(tool.getName())) {
                                             forceUnaryForStructuredOutput = true;
+
+                                            // CRITICAL FIX: Gemini 3 Flash has a known issue where
+                                            // thinking mode
+                                            // causes it to hallucinate tool names instead of using
+                                            // generate_response
+                                            if (modelName
+                                                    .toLowerCase()
+                                                    .contains("gemini-3-flash")) {
+                                                GeminiGenerationConfig genConfig =
+                                                        requestDto.getGenerationConfig();
+                                                if (genConfig == null) {
+                                                    genConfig = new GeminiGenerationConfig();
+                                                    requestDto.setGenerationConfig(genConfig);
+                                                }
+                                                GeminiThinkingConfig thinkingConfig =
+                                                        new GeminiThinkingConfig();
+                                                thinkingConfig.setIncludeThoughts(false);
+                                                genConfig.setThinkingConfig(thinkingConfig);
+                                            }
                                             break;
                                         }
                                     }
@@ -439,7 +569,18 @@ public class GeminiChatModel extends ChatModelBase {
 
                 GeminiResponse geminiResponse =
                         jsonCodec.fromJson(bodyString, GeminiResponse.class);
+                log.info("Gemini Response JSON: {}", bodyString);
+                log.info(
+                        "Parsed GeminiResponse: candidates={}, promptFeedback={}",
+                        geminiResponse.getCandidates() != null
+                                ? geminiResponse.getCandidates().size()
+                                : 0,
+                        geminiResponse.getPromptFeedback());
                 ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
+                log.info(
+                        "Parsed ChatResponse: contentBlocks={}, metadata={}",
+                        chatResponse.getContent() != null ? chatResponse.getContent().size() : 0,
+                        chatResponse.getMetadata());
                 return Flux.just(chatResponse);
             }
         } catch (IOException e) {
@@ -577,6 +718,16 @@ public class GeminiChatModel extends ChatModelBase {
         ToolUseBlock targetToolUse = null;
         boolean targetToolCalled = false;
         boolean anyOtherToolCalled = false;
+        ToolUseBlock firstHallucinatedToolUse = null;
+        boolean hasHallucinatedToolCall = false;
+        List<String> allowedToolNames = new ArrayList<>();
+        if (tools != null) {
+            for (ToolSchema tool : tools) {
+                if (tool != null && tool.getName() != null) {
+                    allowedToolNames.add(tool.getName());
+                }
+            }
+        }
         for (ContentBlock block : blocks) {
             if (block instanceof ToolUseBlock toolUse) {
                 if (targetToolName.equals(toolUse.getName())) {
@@ -585,8 +736,62 @@ public class GeminiChatModel extends ChatModelBase {
                 } else {
                     // A different tool was called (e.g., "add" before "generate_response")
                     anyOtherToolCalled = true;
+                    if (!allowedToolNames.isEmpty()
+                            && !allowedToolNames.contains(toolUse.getName())) {
+                        hasHallucinatedToolCall = true;
+                        if (firstHallucinatedToolUse == null) {
+                            firstHallucinatedToolUse = toolUse;
+                        }
+                    }
                 }
             }
+        }
+
+        // Gemini 3 Flash may hallucinate tool names not present in the tool list.
+        // If that happens during structured output, coerce the hallucinated tool call
+        // into a generate_response call so structured output metadata is populated.
+        if (hasHallucinatedToolCall && !targetToolCalled && firstHallucinatedToolUse != null) {
+            Map<String, Object> inputMap =
+                    firstHallucinatedToolUse.getInput() != null
+                            ? new HashMap<>(firstHallucinatedToolUse.getInput())
+                            : new HashMap<>();
+            Map<String, Object> normalized =
+                    normalizeStructuredOutputInput(inputMap, tools, targetToolName);
+            if (normalized == null || normalized.isEmpty()) {
+                return createEmptyStructuredOutputResponse(response, targetToolName, tools);
+            }
+
+            Map<String, Object> metadata = new HashMap<>();
+            if (firstHallucinatedToolUse.getMetadata() != null) {
+                metadata.putAll(firstHallucinatedToolUse.getMetadata());
+            }
+            metadata.put("synthetic", true);
+            metadata.put("hallucinated_tool", firstHallucinatedToolUse.getName());
+
+            ToolUseBlock fixedToolUse =
+                    ToolUseBlock.builder()
+                            .id(firstHallucinatedToolUse.getId())
+                            .name(targetToolName)
+                            .input(normalized)
+                            .content(JsonUtils.getJsonCodec().toJson(normalized))
+                            .metadata(metadata)
+                            .build();
+
+            List<ContentBlock> newBlocks = new ArrayList<>(blocks);
+            int index = newBlocks.indexOf(firstHallucinatedToolUse);
+            if (index >= 0) {
+                newBlocks.set(index, fixedToolUse);
+            } else {
+                newBlocks.add(0, fixedToolUse);
+            }
+
+            return ChatResponse.builder()
+                    .id(response.getId())
+                    .content(newBlocks)
+                    .usage(response.getUsage())
+                    .finishReason(response.getFinishReason())
+                    .metadata(response.getMetadata())
+                    .build();
         }
 
         // If a different tool was called (not generate_response), don't apply structured output

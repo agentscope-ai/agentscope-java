@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool.GeminiFunctionDeclaration;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
@@ -93,8 +92,11 @@ public class GeminiToolsHelper {
                 Map<String, Object> parameters = toolSchema.getParameters();
 
                 // Special handling for generate_response tool:
-                // Gemini doesn't understand the nested {response: {...}} wrapper format.
-                // We need to unwrap the inner schema so Gemini can call the tool correctly.
+                // We previously unwrapped the schema for Gemini compatibility, but this caused
+                // conflicts with Gemini 2.5+ which follows the system prompt instructions
+                // (which request a "response" object) more strictly.
+                // We now keep the schema as-is (wrapped) to ensure prompt and schema alignment.
+                /*
                 if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
                         toolSchema.getName())) {
                     parameters = unwrapResponseSchema(parameters);
@@ -102,6 +104,7 @@ public class GeminiToolsHelper {
                             "Unwrapped 'response' wrapper from generate_response tool schema for"
                                     + " Gemini compatibility");
                 }
+                */
 
                 // Only set parameters if not null and not empty
                 // Gemini rejects tools with empty parameter schemas

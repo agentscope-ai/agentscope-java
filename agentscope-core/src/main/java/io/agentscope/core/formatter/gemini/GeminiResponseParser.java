@@ -107,14 +107,14 @@ public class GeminiResponseParser {
 
                 // Log debug if content is empty (common in streaming or metadata-only updates)
                 if (blocks.isEmpty()) {
-                    log.debug(
+                    log.warn(
                             "Gemini returned empty content blocks in this chunk/response."
                                     + " finishReason={}",
                             finishReason);
                 }
             } else {
                 // No candidates at all
-                log.warn(
+                log.error(
                         "Gemini returned no candidates. promptFeedback={}",
                         response.getPromptFeedback());
                 // Add error block to inform the user that no content was returned
@@ -123,6 +123,9 @@ public class GeminiResponseParser {
                 String errorMessage = "Gemini returned no candidates";
                 if (finishReason != null && !finishReason.isEmpty()) {
                     errorMessage += " (finishReason: " + finishReason + ")";
+                }
+                if (response.getPromptFeedback() != null) {
+                    errorMessage += " - promptFeedback: " + response.getPromptFeedback();
                 }
                 blocks.add(TextBlock.builder().text(errorMessage).build());
             }
