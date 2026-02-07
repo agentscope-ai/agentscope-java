@@ -259,20 +259,41 @@ AgentSkill loaded = repo.getSkill("data_analysis");
 
 #### MySQL数据库存储 (暂未实现)
 
-#### Git仓库 (暂未实现)
+#### Git仓库 (只读)
 
-#### Jar中的resource路径存储 (适配器)
+用于从 Git 仓库加载 Skills (只读)。支持 HTTPS 和 SSH。
 
-用于从 JAR 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。
+**更新机制**
+- 默认每次读取都会做轻量化的远端引用检查，仅当远端 HEAD 变化时才会 pull。
+- 可以通过构造函数关闭自动同步，改为手动调用 `sync()` 刷新。
 
 ```java
-try (JarSkillRepositoryAdapter adapter = new JarSkillRepositoryAdapter("skills")) {
-    AgentSkill skill = adapter.getSkill("data-analysis");
-    List<AgentSkill> allSkills = adapter.getAllSkills();
+AgentSkillRepository repo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git");
+AgentSkill skill = repo.getSkill("data-analysis");
+List<AgentSkill> allSkills = repo.getAllSkills();
+
+GitSkillRepository manualRepo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git", false);
+manualRepo.sync();
+```
+
+如果仓库中存在 `skills/` 子目录，会优先从该目录加载，否则使用仓库根目录。
+
+#### Classpath 仓库 (只读)
+
+用于从 classpath 资源中加载预打包的 Skills (只读)。自动兼容标准 JAR 和 Spring Boot Fat JAR。
+
+```java
+try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    List<AgentSkill> allSkills = repository.getAllSkills();
 } catch //...
 ```
 
 资源目录结构: `src/main/resources/skills/` 下放置多个 Skill 子目录,每个子目录包含 `SKILL.md`
+
+> 注意: `JarSkillRepositoryAdapter` 已废弃,请使用 `ClasspathSkillRepository`。
 
 ### 性能优化建议
 

@@ -74,23 +74,24 @@
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.36.0</google-genai.version>
-        <dashscope-sdk-java.version>2.22.6</dashscope-sdk-java.version>
-        <bailian.version>2.8.0</bailian.version>
-        <openai-java.version>4.16.1</openai-java.version>
-        <anthropic.version>2.11.1</anthropic.version>
+        <google-genai.version>1.37.0</google-genai.version>
+        <dashscope-sdk-java.version>2.22.7</dashscope-sdk-java.version>
+        <bailian.version>2.8.1</bailian.version>
+        <openai-java.version>4.17.0</openai-java.version>
+        <anthropic.version>2.12.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
         <milvus.version>2.6.13</milvus.version>
-        <elasticsearch.version>8.12.0</elasticsearch.version>
+        <httpclient5.version>5.6</httpclient5.version>
+        <elasticsearch.version>9.3.0</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
-        <mysql.version>9.5.0</mysql.version>
+        <mysql.version>9.6.0</mysql.version>
         <opentelemetry-reactor.version>2.24.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.39.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.1.0</redisson.version>
@@ -109,7 +110,7 @@
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
-
+        <jgit.version>7.5.0.202512021534-r</jgit.version>
 
         <spotless.version>3.2.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -237,6 +238,13 @@
                 <groupId>io.qdrant</groupId>
                 <artifactId>client</artifactId>
                 <version>${qdrant.version}</version>
+            </dependency>
+
+            <!-- Apache HTTP Client 5 -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${httpclient5.version}</version>
             </dependency>
 
             <!-- Elasticsearch Java SDK -->
@@ -438,6 +446,13 @@
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons-lang3.version}</version>
+            </dependency>
+
+            <!-- JGit for Git repository operations -->
+            <dependency>
+                <groupId>org.eclipse.jgit</groupId>
+                <artifactId>org.eclipse.jgit</artifactId>
+                <version>${jgit.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
