@@ -31,8 +31,7 @@ import org.junit.jupiter.api.Test;
  */
 class ToolUseBlockTest {
 
-    private final ObjectMapper objectMapper =
-            ((JacksonJsonCodec) io.agentscope.core.util.JsonUtils.getJsonCodec()).getObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void testJsonSerializationWithAllFields() throws JsonProcessingException {
