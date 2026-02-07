@@ -99,6 +99,7 @@
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.1</jedis.version>
+        <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.3</spring.version>
@@ -376,6 +377,13 @@
                 <groupId>redis.clients</groupId>
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
+            </dependency>
+
+            <!-- Lettuce client for Redis-based session implementation -->
+            <dependency>
+                <groupId>io.lettuce</groupId>
+                <artifactId>lettuce-core</artifactId>
+                <version>${lettuce.version}</version>
             </dependency>
 
             <!-- XXL-JOB Core -->
