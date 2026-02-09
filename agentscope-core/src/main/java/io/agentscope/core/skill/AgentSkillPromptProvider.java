@@ -29,27 +29,31 @@ package io.agentscope.core.skill;
  */
 public class AgentSkillPromptProvider {
     private final SkillRegistry skillRegistry;
+    private final String instruction;
+    private final String template;
 
     public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
             """
             ## Available Skills
 
             <usage>
-            When you need to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities, tools, and domain knowledge.
+            Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
             How to use skills:
             - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
-            Usage notes:
-            - Only use skills listed in <available_skills> below
-            - Loading SKILL.md activates the skill and will make its tools available
+            Path Information:
+            When you load a skill, the response will include:
+            - Exact paths to all skill resources
+            - Code examples for accessing skill files
+            - Usage instructions specific to that skill
 
             Template fields explanation:
-            - <name>: The skill's display name. Use it along with <description> to determine if this skill is relevant to your current task
-            - <description>: Detailed description of when and how to use this skill. Read carefully to decide whether to load this skill
-            - <skill-id>: The unique identifier used to load the skill via load_skill_through_path tool
+            - <name>: The skill's display name
+            - <description>: When and how to use this skill
+            - <skill-id>: Unique identifier for load_skill_through_path tool
             </usage>
 
             <available_skills>
@@ -73,7 +77,24 @@ public class AgentSkillPromptProvider {
      * @param registry The skill registry containing registered skills
      */
     public AgentSkillPromptProvider(SkillRegistry registry) {
+        this(registry, null, null);
+    }
+
+    /**
+     * Creates a skill prompt provider with custom instruction and template.
+     *
+     * @param registry The skill registry containing registered skills
+     * @param instruction Custom instruction header (null or blank uses default)
+     * @param template Custom skill template (null or blank uses default)
+     */
+    public AgentSkillPromptProvider(SkillRegistry registry, String instruction, String template) {
         this.skillRegistry = registry;
+        this.instruction =
+                instruction == null || instruction.isBlank()
+                        ? DEFAULT_AGENT_SKILL_INSTRUCTION
+                        : instruction;
+        this.template =
+                template == null || template.isBlank() ? DEFAULT_AGENT_SKILL_TEMPLATE : template;
     }
 
     /**
@@ -92,17 +113,14 @@ public class AgentSkillPromptProvider {
         }
 
         // Add instruction header
-        sb.append(DEFAULT_AGENT_SKILL_INSTRUCTION);
+        sb.append(instruction);
 
         // Add each skill
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
             sb.append(
                     String.format(
-                            DEFAULT_AGENT_SKILL_TEMPLATE,
-                            skill.getName(),
-                            skill.getDescription(),
-                            skill.getSkillId()));
+                            template, skill.getName(), skill.getDescription(), skill.getSkillId()));
         }
 
         // Close available_skills tag

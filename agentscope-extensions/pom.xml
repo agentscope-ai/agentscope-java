@@ -33,6 +33,7 @@
     <modules>
         <module>agentscope-extensions-a2a</module>
         <module>agentscope-extensions-autocontext-memory</module>
+        <module>agentscope-extensions-skill-git-repository</module>
         <module>agentscope-extensions-mem0</module>
         <module>agentscope-extensions-rag-bailian</module>
         <module>agentscope-extensions-rag-dify</module>
