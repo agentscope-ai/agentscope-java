@@ -178,6 +178,9 @@ public abstract class AgentBase implements StateModule, Agent {
                                         .flatMap(this::notifyPostCall)
                                         .onErrorResume(
                                                 createErrorHandler(msgs.toArray(new Msg[0]))))
+                .doOnSuccess(ignored -> running.set(false))
+                .doOnError(ignored -> running.set(false))
+                .doOnCancel(() -> running.set(false))
                 .doFinally(signalType -> running.set(false));
     }
 
@@ -209,6 +212,9 @@ public abstract class AgentBase implements StateModule, Agent {
                                         .flatMap(this::notifyPostCall)
                                         .onErrorResume(
                                                 createErrorHandler(msgs.toArray(new Msg[0]))))
+                .doOnSuccess(ignored -> running.set(false))
+                .doOnError(ignored -> running.set(false))
+                .doOnCancel(() -> running.set(false))
                 .doFinally(signalType -> running.set(false));
     }
 
@@ -240,6 +246,9 @@ public abstract class AgentBase implements StateModule, Agent {
                                         .flatMap(this::notifyPostCall)
                                         .onErrorResume(
                                                 createErrorHandler(msgs.toArray(new Msg[0]))))
+                .doOnSuccess(ignored -> running.set(false))
+                .doOnError(ignored -> running.set(false))
+                .doOnCancel(() -> running.set(false))
                 .doFinally(signalType -> running.set(false));
     }
 

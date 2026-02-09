@@ -63,23 +63,12 @@ public class GeminiMultiAgentMessageConverter {
 
         for (int i = 0; i < groups.size(); i++) {
             MessageGroup group = groups.get(i);
-            boolean isLastGroup = (i == groups.size() - 1);
-
             if (group.type == GroupType.TOOL_SEQUENCE) {
                 result.addAll(baseConverter.convertMessages(group.messages));
                 continue;
             }
 
             if (group.messages.isEmpty()) {
-                continue;
-            }
-
-            // If this is the last group and it's an AGENT_MESSAGE, treat it as the "active" turn
-            // rather than history. This ensures the model treats instructions (like structured
-            // output requests)
-            // as immediate commands rather than historical context.
-            if (isLastGroup) {
-                result.addAll(baseConverter.convertMessages(group.messages));
                 continue;
             }
 
