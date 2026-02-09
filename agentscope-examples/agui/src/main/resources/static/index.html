@@ -609,8 +609,8 @@
                     requestMessages.push({
                         id: 'tool-result-' + Date.now() + '-' + Math.random(),
                         role: 'tool',
-                        content: result.content,
-                        tool_call_id: result.toolCallId
+                        content: JSON.stringify(result.output),
+                        toolCallId: result.toolCallId
                     });
                 });
                 frontendTools.clearPendingResults();

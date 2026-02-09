@@ -558,8 +558,8 @@ public class Toolkit {
     /**
      * Add a tool to a group.
      *
-     * @param groupName Group name
      * @param toolName Tool name
+     * @param groupName Group name
      */
     public void addToolToGroup(String toolName, String groupName) {
         groupManager.addToolToGroup(toolName, groupName);
