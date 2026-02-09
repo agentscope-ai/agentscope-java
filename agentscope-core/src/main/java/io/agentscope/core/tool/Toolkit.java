@@ -556,6 +556,16 @@ public class Toolkit {
     }
 
     /**
+     * Add a tool to a group.
+     *
+     * @param groupName Group name
+     * @param toolName Tool name
+     */
+    public void addToolToGroup(String toolName, String groupName) {
+        groupManager.addToolToGroup(toolName, groupName);
+    }
+
+    /**
      * Update the activation status of tool groups.
      *
      * <p>When {@code allowToolDeletion} is disabled and {@code active} is false, the deactivation

@@ -278,6 +278,173 @@
         .status-dot.disconnected {
             background: var(--accent-red);
         }
+
+        /* Frontend Tools Panel Styles */
+        .tools-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .tools-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(122, 162, 247, 0.1);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .tools-header h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin: 0;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: transform 0.2s;
+        }
+
+        .icon-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .icon-btn.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .tools-content {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .tools-content.collapsed {
+            display: none;
+        }
+
+        .preset-tools {
+            margin-bottom: 16px;
+        }
+
+        .preset-tools label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .preset-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-btn:hover {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .tools-list {
+            margin-bottom: 12px;
+        }
+
+        .tool-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .tool-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .tool-name {
+            font-weight: 600;
+            color: var(--accent-green);
+            font-size: 0.9rem;
+        }
+
+        .remove-tool-btn {
+            background: none;
+            border: none;
+            color: var(--accent-red);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 2px 6px;
+        }
+
+        .tool-description {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .tool-params-preview {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+
+        .secondary-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .secondary-btn:hover {
+            background: var(--border-color);
+        }
+
+        .no-tools {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-style: italic;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .tool-result {
+            background: rgba(158, 206, 106, 0.1);
+            border-left: 3px solid var(--accent-green);
+            padding: 8px 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 <body>
@@ -290,6 +457,29 @@
         <div class="status">
             <div class="status-dot" id="status-dot"></div>
             <span id="status-text">Ready</span>
+        </div>
+
+        <!-- Frontend Tools Panel -->
+        <div class="tools-panel" id="tools-panel">
+            <div class="tools-header" id="tools-header">
+                <h3>🔧 Frontend Tools (<span id="tool-count">0</span>)</h3>
+                <button id="toggle-tools" class="icon-btn">▼</button>
+            </div>
+            <div class="tools-content" id="tools-content">
+                <div class="preset-tools">
+                    <label>Quick Add:</label>
+                    <button class="preset-btn" data-preset="browser-info">Browser Info</button>
+                    <button class="preset-btn" data-preset="local-storage">Local Storage</button>
+                    <button class="preset-btn" data-preset="clipboard">Clipboard</button>
+                    <button class="preset-btn" data-preset="current-time">Get Client Time</button>
+                    <button class="preset-btn" data-preset="page-info">Get Page Info</button>
+                </div>
+                
+                <div class="tools-list" id="tools-list">
+                    <div class="no-tools">No frontend tools added. Click buttons above or add custom tool.</div>
+                </div>
+                
+            </div>
         </div>
 
         <div id="messages"></div>
@@ -308,6 +498,7 @@
     </footer>
 
     <script src="/js/agui-client.js"></script>
+    <script src="/js/frontend-tools.js"></script>
     <script>
         const client = new AguiClient('/agui/run');
         const input = document.getElementById('input');
@@ -320,6 +511,9 @@
         let threadId = 'thread-' + Date.now();
         let messageHistory = [];
         let isRunning = false;
+        
+        // Frontend Tools Management
+        const frontendTools = new FrontendToolsManager();
 
         function setStatus(status, text) {
             statusDot.className = 'status-dot' + (status === 'error' ? ' disconnected' : '');
@@ -403,12 +597,31 @@
             let reasoningContent = '';
             let currentReasoningMessageId = null;
             let currentReasoningDiv = null;
+            
+            // Get pending tool results from previous frontend tool calls
+            const pendingToolResults = frontendTools.getPendingResults();
+            
+            // Build messages with tool results if any
+            let requestMessages = [...messageHistory];
+            if (pendingToolResults.length > 0) {
+                // Add tool result messages
+                pendingToolResults.forEach(result => {
+                    requestMessages.push({
+                        id: 'tool-result-' + Date.now() + '-' + Math.random(),
+                        role: 'tool',
+                        content: result.content,
+                        tool_call_id: result.toolCallId
+                    });
+                });
+                frontendTools.clearPendingResults();
+            }
 
             try {
                 await client.run({
                     threadId: threadId,
                     runId: 'run-' + Date.now(),
-                    messages: messageHistory
+                    messages: requestMessages,
+                    tools: frontendTools.getTools()
                 }, {
                     onRunStarted: () => {
                         console.log('Run started');
@@ -468,9 +681,23 @@
                         hideTypingIndicator();
                         currentAssistantDiv = null;
                         appendMessage('tool', `🔧 Calling tool: ${toolName}`);
+                        
+                        // Check if this is a frontend tool
+                        if (frontendTools.hasTool(toolName)) {
+                            // Store the pending tool call for later execution
+                            frontendTools.addPendingCall(toolCallId, toolName);
+                        }
+                    },
+                    onToolCallArgs: (toolCallId, delta) => {
+                        // Accumulate tool call arguments
+                        frontendTools.appendToolCallArgs(toolCallId, delta);
                     },
                     onToolCallEnd: (toolCallId) => {
-                        // Tool call completed
+                        // Tool call completed - if it's a frontend tool, execute it
+                        const pendingCall = frontendTools.getPendingCall(toolCallId);
+                        if (pendingCall) {
+                            executeFrontendTool(pendingCall.toolCallId, pendingCall.toolName, pendingCall.parsedArgs);
+                        }
                     },
                     onError: (error) => {
                         hideTypingIndicator();
@@ -517,6 +744,141 @@
             }
         }
 
+        // Execute frontend tool
+        async function executeFrontendTool(toolCallId, toolName, args) {
+            console.log(`Executing frontend tool: ${toolName} (call ID: ${toolCallId})`, args);
+
+            try {
+                const result = await frontendTools.executeTool(toolName, args);
+                
+                // Display tool result
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'tool-result';
+                resultDiv.textContent = `📤 Result from ${toolName}:\n${JSON.stringify(result, null, 2)}`;
+                messages.appendChild(resultDiv);
+                messages.scrollTop = messages.scrollHeight;
+                
+                // Store result for next request
+                frontendTools.addPendingResult(toolCallId, result);
+                
+                // Automatically send the tool result to continue the conversation
+                setTimeout(() => {
+                    if (!isRunning) {
+                        sendToolResultMessage();
+                    }
+                }, 500);
+                
+            } catch (error) {
+                console.error(`Error executing frontend tool ${toolName}:`, error);
+                appendMessage('error', `Frontend tool error: ${error.message}`);
+            }
+        }
+        
+        // Send tool result message to continue conversation
+        async function sendToolResultMessage() {
+            const pendingResults = frontendTools.getPendingResults();
+            if (pendingResults.length === 0 || isRunning) return;
+            
+            isRunning = true;
+            sendBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            setStatus('running', 'Processing tool results...');
+            
+            showTypingIndicator();
+            
+            let assistantContent = '';
+            let currentMessageId = null;
+            
+            // Build messages with tool results
+            let requestMessages = [...messageHistory];
+            pendingResults.forEach(result => {
+                requestMessages.push({
+                    id: 'tool-result-' + Date.now() + '-' + Math.random(),
+                    role: 'tool',
+                    content: JSON.stringify(result.output),
+                    toolCallId: result.toolCallId
+                });
+            });
+            frontendTools.clearPendingResults();
+            
+            try {
+                await client.run({
+                    threadId: threadId,
+                    runId: 'run-' + Date.now(),
+                    messages: requestMessages,
+                    tools: frontendTools.getTools()
+                }, {
+                    onRunStarted: () => {
+                        console.log('Tool result processing started');
+                    },
+                    onTextMessageStart: (messageId, role) => {
+                        hideTypingIndicator();
+                        currentMessageId = messageId;
+                        assistantContent = '';
+                        currentAssistantDiv = null;
+                    },
+                    onTextContent: (delta) => {
+                        if (assistantContent === '') {
+                            appendMessage('assistant', delta);
+                        } else {
+                            appendMessage('assistant', delta, true);
+                        }
+                        assistantContent += delta;
+                    },
+                    onTextMessageEnd: (messageId) => {
+                        if (assistantContent) {
+                            messageHistory.push({
+                                id: messageId,
+                                role: 'assistant',
+                                content: assistantContent
+                            });
+                        }
+                        currentAssistantDiv = null;
+                    },
+                    onToolCallStart: (toolCallId, toolName) => {
+                        hideTypingIndicator();
+                        currentAssistantDiv = null;
+                        appendMessage('tool', `🔧 Calling tool: ${toolName}`);
+                        
+                        if (frontendTools.hasTool(toolName)) {
+                            frontendTools.addPendingCall(toolCallId, toolName);
+                        }
+                    },
+                    onToolCallArgs: (toolCallId, delta) => {
+                        frontendTools.appendToolCallArgs(toolCallId, delta);
+                    },
+                    onToolCallEnd: (toolCallId) => {
+                        const pendingCall = frontendTools.getPendingCall(toolCallId);
+                        if (pendingCall) {
+                            executeFrontendTool(pendingCall.toolCallId, pendingCall.toolName, pendingCall.parsedArgs);
+                        }
+                    },
+                    onError: (error) => {
+                        hideTypingIndicator();
+                        appendMessage('error', `Error: ${error}`);
+                    },
+                    onRunFinished: () => {
+                        console.log('Tool result processing finished');
+                        hideTypingIndicator();
+                        setStatus('ready', 'Ready');
+                    }
+                });
+            } catch (error) {
+                console.error('Error during tool result processing:', error);
+                hideTypingIndicator();
+                appendMessage('error', `Error: ${error.message}`);
+            } finally {
+                isRunning = false;
+                sendBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+                hideTypingIndicator();
+                currentAssistantDiv = null;
+                if (statusText.textContent === 'Processing tool results...') {
+                    setStatus('ready', 'Ready');
+                }
+            }
+        }
+        
         // Stop button handler
         function stopGeneration() {
             if (isRunning) {
@@ -536,6 +898,55 @@
 
         // Focus input on load
         input.focus();
+        
+        // Frontend Tools Panel Event Handlers
+        const toolsHeader = document.getElementById('tools-header');
+        const toolsContent = document.getElementById('tools-content');
+        const toggleToolsBtn = document.getElementById('toggle-tools');
+        const toolsList = document.getElementById('tools-list');
+        const toolCountSpan = document.getElementById('tool-count');
+        
+        // Toggle tools panel
+        toolsHeader.addEventListener('click', () => {
+            toolsContent.classList.toggle('collapsed');
+            toggleToolsBtn.classList.toggle('collapsed');
+        });
+        
+        // Add preset tool
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const preset = e.target.dataset.preset;
+                const tool = frontendTools.addPresetTool(preset);
+                if (tool) {
+                    renderToolsList();
+                }
+            });
+        });
+        
+        // Render tools list
+        function renderToolsList() {
+            const tools = frontendTools.getTools();
+            toolCountSpan.textContent = tools.length;
+            
+            if (tools.length === 0) {
+                toolsList.innerHTML = '<div class="no-tools">No frontend tools added. Click buttons above or add custom tool.</div>';
+                return;
+            }
+            
+            toolsList.innerHTML = tools.map((tool, index) => `
+                <div class="tool-item">
+                    <div class="tool-item-header">
+                        <span class="tool-name">${escapeHtml(tool.name)}</span>
+                    </div>
+                    <div class="tool-description">${escapeHtml(tool.description)}</div>
+                    <div class="tool-params-preview">${escapeHtml(JSON.stringify(tool.parameters, null, 2))}</div>
+                </div>
+            `).join('');
+        }
+        
+        // Initial render
+        renderToolsList();
     </script>
 </body>
 </html>
