@@ -26,8 +26,6 @@ import io.agentscope.spring.boot.nacos.properties.AgentScopeNacosPromptPropertie
 import io.agentscope.spring.boot.nacos.properties.AgentScopeNacosProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
 import java.util.Properties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -58,9 +56,6 @@ import org.springframework.context.annotation.Bean;
         havingValue = "true",
         matchIfMissing = true)
 public class AgentscopeNacosPromptAutoConfiguration {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(AgentscopeNacosPromptAutoConfiguration.class);
 
     @Bean(name = "agentscopePromptConfigService")
     @ConditionalOnMissingBean(name = "agentscopePromptConfigService")

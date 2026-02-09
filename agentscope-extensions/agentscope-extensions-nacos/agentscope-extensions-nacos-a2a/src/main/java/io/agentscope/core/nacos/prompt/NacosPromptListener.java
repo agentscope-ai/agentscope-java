@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package io.agentscope.core.nacos.prompt;
 
 import com.alibaba.nacos.api.config.ConfigService;
@@ -8,6 +24,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,8 +37,9 @@ public class NacosPromptListener {
     private static final String FIELD_TEMPLATE = "template";
     private static final String FIELD_PROMPT_KEY = "promptKey";
     private static final String DEFAULT_GROUP = "nacos-ai-prompt";
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(.+?)\\}\\}");
 
-    private ConfigService configService;
+    private final ConfigService configService;
 
     private final Map<String, String> prompts;
 
@@ -83,7 +102,14 @@ public class NacosPromptListener {
                 configService.getConfigAndSignListener(
                         promptDataId, DEFAULT_GROUP, 5000, this.promptListener);
 
-        JsonNode node = JacksonUtils.toObj(promptStr, JsonNode.class);
+        JsonNode node;
+        try {
+            node = JacksonUtils.toObj(promptStr, JsonNode.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse prompt config JSON for key: {}", promptKey, e);
+            return "";
+        }
+
         if (node == null || !node.has(FIELD_PROMPT_KEY) || !node.has(FIELD_TEMPLATE)) {
             log.warn("Invalid prompt config for key: {}, missing required fields", promptKey);
             return "";
@@ -101,7 +127,10 @@ public class NacosPromptListener {
     }
 
     /**
-     * Render template by replacing {{variableName}} with values from args
+     * Render template by replacing {{variableName}} with values from args.
+     * Uses single-pass regex replacement for better performance.
+     * Unmatched placeholders are preserved as-is.
+     *
      * @param template the template string with {{}} placeholders
      * @param args the variable map for replacement
      * @return rendered string
@@ -111,13 +140,17 @@ public class NacosPromptListener {
             return template;
         }
 
-        String result = template;
-        for (Map.Entry<String, String> entry : args.entrySet()) {
-            String placeholder = "{{" + entry.getKey() + "}}";
-            String value = entry.getValue() != null ? entry.getValue() : "";
-            result = result.replace(placeholder, value);
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(template);
+        StringBuilder sb = new StringBuilder();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            if (args.containsKey(key)) {
+                String value = args.get(key) != null ? args.get(key) : "";
+                matcher.appendReplacement(sb, Matcher.quoteReplacement(value));
+            }
         }
-        return result;
+        matcher.appendTail(sb);
+        return sb.toString();
     }
 
     private final Listener promptListener =
