@@ -21,7 +21,9 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -206,7 +208,7 @@ public class McpTool implements AgentTool {
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema) {
+            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
         if (inputSchema == null) {
@@ -215,14 +217,24 @@ public class McpTool implements AgentTool {
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+        Map<String, Object> properties =
+                inputSchema.properties() != null
+                        ? new HashMap<>(inputSchema.properties())
+                        : new HashMap<>();
+        List<String> required =
+                inputSchema.required() != null
+                        ? new ArrayList<>(inputSchema.required())
+                        : new ArrayList<>();
+
+        // Exclude preset parameters from the schema
+        if (excludeParams != null) {
+            required.removeAll(excludeParams);
+            properties.keySet().removeAll(excludeParams);
+        }
 
         parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
-        parameters.put(
-                "properties",
-                inputSchema.properties() != null ? inputSchema.properties() : new HashMap<>());
-        parameters.put(
-                "required",
-                inputSchema.required() != null ? inputSchema.required() : new ArrayList<>());
+        parameters.put("properties", properties);
+        parameters.put("required", required);
 
         if (inputSchema.additionalProperties() != null) {
             parameters.put("additionalProperties", inputSchema.additionalProperties());

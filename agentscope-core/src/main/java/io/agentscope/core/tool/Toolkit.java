@@ -226,8 +226,7 @@ public class Toolkit {
 
         // Create registered wrapper with preset parameters
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(
-                        tool, groupName, extendedModel, mcpClientName, presetParameters);
+                new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
         // Register in toolRegistry
         toolRegistry.registerTool(toolName, tool, registered);

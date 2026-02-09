@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Provides tool schemas in various formats for model consumption.
@@ -36,8 +37,8 @@ import java.util.List;
  *
  * <p><b>Filtering Logic:</b> A tool is included in schemas if and only if:
  * <ul>
- *   <li>It is ungrouped (groupName is null or empty), OR</li>
- *   <li>It belongs to a group that is currently active</li>
+ *   <li>It is ungrouped (not assigned to any tool group), OR</li>
+ *   <li>It belongs to at least one group that is currently active</li>
  * </ul>
  */
 class ToolSchemaProvider {
@@ -64,19 +65,22 @@ class ToolSchemaProvider {
      */
     List<ToolSchema> getToolSchemas() {
         List<ToolSchema> schemas = new ArrayList<>();
+        List<RegisteredToolFunction> registeredTools =
+                new ArrayList<>(toolRegistry.getAllRegisteredTools().values());
+        Set<String> activeTools = groupManager.getActiveToolNames();
 
-        for (RegisteredToolFunction registered : toolRegistry.getAllRegisteredTools().values()) {
+        for (RegisteredToolFunction registered : registeredTools) {
             AgentTool tool = registered.getTool();
-            String groupName = registered.getGroupName();
+            String toolName = tool.getName();
 
-            // Filter: Only include if ungrouped OR in active group
-            if (!groupManager.isInActiveGroup(groupName)) {
-                continue; // Skip inactive tools
+            // Filter: include ungrouped tools, or tools in any active group
+            if (groupManager.isGroupedTool(toolName) && !activeTools.contains(toolName)) {
+                continue; // Skip inactive grouped tools
             }
 
             ToolSchema schema =
                     ToolSchema.builder()
-                            .name(tool.getName())
+                            .name(toolName)
                             .description(tool.getDescription())
                             .parameters(registered.getExtendedParameters())
                             .build();

@@ -219,33 +219,52 @@ class ToolGroupManagerTest {
     }
 
     @Test
-    void testIsInActiveGroupUngrouped() {
+    void testIsActiveToolUngrouped() {
         // Act & Assert
-        assertTrue(manager.isInActiveGroup(null));
+        assertTrue(manager.isActiveTool("ungroupedTool"));
     }
 
     @Test
-    void testIsInActiveGroupActive() {
+    void testIsActiveToolInactive() {
+        // Arrange
+        manager.createToolGroup("inactive", "Inactive group", false);
+        manager.addToolToGroup("inactive", "tool1");
+
+        // Act & Assert
+        assertFalse(manager.isActiveTool("tool1"));
+    }
+
+    @Test
+    void testIsInActiveGroupToolNotAnyTool() {
+        // Arrange
+        manager.createToolGroup("group1", "Group 1", true);
+
+        // Act & Assert
+        assertTrue(manager.isActiveTool("ungroupedTool"));
+    }
+
+    @Test
+    void testIsActiveGroupActive() {
         // Arrange
         manager.createToolGroup("active", "Active group", true);
 
         // Act & Assert
-        assertTrue(manager.isInActiveGroup("active"));
+        assertTrue(manager.isActiveGroup("active"));
     }
 
     @Test
-    void testIsInActiveGroupInactive() {
+    void testIsActiveGroupInactive() {
         // Arrange
         manager.createToolGroup("inactive", "Inactive group", false);
 
         // Act & Assert
-        assertFalse(manager.isInActiveGroup("inactive"));
+        assertFalse(manager.isActiveGroup("inactive"));
     }
 
     @Test
-    void testIsInActiveGroupNonexistent() {
+    void testIsActiveGroupNonexistent() {
         // Act & Assert
-        assertFalse(manager.isInActiveGroup("nonexistent"));
+        assertFalse(manager.isActiveGroup("nonexistent"));
     }
 
     @Test
@@ -442,9 +461,11 @@ class ToolGroupManagerTest {
         manager.updateToolGroups(List.of("admin"), true);
 
         // Assert
-        assertFalse(manager.isInActiveGroup("analytics"));
-        assertTrue(manager.isInActiveGroup("search"));
-        assertTrue(manager.isInActiveGroup("admin"));
+        assertFalse(manager.isActiveGroup("analytics"));
+        assertTrue(manager.isActiveGroup("search"));
+        assertTrue(manager.isActiveGroup("admin"));
+        assertFalse(manager.isActiveTool("chart"));
+        assertTrue(manager.isActiveTool("google"));
 
         List<String> activeGroups = manager.getActiveGroups();
         assertEquals(2, activeGroups.size());
