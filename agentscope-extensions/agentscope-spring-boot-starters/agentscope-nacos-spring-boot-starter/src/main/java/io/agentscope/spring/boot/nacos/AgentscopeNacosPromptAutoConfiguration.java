@@ -63,11 +63,11 @@ public class AgentscopeNacosPromptAutoConfiguration {
             AgentScopeNacosProperties nacosProperties,
             AgentScopeNacosPromptProperties promptNacosProperties)
             throws NacosException {
-        Properties baseProperties = nacosProperties.getNacosProperties();
-        Properties promptProperties = promptNacosProperties.getNacosProperties();
-        // Prompt-specific configuration overrides the base Nacos configuration when both are set
-        baseProperties.putAll(promptProperties);
-        return ConfigFactory.createConfigService(baseProperties);
+        // Start from the global Nacos configuration (with defaults)
+        Properties result = nacosProperties.getNacosProperties();
+        // Only overlay explicitly configured prompt-specific fields (no defaults)
+        result.putAll(promptNacosProperties.getExplicitNacosProperties());
+        return ConfigFactory.createConfigService(result);
     }
 
     @Bean

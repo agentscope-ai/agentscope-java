@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 
+import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.config.ConfigFactory;
 import com.alibaba.nacos.api.config.ConfigService;
 import io.agentscope.core.nacos.prompt.NacosPromptListener;
@@ -171,6 +172,38 @@ class AgentscopeNacosPromptAutoConfigurationTest {
                                         context.getBean(AgentScopeNacosProperties.class);
                                 assertThat(globalProps.getServerAddr())
                                         .isEqualTo("global.example.com:8848");
+                            });
+        }
+    }
+
+    @Test
+    @DisplayName("should not overwrite global server-addr when prompt server-addr is not set")
+    void shouldNotOverwriteGlobalServerAddrWhenPromptNotSet() {
+        try (MockedStatic<ConfigFactory> mocked = Mockito.mockStatic(ConfigFactory.class)) {
+            java.util.concurrent.atomic.AtomicReference<java.util.Properties> capturedProps =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            mocked.when(() -> ConfigFactory.createConfigService(any(java.util.Properties.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                capturedProps.set(invocation.getArgument(0));
+                                return mockConfigService;
+                            });
+
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(AgentscopeNacosPromptAutoConfiguration.class))
+                    .withPropertyValues(
+                            "agentscope.nacos.server-addr=production.nacos.com:8848",
+                            "agentscope.nacos.namespace=prod-ns",
+                            "agentscope.nacos.prompt.enabled=true",
+                            "agentscope.nacos.prompt.sys-prompt-key=test")
+                    .run(
+                            context -> {
+                                assertThat(capturedProps.get()).isNotNull();
+                                assertThat(capturedProps.get().get(PropertyKeyConst.SERVER_ADDR))
+                                        .isEqualTo("production.nacos.com:8848");
+                                assertThat(capturedProps.get().get(PropertyKeyConst.NAMESPACE))
+                                        .isEqualTo("prod-ns");
                             });
         }
     }
