@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.rag.integration.haystack.model.HayStackDocument;
 import io.agentscope.core.rag.model.Document;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
@@ -291,7 +292,7 @@ class HayStackDocumentConverterTest {
             doc.setContent("Test content");
             doc.setScore(0.95);
 
-            Map<String, Object> meta = new java.util.HashMap<>();
+            Map<String, Object> meta = new HashMap<>();
             meta.put("file_path", "test.pdf");
             meta.put("kb_id", "kb-789");
             meta.put("page_number", 10);

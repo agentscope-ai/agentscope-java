@@ -17,6 +17,7 @@ package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -45,6 +46,20 @@ public interface ModelProvider {
      * @return ReActAgent.Builder ready for further configuration
      */
     ReActAgent.Builder createAgentBuilder(String name, Toolkit toolkit);
+
+    /**
+     * Creates a ReActAgent with the specified configuration and system prompt.
+     *
+     * @param name      The name of the agent
+     * @param toolkit   The toolkit to use
+     * @param sysPrompt The system prompt for the agent
+     * @return Configured ReActAgent
+     */
+    default ReActAgent createAgent(String name, Toolkit toolkit, String sysPrompt) {
+        // Default implementation ignores sysPrompt for backward compatibility
+        // Override this in implementations to support system prompts
+        return createAgent(name, toolkit);
+    }
 
     /**
      * Gets the display name of this provider.
@@ -99,7 +114,7 @@ public interface ModelProvider {
             return Set.of(annotation.value());
         }
         // Fallback: derive capabilities from existing methods
-        Set<ModelCapability> capabilities = new java.util.HashSet<>();
+        Set<ModelCapability> capabilities = new HashSet<>();
         capabilities.add(ModelCapability.BASIC);
         if (supportsToolCalling()) {
             capabilities.add(ModelCapability.TOOL_CALLING);

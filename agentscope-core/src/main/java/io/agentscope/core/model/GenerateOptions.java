@@ -19,6 +19,7 @@ package io.agentscope.core.model;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /**
  * Immutable generation options for LLM models.
@@ -423,9 +424,7 @@ public class GenerateOptions {
     }
 
     private static <V> void mergeMaps(
-            Map<String, V> fallback,
-            Map<String, V> primary,
-            java.util.function.BiConsumer<String, V> adder) {
+            Map<String, V> fallback, Map<String, V> primary, BiConsumer<String, V> adder) {
         if (fallback != null && !fallback.isEmpty()) {
             for (Map.Entry<String, V> entry : fallback.entrySet()) {
                 adder.accept(entry.getKey(), entry.getValue());

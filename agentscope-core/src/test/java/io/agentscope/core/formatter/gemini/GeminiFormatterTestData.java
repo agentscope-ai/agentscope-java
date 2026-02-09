@@ -341,7 +341,6 @@ public class GeminiFormatterTestData {
                 "parts": [
                     {
                         "function_call": {
-                            "id": "1",
                             "name": "get_capital",
                             "args": {
                                 "country": "Japan"
@@ -424,7 +423,6 @@ public class GeminiFormatterTestData {
                 "parts": [
                     {
                         "function_call": {
-                            "id": "1",
                             "name": "get_capital",
                             "args": {
                                 "country": "Japan"
@@ -507,7 +505,6 @@ public class GeminiFormatterTestData {
                 "parts": [
                     {
                         "function_call": {
-                            "id": "1",
                             "name": "get_capital",
                             "args": {
                                 "country": "Japan"
@@ -543,7 +540,6 @@ public class GeminiFormatterTestData {
                 "parts": [
                     {
                         "function_call": {
-                            "id": "1",
                             "name": "get_capital",
                             "args": {
                                 "country": "South Korea"

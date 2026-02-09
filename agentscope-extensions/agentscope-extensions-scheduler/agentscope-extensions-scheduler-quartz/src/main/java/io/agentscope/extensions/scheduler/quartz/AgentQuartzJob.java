@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.scheduler.quartz;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
 import org.quartz.InterruptableJob;
@@ -57,7 +58,7 @@ public class AgentQuartzJob implements InterruptableJob {
             return;
         }
         try {
-            ScheduleAgentTask<io.agentscope.core.message.Msg> t = task;
+            ScheduleAgentTask<Msg> t = task;
             // Blocking is acceptable here because Quartz jobs run in their own dedicated thread
             // pool
             // and are executed synchronously; we need to wait for the reactive pipeline to

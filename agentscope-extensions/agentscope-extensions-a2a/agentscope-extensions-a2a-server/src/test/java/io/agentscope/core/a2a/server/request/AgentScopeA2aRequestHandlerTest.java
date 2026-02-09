@@ -53,6 +53,10 @@ import org.junit.jupiter.api.Test;
 @DisplayName("AgentScopeA2aRequestHandler Tests")
 class AgentScopeA2aRequestHandlerTest {
 
+    private static final String TASK_STATE_PROVIDER_CLASS_NAME =
+            "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$"
+                    + "AgentScopeTaskStateProvider";
+
     /**
      * Helper method to create a AgentScopeA2aRequestHandler and extract its TaskStateProvider
      * through reflection.
@@ -123,9 +127,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskActive("nonexistent");
 
@@ -143,9 +145,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskActive("task123");
 
@@ -165,9 +165,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskActive("task123");
 
@@ -187,9 +185,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskActive("task123");
 
@@ -209,9 +205,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskActive("task123");
 
@@ -227,9 +221,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskFinalized("nonexistent");
 
@@ -247,9 +239,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskFinalized("task123");
 
@@ -269,9 +259,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskFinalized("task123");
 
@@ -291,9 +279,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskFinalized("task123");
 
@@ -313,9 +299,7 @@ class AgentScopeA2aRequestHandlerTest {
             TaskStateProvider taskStateProvider = getTaskStateProvider(mockTaskStore);
 
             // Verify it's AgentScopeTaskStateProvider
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
 
             boolean result = taskStateProvider.isTaskFinalized("task123");
 
@@ -389,9 +373,7 @@ class AgentScopeA2aRequestHandlerTest {
                     (TaskStateProvider) taskStateProviderField.get(queueManager);
 
             // Should be the AgentScopeTaskStateProvider instance
-            assertEquals(
-                    "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
-                    taskStateProvider.getClass().getName());
+            assertEquals(TASK_STATE_PROVIDER_CLASS_NAME, taskStateProvider.getClass().getName());
         }
     }
 }

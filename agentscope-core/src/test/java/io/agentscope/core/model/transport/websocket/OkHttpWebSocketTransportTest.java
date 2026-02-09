@@ -24,6 +24,7 @@ import io.agentscope.core.model.transport.ProxyType;
 import io.agentscope.core.model.transport.WebSocketTransport;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -468,9 +469,9 @@ class OkHttpWebSocketTransportTest {
         void shouldCreateJavaProxyFromHttpProxyConfig() {
             ProxyConfig proxyConfig = ProxyConfig.http("proxy.example.com", 8080);
 
-            java.net.Proxy javaProxy = proxyConfig.toJavaProxy();
+            Proxy javaProxy = proxyConfig.toJavaProxy();
 
-            assertEquals(java.net.Proxy.Type.HTTP, javaProxy.type());
+            assertEquals(Proxy.Type.HTTP, javaProxy.type());
             InetSocketAddress address = (InetSocketAddress) javaProxy.address();
             assertEquals("proxy.example.com", address.getHostString());
             assertEquals(8080, address.getPort());
@@ -481,9 +482,9 @@ class OkHttpWebSocketTransportTest {
         void shouldCreateJavaProxyFromSocks5ProxyConfig() {
             ProxyConfig proxyConfig = ProxyConfig.socks5("socks.example.com", 1080);
 
-            java.net.Proxy javaProxy = proxyConfig.toJavaProxy();
+            Proxy javaProxy = proxyConfig.toJavaProxy();
 
-            assertEquals(java.net.Proxy.Type.SOCKS, javaProxy.type());
+            assertEquals(Proxy.Type.SOCKS, javaProxy.type());
             InetSocketAddress address = (InetSocketAddress) javaProxy.address();
             assertEquals("socks.example.com", address.getHostString());
             assertEquals(1080, address.getPort());

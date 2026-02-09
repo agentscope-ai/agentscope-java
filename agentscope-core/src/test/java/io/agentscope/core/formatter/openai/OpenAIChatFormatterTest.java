@@ -25,11 +25,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.openai.dto.JsonSchema;
+import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
+import io.agentscope.core.formatter.openai.dto.OpenAIUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -288,8 +290,7 @@ class OpenAIChatFormatterTest {
         response.setCreated(1677652280L);
         response.setModel("gpt-4");
 
-        io.agentscope.core.formatter.openai.dto.OpenAIChoice choice =
-                new io.agentscope.core.formatter.openai.dto.OpenAIChoice();
+        OpenAIChoice choice = new OpenAIChoice();
         choice.setIndex(0);
         OpenAIMessage message =
                 OpenAIMessage.builder().role("assistant").content("Hello! How can I help?").build();
@@ -297,8 +298,7 @@ class OpenAIChatFormatterTest {
         choice.setFinishReason("stop");
         response.setChoices(List.of(choice));
 
-        io.agentscope.core.formatter.openai.dto.OpenAIUsage usage =
-                new io.agentscope.core.formatter.openai.dto.OpenAIUsage();
+        OpenAIUsage usage = new OpenAIUsage();
         usage.setPromptTokens(10);
         usage.setCompletionTokens(20);
         usage.setTotalTokens(30);
@@ -310,9 +310,7 @@ class OpenAIChatFormatterTest {
         assertNotNull(chatResponse);
         assertNotNull(chatResponse.getContent());
         assertEquals(
-                "Hello! How can I help?",
-                ((io.agentscope.core.message.TextBlock) chatResponse.getContent().get(0))
-                        .getText());
+                "Hello! How can I help?", ((TextBlock) chatResponse.getContent().get(0)).getText());
         assertNotNull(chatResponse.getUsage());
         assertEquals(10, chatResponse.getUsage().getInputTokens());
         assertEquals(20, chatResponse.getUsage().getOutputTokens());

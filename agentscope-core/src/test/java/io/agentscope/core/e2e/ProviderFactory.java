@@ -22,6 +22,12 @@ import io.agentscope.core.e2e.providers.DeepSeekProvider;
 import io.agentscope.core.e2e.providers.DeepSeekReasonerProvider;
 import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini25Flash;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini25FlashMultiAgent;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3Flash;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3FlashMultiAgent;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3Pro;
+import io.agentscope.core.e2e.providers.GeminiProvider.Gemini3ProMultiAgent;
 import io.agentscope.core.e2e.providers.ModelCapability;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
@@ -104,9 +110,13 @@ public class ProviderFactory {
         providers.add(new DashScopeProvider.Qwen3VlPlusDashScope());
         providers.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
 
-        // Gemini providers
-        providers.add(new GeminiProvider.Gemini25FlashGemini());
-        providers.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        // Gemini providers (Native)
+        providers.add(new Gemini25Flash());
+        providers.add(new Gemini25FlashMultiAgent());
+        providers.add(new Gemini3Pro());
+        providers.add(new Gemini3ProMultiAgent());
+        providers.add(new Gemini3Flash());
+        providers.add(new Gemini3FlashMultiAgent());
 
         // Anthropic providers
         providers.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
@@ -273,6 +283,16 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeProvider.QwenPlusThinkingDashScope(1000));
             builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope(1000));
+        }
+
+        if (hasGoogleKey()) {
+            // Gemini 2.5 Flash, 3 Pro, and 3 Flash support thinking mode
+            builders.add(new GeminiProvider.Gemini25Flash());
+            builders.add(new GeminiProvider.Gemini25FlashMultiAgent());
+            builders.add(new GeminiProvider.Gemini3Pro());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgent());
+            builders.add(new GeminiProvider.Gemini3Flash());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgent());
         }
 
         if (hasGLMKey()) {

@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.rag.exception.ReaderException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import okhttp3.MediaType;
@@ -74,8 +76,8 @@ class ExternalApiReaderTest {
                         .build();
 
         // Create temporary test file
-        java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("test", ".txt");
-        java.nio.file.Files.writeString(tempFile, "test content");
+        Path tempFile = Files.createTempFile("test", ".txt");
+        Files.writeString(tempFile, "test content");
 
         try {
             // Note: This test will fail because it will actually try to connect to the mock URL
@@ -90,7 +92,7 @@ class ExternalApiReaderTest {
                     cause instanceof ReaderException,
                     "Expected ReaderException but got: " + cause.getClass());
         } finally {
-            java.nio.file.Files.deleteIfExists(tempFile);
+            Files.deleteIfExists(tempFile);
         }
     }
 

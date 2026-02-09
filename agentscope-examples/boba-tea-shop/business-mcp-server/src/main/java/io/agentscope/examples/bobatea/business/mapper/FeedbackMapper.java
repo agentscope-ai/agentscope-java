@@ -17,6 +17,7 @@
 package io.agentscope.examples.bobatea.business.mapper;
 
 import io.agentscope.examples.bobatea.business.entity.Feedback;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
@@ -136,7 +137,7 @@ public interface FeedbackMapper {
     int updateSolution(
             @Param("id") Long id,
             @Param("solution") String solution,
-            @Param("updatedAt") java.time.LocalDateTime updatedAt);
+            @Param("updatedAt") LocalDateTime updatedAt);
 
     /**
      * Delete feedback record by ID

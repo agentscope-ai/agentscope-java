@@ -34,7 +34,9 @@ import io.agentscope.core.a2a.agent.card.FixedAgentCardResolver;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -67,7 +69,7 @@ class A2aAgentBuilderTest {
         agentCard = mock(AgentCard.class);
 
         lenient().when(agentCardResolver.getAgentCard(anyString())).thenReturn(agentCard);
-        lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new java.util.HashMap<>());
+        lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new HashMap<>());
         lenient().when(a2aAgentConfig.clientConfig()).thenReturn(null);
     }
 
@@ -338,7 +340,7 @@ class A2aAgentBuilderTest {
         // Traverse up the class hierarchy to find the field
         while (clazz != null) {
             try {
-                java.lang.reflect.Field field = clazz.getDeclaredField(fieldName);
+                Field field = clazz.getDeclaredField(fieldName);
                 field.setAccessible(true);
                 return fieldType.cast(field.get(obj));
             } catch (NoSuchFieldException e) {

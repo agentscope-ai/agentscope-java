@@ -21,12 +21,17 @@ import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.buildT
 import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.getGroundTruthChatJson;
 import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.parseGroundTruth;
 
-import com.google.genai.types.Content;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiBlob;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionResponse;
 import io.agentscope.core.message.Msg;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -35,7 +40,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Ground truth tests for GeminiChatFormatter.
- * This test validates that the formatter output matches the expected Gemini API format
+ * This test validates that the formatter output matches the expected Gemini API
+ * format
  * exactly as defined in the Python version.
  */
 class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
@@ -89,9 +95,13 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         allMessages.addAll(msgsConversation);
         allMessages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(allMessages);
+        List<GeminiContent> result = formatter.format(allMessages);
 
-        assertContentsMatchGroundTruth(groundTruthChat, result);
+        // System message is extracted to systemInstruction, so we skip the first message in ground
+        // truth
+        List<Map<String, Object>> expected = groundTruthChat.subList(1, groundTruthChat.size());
+
+        assertContentsMatchGroundTruth(expected, result);
     }
 
     @Test
@@ -101,7 +111,7 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsConversation);
         messages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         // Ground truth without first message (system)
         List<Map<String, Object>> expected = groundTruthChat.subList(1, groundTruthChat.size());
@@ -116,14 +126,12 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsSystem);
         messages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
-        // Ground truth: first message + last 3 messages (tools)
-        List<Map<String, Object>> expected = new ArrayList<>();
-        expected.add(groundTruthChat.get(0));
-        expected.addAll(
+        // Ground truth: last 3 messages (tools) only, as system message is extracted
+        List<Map<String, Object>> expected =
                 groundTruthChat.subList(
-                        groundTruthChat.size() - msgsTools.size(), groundTruthChat.size()));
+                        groundTruthChat.size() - msgsTools.size(), groundTruthChat.size());
 
         assertContentsMatchGroundTruth(expected, result);
     }
@@ -135,18 +143,19 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsSystem);
         messages.addAll(msgsConversation);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
-        // Ground truth without last 3 messages (tools)
+        // Ground truth without last 3 messages (tools) and without first (system)
+        // System message is extracted, so we skip index 0
         List<Map<String, Object>> expected =
-                groundTruthChat.subList(0, groundTruthChat.size() - msgsTools.size());
+                groundTruthChat.subList(1, groundTruthChat.size() - msgsTools.size());
 
         assertContentsMatchGroundTruth(expected, result);
     }
 
     @Test
     void testChatFormatter_EmptyMessages() {
-        List<Content> result = formatter.format(List.of());
+        List<GeminiContent> result = formatter.format(List.of());
 
         assertContentsMatchGroundTruth(List.of(), result);
     }
@@ -155,10 +164,10 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
      * Convert a list of Content objects to JSON and compare with ground truth.
      *
      * @param expectedGroundTruth Expected ground truth as list of maps
-     * @param actualContents Actual Content objects from formatter
+     * @param actualContents      Actual Content objects from formatter
      */
     private void assertContentsMatchGroundTruth(
-            List<Map<String, Object>> expectedGroundTruth, List<Content> actualContents) {
+            List<Map<String, Object>> expectedGroundTruth, List<GeminiContent> actualContents) {
         String expectedJson = toJson(expectedGroundTruth);
         String actualJson = toJson(contentsToMaps(actualContents));
 
@@ -185,90 +194,88 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
     }
 
     /**
-     * Convert List of Content objects to List of Maps for JSON comparison.
+     * Convert List of GeminiContent objects to List of Maps for JSON comparison.
      *
-     * @param contents Content objects
+     * @param contents GeminiContent objects
      * @return List of maps representing the contents
      */
-    private List<Map<String, Object>> contentsToMaps(List<Content> contents) {
+    private List<Map<String, Object>> contentsToMaps(List<GeminiContent> contents) {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Content content : contents) {
+        for (GeminiContent content : contents) {
             result.add(contentToMap(content));
         }
         return result;
     }
 
     /**
-     * Convert a Content object to a Map for JSON comparison.
+     * Convert a GeminiContent object to a Map for JSON comparison.
      *
-     * @param content Content object
+     * @param content GeminiContent object
      * @return Map representation
      */
-    private Map<String, Object> contentToMap(Content content) {
-        Map<String, Object> map = new java.util.LinkedHashMap<>();
+    private Map<String, Object> contentToMap(GeminiContent content) {
+        Map<String, Object> map = new LinkedHashMap<>();
 
         // Add role
-        if (content.role().isPresent()) {
-            map.put("role", content.role().get());
+        if (content.getRole() != null) {
+            map.put("role", content.getRole());
         }
 
         // Add parts
-        if (content.parts().isPresent()) {
+        if (content.getParts() != null) {
             List<Map<String, Object>> partsList = new ArrayList<>();
-            for (var part : content.parts().get()) {
-                Map<String, Object> partMap = new java.util.LinkedHashMap<>();
+            for (GeminiPart part : content.getParts()) {
+                Map<String, Object> partMap = new LinkedHashMap<>();
 
                 // Text part
-                if (part.text().isPresent()) {
-                    partMap.put("text", part.text().get());
+                if (part.getText() != null) {
+                    partMap.put("text", part.getText());
                 }
 
                 // Inline data (image/audio)
-                if (part.inlineData().isPresent()) {
-                    var inlineData = part.inlineData().get();
-                    Map<String, Object> inlineDataMap = new java.util.LinkedHashMap<>();
+                if (part.getInlineData() != null) {
+                    GeminiBlob inlineData = part.getInlineData();
+                    Map<String, Object> inlineDataMap = new LinkedHashMap<>();
 
-                    if (inlineData.data().isPresent()) {
-                        inlineDataMap.put("data", inlineData.data().get());
+                    if (inlineData.getData() != null) {
+                        inlineDataMap.put("data", inlineData.getData());
                     }
-                    if (inlineData.mimeType().isPresent()) {
-                        inlineDataMap.put("mime_type", inlineData.mimeType().get());
+                    if (inlineData.getMimeType() != null) {
+                        inlineDataMap.put("mime_type", inlineData.getMimeType());
                     }
 
                     partMap.put("inline_data", inlineDataMap);
                 }
 
                 // Function call
-                if (part.functionCall().isPresent()) {
-                    var functionCall = part.functionCall().get();
-                    Map<String, Object> functionCallMap = new java.util.LinkedHashMap<>();
+                if (part.getFunctionCall() != null) {
+                    GeminiFunctionCall functionCall = part.getFunctionCall();
+                    Map<String, Object> functionCallMap = new LinkedHashMap<>();
 
-                    if (functionCall.id().isPresent()) {
-                        functionCallMap.put("id", functionCall.id().get());
+                    // Note: id field is NOT included in JSON serialization (not sent to Gemini API)
+                    if (functionCall.getName() != null) {
+                        functionCallMap.put("name", functionCall.getName());
                     }
-                    if (functionCall.name().isPresent()) {
-                        functionCallMap.put("name", functionCall.name().get());
-                    }
-                    if (functionCall.args().isPresent()) {
-                        functionCallMap.put("args", functionCall.args().get());
+                    if (functionCall.getArgs() != null) {
+                        functionCallMap.put("args", functionCall.getArgs());
                     }
 
                     partMap.put("function_call", functionCallMap);
                 }
 
                 // Function response
-                if (part.functionResponse().isPresent()) {
-                    var functionResponse = part.functionResponse().get();
-                    Map<String, Object> functionResponseMap = new java.util.LinkedHashMap<>();
+                if (part.getFunctionResponse() != null) {
+                    GeminiFunctionResponse functionResponse = part.getFunctionResponse();
+                    Map<String, Object> functionResponseMap = new LinkedHashMap<>();
 
-                    if (functionResponse.id().isPresent()) {
-                        functionResponseMap.put("id", functionResponse.id().get());
+                    if (functionResponse.getId() != null) {
+                        functionResponseMap.put("id", functionResponse.getId());
                     }
-                    if (functionResponse.name().isPresent()) {
-                        functionResponseMap.put("name", functionResponse.name().get());
+                    if (functionResponse.getName() != null) {
+                        functionResponseMap.put("name", functionResponse.getName());
                     }
-                    if (functionResponse.response().isPresent()) {
-                        functionResponseMap.put("response", functionResponse.response().get());
+                    if (functionResponse.getResponse() != null) {
+                        functionResponseMap.put("response", functionResponse.getResponse());
                     }
 
                     partMap.put("function_response", functionResponseMap);

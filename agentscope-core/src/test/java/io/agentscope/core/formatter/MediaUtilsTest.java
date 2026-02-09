@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -78,7 +79,7 @@ class MediaUtilsTest {
         assertNotNull(base64);
         assertTrue(base64.length() > 0);
         // Verify it's valid base64
-        byte[] decoded = java.util.Base64.getDecoder().decode(base64);
+        byte[] decoded = Base64.getDecoder().decode(base64);
         assertEquals(content, new String(decoded));
     }
 

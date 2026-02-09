@@ -33,6 +33,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -821,7 +822,7 @@ class ToolkitTest {
      */
     public static class CustomNoArgConverter implements ToolResultConverter {
         @Override
-        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+        public ToolResultBlock convert(Object result, Type returnType) {
             return ToolResultBlock.text("[CustomNoArg] " + result);
         }
     }
@@ -837,7 +838,7 @@ class ToolkitTest {
         }
 
         @Override
-        public ToolResultBlock convert(Object result, java.lang.reflect.Type returnType) {
+        public ToolResultBlock convert(Object result, Type returnType) {
             return ToolResultBlock.text(result + " with config: " + config);
         }
     }

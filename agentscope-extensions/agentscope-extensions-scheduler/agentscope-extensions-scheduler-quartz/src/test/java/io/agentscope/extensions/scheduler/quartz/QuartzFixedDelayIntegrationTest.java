@@ -18,6 +18,7 @@ package io.agentscope.extensions.scheduler.quartz;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -48,9 +49,7 @@ class QuartzFixedDelayIntegrationTest {
             return new Model() {
                 @Override
                 public Flux<ChatResponse> stream(
-                        List<io.agentscope.core.message.Msg> messages,
-                        List<ToolSchema> tools,
-                        GenerateOptions options) {
+                        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                     ContentBlock block = TextBlock.builder().text("ok").build();
                     ChatResponse resp =
                             ChatResponse.builder().id("r1").content(List.of(block)).build();
