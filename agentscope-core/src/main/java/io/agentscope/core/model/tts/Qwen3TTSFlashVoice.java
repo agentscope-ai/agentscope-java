@@ -28,89 +28,129 @@ import java.util.concurrent.ThreadLocalRandom;
 public enum Qwen3TTSFlashVoice {
 
     /**
-     * 芊悦 (Cherry) - 阳光积极、亲切自然小姐姐。
+     * 芊悦 (Cherry) - A sunny, positive, friendly, and natural young woman.
      */
-    CHERRY("Cherry", "芊悦", Gender.FEMALE, "阳光积极、亲切自然小姐姐"),
+    CHERRY("Cherry", "芊悦", Gender.FEMALE, "A sunny, positive, friendly, and natural young woman"),
 
     /**
-     * 晨煦 (Ethan) - 标准普通话，带部分北方口音。阳光、温暖、活力、朝气。
+     * 晨煦 (Ethan) - A bright, warm, energetic, and vibrant male voice with a standard Mandarin pronunciation and a slight northern accent.
      */
-    ETHAN("Ethan", "晨煦", Gender.MALE, "标准普通话，带部分北方口音，阳光温暖、活力十足"),
+    ETHAN(
+            "Ethan",
+            "晨煦",
+            Gender.MALE,
+            "A bright, warm, energetic, and vibrant male voice with a standard Mandarin"
+                    + " pronunciation and a slight northern accent"),
 
     /**
-     * 不吃鱼 (Nofish) - 不会翘舌音的设计师。
+     * 不吃鱼 (Nofish) - A male designer who cannot pronounce retroflex sounds.
      */
-    NOFISH("Nofish", "不吃鱼", Gender.MALE, "不会翘舌音的设计师"),
+    NOFISH("Nofish", "不吃鱼", Gender.MALE, "A male designer who cannot pronounce retroflex sounds"),
 
     /**
-     * 詹妮弗 (Jennifer) - 品牌级、电影质感般美语女声。
+     * 詹妮弗 (Jennifer) - A premium, cinematic American English female voice.
      */
-    JENNIFER("Jennifer", "詹妮弗", Gender.FEMALE, "品牌级、电影质感般美语女声"),
+    JENNIFER(
+            "Jennifer", "詹妮弗", Gender.FEMALE, "A premium, cinematic American English female voice"),
 
     /**
-     * 甜茶 (Ryan) - 节奏拉满，戏感炸裂，真实与张力共舞。
+     * 甜茶 (Ryan) - A rhythmic and dramatic voice with a sense of realism and tension.
      */
-    RYAN("Ryan", "甜茶", Gender.MALE, "节奏拉满、戏感炸裂的男声"),
+    RYAN(
+            "Ryan",
+            "甜茶",
+            Gender.MALE,
+            "A rhythmic and dramatic voice with a sense of realism and tension"),
 
     /**
-     * 卡捷琳娜 (Katerina) - 御姐音色，韵律回味十足。
+     * 卡捷琳娜 (Katerina) - A mature female voice with a rich rhythm and lingering resonance.
      */
-    KATERINA("Katerina", "卡捷琳娜", Gender.FEMALE, "御姐音色，韵律回味十足"),
+    KATERINA(
+            "Katerina",
+            "卡捷琳娜",
+            Gender.FEMALE,
+            "A mature female voice with a rich rhythm and lingering resonance"),
 
     /**
-     * 墨讲师 (Elias) - 兼具严谨与叙事性的讲师音色。
+     * 墨讲师 (Elias) - A voice that maintains academic rigor while using storytelling techniques to transform complex knowledge into digestible cognitive modules.
      */
-    ELIAS("Elias", "墨讲师", Gender.MALE, "兼具严谨与叙事性的讲师音色"),
+    ELIAS(
+            "Elias",
+            "墨讲师",
+            Gender.MALE,
+            "A voice that maintains academic rigor while using storytelling techniques to transform"
+                    + " complex knowledge into digestible cognitive modules"),
 
     /**
-     * 上海-阿珍 (Jada) - 风风火火的沪上阿姐。
+     * 上海-阿珍 (Jada) - An energetic woman from Shanghai.
      */
-    JADA("Jada", "上海-阿珍", Gender.FEMALE, "风风火火的沪上阿姐"),
+    JADA("Jada", "上海-阿珍", Gender.FEMALE, "An energetic woman from Shanghai"),
 
     /**
-     * 北京-晓东 (Dylan) - 北京胡同里长大的少年。
+     * 北京-晓东 (Dylan) - A teenage boy who grew up in the hutongs of Beijing.
      */
-    DYLAN("Dylan", "北京-晓东", Gender.MALE, "北京胡同里长大的少年"),
+    DYLAN("Dylan", "北京-晓东", Gender.MALE, "A teenage boy who grew up in the hutongs of Beijing"),
 
     /**
-     * 四川-晴儿 (Sunny) - 甜到你心里的川妹子。
+     * 四川-晴儿 (Sunny) - The voice of a Sichuan girl whose sweetness melts your heart.
      */
-    SUNNY("Sunny", "四川-晴儿", Gender.FEMALE, "甜到你心里的川妹子"),
+    SUNNY(
+            "Sunny",
+            "四川-晴儿",
+            Gender.FEMALE,
+            "The voice of a Sichuan girl whose sweetness melts your heart"),
 
     /**
-     * 南京-老李 (li) - 耐心的瑜伽老师。
+     * 南京-老李 (li) - Patient male yoga instructor.
      */
-    LI("li", "南京-老李", Gender.MALE, "耐心的瑜伽老师"),
+    LI("li", "南京-老李", Gender.MALE, "Patient male yoga instructor"),
 
     /**
-     * 陕西-秦川 (Marcus) - 面宽话短，心实声沉的老陕味道。
+     * 陕西-秦川 (Marcus) - A voice that is broad-faced and brief-spoken, sincere-hearted and deep-voiced—the authentic flavor of Shaanxi.
      */
-    MARCUS("Marcus", "陕西-秦川", Gender.MALE, "面宽话短、心实声沉的老陕味道"),
+    MARCUS(
+            "Marcus",
+            "陕西-秦川",
+            Gender.MALE,
+            "A voice that is broad-faced and brief-spoken, sincere-hearted and deep-voiced—the"
+                    + " authentic flavor of Shaanxi"),
 
     /**
-     * 闽南-阿杰 (Roy) - 诙谐直爽、市井活泼的中国台湾哥仔。
+     * 闽南-阿杰 (Roy) - The voice of a humorous, straightforward, and lively young Taiwanese man.
      */
-    ROY("Roy", "闽南-阿杰", Gender.MALE, "诙谐直爽、市井活泼的台湾哥仔"),
+    ROY(
+            "Roy",
+            "闽南-阿杰",
+            Gender.MALE,
+            "The voice of a humorous, straightforward, and lively young Taiwanese man"),
 
     /**
-     * 天津-李彼得 (Peter) - 天津相声，专业捧人。
+     * 天津-李彼得 (Peter) - The voice of a professional straight man in Tianjin crosstalk.
      */
-    PETER("Peter", "天津-李彼得", Gender.MALE, "天津相声风格的专业捧人"),
+    PETER(
+            "Peter",
+            "天津-李彼得",
+            Gender.MALE,
+            "The voice of a professional straight man in Tianjin crosstalk"),
 
     /**
-     * 粤语-阿强 (Rocky) - 幽默风趣的阿强，在线陪聊。
+     * 粤语-阿强 (Rocky) - The voice of the humorous and witty Rocky, here for online chatting.
      */
-    ROCKY("Rocky", "粤语-阿强", Gender.MALE, "幽默风趣的粤语阿强"),
+    ROCKY(
+            "Rocky",
+            "粤语-阿强",
+            Gender.MALE,
+            "The voice of the humorous and witty Rocky, here for online chatting"),
 
     /**
-     * 粤语-阿清 (Kiki) - 甜美的港妹闺蜜。
+     * 粤语-阿清 (Kiki) - A sweet female companion from Hong Kong.
      */
-    KIKI("Kiki", "粤语-阿清", Gender.FEMALE, "甜美的港妹闺蜜"),
+    KIKI("Kiki", "粤语-阿清", Gender.FEMALE, "A sweet female companion from Hong Kong"),
 
     /**
-     * 四川-程川 (Eric) - 一个跳脱市井的四川成都男子。
+     * 四川-程川 (Eric) - An unconventional man from Chengdu, Sichuan.
      */
-    ERIC("Eric", "四川-程川", Gender.MALE, "跳脱市井的四川成都男子");
+    ERIC("Eric", "四川-程川", Gender.MALE, "An unconventional man from Chengdu, Sichuan");
 
     private final String voiceId;
     private final String displayName;
