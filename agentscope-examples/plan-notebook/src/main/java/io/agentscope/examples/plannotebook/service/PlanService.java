@@ -104,9 +104,7 @@ public class PlanService {
         subtaskMap.put("description", subtask.getDescription());
         subtaskMap.put("expected_outcome", subtask.getExpectedOutcome());
 
-        return planNotebook
-                .reviseCurrentPlan(index, "add", subtaskMap)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.reviseCurrentPlan(index, "add", subtaskMap);
     }
 
     /**
@@ -118,52 +116,42 @@ public class PlanService {
         subtaskMap.put("description", subtask.getDescription());
         subtaskMap.put("expected_outcome", subtask.getExpectedOutcome());
 
-        return planNotebook
-                .reviseCurrentPlan(index, "revise", subtaskMap)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.reviseCurrentPlan(index, "revise", subtaskMap);
     }
 
     /**
      * Delete a subtask at the specified index.
      */
     public Mono<String> deleteSubtask(int index) {
-        return planNotebook
-                .reviseCurrentPlan(index, "delete", null)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.reviseCurrentPlan(index, "delete", null);
     }
 
     /**
      * Update subtask state.
      */
     public Mono<String> updateSubtaskState(int index, String state) {
-        return planNotebook
-                .updateSubtaskState(index, state)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.updateSubtaskState(index, state);
     }
 
     /**
      * Finish a subtask with outcome.
      */
     public Mono<String> finishSubtask(int index, String outcome) {
-        return planNotebook
-                .finishSubtask(index, outcome)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.finishSubtask(index, outcome);
     }
 
     /**
      * Finish the current plan.
      */
     public Mono<String> finishPlan(String state, String outcome) {
-        return planNotebook.finishPlan(state, outcome).doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.finishPlan(state, outcome);
     }
 
     /**
      * Update the current plan's name, description, or expected outcome.
      */
     public Mono<String> updatePlanInfo(String name, String description, String expectedOutcome) {
-        return planNotebook
-                .updatePlanInfo(name, description, expectedOutcome)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.updatePlanInfo(name, description, expectedOutcome);
     }
 
     /**
@@ -174,8 +162,6 @@ public class PlanService {
             String description,
             String expectedOutcome,
             List<Map<String, Object>> subtasks) {
-        return planNotebook
-                .createPlan(name, description, expectedOutcome, subtasks)
-                .doOnSuccess(result -> broadcastPlanChange());
+        return planNotebook.createPlan(name, description, expectedOutcome, subtasks);
     }
 }
