@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
@@ -670,38 +671,18 @@ public class SkillBox implements StateModule {
      * @throws RuntimeException if failed to create the directory
      */
     private Path ensureWorkDirExists() {
-        Path workDir;
-
         if (this.workDir == null) {
             // Create temporary directory
             try {
-                workDir = Files.createTempDirectory("agentscope-code-execution-");
+                this.workDir = Files.createTempDirectory("agentscope-code-execution-");
 
-                // Register shutdown hook to clean up temporary directory
-                Runtime.getRuntime()
-                        .addShutdownHook(
-                                new Thread(
-                                        () -> {
-                                            try {
-                                                deleteTempDirectory(workDir);
-                                                logger.info(
-                                                        "Cleaned up temporary working directory:"
-                                                                + " {}",
-                                                        workDir);
-                                            } catch (IOException e) {
-                                                logger.warn(
-                                                        "Failed to clean up temporary directory:"
-                                                                + " {}",
-                                                        e.getMessage());
-                                            }
-                                        }));
+                SkillFileSystemHelper.registerTempDirectoryCleanup(workDir);
 
                 logger.info("Created temporary working directory: {}", workDir);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create temporary working directory", e);
             }
         } else {
-            workDir = this.workDir;
             // Create directory if it doesn't exist
             if (!Files.exists(workDir)) {
                 try {
@@ -713,7 +694,7 @@ public class SkillBox implements StateModule {
             }
         }
 
-        return workDir;
+        return this.workDir;
     }
 
     /**
@@ -722,54 +703,21 @@ public class SkillBox implements StateModule {
      * @return The upload directory path
      */
     private Path ensureUploadDirExists() {
-        Path targetDir = uploadDir;
-        if (targetDir == null) {
+        if (uploadDir == null) {
             Path resolvedWorkDir = ensureWorkDirExists();
-            targetDir = resolvedWorkDir.resolve("skills");
+            uploadDir = resolvedWorkDir.resolve("skills");
         }
 
-        if (!Files.exists(targetDir)) {
+        if (!Files.exists(uploadDir)) {
             try {
-                Files.createDirectories(targetDir);
-                logger.info("Created upload directory: {}", targetDir);
+                Files.createDirectories(uploadDir);
+                logger.info("Created upload directory: {}", uploadDir);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create upload directory", e);
             }
         }
 
-        if (uploadDir == null) {
-            uploadDir = targetDir;
-        }
-
-        return targetDir;
-    }
-
-    /**
-     * Deletes the temporary working directory if it was created.
-     *
-     * <p>
-     * This method only deletes directories that were created as temporary
-     * directories
-     * by this SkillBox instance. User-specified directories are never deleted.
-     *
-     * @throws IOException if deletion fails
-     */
-    private void deleteTempDirectory(Path temporaryWorkDir) throws IOException {
-        if (temporaryWorkDir != null && Files.exists(temporaryWorkDir)) {
-            Files.walk(temporaryWorkDir)
-                    .sorted(
-                            (a, b) ->
-                                    -a.compareTo(
-                                            b)) // Reverse order to delete files before directories
-                    .forEach(
-                            path -> {
-                                try {
-                                    Files.delete(path);
-                                } catch (IOException e) {
-                                    logger.warn("Failed to delete: {}", path);
-                                }
-                            });
-        }
+        return uploadDir;
     }
 
     /**
