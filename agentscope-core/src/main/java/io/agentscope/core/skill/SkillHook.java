@@ -38,7 +38,8 @@ public class SkillHook implements Hook {
         if (event instanceof PreReasoningEvent preReasoningEvent) {
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages = new ArrayList<>();
+                List<Msg> inputMessages =
+                        new ArrayList<>(preReasoningEvent.getInputMessages().size() + 1);
                 inputMessages.add(
                         Msg.builder()
                                 .role(MsgRole.SYSTEM)

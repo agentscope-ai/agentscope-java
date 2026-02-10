@@ -247,7 +247,7 @@ class SkillHookTest {
     }
 
     @Test
-    @DisplayName("[ISSUE#765] should inject skill prompt at fisrt not last")
+    @DisplayName("[ISSUE#765] should inject skill prompt at first not last")
     void testInjectSkillPromptAtFirst() {
         // Arrange: Register and activate a skill
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
@@ -255,22 +255,20 @@ class SkillHookTest {
         activateSkill(skill.getSkillId());
 
         // Create PreReasoningEvent with multiple messages
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text("System instruction").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User query").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Assistant response").build())
-                        .build());
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(TextBlock.builder().text("System instruction").build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("User query").build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("Assistant response").build())
+                                .build());
 
         PreReasoningEvent event =
                 new PreReasoningEvent(
@@ -296,15 +294,15 @@ class SkillHookTest {
         // Verify original messages are preserved in order after skill prompt
         assertEquals(
                 "System instruction",
-                ((TextBlock) result.getInputMessages().get(1).getContent().get(0)).getText(),
+                result.getInputMessages().get(1).getTextContent(),
                 "Second message should be original system instruction");
         assertEquals(
                 "User query",
-                ((TextBlock) result.getInputMessages().get(2).getContent().get(0)).getText(),
+                result.getInputMessages().get(2).getTextContent(),
                 "Third message should be original user query");
         assertEquals(
                 "Assistant response",
-                ((TextBlock) result.getInputMessages().get(3).getContent().get(0)).getText(),
+                result.getInputMessages().get(3).getTextContent(),
                 "Fourth message should be original assistant response");
     }
 
