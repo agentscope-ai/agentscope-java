@@ -336,11 +336,25 @@ class ToolMethodInvoker {
     /**
      * Handle invocation errors with informative messages.
      *
+     * <p>Special handling for {@link ToolSuspendException}: if found in the exception chain,
+     * it will be re-thrown to allow proper suspension handling by {@link ToolExecutor}.
+     *
      * @param e the exception
      * @return ToolResultBlock with error message
+     * @throws ToolSuspendException if found in the exception chain
      */
     private ToolResultBlock handleInvocationError(Exception e) {
+        // Check if the exception itself is ToolSuspendException
+        if (e instanceof ToolSuspendException) {
+            throw (ToolSuspendException) e;
+        }
+
         Throwable cause = e.getCause();
+        // Check for ToolSuspendException in the exception chain
+        if (cause instanceof ToolSuspendException) {
+            throw (ToolSuspendException) cause;
+        }
+
         String errorMsg =
                 cause != null
                         ? ExceptionUtils.getErrorMessage(cause)
