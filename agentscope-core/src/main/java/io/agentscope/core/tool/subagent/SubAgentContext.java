@@ -38,7 +38,7 @@ import java.util.Optional;
  * which delegates to {@link SubAgentPendingStore} that implements {@link io.agentscope.core.state.State} for direct serialization support. This class follows a sessionId-first
  * constraint: a session ID must be registered before any results can be added for that tool.
  *
- * <h3>Usage Pattern:</h3>
+ * <h2>Usage Pattern:</h2>
  * <pre>{@code
  * SubAgentContext context = new SubAgentContext();
  *
@@ -63,7 +63,7 @@ import java.util.Optional;
  * context.loadFrom(session, sessionKey);
  * }</pre>
  *
- * <h3>Thread Safety:</h3>
+ * <h2>Thread Safety:</h2>
  * This class is thread-safe and delegates all state management to the thread-safe
  * {@link SubAgentPendingStore}.
  */

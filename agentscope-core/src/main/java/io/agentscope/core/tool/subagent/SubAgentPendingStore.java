@@ -30,12 +30,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * can be added for that tool. This ensures proper lifecycle management and prevents orphaned
  * results without associated sessions.
  *
- * <h3>Storage Structure:</h3>
+ * <h2>Storage Structure:</h2>
  * The storage is organized by tool ID: {@code Map<String, SubAgentPendingContext>}.
  * Each tool ID maps to a complete context containing the tool ID, session ID, and pending results.
  * This single-source-of-truth design ensures data consistency.
  *
- * <h3>Key Features:</h3>
+ * <h2>Key Features:</h2>
  * <ul>
  *   <li>Thread-safe storage using ConcurrentHashMap</li>
  *   <li>SessionId-first constraint: results can only be added after session ID is registered</li>
@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>Single data source ensures consistency</li>
  * </ul>
  *
- * <h3>Usage Pattern:</h3>
+ * <h2>Usage Pattern:</h2>
  * <pre>{@code
  * // 1. Register session ID first (required) - creates a pending context
  * state.setSessionId("tool-123", "session-abc");
@@ -62,7 +62,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * state.remove("tool-123");
  * }</pre>
  *
- * <h3>Thread Safety:</h3>
+ * <h2>Thread Safety:</h2>
  * This class is thread-safe and can be used concurrently from multiple threads.
  * All operations are atomic at the method level.
  */

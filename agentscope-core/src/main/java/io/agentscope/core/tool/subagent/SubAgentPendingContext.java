@@ -31,11 +31,11 @@ import java.util.List;
  *   <li>The list of pending tool results that need to be injected when resuming</li>
  * </ul>
  *
- * <h3>Immutability:</h3>
+ * <h2>Immutability:</h2>
  * This record is immutable. The pendingResults list is defensively copied during construction
  * to prevent external modifications. This ensures thread-safety and predictable behavior.
  *
- * <h3>Usage:</h3>
+ * <h2>Usage:</h2>
  * This class is typically created by {@link SubAgentPendingStore} when consuming pending state
  * and is used to pass complete context information between components.
  *
