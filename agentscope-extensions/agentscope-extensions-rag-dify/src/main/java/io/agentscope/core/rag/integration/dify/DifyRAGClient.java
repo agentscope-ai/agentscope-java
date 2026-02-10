@@ -158,19 +158,19 @@ public class DifyRAGClient {
                         retrievalModel.put("reranking_enable", true);
 
                         if (config.getRerankConfig() != null) {
-                            Map<String, Object> rerankingMode = new HashMap<>();
+                            Map<String, Object> rerankingModel = new HashMap<>();
                             if (config.getRerankConfig().getProviderName() != null) {
-                                rerankingMode.put(
+                                rerankingModel.put(
                                         "reranking_provider_name",
                                         config.getRerankConfig().getProviderName());
                             }
                             if (config.getRerankConfig().getModelName() != null) {
-                                rerankingMode.put(
+                                rerankingModel.put(
                                         "reranking_model_name",
                                         config.getRerankConfig().getModelName());
                             }
-                            if (!rerankingMode.isEmpty()) {
-                                retrievalModel.put("reranking_mode", rerankingMode);
+                            if (!rerankingModel.isEmpty()) {
+                                retrievalModel.put("reranking_model", rerankingModel);
                             }
                         }
                     } else {
