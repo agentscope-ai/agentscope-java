@@ -204,6 +204,51 @@
             cursor: not-allowed;
         }
 
+        /* Control buttons next to Send */
+        .control-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            display: none;
+        }
+
+        .control-btn:hover {
+            opacity: 0.9;
+        }
+
+        .control-btn:active {
+            transform: scale(0.98);
+        }
+
+        .control-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .control-btn.stop {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .control-btn.waiting {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+
+        .control-btn.continue {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .control-btn.visible {
+            display: inline-block;
+        }
+
         /* Plan Panel */
         .plan-panel {
             flex: 0 0 45%;
@@ -455,12 +500,13 @@
 
         /* Plan Actions */
         .plan-actions {
-            padding: 16px 20px;
+            padding: 12px 20px;
             background: white;
             border-top: 1px solid #e5e7eb;
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            align-items: center;
         }
 
         .action-btn {
@@ -486,6 +532,44 @@
 
         .action-btn.primary:hover {
             opacity: 0.9;
+        }
+
+        .action-btn.continue {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .action-btn.continue:hover {
+            opacity: 0.9;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        }
+
+        /* Paused status indicator */
+        .paused-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-radius: 6px;
+            color: #92400e;
+            font-size: 0.8rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .paused-indicator.hidden {
+            display: none;
+        }
+
+        .paused-icon {
+            font-size: 0.9rem;
         }
 
         /* Modal */
@@ -632,6 +716,7 @@
                     <input type="text" class="chat-input" id="chatInput" placeholder="Type your message..."
                            onkeypress="if(event.key==='Enter') sendMessage()">
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                    <button class="control-btn" id="controlBtn" onclick="handleControlClick()">Stop</button>
                 </div>
             </div>
         </div>
@@ -650,6 +735,10 @@
                 </div>
             </div>
             <div class="plan-actions">
+                <div class="paused-indicator hidden" id="pausedIndicator">
+                    <span class="paused-icon">⏸️</span>
+                    <span>Paused - Review and edit the plan, then Continue</span>
+                </div>
                 <button class="action-btn primary" id="planMainBtn" onclick="handlePlanMainAction()">+ New Plan</button>
                 <button class="action-btn" onclick="openAddSubtaskModal()">+ Add Subtask</button>
             </div>
@@ -756,12 +845,106 @@
     <script>
         let currentPlan = null;
         let planEventSource = null;
+        let isPaused = false;
+        let stopRequested = false;
+        let isProcessing = false;
+
+        // Control button states: 'hidden', 'stop', 'waiting', 'continue'
+        let controlState = 'hidden';
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             connectPlanStream();
             fetchCurrentPlan();
+            checkPausedState();
         });
+
+        // Check if agent is paused
+        async function checkPausedState() {
+            try {
+                const [pausedRes, stopRes] = await Promise.all([
+                    fetch('/api/paused'),
+                    fetch('/api/stop-requested')
+                ]);
+                const pausedData = await pausedRes.json();
+                const stopData = await stopRes.json();
+                isPaused = pausedData.isPaused;
+                stopRequested = stopData.stopRequested;
+                
+                if (isPaused) {
+                    controlState = 'continue';
+                } else if (stopRequested) {
+                    controlState = 'waiting';
+                }
+                updateControlUI();
+            } catch (error) {
+                console.error('Failed to check paused state:', error);
+            }
+        }
+
+        // Handle control button click based on current state
+        function handleControlClick() {
+            if (controlState === 'stop') {
+                requestStop();
+            } else if (controlState === 'continue') {
+                resumeAgent();
+            }
+        }
+
+        // Request agent to stop after next plan tool execution
+        async function requestStop() {
+            try {
+                const response = await fetch('/api/stop', { method: 'POST' });
+                const data = await response.json();
+                stopRequested = true;
+                controlState = 'waiting';
+                updateControlUI();
+            } catch (error) {
+                console.error('Failed to request stop:', error);
+                alert('Failed to request stop: ' + error.message);
+            }
+        }
+
+        // Update UI based on control state
+        function updateControlUI() {
+            const sendBtn = document.getElementById('sendBtn');
+            const controlBtn = document.getElementById('controlBtn');
+            const indicator = document.getElementById('pausedIndicator');
+
+            // Update paused indicator
+            if (isPaused) {
+                indicator.classList.remove('hidden');
+            } else {
+                indicator.classList.add('hidden');
+            }
+
+            // Update control button
+            controlBtn.classList.remove('stop', 'waiting', 'continue', 'visible');
+            controlBtn.disabled = false;
+
+            switch (controlState) {
+                case 'hidden':
+                    // No control button visible
+                    sendBtn.disabled = false;
+                    break;
+                case 'stop':
+                    controlBtn.classList.add('stop', 'visible');
+                    controlBtn.textContent = 'Stop';
+                    sendBtn.disabled = true;
+                    break;
+                case 'waiting':
+                    controlBtn.classList.add('waiting', 'visible');
+                    controlBtn.textContent = 'Waiting to pause...';
+                    controlBtn.disabled = true;
+                    sendBtn.disabled = true;
+                    break;
+                case 'continue':
+                    controlBtn.classList.add('continue', 'visible');
+                    controlBtn.textContent = 'Continue';
+                    sendBtn.disabled = false;
+                    break;
+            }
+        }
 
         // Connect to plan SSE stream
         function connectPlanStream() {
@@ -915,18 +1098,65 @@
             return div.innerHTML;
         }
 
+        // Common function to process SSE stream response
+        async function processSSEStream(response, contentDiv, defaultMessage) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data:')) {
+                        const data = line.substring(5).trim();
+                        if (data) {
+                            if (data === '[PAUSED]') {
+                                isPaused = true;
+                                stopRequested = false;
+                                controlState = 'continue';
+                                updateControlUI();
+                                if (!fullText) {
+                                    fullText = '(Plan updated - Review and edit the plan, then Continue)';
+                                }
+                            } else {
+                                fullText += data;
+                            }
+                            contentDiv.textContent = fullText;
+                        }
+                    }
+                }
+            }
+
+            if (!fullText) {
+                contentDiv.textContent = defaultMessage;
+            }
+            return fullText;
+        }
+
         // Send chat message
         async function sendMessage() {
+            if (isProcessing) return;
+
             const input = document.getElementById('chatInput');
             const sendBtn = document.getElementById('sendBtn');
             const message = input.value.trim();
 
             if (!message) return;
 
+            // Clear paused state when sending a new message
+            isPaused = false;
+            stopRequested = false;
+            isProcessing = true;
+            controlState = 'stop';
+            updateControlUI();
+
             // Add user message
             appendMessage('user', message);
             input.value = '';
-            sendBtn.disabled = true;
 
             // Create assistant message container
             const assistantMsg = appendMessage('assistant', '');
@@ -934,37 +1164,44 @@
 
             try {
                 const response = await fetch(`/api/chat?message=${encodeURIComponent(message)}`);
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                let fullText = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value);
-                    // Parse SSE data
-                    const lines = chunk.split('\n');
-                    for (const line of lines) {
-                        if (line.startsWith('data:')) {
-                            const data = line.substring(5).trim();
-                            if (data) {
-                                fullText += data;
-                                contentDiv.textContent = fullText;
-                            }
-                        }
-                    }
-                }
-
-                if (!fullText) {
-                    contentDiv.textContent = '(No response)';
-                }
-
+                await processSSEStream(response, contentDiv, '(No response)');
             } catch (error) {
                 contentDiv.textContent = 'Error: ' + error.message;
             } finally {
-                sendBtn.disabled = false;
+                isProcessing = false;
+                if (!isPaused) {
+                    controlState = 'hidden';
+                }
+                updateControlUI();
+                scrollToBottom();
+            }
+        }
+
+        // Resume agent execution
+        async function resumeAgent() {
+            if (isProcessing) return;
+            isProcessing = true;
+            controlState = 'stop';
+            isPaused = false;
+            updateControlUI();
+
+            // Create assistant message container for resume response
+            const assistantMsg = appendMessage('assistant', '');
+            const contentDiv = assistantMsg.querySelector('.message-content');
+            contentDiv.textContent = '(Continuing execution...)';
+
+            try {
+                const response = await fetch('/api/resume');
+                await processSSEStream(response, contentDiv, '(Execution completed)');
+            } catch (error) {
+                contentDiv.textContent = 'Error: ' + error.message;
+                isPaused = false;
+            } finally {
+                isProcessing = false;
+                if (!isPaused) {
+                    controlState = 'hidden';
+                }
+                updateControlUI();
                 scrollToBottom();
             }
         }
@@ -1219,6 +1456,13 @@
 
             try {
                 await fetch('/api/reset', { method: 'POST' });
+
+                // Clear all states
+                isPaused = false;
+                stopRequested = false;
+                isProcessing = false;
+                controlState = 'hidden';
+                updateControlUI();
 
                 // Clear chat messages and show welcome message
                 const chatMessages = document.getElementById('chatMessages');

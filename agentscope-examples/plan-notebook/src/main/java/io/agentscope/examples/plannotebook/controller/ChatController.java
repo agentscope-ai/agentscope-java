@@ -16,6 +16,7 @@
 package io.agentscope.examples.plannotebook.controller;
 
 import io.agentscope.examples.plannotebook.service.AgentService;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -49,6 +50,56 @@ public class ChatController {
             @RequestParam String message,
             @RequestParam(defaultValue = "default") String sessionId) {
         return agentService.chat(sessionId, message);
+    }
+
+    /**
+     * Resume agent execution after user review.
+     * This endpoint is called when user clicks "Continue" button after reviewing/modifying the plan.
+     *
+     * @param sessionId Session ID (optional, defaults to "default")
+     * @return Flux of streaming text chunks
+     */
+    @GetMapping(path = "/resume", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> resume(@RequestParam(defaultValue = "default") String sessionId) {
+        return agentService.resume(sessionId);
+    }
+
+    /**
+     * Get the current pause state of the agent.
+     *
+     * @param sessionId Session ID (optional, defaults to "default", reserved for future multi-session support)
+     * @return Map containing isPaused boolean
+     */
+    @GetMapping("/paused")
+    public Map<String, Boolean> isPaused(@RequestParam(defaultValue = "default") String sessionId) {
+        return Map.of("isPaused", agentService.isPaused());
+    }
+
+    /**
+     * Request the agent to stop after the next plan tool execution.
+     * The agent will continue running until a plan-related tool is executed, then pause.
+     *
+     * @param sessionId Session ID (optional, defaults to "default", reserved for future multi-session support)
+     * @return Map containing stopRequested status
+     */
+    @PostMapping("/stop")
+    public Map<String, Object> requestStop(
+            @RequestParam(defaultValue = "default") String sessionId) {
+        agentService.requestStop();
+        return Map.of(
+                "stopRequested", true, "message", "Will pause after next plan tool execution");
+    }
+
+    /**
+     * Get the current stop requested state.
+     *
+     * @param sessionId Session ID (optional, defaults to "default", reserved for future multi-session support)
+     * @return Map containing stopRequested boolean
+     */
+    @GetMapping("/stop-requested")
+    public Map<String, Boolean> isStopRequested(
+            @RequestParam(defaultValue = "default") String sessionId) {
+        return Map.of("stopRequested", agentService.isStopRequested());
     }
 
     /**
