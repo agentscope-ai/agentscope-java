@@ -16,14 +16,20 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.hook.*;
+import io.agentscope.core.hook.ErrorEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -93,12 +99,14 @@ public abstract class AgentBase implements StateModule, Agent {
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
-    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(e -> {
-        if (e == null) {
-            return 0;
-        }
-        return e.priority();
-    });
+    private static final Comparator<Hook> HOOK_COMPARATOR =
+            Comparator.comparingInt(
+                    e -> {
+                        if (e == null) {
+                            return 0;
+                        }
+                        return e.priority();
+                    });
 
     /**
      * Constructor for AgentBase.
