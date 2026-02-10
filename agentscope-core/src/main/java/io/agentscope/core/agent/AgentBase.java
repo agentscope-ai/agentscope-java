@@ -16,19 +16,14 @@
 package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.agentscope.core.hook.ErrorEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.*;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -98,6 +93,12 @@ public abstract class AgentBase implements StateModule, Agent {
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(e -> {
+        if (e == null) {
+            return 0;
+        }
+        return e.priority();
+    });
 
     /**
      * Constructor for AgentBase.
@@ -133,6 +134,7 @@ public abstract class AgentBase implements StateModule, Agent {
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
+        sortHooks();
     }
 
     @Override
@@ -455,7 +457,12 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
+            sortHooks();
         }
+    }
+
+    private void sortHooks() {
+        this.hooks.sort(HOOK_COMPARATOR);
     }
 
     /**
@@ -479,7 +486,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        return hooks;
     }
 
     /**
