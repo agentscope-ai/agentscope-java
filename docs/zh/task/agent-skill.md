@@ -28,7 +28,7 @@ Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含�
 以 [Skill 结构](#skill-结构) 为例,这种目录结构的 Skill 在我们的系统中的表现形式就是:
 
 ```java
-AgentSkill skill = new AgentSkill.builder()
+AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use this skill when analyzing data, calculating statistics, or generating reports")
     .skillContent("# Data Analysis\n...")
