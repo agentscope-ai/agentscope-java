@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-04T02:32:26+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-02-10T03:40:03+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -445,7 +445,7 @@
 <p>We have further abstracted skills so that their discovery and content loading are no longer dependent on the file system. Instead, the LLM discovers and loads skill content and resources through tools. At the same time, to maintain compatibility with the existing skill ecosystem and resources, skills are still organized according to file system structure for their content and resources.</p>
 <p><strong>Organize your skill content and resources just like organizing a skill directory in a file system!</strong></p>
 <p>Taking the <a class="reference internal" href="#skill-structure"><span class="xref myst">Skill Structure</span></a> as an example, this directory-structured skill is represented in our system as:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use this skill when analyzing data, calculating statistics, or generating reports&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
@@ -789,7 +789,7 @@ is used.</p>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-04</div>
+              Last updated on 2026-02-10</div>
           </div>
           <div class="right-details">
             <div class="icons">

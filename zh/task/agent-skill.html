@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-04T02:32:26+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-02-10T03:40:03+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -445,7 +445,7 @@
 <p>我们将 Skill 进行了进一步的抽象,使其的发现和内容加载不再依赖于文件系统,而是 LLM 通过 Tool 来发现和加载 Skill 的内容和资源。同时为了兼容已有的 Skill 生态与资源,Skill 的组织形式依旧按照文件系统的结构来组织它的内容和资源。</p>
 <p><strong>像在文件系统里组织 Skill 目录一样组织 Skill 的内容和资源吧!</strong></p>
 <p>以 <a class="reference internal" href="#skill-%E7%BB%93%E6%9E%84"><span class="xref myst">Skill 结构</span></a> 为例,这种目录结构的 Skill 在我们的系统中的表现形式就是:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use this skill when analyzing data, calculating statistics, or generating reports&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
@@ -783,7 +783,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-04</div>
+              Last updated on 2026-02-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
