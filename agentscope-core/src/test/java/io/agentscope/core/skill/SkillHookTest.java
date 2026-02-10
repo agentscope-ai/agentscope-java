@@ -103,10 +103,10 @@ class SkillHookTest {
         assertEquals(2, result.getInputMessages().size(), "Should add skill prompt message");
         assertEquals(
                 MsgRole.SYSTEM,
-                result.getInputMessages().get(1).getRole(),
+                result.getInputMessages().get(0).getRole(),
                 "Skill prompt should be SYSTEM message");
         assertTrue(
-                result.getInputMessages().get(1).getContent().toString().contains("test_skill"),
+                result.getInputMessages().get(0).getContent().toString().contains("test_skill"),
                 "Skill prompt should contain skill information");
     }
 
@@ -164,7 +164,7 @@ class SkillHookTest {
                 "Should add skill prompt for registered skills");
         assertEquals(
                 MsgRole.SYSTEM,
-                result.getInputMessages().get(1).getRole(),
+                result.getInputMessages().get(0).getRole(),
                 "Skill prompt should be SYSTEM message");
     }
 
