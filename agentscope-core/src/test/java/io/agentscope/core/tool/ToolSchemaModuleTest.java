@@ -70,6 +70,19 @@ class ToolSchemaModuleTest {
         private String value;
     }
 
+    @SuppressWarnings("unused")
+    static class NameOverridePojo {
+
+        @ToolParam(name = "city_name", description = "The city name")
+        private String city;
+
+        @ToolParam(name = "zip_code", description = "The zip code", required = false)
+        private String zip;
+
+        @ToolParam(name = "", description = "A value")
+        private String value;
+    }
+
     // --- helpers ---
 
     private JsonNode generate(Class<?> clazz, ToolSchemaModule.Option... options) {
@@ -161,5 +174,23 @@ class ToolSchemaModuleTest {
         JsonNode desc = schema.get("properties").get("value").get("description");
 
         assertNull(desc);
+    }
+
+    @Test
+    void propertyNameOverride() {
+        JsonNode schema = generate(NameOverridePojo.class);
+        JsonNode props = schema.get("properties");
+        List<String> required = requiredList(schema);
+
+        // name override: field "city" → "city_name", field "zip" → "zip_code"
+        assertNull(props.get("city"));
+        assertEquals("The city name", props.get("city_name").get("description").asText());
+        assertNull(props.get("zip"));
+        assertEquals("The zip code", props.get("zip_code").get("description").asText());
+        assertTrue(required.contains("city_name"));
+        assertFalse(required.contains("zip_code"));
+
+        // blank name → falls back to field name "value"
+        assertEquals("A value", props.get("value").get("description").asText());
     }
 }

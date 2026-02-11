@@ -56,8 +56,23 @@ public class ToolSchemaModule implements Module {
      * Registers description resolver and required check.
      */
     private void applyToConfigBuilder(SchemaGeneratorConfigPart<FieldScope> configPart) {
+        configPart.withPropertyNameOverrideResolver(this::resolvePropertyName);
         configPart.withDescriptionResolver(this::resolveDescription);
         configPart.withRequiredCheck(this::checkRequired);
+    }
+
+    /**
+     * Returns the {@code @ToolParam} name, or {@code null} if absent.
+     *
+     * @param member the field or getter being processed
+     * @return the property name, or {@code null}
+     */
+    private String resolvePropertyName(FieldScope member) {
+        ToolParam toolParam = member.getAnnotationConsideringFieldAndGetter(ToolParam.class);
+        if (toolParam != null && hasText(toolParam.name())) {
+            return toolParam.name();
+        }
+        return null;
     }
 
     /**
