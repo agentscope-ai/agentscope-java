@@ -167,6 +167,24 @@ class ToolMethodInvokerTest {
             }
             return String.valueOf(sum);
         }
+
+        public String suspendTool(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            throw new ToolSuspendException(reason);
+        }
+
+        public java.util.concurrent.CompletableFuture<String> suspendToolAsync(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            return java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> {
+                        throw new ToolSuspendException(reason);
+                    });
+        }
+
+        public reactor.core.publisher.Mono<String> suspendToolMono(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            return reactor.core.publisher.Mono.error(new ToolSuspendException(reason));
+        }
     }
 
     /** Test POJO for generic type testing (Issue #677). */
@@ -208,24 +226,6 @@ class ToolMethodInvokerTest {
         @Override
         public int hashCode() {
             return Objects.hash(name, quantity);
-        }
-
-        public String suspendTool(
-                @ToolParam(name = "reason", description = "reason") String reason) {
-            throw new ToolSuspendException(reason);
-        }
-
-        public java.util.concurrent.CompletableFuture<String> suspendToolAsync(
-                @ToolParam(name = "reason", description = "reason") String reason) {
-            return java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> {
-                        throw new ToolSuspendException(reason);
-                    });
-        }
-
-        public reactor.core.publisher.Mono<String> suspendToolMono(
-                @ToolParam(name = "reason", description = "reason") String reason) {
-            return reactor.core.publisher.Mono.error(new ToolSuspendException(reason));
         }
     }
 
