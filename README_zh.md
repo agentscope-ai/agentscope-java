@@ -77,7 +77,7 @@ AgentScope 设计上能够与现有企业基础设施集成，无需大规模改
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
