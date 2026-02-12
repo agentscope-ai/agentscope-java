@@ -85,14 +85,8 @@ class ToolMethodInvoker {
                                                     r ->
                                                             converter.convert(
                                                                     r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -108,14 +102,8 @@ class ToolMethodInvoker {
                     .flatMap(
                             mono ->
                                     mono.map(r -> converter.convert(r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else {
             // Sync method: wrap in Mono.fromCallable
@@ -127,13 +115,7 @@ class ToolMethodInvoker {
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+                    .onErrorResume(this::handleError);
         }
     }
 
@@ -338,16 +320,30 @@ class ToolMethodInvoker {
     }
 
     /**
+     * Reactive error handler for use with {@code onErrorResume}.
+     *
+     * <p>Delegates to {@link #handleInvocationError(Throwable)} and wraps the
+     * result in {@code Mono.just(...)}.
+     *
+     * @param e the error from the reactive chain
+     * @return Mono containing ToolResultBlock with error info
+     * @throws ToolSuspendException if found in the exception chain
+     */
+    private Mono<ToolResultBlock> handleError(Throwable e) {
+        return Mono.just(handleInvocationError(e));
+    }
+
+    /**
      * Handle invocation errors with informative messages.
      *
      * <p>Special handling for {@link ToolSuspendException}: if found in the exception chain,
      * it will be re-thrown to allow proper suspension handling by {@link ToolExecutor}.
      *
-     * @param e the exception
+     * @param e the throwable
      * @return ToolResultBlock with error message
      * @throws ToolSuspendException if found in the exception chain
      */
-    private ToolResultBlock handleInvocationError(Exception e) {
+    private ToolResultBlock handleInvocationError(Throwable e) {
         // Check if the exception itself is ToolSuspendException
         if (e instanceof ToolSuspendException) {
             throw (ToolSuspendException) e;
