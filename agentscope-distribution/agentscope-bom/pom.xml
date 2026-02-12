@@ -278,7 +278,7 @@
 
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-nacos-promot</artifactId>
+                <artifactId>agentscope-extensions-nacos-prompt</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

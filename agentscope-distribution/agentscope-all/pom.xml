@@ -202,7 +202,7 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-nacos-promot</artifactId>
+            <artifactId>agentscope-extensions-nacos-prompt</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
