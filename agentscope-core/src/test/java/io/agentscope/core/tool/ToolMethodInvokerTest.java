@@ -141,6 +141,24 @@ class ToolMethodInvokerTest {
                 @ToolParam(name = "reason", description = "reason") String reason) {
             return reactor.core.publisher.Mono.error(new ToolSuspendException(reason));
         }
+
+        /**
+         * CompletableFuture-returning method that throws ToolSuspendException
+         * synchronously BEFORE creating the Future.
+         */
+        public java.util.concurrent.CompletableFuture<String> suspendToolAsyncSync(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            throw new ToolSuspendException(reason);
+        }
+
+        /**
+         * Mono-returning method that throws ToolSuspendException
+         * synchronously BEFORE creating the Mono.
+         */
+        public reactor.core.publisher.Mono<String> suspendToolMonoSync(
+                @ToolParam(name = "reason", description = "reason") String reason) {
+            throw new ToolSuspendException(reason);
+        }
     }
 
     @Test
@@ -558,6 +576,43 @@ class ToolMethodInvokerTest {
             Assertions.assertEquals("Reactive suspension needed", e.getReason());
         } catch (Exception e) {
             Assertions.fail("Unexpected exception: " + e.getMessage());
+        }
+    }
+
+    @Test
+    void testToolSuspendException_CompletableFuture_SyncThrow() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("suspendToolAsyncSync", String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("reason", "Sync throw before Future creation");
+
+        assertThrows(
+                ToolSuspendException.class,
+                () -> {
+                    invokeWithParam(tools, method, input);
+                });
+    }
+
+    @Test
+    void testToolSuspendException_Mono_SyncThrow() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("suspendToolMonoSync", String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("reason", "Sync throw before Mono creation");
+
+        try {
+            ToolResultBlock response = invokeWithParam(tools, method, input);
+            Assertions.fail("Should throw ToolSuspendException");
+        } catch (ToolSuspendException e) {
+            Assertions.assertEquals("Sync throw before Mono creation", e.getReason());
+        } catch (Exception e) {
+            Assertions.fail(
+                    "Expected ToolSuspendException but got: "
+                            + e.getClass().getSimpleName()
+                            + " - "
+                            + e.getMessage());
         }
     }
 
