@@ -43,7 +43,26 @@
         
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-spring-boot-starter</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-nacos-a2a</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-nacos-prompt</artifactId>
         </dependency>
         
         <!-- Spring Boot auto-configuration SPI -->
