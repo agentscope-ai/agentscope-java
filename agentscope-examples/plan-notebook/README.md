@@ -79,6 +79,15 @@ Open your browser and navigate to: **http://localhost:8080**
 | GET | `/api/health` | Health check |
 | POST | `/api/reset` | Reset agent and clear all data |
 
+### Human-in-the-Loop (HITL) API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/resume` | Resume agent execution after user review (SSE streaming) |
+| GET | `/api/paused` | Check if the agent is currently paused |
+| POST | `/api/stop` | Request the agent to pause after the next plan tool execution |
+| GET | `/api/stop-requested` | Check if a stop has been requested |
+
 ### Plan API
 
 | Method | Endpoint | Description |
