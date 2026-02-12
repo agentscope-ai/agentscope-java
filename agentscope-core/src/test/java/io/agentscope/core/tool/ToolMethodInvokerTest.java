@@ -602,18 +602,10 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("reason", "Sync throw before Mono creation");
 
-        try {
-            ToolResultBlock response = invokeWithParam(tools, method, input);
-            Assertions.fail("Should throw ToolSuspendException");
-        } catch (ToolSuspendException e) {
-            Assertions.assertEquals("Sync throw before Mono creation", e.getReason());
-        } catch (Exception e) {
-            Assertions.fail(
-                    "Expected ToolSuspendException but got: "
-                            + e.getClass().getSimpleName()
-                            + " - "
-                            + e.getMessage());
-        }
+        ToolSuspendException e = Assertions.assertThrows(
+                ToolSuspendException.class,
+                () -> invokeWithParam(tools, method, input));
+        Assertions.assertEquals("Sync throw before Mono creation", e.getReason());
     }
 
     @Test
