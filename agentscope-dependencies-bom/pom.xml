@@ -82,7 +82,7 @@
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.13</milvus.version>
+        <milvus.version>2.6.14</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
         <elasticsearch.version>9.3.0</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
