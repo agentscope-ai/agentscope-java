@@ -43,7 +43,7 @@ public abstract class McpClientWrapper implements AutoCloseable {
     protected final String name;
 
     /** Cache of tools available from this MCP server */
-    protected final Map<String, McpSchema.Tool> cachedTools;
+    protected volatile Map<String, McpSchema.Tool> cachedTools;
 
     /** Flag indicating whether the client has been initialized */
     protected volatile boolean initialized = false;

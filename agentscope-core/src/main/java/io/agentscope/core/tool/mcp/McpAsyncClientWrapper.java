@@ -19,17 +19,19 @@ import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * Wrapper for asynchronous MCP clients using Project Reactor.
- * This implementation delegates to {@link McpAsyncClient} and provides
- * reactive operations that return Mono types.
+ * Wrapper for asynchronous MCP clients using Project Reactor. This implementation delegates to
+ * {@link McpAsyncClient} and provides reactive operations that return Mono types.
  *
- * <p>Example usage:
- * <pre>{@code
+ * <p>Example usage: <pre>{@code
  * McpAsyncClient client = ... // created via McpClient.async()
  * McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper("my-mcp", client);
  * wrapper.initialize()
@@ -42,6 +44,7 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     private static final Logger logger = LoggerFactory.getLogger(McpAsyncClientWrapper.class);
 
     private final McpAsyncClient client;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
      * Constructs a new asynchronous MCP client wrapper.
@@ -51,7 +54,36 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     public McpAsyncClientWrapper(String name, McpAsyncClient client) {
         super(name);
-        this.client = client;
+        this.client = Objects.requireNonNull(client, "MCP client cannot be null");
+    }
+
+    /**
+     * Package-private constructor for use by McpClientBuilder.
+     *
+     * @param name unique identifier for this client
+     * @param builder the builder to construct the client with notification handlers
+     */
+    McpAsyncClientWrapper(String name, McpClientBuilder builder) {
+        super(name);
+        this.client = builder.buildClientForAsync(this);
+    }
+
+    /**
+     * Updates the cached tools map with new tools from the server. This method is called when the
+     * server sends a tools/list_changed notification. This method is thread-safe and can be
+     * called concurrently from notification handlers.
+     *
+     * @param tools the new list of tools from the server (empty list clears cache)
+     */
+    void updateCachedTools(List<McpSchema.Tool> tools) {
+        if (closed.get() || tools == null) {
+            return;
+        }
+        // Build new map first, then atomically replace via volatile assignment
+        Map<String, McpSchema.Tool> newTools =
+                tools.stream().collect(Collectors.toMap(McpSchema.Tool::name, t -> t));
+        cachedTools = new ConcurrentHashMap<>(newTools);
+        logger.info("[MCP-{}] Updated cached tools, total: {}", name, tools.size());
     }
 
     /**
@@ -64,6 +96,9 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<Void> initialize() {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (initialized) {
             return Mono.empty();
         }
@@ -84,10 +119,19 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                                     "MCP client '{}' discovered {} tools",
                                     name,
                                     result.tools().size());
-                            // Cache all tools
-                            result.tools().forEach(tool -> cachedTools.put(tool.name(), tool));
+                            // Cache all tools - build new map then atomically replace
+                            Map<String, McpSchema.Tool> newTools =
+                                    result.tools().stream()
+                                            .collect(
+                                                    Collectors.toMap(McpSchema.Tool::name, t -> t));
+                            cachedTools = new ConcurrentHashMap<>(newTools);
                         })
-                .doOnSuccess(v -> initialized = true)
+                .doOnSuccess(
+                        v -> {
+                            if (!closed.get()) {
+                                initialized = true;
+                            }
+                        })
                 .doOnError(e -> logger.error("Failed to initialize MCP client: {}", name, e))
                 .then();
     }
@@ -99,10 +143,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      * initialized before calling this method.
      *
      * @return a Mono emitting the list of available tools
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
@@ -120,10 +166,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      * @param toolName the name of the tool to call
      * @param arguments the arguments to pass to the tool
      * @return a Mono emitting the tool call result (may contain error information)
-     * @throws IllegalStateException if the client is not initialized
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        if (closed.get()) {
+            return Mono.error(new IllegalStateException("MCP client '" + name + "' is closed"));
+        }
         if (!initialized) {
             return Mono.error(
                     new IllegalStateException("MCP client '" + name + "' not initialized"));
@@ -161,7 +209,7 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        if (client != null) {
+        if (closed.compareAndSet(false, true)) {
             logger.info("Closing MCP async client: {}", name);
             try {
                 client.closeGracefully()
@@ -171,9 +219,10 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
                 client.close();
+            } finally {
+                initialized = false;
+                cachedTools = new ConcurrentHashMap<>();
             }
         }
-        initialized = false;
-        cachedTools.clear();
     }
 }

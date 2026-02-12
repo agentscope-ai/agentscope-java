@@ -20,6 +20,9 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -69,6 +72,11 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
     private final McpClientWrapper delegateClient;
 
     /**
+     * Flag indicating whether this client has been closed.
+     */
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    /**
      * Whether x_higress_tool_search is enabled.
      */
     private final boolean enableToolSearch;
@@ -115,6 +123,10 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<Void> initialize() {
+        if (closed.get()) {
+            return Mono.error(
+                    new IllegalStateException("Higress MCP client '" + name + "' is closed"));
+        }
         if (isInitialized()) {
             logger.debug("Higress MCP client '{}' already initialized", name);
             return Mono.empty();
@@ -126,7 +138,9 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                 .initialize()
                 .doOnSuccess(
                         unused -> {
-                            this.initialized = true;
+                            if (!closed.get()) {
+                                this.initialized = true;
+                            }
                             logger.info("Higress MCP client '{}' initialized successfully", name);
                         })
                 .doOnError(
@@ -154,6 +168,10 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
+        if (closed.get()) {
+            return Mono.error(
+                    new IllegalStateException("Higress MCP client '" + name + "' is closed"));
+        }
         if (enableToolSearch) {
             // Call x_higress_tool_search and convert results to McpSchema.Tool
             logger.info(
@@ -185,8 +203,13 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                             })
                     .doOnNext(
                             tools -> {
-                                // Cache tools locally
-                                tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+                                // Cache tools locally - build new map then atomically replace
+                                Map<String, McpSchema.Tool> newTools =
+                                        tools.stream()
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                McpSchema.Tool::name, t -> t));
+                                cachedTools = new ConcurrentHashMap<>(newTools);
                             });
         } else {
             // Return all tools from delegate
@@ -194,8 +217,13 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
                     .listTools()
                     .doOnNext(
                             tools -> {
-                                // Cache tools locally
-                                tools.forEach(tool -> cachedTools.put(tool.name(), tool));
+                                // Cache tools locally - build new map then atomically replace
+                                Map<String, McpSchema.Tool> newTools =
+                                        tools.stream()
+                                                .collect(
+                                                        Collectors.toMap(
+                                                                McpSchema.Tool::name, t -> t));
+                                cachedTools = new ConcurrentHashMap<>(newTools);
                                 logger.debug(
                                         "Higress MCP client '{}' discovered {} tools",
                                         name,
@@ -259,6 +287,10 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
+        if (closed.get()) {
+            return Mono.error(
+                    new IllegalStateException("Higress MCP client '" + name + "' is closed"));
+        }
         logger.debug(
                 "Calling tool '{}' on Higress MCP client '{}' with arguments: {}",
                 toolName,
@@ -293,19 +325,23 @@ public class HigressMcpClientWrapper extends McpClientWrapper {
      */
     @Override
     public void close() {
-        logger.info("Closing Higress MCP client: {}", name);
-
-        if (delegateClient != null) {
-            try {
-                delegateClient.close();
-                logger.debug("Higress MCP client '{}' closed successfully", name);
-            } catch (Exception e) {
-                logger.error("Error closing Higress MCP client '{}': {}", name, e.getMessage(), e);
-            }
+        if (!closed.compareAndSet(false, true)) {
+            return; // Already closed
         }
 
-        this.initialized = false;
-        this.cachedTools.clear();
+        logger.info("Closing Higress MCP client: {}", name);
+
+        try {
+            if (delegateClient != null) {
+                delegateClient.close();
+                logger.debug("Higress MCP client '{}' closed successfully", name);
+            }
+        } catch (Exception e) {
+            logger.error("Error closing Higress MCP client '{}': {}", name, e.getMessage(), e);
+        } finally {
+            this.initialized = false;
+            this.cachedTools = new ConcurrentHashMap<>();
+        }
     }
 
     /**
