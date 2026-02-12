@@ -602,9 +602,9 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("reason", "Sync throw before Mono creation");
 
-        ToolSuspendException e = Assertions.assertThrows(
-                ToolSuspendException.class,
-                () -> invokeWithParam(tools, method, input));
+        ToolSuspendException e =
+                Assertions.assertThrows(
+                        ToolSuspendException.class, () -> invokeWithParam(tools, method, input));
         Assertions.assertEquals("Sync throw before Mono creation", e.getReason());
     }
 
