@@ -384,12 +384,7 @@ public class McpClientBuilder {
                                     "AgentScope Java Framework",
                                     "1.0.10-SNAPSHOT");
 
-                    McpSchema.ClientCapabilities.Builder capabilitiesBuilder =
-                            McpSchema.ClientCapabilities.builder();
-                    if (asyncElicitationHandler != null) {
-                        capabilitiesBuilder.elicitation();
-                    }
-                    McpSchema.ClientCapabilities clientCapabilities = capabilitiesBuilder.build();
+                    McpSchema.ClientCapabilities clientCapabilities = buildCapabilities(asyncElicitationHandler != null);
 
                     var clientBuilder =
                             McpClient.async(transport)
@@ -424,12 +419,7 @@ public class McpClientBuilder {
                 new McpSchema.Implementation(
                         "agentscope-java", "AgentScope Java Framework", "1.0.10-SNAPSHOT");
 
-        McpSchema.ClientCapabilities.Builder capabilitiesBuilder =
-                McpSchema.ClientCapabilities.builder();
-        if (syncElicitationHandler != null) {
-            capabilitiesBuilder.elicitation();
-        }
-        McpSchema.ClientCapabilities clientCapabilities = capabilitiesBuilder.build();
+        McpSchema.ClientCapabilities clientCapabilities = buildCapabilities(syncElicitationHandler != null);
 
         var clientBuilder =
                 McpClient.sync(transport)
@@ -445,6 +435,20 @@ public class McpClientBuilder {
         McpSyncClient mcpClient = clientBuilder.build();
 
         return new McpSyncClientWrapper(name, mcpClient);
+    }
+
+    /**
+     * Builds client capabilities
+     * @param withElicitation whether to include elicitation capability
+     * @return client capabilities
+     */
+    private McpSchema.ClientCapabilities buildCapabilities(boolean withElicitation) {
+        McpSchema.ClientCapabilities.Builder capabilitiesBuilder =
+                McpSchema.ClientCapabilities.builder();
+        if (withElicitation) {
+            capabilitiesBuilder.elicitation();
+        }
+        return capabilitiesBuilder.build();
     }
 
     // ==================== Internal Transport Configuration Classes ====================

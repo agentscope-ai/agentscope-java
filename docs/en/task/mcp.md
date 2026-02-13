@@ -248,9 +248,9 @@ Asynchronous client example
 McpClientWrapper client = McpClientBuilder.create("mcp-async")
 .stdioTransport("python", "-m", "mcp_server")
 .asyncElicitation(request -> {
-// 处理 elicitation 请求
+// Handle elicitation request
 System.out.println("Received elicit request: " + request.message());
-        // 返回 Mono<ElicitResult>
+        // Return Mono<ElicitResult>
         return Mono.just(
             ElicitResult.builder()
                 .action(ElicitResult.Action.ACCEPT)
@@ -267,9 +267,9 @@ Synchronous client example
 McpClientWrapper client = McpClientBuilder.create("mcp-sync")
 .stdioTransport("python", "-m", "mcp_server")
 .syncElicitation(request -> {
-// 处理 elicitation 请求
+// Handle elicitation request
 System.out.println("Received elicit request: " + request.message());
-        // 直接返回 ElicitResult
+        // return ElicitResult directly
         return ElicitResult.builder()
             .action(ElicitResult.Action.ACCEPT)
             .data(Map.of("response", "user input"))
