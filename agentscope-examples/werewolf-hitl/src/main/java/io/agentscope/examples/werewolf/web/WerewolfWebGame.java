@@ -23,6 +23,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.user.UserAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -30,6 +31,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.tts.DashScopeRealtimeTTSModel;
+import io.agentscope.core.model.tts.Qwen3TTSFlashVoice;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.werewolf.GameConfiguration;
@@ -79,6 +82,8 @@ public class WerewolfWebGame {
     private DashScopeChatModel model;
     private GameState gameState;
     private Player humanPlayer;
+    // Mapping from player name to assigned TTS voice (randomized per game)
+    private Map<String, Qwen3TTSFlashVoice> playerVoices;
 
     public WerewolfWebGame(GameEventEmitter emitter, LocalizationBundle bundle) {
         this(emitter, bundle, null, null, new GameConfiguration());
@@ -165,6 +170,9 @@ public class WerewolfWebGame {
     }
 
     private GameState initializeGame() {
+        // Initialize per-game TTS voice mapping
+        playerVoices = new HashMap<>();
+
         List<Role> roles = new ArrayList<>();
         for (int i = 0; i < gameConfig.getVillagerCount(); i++) roles.add(Role.VILLAGER);
         for (int i = 0; i < gameConfig.getWerewolfCount(); i++) roles.add(Role.WEREWOLF);
@@ -303,6 +311,15 @@ public class WerewolfWebGame {
                     humanPlayer.getRole().name(),
                     messages.getRoleDisplayName(humanPlayer.getRole()),
                     teammates);
+        }
+
+        // Assign random TTS voice to each player (independent of roles)
+        List<Qwen3TTSFlashVoice> voices = new ArrayList<>(List.of(Qwen3TTSFlashVoice.values()));
+        Collections.shuffle(voices);
+        for (int i = 0; i < players.size(); i++) {
+            Player player = players.get(i);
+            Qwen3TTSFlashVoice voice = voices.get(i % voices.size());
+            playerVoices.put(player.getName(), voice);
         }
 
         return new GameState(players);
@@ -455,7 +472,7 @@ public class WerewolfWebGame {
                     try {
                         VoteModel voteData = vote.getStructuredData(VoteModel.class);
                         emitter.emitPlayerVote(
-                                vote.getName(),
+                                werewolf.getName(),
                                 voteData.targetPlayer,
                                 voteData.reason,
                                 EventVisibility.WEREWOLF_ONLY);
@@ -872,6 +889,9 @@ public class WerewolfWebGame {
                         Msg response = player.getAgent().call().block();
                         String content = utils.extractTextContent(response);
                         emitter.emitPlayerSpeak(player.getName(), content, "day_discussion");
+
+                        // Generate TTS for AI speech (only during day discussion)
+                        generateTTSForSpeech(player.getName(), content);
                     }
                 }
             }
@@ -946,7 +966,7 @@ public class WerewolfWebGame {
                     try {
                         VoteModel voteData = vote.getStructuredData(VoteModel.class);
                         emitter.emitPlayerVote(
-                                vote.getName(),
+                                player.getName(),
                                 voteData.targetPlayer,
                                 voteData.reason,
                                 EventVisibility.PUBLIC);
@@ -1134,5 +1154,74 @@ public class WerewolfWebGame {
                 gameState.getAlivePlayers().size(),
                 gameState.getAliveWerewolves().size(),
                 gameState.getAliveVillagers().size());
+    }
+
+    /**
+     * Generate TTS audio for a player's speech and emit audio chunks to frontend.
+     * Only called during day discussion phase to avoid generating TTS for votes/actions.
+     *
+     * @param playerName The name of the speaking player
+     * @param text The text content to convert to speech
+     */
+    private void generateTTSForSpeech(String playerName, String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return;
+        }
+
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            // Skip TTS if no API key
+            return;
+        }
+
+        // Resolve voice for this player (fallback to a default if not assigned)
+        Qwen3TTSFlashVoice voice = playerVoices != null ? playerVoices.get(playerName) : null;
+        if (voice == null) {
+            voice = Qwen3TTSFlashVoice.CHERRY;
+        }
+
+        // Create TTS model for this specific speech
+        DashScopeRealtimeTTSModel ttsModel = null;
+        try {
+            ttsModel =
+                    DashScopeRealtimeTTSModel.builder()
+                            .apiKey(apiKey)
+                            .modelName("qwen3-tts-flash-realtime")
+                            .voice(voice.getVoiceId())
+                            .sampleRate(24000)
+                            .format("pcm")
+                            .build();
+
+            // Start session
+            ttsModel.startSession();
+
+            // Subscribe to audio stream and emit chunks
+            ttsModel.getAudioStream()
+                    .doOnNext(
+                            audio -> {
+                                if (audio.getSource() instanceof Base64Source src) {
+                                    emitter.emitAudioChunk(playerName, src.getData());
+                                }
+                            })
+                    .subscribe();
+
+            // Push text to TTS
+            ttsModel.push(text);
+
+            // Finish and wait for all audio
+            ttsModel.finish().blockLast();
+        } catch (Exception e) {
+            // Log error but don't fail the game
+            System.err.println("TTS generation error for " + playerName + ": " + e.getMessage());
+        } finally {
+            // Clean up TTS resources
+            if (ttsModel != null) {
+                try {
+                    ttsModel.close();
+                } catch (Exception e) {
+                    // Ignore cleanup errors
+                }
+            }
+        }
     }
 }

@@ -364,6 +364,19 @@ public class GameEventEmitter {
     }
 
     /**
+     * Emit an audio chunk for TTS.
+     * Audio is always public (everyone can hear day discussion).
+     *
+     * @param playerName The name of the player speaking
+     * @param audioBase64 Base64 encoded audio data
+     */
+    public void emitAudioChunk(String playerName, String audioBase64) {
+        GameEvent event = GameEvent.audioChunk(playerName, audioBase64);
+        godViewHistory.add(event);
+        playerSink.tryEmitNext(event);
+    }
+
+    /**
      * Get the player event stream as a Flux.
      * This stream contains events visible to the human player based on their role.
      *

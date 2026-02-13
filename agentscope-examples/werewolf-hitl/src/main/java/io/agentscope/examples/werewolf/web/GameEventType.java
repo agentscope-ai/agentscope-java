@@ -59,5 +59,8 @@ public enum GameEventType {
     WAIT_USER_INPUT,
 
     /** User input received confirmation. */
-    USER_INPUT_RECEIVED
+    USER_INPUT_RECEIVED,
+
+    /** Audio chunk for TTS (text-to-speech). */
+    AUDIO_CHUNK
 }
