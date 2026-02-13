@@ -85,7 +85,7 @@
         <milvus.version>2.6.13</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
         <elasticsearch.version>9.3.0</elasticsearch.version>
-        <postgresql.version>42.7.9</postgresql.version>
+        <postgresql.version>42.7.10</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
