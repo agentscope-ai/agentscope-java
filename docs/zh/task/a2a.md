@@ -290,6 +290,147 @@ agent.interrupt(Msg.builder()
     .build());
 ```
 
+## 基于Apache RocketMQ实现高可靠的异步通信
+注: Apache RocketMQ 需支持轻量级消费模型LiteTopic的开源版本或商业版本(开源版本预计将在1月发布，敬请期待)
+
+### 客户端配置Apache RocketMQ作为通信通道
+
+```xml
+<!--在pom.xml 中添加依赖-->
+<dependency>
+    <groupId>org.apache.rocketmq</groupId>
+    <artifactId>rocketmq-a2a</artifactId>
+    <version>${RELEASE.VERSION}</version>
+</dependency>
+```
+客户端使用Apache RocketMQ 构建A2aAgent
+
+```java
+//构建RocketMQTransportConfig对象用于配置RocketMQTransport
+RocketMQTransportConfig rocketMQTransportConfig = new RocketMQTransportConfig();
+//配置Apache RocketMQ账号
+rocketMQTransportConfig.setAccessKey(accessKey);
+//配置Apache RocketMQ密码
+rocketMQTransportConfig.setSecretKey(secretKey);
+//配置接收响应结果的轻量级LiteTopic
+rocketMQTransportConfig.setWorkAgentResponseTopic(workAgentResponseTopic);
+//配置订阅轻量级LiteTopic的消费者CID
+rocketMQTransportConfig.setWorkAgentResponseGroupID(workAgentResponseGroupID);
+//配置Apache RocketMQ的命名空间
+rocketMQTransportConfig.setRocketMQNamespace(rocketMQNamespace);
+rocketMQTransportConfig.setHttpClient(new JdkA2AHttpClient());
+//使用RocketMQTransport和rocketMQTransportConfig 构建A2aAgentConfig
+A2aAgentConfig a2aAgentConfig = new A2aAgentConfigBuilder().withTransport(RocketMQTransport.class, rocketMQTransportConfig).build();
+//解析对应的Agent服务构建A2aAgent
+A2aAgent agent = A2aAgent.builder().a2aAgentConfig(a2aAgentConfig).name(AGENT_NAME).agentCardResolver(WellKnownAgentCardResolver.builder().baseUrl("http://127.0.0.1:10001").build()).build();
+```
+| 参数                            | 类型     | 描述                | 是否必填 |
+|-------------------------------|--------|-------------------|------|
+| `accessKey`                | String | Apache RocketMQ账号 | 否    |
+| `secretKey`                | String | Apache RocketMQ密码 | 否    |
+| `workAgentResponseTopic` | String | 轻量级LiteTopic      | 是    |
+| `workAgentResponseGroupID` | String | 轻量级消费者CID         | 是    |
+| `rocketMQNamespace` | String | Apache RocketMQ命名空间 | 否    |
+
+### 服务端对外开放基于Apache RocketMQ通信协议的Agent服务
+构建Apache RocketMQ通信协议的URL
+
+```java
+private static String buildRocketMQUrl(String rocketMQEndpoint, String rocketMQNamespace, String bizTopic) {
+    if (StringUtils.isEmpty(rocketMQEndpoint) || StringUtils.isEmpty(bizTopic)) {
+        throw new IllegalArgumentException(
+            "Invalid parameters for building RocketMQ URL: 'rocketMQEndpoint' and 'bizTopic' must not be empty. Please check your RocketMQ configuration."
+        );
+    }
+    return "http://" + rocketMQEndpoint + "/" + rocketMQNamespace + "/" + bizTopic;
+}
+```
+
+| 参数                  | 类型     | 描述                   | 是否必填 |
+|---------------------|--------|----------------------|------|
+| `rocketMQEndpoint`  | String | Apache RocketMQ服务接入点 | 是    |
+| `rocketMQNamespace` | String | Apache RocketMQ命名空间  | 否    |
+| `bizTopic`          | String | 普通Topic              | 是    |
+
+服务端对外开放Agent服务
+
+```java
+//对外开放基于Apache RocketMQ通信的AgentCard服务
+AgentInterface agentInterface = new AgentInterface(RocketMQA2AConstant.ROCKETMQ_PROTOCOL, buildRocketMQUrl());
+ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
+    .url(buildRocketMQUrl())
+    .preferredTransport(RocketMQA2AConstant.ROCKETMQ_PROTOCOL)
+    .additionalInterfaces(List.of(agentInterface))
+    .description("基于Apache RocketMQ进行高可靠异步通信的智能助手")
+    .build();
+//配置DASHSCOPE_API_KEY以调用LLM服务
+AgentApp agentApp = new AgentApp(agent(agentBuilder(dashScopeChatModel(DASHSCOPE_API_KEY))));
+agentApp.deployManager(LocalDeployManager.builder()
+    .protocolConfigs(List.of(new A2aProtocolConfig(agentCard, 60, 10)))
+    .port(10001)
+    .build());
+```
+
+```java
+//构建DashScopeChatModel 用于调用LLM服务
+public static DashScopeChatModel dashScopeChatModel(String dashScopeApiKey) {
+    if (StringUtils.isEmpty(dashScopeApiKey)) {
+        throw new IllegalArgumentException(
+            "DashScope API key is empty. Please set the environment variable `AI_DASHSCOPE_API_KEY`."
+        );
+    }
+    return DashScopeChatModel.builder()
+        .apiKey(dashScopeApiKey)
+        .modelName("qwen-max")
+        .stream(true)
+        .enableThinking(true)
+        .build();
+}
+```
+```java
+//构建ReActAgent.Builder
+public static ReActAgent.Builder agentBuilder(DashScopeChatModel model) {
+    return ReActAgent.builder().model(model).name(AGENT_NAME).sysPrompt("你是一个基于 RocketMQTransport 实现的 A2A（Agent-to-Agent，智能体间）协议的示例。你可以根据自身内置知识回答简单问题。");
+}
+```
+```java
+//构建AgentScopeAgentHandler
+public static AgentScopeAgentHandler agent(ReActAssistant.Builder builder) {
+    return new AgentScopeAgentHandler() {
+        @Override
+        public boolean isHealthy() {
+            return true;
+        }
+        @Override
+        public Flux<?> streamQuery(AgentRequest request, Object messages) {
+            ReActAgent agent = builder.build();
+            StreamOptions streamOptions = StreamOptions.builder()
+                .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                .incremental(true)
+                .build();
+
+            if (messages instanceof List<?>) {
+                return agent.stream((List<Msg>) messages, streamOptions);
+            } else if (messages instanceof Msg) {
+                return agent.stream((Msg) messages, streamOptions);
+            } else {
+                Msg msg = Msg.builder().role(MsgRole.USER).build();
+                return agent.stream(msg, streamOptions);
+            }
+        }
+
+        @Override
+        public String getName() {
+            return builder.build().getName();
+        }
+
+        @Override
+        public String getDescription() {
+            return builder.build().getDescription();
+        }
+    };
+}
+```
 ---
 
 ## 更多资源
@@ -300,3 +441,6 @@ agent.interrupt(Msg.builder()
 - **Nacos Java SDK** : https://nacos.io/docs/latest/manual/user/java-sdk/usage
 - **Nacos Java SDK 更多配置参数** : https://nacos.io/docs/latest/manual/user/java-sdk/properties
 - **Nacos 社区** : https://github.com/alibaba/nacos
+- **基于Apache RocketMQ 实现高可靠异步通信的AgentScope智能体应用演示案例** : https://github.com/agentscope-ai/agentscope-runtime-java/tree/main/examples/simple_agent_use_rocketmq_example
+- **Apache RocketMQ 社区** : https://github.com/apache/rocketmq
+- **Apache RocketMQ A2A异步通信组件** : https://github.com/apache/rocketmq-a2a
