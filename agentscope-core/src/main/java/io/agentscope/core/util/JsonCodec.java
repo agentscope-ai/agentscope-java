@@ -17,6 +17,7 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import java.lang.reflect.Type;
 
 /**
  * Interface for JSON serialization and deserialization operations.
@@ -110,4 +111,24 @@ public interface JsonCodec {
      * @throws JsonException if conversion fails
      */
     <T> T convertValue(Object from, TypeReference<T> toTypeRef);
+
+    /**
+     * Convert an object to another type using Java reflection Type.
+     *
+     * <p>This method preserves generic type information from parameterized types
+     * such as {@code List<MyClass>} or {@code Map<String, MyClass>}.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * // For a method parameter declared as List<OrderItem>
+     * Type paramType = parameter.getParameterizedType();
+     * List<OrderItem> items = (List<OrderItem>) codec.convertValue(value, paramType);
+     * }</pre>
+     *
+     * @param from the source object
+     * @param toType the target type (can be Class, ParameterizedType, etc.)
+     * @return converted object
+     * @throws JsonException if conversion fails
+     */
+    Object convertValue(Object from, Type toType);
 }
