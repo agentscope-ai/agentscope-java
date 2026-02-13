@@ -25,6 +25,8 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.ElicitRequest;
+import io.modelcontextprotocol.spec.McpSchema.ElicitResult;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -37,6 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
@@ -45,33 +48,33 @@ import reactor.core.publisher.Mono;
  *
  * <p>Supports three transport types:
  * <ul>
- *   <li>StdIO - for local process communication</li>
- *   <li>SSE - for HTTP Server-Sent Events (stateful)</li>
- *   <li>StreamableHTTP - for HTTP streaming (stateless)</li>
+ * <li>StdIO - for local process communication</li>
+ * <li>SSE - for HTTP Server-Sent Events (stateful)</li>
+ * <li>StreamableHTTP - for HTTP streaming (stateless)</li>
  * </ul>
  *
  * <p>Example usage:
  * <pre>{@code
  * // StdIO transport
  * McpClientWrapper client = McpClientBuilder.create("git-mcp")
- *     .stdioTransport("python", "-m", "mcp_server_git")
- *     .buildAsync()
- *     .block();
+ *         .stdioTransport("python", "-m", "mcp_server_git")
+ *         .buildAsync()
+ *         .block();
  *
  * // SSE transport with headers and query parameters
  * McpClientWrapper client = McpClientBuilder.create("remote-mcp")
- *     .sseTransport("https://mcp.example.com/sse")
- *     .header("Authorization", "Bearer " + token)
- *     .queryParam("queryKey", "queryValue")
- *     .timeout(Duration.ofSeconds(60))
- *     .buildAsync()
- *     .block();
+ *         .sseTransport("https://mcp.example.com/sse")
+ *         .header("Authorization", "Bearer " + token)
+ *         .queryParam("queryKey", "queryValue")
+ *         .timeout(Duration.ofSeconds(60))
+ *         .buildAsync()
+ *         .block();
  *
  * // HTTP transport with multiple query parameters
  * McpClientWrapper client = McpClientBuilder.create("http-mcp")
- *     .streamableHttpTransport("https://mcp.example.com/http")
- *     .queryParams(Map.of("token", "abc123", "env", "prod"))
- *     .buildSync();
+ *         .streamableHttpTransport("https://mcp.example.com/http")
+ *         .queryParams(Map.of("token", "abc123", "env", "prod"))
+ *         .buildSync();
  * }</pre>
  */
 public class McpClientBuilder {
@@ -83,6 +86,8 @@ public class McpClientBuilder {
     private TransportConfig transportConfig;
     private Duration requestTimeout = DEFAULT_REQUEST_TIMEOUT;
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
+    private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
+    private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -105,7 +110,7 @@ public class McpClientBuilder {
      * Configures StdIO transport for local process communication.
      *
      * @param command the executable command
-     * @param args command arguments
+     * @param args    command arguments
      * @return this builder
      */
     public McpClientBuilder stdioTransport(String command, String... args) {
@@ -117,8 +122,8 @@ public class McpClientBuilder {
      * Configures StdIO transport with environment variables.
      *
      * @param command the executable command
-     * @param args command arguments list
-     * @param env environment variables
+     * @param args    command arguments list
+     * @param env     environment variables
      * @return this builder
      */
     public McpClientBuilder stdioTransport(
@@ -145,11 +150,11 @@ public class McpClientBuilder {
      * <p>Example usage for HTTP/2:
      * <pre>{@code
      * McpClientWrapper client = McpClientBuilder.create("mcp")
-     *     .sseTransport("https://example.com/sse")
+     *         .sseTransport("https://example.com/sse")
      *     .customizeSseClient(clientBuilder ->
      *         clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
-     *     .buildAsync()
-     *     .block();
+     *         .buildAsync()
+     *         .block();
      * }</pre>
      *
      * @param customizer consumer to customize the HttpClient.Builder
@@ -174,17 +179,21 @@ public class McpClientBuilder {
     }
 
     /**
-     * Customizes the HTTP client for StreamableHTTP transport (only applicable after calling streamableHttpTransport).
-     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts, SSL settings, etc.
+     * Customizes the HTTP client for StreamableHTTP transport (only applicable
+     * after calling streamableHttpTransport).
+     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts,
+     * SSL settings, etc.
      *
-     * <p>Example usage for HTTP/2:
+     * <p>
+     * Example usage for HTTP/2:
+     *
      * <pre>{@code
      * McpClientWrapper client = McpClientBuilder.create("mcp")
-     *     .streamableHttpTransport("https://example.com/http")
-     *     .customizeStreamableHttpClient(clientBuilder ->
-     *         clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
-     *     .buildAsync()
-     *     .block();
+     *         .streamableHttpTransport("https://example.com/http")
+     *         .customizeStreamableHttpClient(
+     *                 clientBuilder -> clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
+     *         .buildAsync()
+     *         .block();
      * }</pre>
      *
      * @param customizer consumer to customize the HttpClient.Builder
@@ -200,7 +209,7 @@ public class McpClientBuilder {
     /**
      * Adds an HTTP header (only applicable for HTTP transports).
      *
-     * @param key header name
+     * @param key   header name
      * @param value header value
      * @return this builder
      */
@@ -227,11 +236,12 @@ public class McpClientBuilder {
     /**
      * Adds a query parameter to the URL (only applicable for HTTP transports).
      *
-     * <p>Query parameters added via this method will be merged with any existing
+     * <p>
+     * Query parameters added via this method will be merged with any existing
      * query parameters in the URL. If the same parameter key exists in both the URL
      * and the added parameters, the added parameter will take precedence.
      *
-     * @param key query parameter name
+     * @param key   query parameter name
      * @param value query parameter value
      * @return this builder
      */
@@ -245,7 +255,8 @@ public class McpClientBuilder {
     /**
      * Sets multiple query parameters (only applicable for HTTP transports).
      *
-     * <p>This method replaces any previously added query parameters.
+     * <p>
+     * This method replaces any previously added query parameters.
      * Query parameters in the original URL are still preserved and merged.
      *
      * @param queryParams map of query parameter name-value pairs
@@ -281,6 +292,79 @@ public class McpClientBuilder {
     }
 
     /**
+     * Registers an asynchronous elicitation handler for processing elicit requests
+     * from the server.
+     *
+     * <p>
+     * When an elicitation handler is registered, the client will automatically
+     * enable
+     * the elicitation capability in ClientCapabilities.
+     *
+     * <p>
+     * This method is for use with {@link #buildAsync()}. The handler returns a
+     * {@link Mono}
+     * for asynchronous processing.
+     *
+     * <p>
+     * Example usage:
+     *
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .stdioTransport("python", "-m", "mcp_server")
+     *     .asyncElicitation(request -> {
+     *         // Handle elicitation request asynchronously
+     *         return Mono.just(ElicitResult.builder()...build());
+     *     })
+     *     .buildAsync()
+     *     .block();
+     * }
+     * </pre>
+     *
+     * @param handler function to handle elicit requests asynchronously
+     * @return this builder
+     */
+    public McpClientBuilder asyncElicitation(Function<ElicitRequest, Mono<ElicitResult>> handler) {
+        this.asyncElicitationHandler = handler;
+        return this;
+    }
+
+    /**
+     * Registers a synchronous elicitation handler for processing elicit requests
+     * from the server.
+     *
+     * <p>
+     * When an elicitation handler is registered, the client will automatically
+     * enable
+     * the elicitation capability in ClientCapabilities.
+     *
+     * <p>
+     * This method is for use with {@link #buildSync()}. The handler returns an
+     * {@link ElicitResult}
+     * directly for synchronous processing.
+     *
+     * <p>
+     * Example usage:
+     *
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .stdioTransport("python", "-m", "mcp_server")
+     *     .syncElicitation(request -> {
+     *         // Handle elicitation request synchronously
+     *         return ElicitResult.builder()...build();
+     *     })
+     *     .buildSync();
+     * }
+     * </pre>
+     *
+     * @param handler function to handle elicit requests synchronously
+     * @return this builder
+     */
+    public McpClientBuilder syncElicitation(Function<ElicitRequest, ElicitResult> handler) {
+        this.syncElicitationHandler = handler;
+        return this;
+    }
+
+    /**
      * Builds an asynchronous MCP client wrapper.
      *
      * @return Mono emitting the async client wrapper
@@ -296,18 +380,25 @@ public class McpClientBuilder {
 
                     McpSchema.Implementation clientInfo =
                             new McpSchema.Implementation(
-                                    "agentscope-java", "AgentScope Java Framework", "1.0.10-SNAPSHOT");
+                                    "agentscope-java",
+                                    "AgentScope Java Framework",
+                                    "1.0.10-SNAPSHOT");
 
                     McpSchema.ClientCapabilities clientCapabilities =
-                            McpSchema.ClientCapabilities.builder().build();
+                            buildCapabilities(asyncElicitationHandler != null);
 
-                    McpAsyncClient mcpClient =
+                    var clientBuilder =
                             McpClient.async(transport)
                                     .requestTimeout(requestTimeout)
                                     .initializationTimeout(initializationTimeout)
                                     .clientInfo(clientInfo)
-                                    .capabilities(clientCapabilities)
-                                    .build();
+                                    .capabilities(clientCapabilities);
+
+                    if (asyncElicitationHandler != null) {
+                        clientBuilder = clientBuilder.elicitation(asyncElicitationHandler);
+                    }
+
+                    McpAsyncClient mcpClient = clientBuilder.build();
 
                     return new McpAsyncClientWrapper(name, mcpClient);
                 });
@@ -330,17 +421,36 @@ public class McpClientBuilder {
                         "agentscope-java", "AgentScope Java Framework", "1.0.10-SNAPSHOT");
 
         McpSchema.ClientCapabilities clientCapabilities =
-                McpSchema.ClientCapabilities.builder().build();
+                buildCapabilities(syncElicitationHandler != null);
 
-        McpSyncClient mcpClient =
+        var clientBuilder =
                 McpClient.sync(transport)
                         .requestTimeout(requestTimeout)
                         .initializationTimeout(initializationTimeout)
                         .clientInfo(clientInfo)
-                        .capabilities(clientCapabilities)
-                        .build();
+                        .capabilities(clientCapabilities);
+
+        if (syncElicitationHandler != null) {
+            clientBuilder = clientBuilder.elicitation(syncElicitationHandler);
+        }
+
+        McpSyncClient mcpClient = clientBuilder.build();
 
         return new McpSyncClientWrapper(name, mcpClient);
+    }
+
+    /**
+     * Builds client capabilities
+     * @param withElicitation whether to include elicitation capability
+     * @return client capabilities
+     */
+    private McpSchema.ClientCapabilities buildCapabilities(boolean withElicitation) {
+        McpSchema.ClientCapabilities.Builder capabilitiesBuilder =
+                McpSchema.ClientCapabilities.builder();
+        if (withElicitation) {
+            capabilitiesBuilder.elicitation();
+        }
+        return capabilitiesBuilder.build();
     }
 
     // ==================== Internal Transport Configuration Classes ====================
@@ -416,8 +526,10 @@ public class McpClientBuilder {
         }
 
         /**
-         * Extracts the endpoint path from URL, merging with additional query parameters.
-         * Query parameters from the original URL are merged with additionally configured parameters.
+         * Extracts the endpoint path from URL, merging with additional query
+         * parameters.
+         * Query parameters from the original URL are merged with additionally
+         * configured parameters.
          * Additional parameters take precedence over URL parameters with the same key.
          *
          * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
