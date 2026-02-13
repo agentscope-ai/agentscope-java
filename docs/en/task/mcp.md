@@ -239,6 +239,45 @@ McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
         .buildSync();
 ```
 
+### elicitation 支持
+
+The elicitation feature in MCP enables interactive information collection during the invocation of MCP server-side tools.
+
+Asynchronous client example
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-async")
+.stdioTransport("python", "-m", "mcp_server")
+.asyncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 返回 Mono<ElicitResult>
+        return Mono.just(
+            ElicitResult.builder()
+                .action(ElicitResult.Action.ACCEPT)
+                .data(Map.of("response", "user input"))
+                .build()
+        );
+    })
+    .buildAsync()
+    .block();
+```
+
+Synchronous client example
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-sync")
+.stdioTransport("python", "-m", "mcp_server")
+.syncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 直接返回 ElicitResult
+        return ElicitResult.builder()
+            .action(ElicitResult.Action.ACCEPT)
+            .data(Map.of("response", "user input"))
+            .build();
+    })
+    .buildSync();
+```
+
 ## Managing MCP Clients
 
 ### List Tools from MCP Server
