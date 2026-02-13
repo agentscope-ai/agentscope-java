@@ -384,7 +384,8 @@ public class McpClientBuilder {
                                     "AgentScope Java Framework",
                                     "1.0.10-SNAPSHOT");
 
-                    McpSchema.ClientCapabilities clientCapabilities = buildCapabilities(asyncElicitationHandler != null);
+                    McpSchema.ClientCapabilities clientCapabilities =
+                            buildCapabilities(asyncElicitationHandler != null);
 
                     var clientBuilder =
                             McpClient.async(transport)
@@ -419,7 +420,8 @@ public class McpClientBuilder {
                 new McpSchema.Implementation(
                         "agentscope-java", "AgentScope Java Framework", "1.0.10-SNAPSHOT");
 
-        McpSchema.ClientCapabilities clientCapabilities = buildCapabilities(syncElicitationHandler != null);
+        McpSchema.ClientCapabilities clientCapabilities =
+                buildCapabilities(syncElicitationHandler != null);
 
         var clientBuilder =
                 McpClient.sync(transport)
