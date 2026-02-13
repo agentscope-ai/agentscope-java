@@ -15,12 +15,17 @@
  */
 package io.agentscope.core.agui.processor;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
+import io.agentscope.core.agui.converter.AguiToolConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.model.ToolMergeMode;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -56,9 +61,11 @@ import reactor.core.publisher.Flux;
 public class AguiRequestProcessor {
 
     private static final Logger logger = LoggerFactory.getLogger(AguiRequestProcessor.class);
+    private static final String TOOL_GROUP_NAME = "agui_tools_group";
 
     private final AgentResolver agentResolver;
     private final AguiAdapterConfig config;
+    private final AguiToolConverter toolConverter = new AguiToolConverter();
 
     private AguiRequestProcessor(Builder builder) {
         this.agentResolver =
@@ -102,11 +109,75 @@ public class AguiRequestProcessor {
             effectiveInput = extractLatestUserMessage(input);
         }
 
+        // Merge tools for agent
+        mergeToolsForAgent(agent, input);
+
         // Create adapter and run
         AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
         Flux<AguiEvent> events = adapter.run(effectiveInput);
 
         return new ProcessResult(agent, events);
+    }
+
+    /**
+     * Merges frontend tools into the agent's toolkit based on configuration.
+     *
+     * <p>This method handles tool merging according to the configured
+     * {@link AguiAdapterConfig#getToolMergeMode()}:
+     * <ol>
+     *   <li><b>AGENT_ONLY</b>: Keep agent's existing tools, ignore frontend tools</li>
+     *   <li><b>FRONTEND_ONLY</b>: Replace all agent tools with frontend tools</li>
+     *   <li><b>MERGE_FRONTEND_PRIORITY</b>: Merge both, frontend tools take precedence on conflicts</li>
+     * </ol>
+     *
+     * <p>Note: Only {@link ReActAgent} instances are affected; other agent types are ignored.
+     *
+     * @param agent the agent to configure tools for
+     * @param input the request input containing frontend tool schemas
+     */
+    private void mergeToolsForAgent(Agent agent, RunAgentInput input) {
+        if (!(agent instanceof ReActAgent reActAgent)) {
+            return;
+        }
+
+        Toolkit toolkit = reActAgent.getToolkit();
+        List<ToolSchema> toolSchemas = toolConverter.toToolSchemaList(input.getTools());
+
+        // ignore frontend tools
+        if (ToolMergeMode.AGENT_ONLY == config.getToolMergeMode()) {
+            return;
+        }
+
+        switch (config.getToolMergeMode()) {
+            case FRONTEND_ONLY -> {
+
+                // remove all tool
+                toolkit.removeToolGroups(toolkit.getActiveGroups());
+                toolkit.getToolNames().forEach(toolkit::removeTool);
+                if (toolSchemas.isEmpty()) {
+                    return;
+                }
+
+                bindToolGroup(toolkit, toolSchemas);
+            }
+            case MERGE_FRONTEND_PRIORITY -> {
+                bindToolGroup(toolkit, toolSchemas);
+            }
+        }
+    }
+
+    private void bindToolGroup(Toolkit toolkit, List<ToolSchema> toolSchemas) {
+
+        if (toolkit.getToolGroup(TOOL_GROUP_NAME) == null) {
+            toolkit.createToolGroup(TOOL_GROUP_NAME, "Tools for AG-UI", true);
+        }
+
+        if (!toolSchemas.isEmpty()) {
+            toolkit.registerSchemas(toolSchemas);
+            for (ToolSchema toolSchema : toolSchemas) {
+                toolkit.addToolToGroup(TOOL_GROUP_NAME, toolSchema.getName());
+            }
+        }
     }
 
     /**
@@ -177,7 +248,7 @@ public class AguiRequestProcessor {
         AguiMessage lastUserMessage = null;
         for (int i = messages.size() - 1; i >= 0; i--) {
             AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
+            if ("user".equalsIgnoreCase(msg.getRole()) || "tool".equalsIgnoreCase(msg.getRole())) {
                 lastUserMessage = msg;
                 break;
             }
