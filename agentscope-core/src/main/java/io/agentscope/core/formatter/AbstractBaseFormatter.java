@@ -148,6 +148,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             case ASSISTANT -> "Assistant";
             case SYSTEM -> "System";
             case TOOL -> "Tool";
+            case CONTROL -> "Control";
         };
     }
 

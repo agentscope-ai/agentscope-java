@@ -218,6 +218,9 @@ public class Mem0LongTermMemory implements LongTermMemory {
                 switch (msg.getRole()) {
                     case USER, SYSTEM -> "user";
                     case ASSISTANT, TOOL -> "assistant";
+                    case CONTROL ->
+                            throw new IllegalArgumentException(
+                                    "Control messages cannot be stored in long-term memory");
                 };
 
         return Mem0Message.builder().role(role).content(msg.getTextContent()).build();
