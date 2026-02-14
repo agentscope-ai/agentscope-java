@@ -148,8 +148,9 @@ class ToolExecutor {
             String errorMsg =
                     String.format(
                             "Parameter validation failed for tool '%s': %s\n"
+                                    + "Actual content: %s\n"
                                     + "Please correct the parameters and try again.",
-                            toolCall.getName(), validationError);
+                            toolCall.getName(), validationError, toolCall.getContent());
             logger.debug(errorMsg);
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
