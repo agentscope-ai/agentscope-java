@@ -25,6 +25,8 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import reactor.core.publisher.Mono;
+
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -38,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import reactor.core.publisher.Mono;
 
 /**
  * Builder for creating MCP client wrappers with fluent configuration.
@@ -296,7 +297,9 @@ public class McpClientBuilder {
 
                     McpSchema.Implementation clientInfo =
                             new McpSchema.Implementation(
-                                    "agentscope-java", "AgentScope Java Framework", "1.0.10-SNAPSHOT");
+                                    "agentscope-java",
+                                    "AgentScope Java Framework",
+                                    "1.0.10-SNAPSHOT");
 
                     McpSchema.ClientCapabilities clientCapabilities =
                             McpSchema.ClientCapabilities.builder().build();
