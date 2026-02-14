@@ -27,10 +27,12 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.subagent.SubAgentContext;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -296,5 +298,108 @@ class HITLBasicE2ETest {
         System.out.println("Resume response: " + TestUtils.extractTextContent(resumeResponse));
 
         System.out.println("✓ Resume after pause test completed for " + provider.getProviderName());
+    }
+
+    @ParameterizedTest
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getToolProviders")
+    @DisplayName("Should handle HITL when ReactAgent uses SubAgent as tool")
+    void testReactAgentWithSubAgentToolHITL(ModelProvider provider) {
+        assumeTrue(
+                provider.supportsToolCalling(),
+                "Skipping: " + provider.getProviderName() + " does not support tool calling");
+
+        System.out.println(
+                "\n=== Test: ReactAgent with SubAgent Tool HITL with "
+                        + provider.getProviderName()
+                        + " ===");
+
+        // Create a sub-agent that will use sensitive tools
+        Toolkit subAgentToolkit = new Toolkit();
+        subAgentToolkit.registerTool(new SensitiveTools());
+
+        AtomicBoolean subAgentStopCalled = new AtomicBoolean(false);
+        AtomicBoolean subAgentShouldStop = new AtomicBoolean(true);
+        Hook confirmationHook = createConfirmationHook(subAgentStopCalled, subAgentShouldStop);
+
+        // Create main agent toolkit with SubAgent registered as a tool
+        Toolkit mainToolkit = new Toolkit();
+
+        // Register SubAgent as a tool with HITL enabled
+        mainToolkit
+                .registration()
+                .subAgent(
+                        () ->
+                                provider.createAgentBuilder("HelperAgent", subAgentToolkit)
+                                        .enableSubAgentHITL(false)
+                                        .hook(confirmationHook)
+                                        .sysPrompt(
+                                                "You are a helper agent that can perform file"
+                                                        + " operations.")
+                                        .build(),
+                        io.agentscope.core.tool.subagent.SubAgentConfig.builder()
+                                .toolName("call_helper")
+                                .description("Call the helper agent to perform tasks")
+                                .enableHITL(true)
+                                .build())
+                .apply();
+
+        // Create main agent
+        ReActAgent mainAgent =
+                provider.createAgentBuilder("MainAgent", mainToolkit)
+                        .sysPrompt("You are a coordinator agent that delegates tasks to helpers.")
+                        .enableSubAgentHITL(true)
+                        .build();
+
+        // Test 1: Main agent calls sub-agent, sub-agent triggers HITL
+        System.out.println("\n--- Phase 1: Main agent delegates to sub-agent ---");
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Please use the helper agent to delete the file 'important.txt'. Tell the"
+                                + " helper to use the delete_file tool directly.");
+
+        Msg response1 = mainAgent.call(input).block(TEST_TIMEOUT);
+        assertNotNull(response1, "Should receive response from main agent");
+
+        // Verify that sub-agent was called and triggered HITL
+        System.out.println("Main agent response reason: " + response1.getGenerateReason());
+
+        // Check if the response contains tool suspension
+        if (response1.getGenerateReason()
+                        == io.agentscope.core.message.GenerateReason.TOOL_SUSPENDED
+                || subAgentStopCalled.get()) {
+            System.out.println("✓ Sub-agent HITL triggered successfully");
+
+            // Verify response contains pending tool calls
+            List<ToolResultBlock> toolResults = response1.getContentBlocks(ToolResultBlock.class);
+            assertFalse(toolResults.isEmpty(), "Should have tool results when suspended");
+
+            System.out.println("Pending tool results: " + toolResults.size());
+            toolResults.forEach(
+                    t ->
+                            System.out.println(
+                                    "  - Tool: "
+                                            + t.getName()
+                                            + ", Reason: "
+                                            + SubAgentContext.getSubAgentGenerateReason(t)));
+
+            // Test 2: Resume after user confirmation
+            System.out.println("\n--- Phase 2: Resume after user confirmation ---");
+            subAgentShouldStop.set(false);
+
+            Msg response2 = mainAgent.call().block(TEST_TIMEOUT);
+            assertNotNull(response2, "Should receive resume response");
+
+            System.out.println("Resume response reason: " + response2.getGenerateReason());
+            assertTrue(
+                    ContentValidator.hasMeaningfulContent(response2),
+                    "Resume response should have meaningful content");
+
+            System.out.println("Resume response: " + TestUtils.extractTextContent(response2));
+        } else {
+            System.out.println(
+                    "Sub-agent did not trigger HITL (model may have handled differently)");
+            System.out.println("Resume response: " + TestUtils.extractTextContent(response1));
+        }
     }
 }
