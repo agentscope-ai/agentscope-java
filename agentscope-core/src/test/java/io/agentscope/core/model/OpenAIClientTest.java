@@ -882,4 +882,35 @@ class OpenAIClientTest {
                 recordedRequest.getPath().contains("/v4/chat/completions"),
                 "Stream path should contain custom endpoint path: " + recordedRequest.getPath());
     }
+
+    @Test
+    @DisplayName("Should throw OpenAIException when handle custom endpoint path in stream call")
+    void testThrowOpenAIExceptionWhenCustomEndpointPathInStreamCall() {
+        String sseResponse = "";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(sseResponse)
+                        .setResponseCode(301)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        // Use custom endpoint path for stream call
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        assertThrows(
+                OpenAIException.class,
+                () -> client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block());
+    }
 }
