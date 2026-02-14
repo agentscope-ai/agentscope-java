@@ -66,7 +66,7 @@ public class OpenAIException extends RuntimeException {
     public static OpenAIException create(
             Integer statusCode, String message, String errorCode, String responseBody) {
         if (null == statusCode) {
-            //When no status code is available, the default is 418
+            // When no status code is available, the default is 418
             statusCode = 418;
         }
         return switch (statusCode) {
