@@ -348,7 +348,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ChatResponse response = invokeParseStreamEvent(event, startTime);
 
         assertNotNull(response);
-        assertNull(response.getId());
+        assertNotNull(response.getId());
         assertTrue(response.getContent().isEmpty());
         assertNull(response.getUsage());
     }
