@@ -496,12 +496,17 @@ public class A2aAgentTest {
 
     private void assertTimeout(CompletableFuture<Void> future, final AtomicBoolean stopFlag) {
         try {
-            future.get(2, TimeUnit.SECONDS);
+            future.get(5, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             fail(
                     "interrupt operation should stop task running and stop agent running. But"
                             + " timeout");
-        } catch (InterruptedException | ExecutionException ignored) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupt operation verification was interrupted unexpectedly");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            fail("interrupt operation should finish without execution errors: " + cause, cause);
         } finally {
             // Force stop task
             stopFlag.set(true);
