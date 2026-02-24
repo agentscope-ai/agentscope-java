@@ -19,22 +19,30 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -63,6 +71,8 @@ import org.junit.jupiter.api.Test;
 class GeminiMessageConverterTest {
 
     private GeminiMessageConverter converter;
+
+    private static class DummySource extends Source {}
 
     @BeforeEach
     void setUp() {
@@ -1081,5 +1091,97 @@ class GeminiMessageConverterTest {
         assertFalse(result.get(0).getParts().isEmpty());
         assertNotNull(result.get(0).getParts().get(0).getFunctionCall());
         assertEquals("after tool", result.get(1).getParts().get(0).getText());
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content parses to null")
+    void testToolCallFallbackToInputMapWhenContentParsesToNull() {
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Shenzhen");
+        inputMap.put("unit", "celsius");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_null_json_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content("null")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
+        assertEquals("Shenzhen", part.getFunctionCall().getArgs().get("city"));
+        assertEquals("celsius", part.getFunctionCall().getArgs().get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should return unsupported source placeholder for unknown source type")
+    void testToolResultWithUnsupportedSourceType() {
+        ImageBlock imageBlock = ImageBlock.builder().source(new DummySource()).build();
+
+        String output = converter.convertToolResultToString(List.of(imageBlock));
+
+        assertEquals("[image - unsupported source type]", output);
+    }
+
+    @Test
+    @DisplayName("Should support base64 media type without slash extension")
+    void testToolResultWithBase64MediaTypeWithoutSlash() {
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
+        ImageBlock imageBlock =
+                ImageBlock.builder()
+                        .source(Base64Source.builder().mediaType("png").data(base64Data).build())
+                        .build();
+
+        String output = converter.convertToolResultToString(List.of(imageBlock));
+
+        assertTrue(output.contains(".png"));
+    }
+
+    @Test
+    @DisplayName("Should return false for hasFunction helper with null values")
+    void testHasFunctionHelperWithNullValues() throws Exception {
+        Method method =
+                GeminiMessageConverter.class.getDeclaredMethod("hasFunction", GeminiContent.class);
+        method.setAccessible(true);
+
+        assertEquals(false, method.invoke(converter, new Object[] {null}));
+        assertEquals(false, method.invoke(converter, new GeminiContent("user", null)));
+    }
+
+    @Test
+    @DisplayName("Should throw for extractSourceFromBlock with unsupported block type")
+    void testExtractSourceFromBlockUnsupportedType() throws Exception {
+        Method method =
+                GeminiMessageConverter.class.getDeclaredMethod(
+                        "extractSourceFromBlock", ContentBlock.class);
+        method.setAccessible(true);
+
+        try {
+            method.invoke(converter, TextBlock.builder().text("not media").build());
+        } catch (InvocationTargetException e) {
+            assertTrue(e.getCause() instanceof IllegalArgumentException);
+            assertTrue(e.getCause().getMessage().contains("Unsupported block type"));
+            return;
+        }
+        throw new AssertionError("Expected IllegalArgumentException");
+    }
+
+    @Test
+    @DisplayName("Should throw when mocked message returns null content block")
+    void testConvertMessageWithMockedNullContentBlockThrows() {
+        Msg mocked = mock(Msg.class);
+        when(mocked.getRole()).thenReturn(MsgRole.USER);
+        when(mocked.getContent()).thenReturn(Arrays.asList((ContentBlock) null));
+
+        assertThrows(NullPointerException.class, () -> converter.convertMessages(List.of(mocked)));
     }
 }

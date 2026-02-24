@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -98,5 +99,34 @@ class ThinkingBlockTest {
                         .build();
 
         assertTrue(block.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS));
+    }
+
+    @Test
+    void testJsonCreatorHandlesNullThinkingAsEmptyString() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ThinkingBlock block =
+                mapper.readValue(
+                        "{\"type\":\"thinking\",\"thinking\":null,\"metadata\":{\"k\":\"v\"}}",
+                        ThinkingBlock.class);
+
+        assertEquals("", block.getThinking());
+        assertNotNull(block.getMetadata());
+        assertEquals("v", block.getMetadata().get("k"));
+    }
+
+    @Test
+    void testSignatureConvenienceMethodUsesExistingMetadataMap() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("existing", "value");
+
+        ThinkingBlock block =
+                ThinkingBlock.builder()
+                        .thinking("t")
+                        .metadata(metadata)
+                        .signature("sig-existing")
+                        .build();
+
+        assertEquals("value", block.getMetadata().get("existing"));
+        assertEquals("sig-existing", block.getSignature());
     }
 }

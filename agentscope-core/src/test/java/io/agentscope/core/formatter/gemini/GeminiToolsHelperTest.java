@@ -18,6 +18,8 @@ package io.agentscope.core.formatter.gemini;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiTool;
 import io.agentscope.core.formatter.gemini.dto.GeminiTool.GeminiFunctionDeclaration;
@@ -203,6 +205,8 @@ class GeminiToolsHelperTest {
                 GeminiToolsHelper.class.getDeclaredMethod("unwrapResponseSchema", Map.class);
         method.setAccessible(true);
 
+        assertNull(method.invoke(helper, new Object[] {null}));
+
         Map<String, Object> wrapped =
                 Map.of(
                         "type",
@@ -241,5 +245,56 @@ class GeminiToolsHelperTest {
         Map<String, Object> unchangedProps = (Map<String, Object>) unchanged.get("properties");
         assertNotNull(unchangedProps.get("x"));
         assertNotNull(unchangedProps.get("y"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> nonMapProperties =
+                (Map<String, Object>)
+                        method.invoke(helper, Map.of("type", "object", "properties", "not-a-map"));
+        assertEquals("not-a-map", nonMapProperties.get("properties"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> responseNotMap =
+                (Map<String, Object>)
+                        method.invoke(
+                                helper,
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("response", "plain-text")));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> responseNotMapProps =
+                (Map<String, Object>) responseNotMap.get("properties");
+        assertEquals("plain-text", responseNotMapProps.get("response"));
+    }
+
+    @Test
+    void testConvertToolWithSelfReferenceSchemaStillReturnsTool() {
+        Map<String, Object> recursive = new HashMap<>();
+        recursive.put("type", "object");
+        recursive.put("properties", recursive);
+
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("recursive_tool")
+                        .description("schema with self reference")
+                        .parameters(recursive)
+                        .build();
+
+        GeminiTool converted = helper.convertToGeminiTool(List.of(tool));
+        assertNotNull(converted);
+        assertEquals(1, converted.getFunctionDeclarations().size());
+        assertNotNull(converted.getFunctionDeclarations().get(0).getParameters());
+    }
+
+    @Test
+    void testConvertToolSchemaExceptionReturnsNullWhenAllFail() {
+        ToolSchema broken = mock(ToolSchema.class);
+        when(broken.getName()).thenReturn("broken_tool");
+        when(broken.getDescription()).thenReturn("broken");
+        when(broken.getParameters()).thenThrow(new RuntimeException("boom"));
+
+        GeminiTool converted = helper.convertToGeminiTool(List.of(broken));
+        assertNull(converted);
     }
 }

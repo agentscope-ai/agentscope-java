@@ -28,10 +28,12 @@ import io.agentscope.core.formatter.gemini.dto.GeminiResponse.GeminiCandidate;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -238,5 +240,53 @@ class GeminiMultiAgentFormatterTest {
         GeminiRequest requestWithoutSystem = new GeminiRequest();
         formatter.applySystemInstruction(requestWithoutSystem, List.of(user));
         assertNull(requestWithoutSystem.getSystemInstruction());
+    }
+
+    @Test
+    void testApplySystemInstructionWithNullAndEmptyMessages() {
+        GeminiRequest requestWithNull = new GeminiRequest();
+        formatter.applySystemInstruction(requestWithNull, null);
+        assertNull(requestWithNull.getSystemInstruction());
+
+        GeminiRequest requestWithEmpty = new GeminiRequest();
+        formatter.applySystemInstruction(requestWithEmpty, List.of());
+        assertNull(requestWithEmpty.getSystemInstruction());
+    }
+
+    @Test
+    void testApplySystemInstructionWithNonConvertibleSystemMessage() {
+        Msg systemThinkingOnly =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(ThinkingBlock.builder().thinking("internal").build()))
+                        .build();
+
+        GeminiRequest request = new GeminiRequest();
+        formatter.applySystemInstruction(request, List.of(systemThinkingOnly));
+
+        assertNull(request.getSystemInstruction());
+    }
+
+    @Test
+    void testComputeStartIndexHelperBranches() throws Exception {
+        Method method =
+                GeminiMultiAgentFormatter.class.getDeclaredMethod("computeStartIndex", List.class);
+        method.setAccessible(true);
+
+        Msg system =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("sys").build()))
+                        .build();
+        Msg user =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("user").build()))
+                        .build();
+
+        assertEquals(0, method.invoke(formatter, new Object[] {null}));
+        assertEquals(0, method.invoke(formatter, List.of()));
+        assertEquals(1, method.invoke(formatter, List.of(system)));
+        assertEquals(0, method.invoke(formatter, List.of(user)));
     }
 }

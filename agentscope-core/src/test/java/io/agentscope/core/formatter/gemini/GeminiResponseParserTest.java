@@ -18,9 +18,12 @@ package io.agentscope.core.formatter.gemini;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
+import io.agentscope.core.formatter.FormatterException;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
@@ -535,5 +538,99 @@ class GeminiResponseParserTest {
         assertTrue(text.contains("Gemini returned no candidates"));
         assertTrue(text.contains("promptFeedback"));
         assertTrue(text.contains("SAFETY"));
+    }
+
+    @Test
+    void testParseResponseThrowsFormatterExceptionWhenPartsContainNull() {
+        List<GeminiPart> parts = new ArrayList<>();
+        parts.add(null);
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", parts));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        assertThrows(FormatterException.class, () -> parser.parseResponse(response, startTime));
+    }
+
+    @Test
+    void testParseUsageMetadataDefaultsPromptTokensToZeroWhenNull() {
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("ok");
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", List.of(textPart)));
+
+        GeminiUsageMetadata usageMetadata = new GeminiUsageMetadata();
+        usageMetadata.setPromptTokenCount(null);
+        usageMetadata.setCandidatesTokenCount(5);
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+        response.setUsageMetadata(usageMetadata);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(0, chatResponse.getUsage().getInputTokens());
+        assertEquals(5, chatResponse.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testSkipFunctionCallWhenNameIsNull() {
+        GeminiFunctionCall functionCall = new GeminiFunctionCall();
+        functionCall.setId("call-null-name");
+        functionCall.setName(null);
+        functionCall.setArgs(Map.of("k", "v"));
+
+        GeminiPart functionCallPart = new GeminiPart();
+        functionCallPart.setFunctionCall(functionCall);
+
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("text after null-name call");
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", List.of(functionCallPart, textPart)));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+        assertEquals(1, chatResponse.getContent().size());
+        assertInstanceOf(TextBlock.class, chatResponse.getContent().get(0));
+        assertEquals(
+                "text after null-name call",
+                ((TextBlock) chatResponse.getContent().get(0)).getText());
+    }
+
+    @Test
+    void testParseToolCallSerializationFailureKeepsToolBlock() {
+        Map<String, Object> cyclic = new HashMap<>();
+        cyclic.put("self", cyclic);
+
+        GeminiFunctionCall functionCall = new GeminiFunctionCall();
+        functionCall.setId("call-cyclic");
+        functionCall.setName("cyclic_tool");
+        functionCall.setArgs(cyclic);
+
+        List<ContentBlock> blocks = new ArrayList<>();
+        parser.parseToolCall(functionCall, "sig-cyclic", blocks);
+
+        assertEquals(1, blocks.size());
+        ToolUseBlock toolUse = (ToolUseBlock) blocks.get(0);
+        assertEquals("cyclic_tool", toolUse.getName());
+        assertNull(toolUse.getContent());
+        assertEquals(
+                "sig-cyclic", toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+    }
+
+    @Test
+    void testParseToolCallSwallowsExceptionWhenBlocksListIsNull() {
+        GeminiFunctionCall functionCall = new GeminiFunctionCall();
+        functionCall.setId("call-null-blocks");
+        functionCall.setName("tool");
+        functionCall.setArgs(Map.of("x", 1));
+
+        parser.parseToolCall(functionCall, null, null);
     }
 }
