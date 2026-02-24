@@ -16,7 +16,6 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -349,8 +348,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ChatResponse response = invokeParseStreamEvent(event, startTime);
 
         assertNotNull(response);
-        assertNotNull(response.getId()); // Builder auto-generates UUID when id is null
-        assertFalse(response.getId().isEmpty());
+        assertNull(response.getId());
         assertTrue(response.getContent().isEmpty());
         assertNull(response.getUsage());
     }
