@@ -1001,7 +1001,9 @@ class GeminiMessageConverterTest {
     @DisplayName("Should prefer metadata thought signature over preceding thinking signature")
     void testToolCallMetadataSignatureOverridesThinkingSignature() {
         ThinkingBlock thinking =
-                ThinkingBlock.builder().metadata(Map.of("thoughtSignature", "sig_from_thinking")).build();
+                ThinkingBlock.builder()
+                        .metadata(Map.of("thoughtSignature", "sig_from_thinking"))
+                        .build();
         ToolUseBlock toolUse =
                 ToolUseBlock.builder()
                         .id("call_meta_sig")
@@ -1045,7 +1047,8 @@ class GeminiMessageConverterTest {
         List<GeminiContent> result = converter.convertMessages(List.of(msg));
         GeminiPart part = result.get(0).getParts().get(0);
 
-        assertEquals(Base64.getEncoder().encodeToString(signatureBytes), part.getThoughtSignature());
+        assertEquals(
+                Base64.getEncoder().encodeToString(signatureBytes), part.getThoughtSignature());
     }
 
     @Test
@@ -1059,7 +1062,11 @@ class GeminiMessageConverterTest {
                         .build();
 
         Msg assistantToolMsg =
-                Msg.builder().name("assistant").role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(toolUse))
+                        .build();
         Msg assistantTextMsg =
                 Msg.builder()
                         .name("assistant")
@@ -1067,7 +1074,8 @@ class GeminiMessageConverterTest {
                         .content(List.of(TextBlock.builder().text("after tool").build()))
                         .build();
 
-        List<GeminiContent> result = converter.convertMessages(List.of(assistantToolMsg, assistantTextMsg));
+        List<GeminiContent> result =
+                converter.convertMessages(List.of(assistantToolMsg, assistantTextMsg));
 
         assertEquals(2, result.size());
         assertFalse(result.get(0).getParts().isEmpty());

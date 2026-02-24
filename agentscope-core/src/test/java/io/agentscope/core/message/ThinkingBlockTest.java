@@ -44,8 +44,7 @@ class ThinkingBlockTest {
 
     @Test
     void testSignatureConvenienceMethodSetsMetadata() {
-        ThinkingBlock block =
-                ThinkingBlock.builder().thinking("t").signature("sig-123").build();
+        ThinkingBlock block = ThinkingBlock.builder().thinking("t").signature("sig-123").build();
 
         assertNotNull(block.getMetadata());
         assertEquals("sig-123", block.getSignature());
@@ -92,10 +91,12 @@ class ThinkingBlockTest {
         ThinkingBlock block =
                 ThinkingBlock.builder()
                         .thinking("t")
-                        .metadata(Map.of(ThinkingBlock.METADATA_REASONING_DETAILS, "[{\"type\":\"text\"}]"))
+                        .metadata(
+                                Map.of(
+                                        ThinkingBlock.METADATA_REASONING_DETAILS,
+                                        "[{\"type\":\"text\"}]"))
                         .build();
 
         assertTrue(block.getMetadata().containsKey(ThinkingBlock.METADATA_REASONING_DETAILS));
     }
 }
-

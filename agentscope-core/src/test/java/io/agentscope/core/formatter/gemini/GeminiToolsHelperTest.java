@@ -200,8 +200,7 @@ class GeminiToolsHelperTest {
     @Test
     void testUnwrapResponseSchemaViaReflection() throws Exception {
         Method method =
-                GeminiToolsHelper.class.getDeclaredMethod(
-                        "unwrapResponseSchema", Map.class);
+                GeminiToolsHelper.class.getDeclaredMethod("unwrapResponseSchema", Map.class);
         method.setAccessible(true);
 
         Map<String, Object> wrapped =
@@ -233,7 +232,11 @@ class GeminiToolsHelperTest {
                                         "type",
                                         "object",
                                         "properties",
-                                        Map.of("x", Map.of("type", "string"), "y", Map.of("type", "string"))));
+                                        Map.of(
+                                                "x",
+                                                Map.of("type", "string"),
+                                                "y",
+                                                Map.of("type", "string"))));
         @SuppressWarnings("unchecked")
         Map<String, Object> unchangedProps = (Map<String, Object>) unchanged.get("properties");
         assertNotNull(unchangedProps.get("x"));

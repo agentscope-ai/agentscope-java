@@ -151,8 +151,7 @@ class GeminiMultiAgentFormatterTest {
     @Test
     void testApplyOptionsDelegatesToChatFormatter() {
         GeminiRequest request = new GeminiRequest();
-        GenerateOptions options =
-                GenerateOptions.builder().temperature(0.7).maxTokens(256).build();
+        GenerateOptions options = GenerateOptions.builder().temperature(0.7).maxTokens(256).build();
 
         formatter.applyOptions(request, options, null);
 

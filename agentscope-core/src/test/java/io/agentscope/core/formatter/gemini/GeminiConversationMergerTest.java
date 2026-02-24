@@ -67,7 +67,11 @@ class GeminiConversationMergerTest {
                                         ToolResultBlock.builder()
                                                 .id("call-1")
                                                 .name("search")
-                                                .output(List.of(TextBlock.builder().text("ok").build()))
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("ok")
+                                                                        .build()))
                                                 .build()))
                         .build();
 
@@ -131,8 +135,7 @@ class GeminiConversationMergerTest {
                         .build();
 
         GeminiContent merged =
-                merger.mergeToContent(
-                        List.of(msg), m -> "agent", blocks -> "", "# Prompt\n");
+                merger.mergeToContent(List.of(msg), m -> "agent", blocks -> "", "# Prompt\n");
 
         assertEquals(3, merged.getParts().size());
         assertTrue(merged.getParts().get(0).getText().startsWith("# Prompt\n<history>agent: Look"));
@@ -155,4 +158,3 @@ class GeminiConversationMergerTest {
         assertTrue(merged.getParts().isEmpty());
     }
 }
-
