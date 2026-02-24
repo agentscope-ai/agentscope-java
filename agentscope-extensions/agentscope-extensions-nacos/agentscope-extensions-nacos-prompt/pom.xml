@@ -21,19 +21,20 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-nacos</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-nacos</artifactId>
-    <name>AgentScope Java - Nacos</name>
-    <description>Nacos integration for AgentScope Java</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-nacos-prompt</artifactId>
+    <name>AgentScope Java - Nacos Prompt</name>
+    <description>AgentScope Java - Nacos prompt listener integration</description>
 
-    <modules>
-        <module>agentscope-extensions-nacos-a2a</module>
-        <module>agentscope-extensions-nacos-prompt</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
+    </dependencies>
 
 </project>
