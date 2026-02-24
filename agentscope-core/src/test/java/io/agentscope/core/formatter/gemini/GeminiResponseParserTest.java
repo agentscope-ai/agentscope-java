@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart;
 import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
@@ -419,5 +420,120 @@ class GeminiResponseParserTest {
         ContentBlock block2 = chatResponse.getContent().get(1);
         assertInstanceOf(TextBlock.class, block2);
         assertEquals("The answer is 42.", ((TextBlock) block2).getText());
+    }
+
+    @Test
+    void testParseReasoningTokensUsingReasoningKey() {
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("Response text");
+
+        GeminiContent content = new GeminiContent("model", List.of(textPart));
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(content);
+
+        GeminiUsageMetadata usageMetadata = new GeminiUsageMetadata();
+        usageMetadata.setPromptTokenCount(10);
+        usageMetadata.setCandidatesTokenCount(8);
+        usageMetadata.setTotalTokenCount(18);
+        usageMetadata.setCandidatesTokensDetails(
+                Map.of("modalityTokenCount", Map.of("reasoning", 3, "text", 5)));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+        response.setUsageMetadata(usageMetadata);
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getUsage());
+        assertEquals(3, chatResponse.getUsage().getReasoningTokens());
+    }
+
+    @Test
+    void testParsePartWithThoughtSignatureAndText() {
+        GeminiPart part = new GeminiPart();
+        part.setText("Visible text");
+        part.setThoughtSignature("sig-visible");
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", List.of(part)));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(2, chatResponse.getContent().size());
+        ThinkingBlock thinking = (ThinkingBlock) chatResponse.getContent().get(0);
+        assertEquals("", thinking.getThinking());
+        assertEquals(
+                "sig-visible",
+                thinking.getMetadata().get(GeminiResponseParser.METADATA_THOUGHT_SIGNATURE));
+        TextBlock text = (TextBlock) chatResponse.getContent().get(1);
+        assertEquals("Visible text", text.getText());
+    }
+
+    @Test
+    void testParseGenerateResponseFunctionCallWrapsResponseProperty() {
+        GeminiFunctionCall functionCall = new GeminiFunctionCall();
+        functionCall.setId("call-structured");
+        functionCall.setName(StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME);
+        functionCall.setArgs(Map.of("field", "value"));
+
+        GeminiPart functionCallPart = new GeminiPart();
+        functionCallPart.setFunctionCall(functionCall);
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", List.of(functionCallPart)));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> wrapped = (Map<String, Object>) toolUse.getInput().get("response");
+        assertNotNull(wrapped);
+        assertEquals("value", wrapped.get("field"));
+    }
+
+    @Test
+    void testSkipFunctionCallWhenNameEmpty() {
+        GeminiFunctionCall functionCall = new GeminiFunctionCall();
+        functionCall.setId("call-empty-name");
+        functionCall.setName("");
+        functionCall.setArgs(Map.of("k", "v"));
+
+        GeminiPart functionCallPart = new GeminiPart();
+        functionCallPart.setFunctionCall(functionCall);
+
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("fallback text");
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(new GeminiContent("model", List.of(functionCallPart, textPart)));
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertEquals(1, chatResponse.getContent().size());
+        assertInstanceOf(TextBlock.class, chatResponse.getContent().get(0));
+        assertEquals("fallback text", ((TextBlock) chatResponse.getContent().get(0)).getText());
+    }
+
+    @Test
+    void testNoCandidatesIncludesPromptFeedbackText() {
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of());
+        response.setPromptFeedback(Map.of("blockReason", "SAFETY"));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+        String text = ((TextBlock) chatResponse.getContent().get(0)).getText();
+
+        assertTrue(text.contains("Gemini returned no candidates"));
+        assertTrue(text.contains("promptFeedback"));
+        assertTrue(text.contains("SAFETY"));
     }
 }

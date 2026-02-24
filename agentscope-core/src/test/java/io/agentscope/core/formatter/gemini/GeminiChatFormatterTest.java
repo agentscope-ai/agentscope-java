@@ -31,6 +31,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -191,5 +192,78 @@ class GeminiChatFormatterTest {
         GeminiRequest requestWithoutSystem = new GeminiRequest();
         formatter.applySystemInstruction(requestWithoutSystem, List.of(userMsg));
         assertNull(requestWithoutSystem.getSystemInstruction());
+    }
+
+    @Test
+    void testFormatSkipsLeadingSystemMessage() {
+        Msg systemMsg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("system").build()))
+                        .build();
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("hello").build()))
+                        .build();
+
+        List<GeminiContent> contents = formatter.format(List.of(systemMsg, userMsg));
+        assertEquals(1, contents.size());
+        assertEquals("user", contents.get(0).getRole());
+        assertEquals("hello", contents.get(0).getParts().get(0).getText());
+    }
+
+    @Test
+    void testApplyOptionsUsesDefaultOptionsFallback() {
+        GeminiRequest request = new GeminiRequest();
+
+        GenerateOptions defaults =
+                GenerateOptions.builder().temperature(0.6).maxTokens(500).topP(0.8).build();
+
+        formatter.applyOptions(request, GenerateOptions.builder().build(), defaults);
+
+        assertNotNull(request.getGenerationConfig());
+        assertEquals(0.6, request.getGenerationConfig().getTemperature(), 0.001);
+        assertEquals(500, request.getGenerationConfig().getMaxOutputTokens());
+        assertEquals(0.8, request.getGenerationConfig().getTopP(), 0.001);
+    }
+
+    @Test
+    void testApplyOptionsWithNoOptionsDoesNotCreateGenerationConfig() {
+        GeminiRequest request = new GeminiRequest();
+
+        formatter.applyOptions(request, null, null);
+
+        assertNull(request.getGenerationConfig());
+    }
+
+    @Test
+    void testApplyOptionsForTopKSeedThinkingBudget() {
+        GeminiRequest request = new GeminiRequest();
+        GenerateOptions options =
+                GenerateOptions.builder().topK(12).seed(123L).thinkingBudget(200).build();
+
+        formatter.applyOptions(request, options, null);
+
+        assertNotNull(request.getGenerationConfig());
+        assertEquals(12.0, request.getGenerationConfig().getTopK(), 0.001);
+        assertEquals(123, request.getGenerationConfig().getSeed());
+        assertNotNull(request.getGenerationConfig().getThinkingConfig());
+        assertEquals(true, request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
+        assertEquals(200, request.getGenerationConfig().getThinkingConfig().getThinkingBudget());
+    }
+
+    @Test
+    void testApplyToolChoiceAutoKeepsToolConfigNull() {
+        GeminiRequest request = new GeminiRequest();
+        formatter.applyToolChoice(request, new ToolChoice.Auto());
+        assertNull(request.getToolConfig());
+    }
+
+    @Test
+    void testApplyToolsWithEmptyListDoesNothing() {
+        GeminiRequest request = new GeminiRequest();
+        formatter.applyTools(request, new ArrayList<>());
+        assertNull(request.getTools());
     }
 }

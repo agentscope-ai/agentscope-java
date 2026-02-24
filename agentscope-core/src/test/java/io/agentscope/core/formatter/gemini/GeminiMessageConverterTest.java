@@ -16,7 +16,9 @@
 package io.agentscope.core.formatter.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
@@ -940,5 +942,136 @@ class GeminiMessageConverterTest {
         Map<String, Object> args = part.getFunctionCall().getArgs();
         assertEquals("Tokyo", args.get("city"));
         assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should convert synthetic tool call to text part")
+    void testConvertSyntheticToolUseBlockToText() {
+        ToolUseBlock syntheticToolCall =
+                ToolUseBlock.builder()
+                        .id("call_syn")
+                        .name("generate_response")
+                        .input(Map.of("k", "v"))
+                        .metadata(Map.of("synthetic", true))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(syntheticToolCall))
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNull(part.getFunctionCall());
+        assertEquals("[Synthetic tool call: generate_response]", part.getText());
+    }
+
+    @Test
+    @DisplayName("Should carry thinking signature from ThinkingBlock to next tool call")
+    void testToolCallUsesPrecedingThinkingSignature() {
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().metadata(Map.of("thoughtSignature", "sig_pre")).build();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_pre_sig")
+                        .name("search")
+                        .input(Map.of("q", "hello"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(thinking, toolUse))
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
+        assertEquals("sig_pre", part.getThoughtSignature());
+    }
+
+    @Test
+    @DisplayName("Should prefer metadata thought signature over preceding thinking signature")
+    void testToolCallMetadataSignatureOverridesThinkingSignature() {
+        ThinkingBlock thinking =
+                ThinkingBlock.builder().metadata(Map.of("thoughtSignature", "sig_from_thinking")).build();
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_meta_sig")
+                        .name("search")
+                        .input(Map.of("q", "hello"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, "sig_from_tool"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(thinking, toolUse))
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertEquals("sig_from_tool", part.getThoughtSignature());
+    }
+
+    @Test
+    @DisplayName("Should convert byte array thought signature metadata to base64")
+    void testToolCallByteArrayThoughtSignature() {
+        byte[] signatureBytes = new byte[] {1, 2, 3, 4};
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_byte_sig")
+                        .name("search")
+                        .input(Map.of("q", "hello"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signatureBytes))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(toolUse))
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+        GeminiPart part = result.get(0).getParts().get(0);
+
+        assertEquals(Base64.getEncoder().encodeToString(signatureBytes), part.getThoughtSignature());
+    }
+
+    @Test
+    @DisplayName("Should not merge same-role contents when function call is present")
+    void testSameRoleNotMergedWhenFunctionExists() {
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_merge_guard")
+                        .name("search")
+                        .input(Map.of("q", "hello"))
+                        .build();
+
+        Msg assistantToolMsg =
+                Msg.builder().name("assistant").role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+        Msg assistantTextMsg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("after tool").build()))
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(assistantToolMsg, assistantTextMsg));
+
+        assertEquals(2, result.size());
+        assertFalse(result.get(0).getParts().isEmpty());
+        assertNotNull(result.get(0).getParts().get(0).getFunctionCall());
+        assertEquals("after tool", result.get(1).getParts().get(0).getText());
     }
 }

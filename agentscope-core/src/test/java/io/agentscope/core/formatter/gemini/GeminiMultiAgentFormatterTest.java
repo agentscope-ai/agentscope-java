@@ -21,11 +21,20 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse.GeminiCandidate;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.model.ToolSchema;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -110,6 +119,90 @@ class GeminiMultiAgentFormatterTest {
 
         assertNotNull(contents);
         assertTrue(contents.size() >= 1);
+    }
+
+    @Test
+    void testFormatWithNullMessages() {
+        List<GeminiContent> contents = formatter.format(null);
+        assertNotNull(contents);
+        assertEquals(0, contents.size());
+    }
+
+    @Test
+    void testCustomConversationHistoryPrompt() {
+        GeminiMultiAgentFormatter customFormatter =
+                new GeminiMultiAgentFormatter("CUSTOM_PROMPT\n");
+
+        Msg userMsg =
+                Msg.builder()
+                        .name("Alice")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        List<GeminiContent> contents = customFormatter.format(List.of(userMsg));
+
+        assertEquals(1, contents.size());
+        String text = contents.get(0).getParts().get(0).getText();
+        assertTrue(text.startsWith("CUSTOM_PROMPT\n<history>Alice: Hi"));
+        assertTrue(text.endsWith("</history>"));
+    }
+
+    @Test
+    void testApplyOptionsDelegatesToChatFormatter() {
+        GeminiRequest request = new GeminiRequest();
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.7).maxTokens(256).build();
+
+        formatter.applyOptions(request, options, null);
+
+        GeminiGenerationConfig config = request.getGenerationConfig();
+        assertNotNull(config);
+        assertEquals(0.7, config.getTemperature(), 0.001);
+        assertEquals(256, config.getMaxOutputTokens());
+    }
+
+    @Test
+    void testApplyToolsAndToolChoiceDelegation() {
+        GeminiRequest request = new GeminiRequest();
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("search tool")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("query", Map.of("type", "string"))))
+                        .build();
+
+        formatter.applyTools(request, List.of(schema));
+        formatter.applyToolChoice(request, new ToolChoice.Specific("search"));
+
+        assertNotNull(request.getTools());
+        assertEquals(1, request.getTools().size());
+        assertNotNull(request.getToolConfig());
+        assertEquals(
+                List.of("search"),
+                request.getToolConfig().getFunctionCallingConfig().getAllowedFunctionNames());
+    }
+
+    @Test
+    void testParseResponseDelegatesToResponseParser() {
+        GeminiResponse response = new GeminiResponse();
+        GeminiCandidate candidate = new GeminiCandidate();
+        io.agentscope.core.formatter.gemini.dto.GeminiPart part =
+                new io.agentscope.core.formatter.gemini.dto.GeminiPart();
+        part.setText("ok");
+        candidate.setContent(new GeminiContent("model", List.of(part)));
+        response.setCandidates(List.of(candidate));
+
+        ChatResponse parsed = formatter.parseResponse(response, Instant.now());
+
+        assertNotNull(parsed);
+        assertEquals(1, parsed.getContent().size());
+        assertEquals("ok", ((TextBlock) parsed.getContent().get(0)).getText());
     }
 
     @Test

@@ -25,6 +25,7 @@ import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig.GeminiFunctionCallingConfig;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -146,5 +147,96 @@ class GeminiToolsHelperTest {
         List<GeminiFunctionDeclaration> funcDecls = tool.getFunctionDeclarations();
         assertEquals("search", funcDecls.get(0).getName());
         assertEquals("calculate", funcDecls.get(1).getName());
+    }
+
+    @Test
+    void testConvertToolWithEmptyParametersOmitsParametersField() {
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("no_params")
+                        .description("Tool without params")
+                        .parameters(Map.of())
+                        .build();
+
+        GeminiTool converted = helper.convertToGeminiTool(List.of(tool));
+
+        assertNotNull(converted);
+        assertEquals(1, converted.getFunctionDeclarations().size());
+        assertNull(converted.getFunctionDeclarations().get(0).getParameters());
+    }
+
+    @Test
+    void testGenerateResponseSchemaKeepsResponseWrapper() {
+        Map<String, Object> wrappedSchema =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "response",
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("x", Map.of("type", "string")))),
+                        "required",
+                        List.of("response"));
+
+        ToolSchema tool =
+                ToolSchema.builder()
+                        .name("generate_response")
+                        .description("Structured output")
+                        .parameters(wrappedSchema)
+                        .build();
+
+        GeminiTool converted = helper.convertToGeminiTool(List.of(tool));
+        Map<String, Object> params = converted.getFunctionDeclarations().get(0).getParameters();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+        assertNotNull(properties);
+        assertNotNull(properties.get("response"));
+    }
+
+    @Test
+    void testUnwrapResponseSchemaViaReflection() throws Exception {
+        Method method =
+                GeminiToolsHelper.class.getDeclaredMethod(
+                        "unwrapResponseSchema", Map.class);
+        method.setAccessible(true);
+
+        Map<String, Object> wrapped =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "response",
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("k", Map.of("type", "string")))));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unwrapped = (Map<String, Object>) method.invoke(helper, wrapped);
+        assertEquals("object", unwrapped.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unwrappedProps = (Map<String, Object>) unwrapped.get("properties");
+        assertNotNull(unwrappedProps.get("k"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unchanged =
+                (Map<String, Object>)
+                        method.invoke(
+                                helper,
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("x", Map.of("type", "string"), "y", Map.of("type", "string"))));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unchangedProps = (Map<String, Object>) unchanged.get("properties");
+        assertNotNull(unchangedProps.get("x"));
+        assertNotNull(unchangedProps.get("y"));
     }
 }
