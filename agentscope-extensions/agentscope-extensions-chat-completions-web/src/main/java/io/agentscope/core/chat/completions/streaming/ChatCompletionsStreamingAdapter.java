@@ -196,13 +196,33 @@ public class ChatCompletionsStreamingAdapter {
         // Extract tool calls (only for REASONING events from assistant)
         if (event.getType() == EventType.REASONING) {
             List<ToolCall> toolCalls = new ArrayList<>();
+            int toolCallIndex = 0;
             for (ContentBlock block : contentBlocks) {
                 if (block instanceof ToolUseBlock) {
                     ToolUseBlock toolUseBlock = (ToolUseBlock) block;
-                    String argumentsJson = serializeMapToJson(toolUseBlock.getInput());
+                    // Prioritize content field (raw JSON string) over input map
+                    // DashScope and some providers store arguments in content field
+                    String argumentsJson;
+                    String content = toolUseBlock.getContent();
+                    Map<String, Object> input = toolUseBlock.getInput();
+
+                    if (content != null && !content.isEmpty()) {
+                        argumentsJson = content;
+                    } else if (input != null && !input.isEmpty()) {
+                        // Only serialize input if it's not empty
+                        argumentsJson = serializeMapToJson(input);
+                    } else {
+                        // Both content and input are empty - use empty string for streaming
+                        // This allows clients to accumulate subsequent chunks correctly
+                        argumentsJson = "";
+                    }
                     toolCalls.add(
                             new ToolCall(
-                                    toolUseBlock.getId(), toolUseBlock.getName(), argumentsJson));
+                                    toolCallIndex,
+                                    toolUseBlock.getId(),
+                                    toolUseBlock.getName(),
+                                    argumentsJson));
+                    toolCallIndex++;
                 }
             }
 
