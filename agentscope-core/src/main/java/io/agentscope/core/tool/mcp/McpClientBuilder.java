@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import static io.agentscope.core.Version.VERSION;
+
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -296,9 +298,7 @@ public class McpClientBuilder {
 
                     McpSchema.Implementation clientInfo =
                             new McpSchema.Implementation(
-                                    "agentscope-java",
-                                    "AgentScope Java Framework",
-                                    "1.0.10-SNAPSHOT");
+                                    "agentscope-java", "AgentScope Java Framework", VERSION);
 
                     McpSchema.ClientCapabilities clientCapabilities =
                             McpSchema.ClientCapabilities.builder().build();
