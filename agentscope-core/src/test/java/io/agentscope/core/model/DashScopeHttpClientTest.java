@@ -224,8 +224,7 @@ class DashScopeHttpClientTest {
                         .setBody(responseJson)
                         .setHeader("Content-Type", "application/json"));
 
-        DashScopeMessage userMsg =
-                DashScopeMessage.builder().role("user").content("Hello").build();
+        DashScopeMessage userMsg = DashScopeMessage.builder().role("user").content("Hello").build();
         DashScopeRequest request =
                 DashScopeRequest.builder()
                         .model("qwen-plus")
@@ -242,10 +241,8 @@ class DashScopeHttpClientTest {
         // Verify the request was sent to the multimodal endpoint
         var recorded = mockServer.takeRequest();
         assertTrue(
-                recorded.getPath()
-                        .contains(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT),
-                "Request should be sent to multimodal endpoint, but was: "
-                        + recorded.getPath());
+                recorded.getPath().contains(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT),
+                "Request should be sent to multimodal endpoint, but was: " + recorded.getPath());
     }
 
     @Test

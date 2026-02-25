@@ -201,10 +201,7 @@ class DashScopeChatModelTest {
     void testBuilderWithoutEndpointType() {
         // This tests backward compatibility - not setting endpointType should still work
         DashScopeChatModel model =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .stream(true)
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
                         .build();
 
         assertNotNull(model, "Model without explicit endpointType should be created");
@@ -218,8 +215,17 @@ class DashScopeChatModelTest {
         // The overloaded constructor without endpointType should delegate to the full constructor
         DashScopeChatModel model =
                 new DashScopeChatModel(
-                        mockApiKey, "qwen-plus", true, null, null,
-                        null, null, null, null, null, null);
+                        mockApiKey,
+                        "qwen-plus",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
 
         assertNotNull(model, "Model from overloaded constructor should be created");
         assertEquals("qwen-plus", model.getModelName());
@@ -230,8 +236,18 @@ class DashScopeChatModelTest {
     void testFullConstructorWithEndpointType() {
         DashScopeChatModel model =
                 new DashScopeChatModel(
-                        mockApiKey, "qwen3.5-plus", true, null, null,
-                        EndpointType.MULTIMODAL, null, null, null, null, null, null);
+                        mockApiKey,
+                        "qwen3.5-plus",
+                        true,
+                        null,
+                        null,
+                        EndpointType.MULTIMODAL,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
 
         assertNotNull(model, "Model from full constructor should be created");
         assertEquals("qwen3.5-plus", model.getModelName());
