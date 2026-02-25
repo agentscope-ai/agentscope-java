@@ -97,8 +97,19 @@ public class DashScopeChatModel extends ChatModelBase {
             HttpTransport httpTransport,
             String publicKeyId,
             String publicKey) {
-        this(apiKey, modelName, stream, enableThinking, enableSearch, null,
-                defaultOptions, baseUrl, formatter, httpTransport, publicKeyId, publicKey);
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                null,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey);
     }
 
     /**

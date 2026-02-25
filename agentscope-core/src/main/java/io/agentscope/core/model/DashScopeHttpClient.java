@@ -165,7 +165,8 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
-        EndpointType endpointType = request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
+        EndpointType endpointType =
+                request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
         String endpoint = selectEndpoint(request.getModel(), endpointType);
         String url = buildUrl(endpoint, additionalQueryParams);
 
@@ -237,7 +238,8 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
-        EndpointType endpointType = request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
+        EndpointType endpointType =
+                request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
         String endpoint = selectEndpoint(request.getModel(), endpointType);
         String url = buildUrl(endpoint, additionalQueryParams);
 
