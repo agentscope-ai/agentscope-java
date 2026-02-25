@@ -60,6 +60,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final boolean stream;
     private final Boolean enableThinking; // nullable
     private final Boolean enableSearch; // nullable
+    private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
 
@@ -67,7 +68,10 @@ public class DashScopeChatModel extends ChatModelBase {
     private final DashScopeHttpClient httpClient;
 
     /**
-     * Creates a new DashScope chat model instance.
+     * Creates a new DashScope chat model instance with automatic API type detection.
+     *
+     * <p>This constructor maintains backward compatibility. API type defaults to AUTO,
+     * which detects the endpoint based on model name.
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
@@ -93,6 +97,39 @@ public class DashScopeChatModel extends ChatModelBase {
             HttpTransport httpTransport,
             String publicKeyId,
             String publicKey) {
+        this(apiKey, modelName, stream, enableThinking, enableSearch, null,
+                defaultOptions, baseUrl, formatter, httpTransport, publicKeyId, publicKey);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     */
+    public DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
         this.modelName = modelName;
         // Thinking mode requires streaming; override stream setting if needed
         if (enableThinking != null && enableThinking && !stream) {
@@ -103,6 +140,7 @@ public class DashScopeChatModel extends ChatModelBase {
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
+        this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
@@ -150,8 +188,12 @@ public class DashScopeChatModel extends ChatModelBase {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         if (log.isDebugEnabled()) {
-            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
-            log.debug("DashScope API call: model={}, multimodal={}", modelName, useMultimodal);
+            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
+            log.debug(
+                    "DashScope API call: model={}, endpointType={}, multimodal={}",
+                    modelName,
+                    endpointType,
+                    useMultimodal);
         }
 
         Flux<ChatResponse> responseFlux = streamWithHttpClient(messages, tools, options);
@@ -169,7 +211,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private Flux<ChatResponse> streamWithHttpClient(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant start = Instant.now();
-        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
+        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
 
         // Merge options with defaultOptions (options takes precedence)
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
@@ -217,6 +259,9 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
+
+        // Set endpoint type for endpoint selection
+        request.setEndpointType(endpointType);
 
         if (stream) {
             // Streaming mode
@@ -298,6 +343,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean stream = true;
         private Boolean enableThinking;
         private Boolean enableSearch;
+        private EndpointType endpointType;
         private GenerateOptions defaultOptions = null;
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
@@ -318,11 +364,13 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets the model name to use.
          *
-         * <p>The model name determines which API is used:
+         * <p>The model name determines which API is used when apiType is AUTO:
          * <ul>
          *   <li>Vision models (qvq* or *-vl*) → MultiModal API</li>
          *   <li>Text models → Text Generation API</li>
          * </ul>
+         *
+         * <p>Use {@link #endpointType(EndpointType)} to explicitly specify the endpoint type.
          *
          * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
          * @return this builder instance
@@ -371,6 +419,37 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableSearch(Boolean enableSearch) {
             this.enableSearch = enableSearch;
+            return this;
+        }
+
+        /**
+         * Sets the endpoint type to use for endpoint routing.
+         *
+         * <p>This allows explicit control over which DashScope API endpoint to use:
+         * <ul>
+         *   <li>{@link EndpointType#AUTO} - Automatic detection based on model name (default)</li>
+         *   <li>{@link EndpointType#TEXT} - Force use of text-generation API</li>
+         *   <li>{@link EndpointType#MULTIMODAL} - Force use of multimodal-generation API</li>
+         * </ul>
+         *
+         * <p>Use this when the model name doesn't match the auto-detection patterns but
+         * you need to use a specific API. For example, qwen3.5-plus is a multimodal-capable
+         * model but its name doesn't match the auto-detection patterns.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("qwen3.5-plus")
+         *     .endpointType(EndpointType.MULTIMODAL)  // Force multimodal API for image inputs
+         *     .build();
+         * }</pre>
+         *
+         * @param endpointType the endpoint type to use (null for AUTO)
+         * @return this builder instance
+         */
+        public Builder endpointType(EndpointType endpointType) {
+            this.endpointType = endpointType;
             return this;
         }
 
@@ -503,6 +582,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     stream,
                     enableThinking,
                     enableSearch,
+                    endpointType,
                     effectiveOptions,
                     baseUrl,
                     formatter,
