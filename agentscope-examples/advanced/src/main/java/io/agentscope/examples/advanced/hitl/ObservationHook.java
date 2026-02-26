@@ -31,6 +31,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -87,7 +89,6 @@ public class ObservationHook implements Hook {
         } else if (event instanceof ErrorEvent e) {
             logError(e);
         }
-        // Ignore chunk events and others
         return Mono.just(event);
     }
 
@@ -203,7 +204,7 @@ public class ObservationHook implements Hook {
                 .append(DIM)
                 .append("  output: ")
                 .append(RESET)
-                .append(extractOutput(result));
+                .append(extractToolOutputText(result, "(empty)"));
 
         if (result.isSuspended()) {
             sb.append('\n')
@@ -241,7 +242,7 @@ public class ObservationHook implements Hook {
                 .append(": ")
                 .append(event.getError().getMessage())
                 .append(RESET);
-        log.info(sb.toString());
+        log.error(sb.toString());
     }
 
     // ==================== Formatting Helpers ====================
@@ -284,7 +285,7 @@ public class ObservationHook implements Hook {
                         .append(RESET)
                         .append(DIM)
                         .append(" → ")
-                        .append(truncate(extractOutput(tr), 150))
+                        .append(truncate(extractToolOutputText(tr, "(empty)"), 150))
                         .append(RESET);
             } else {
                 sb.append('\n')
@@ -308,29 +309,22 @@ public class ObservationHook implements Hook {
         };
     }
 
-    private String extractOutput(ToolResultBlock result) {
+    static String extractToolOutputText(ToolResultBlock result, String fallback) {
         List<ContentBlock> outputs = result.getOutput();
-        if (outputs == null || outputs.isEmpty()) return "(empty)";
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : outputs) {
-            if (block instanceof TextBlock tb) {
-                sb.append(tb.getText());
-            }
-        }
-        return sb.isEmpty() ? "(empty)" : sb.toString();
+        if (outputs == null || outputs.isEmpty()) return fallback;
+        String text =
+                outputs.stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(b -> ((TextBlock) b).getText())
+                        .collect(Collectors.joining());
+        return text.isEmpty() ? fallback : text;
     }
 
     private String formatMap(Map<String, Object> map) {
         if (map == null || map.isEmpty()) return "{}";
-        StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            if (!first) sb.append(", ");
-            sb.append(entry.getKey()).append("=").append(entry.getValue());
-            first = false;
-        }
-        sb.append('}');
-        return sb.toString();
+        StringJoiner sj = new StringJoiner(", ", "{", "}");
+        map.forEach((k, v) -> sj.add(k + "=" + v));
+        return sj.toString();
     }
 
     private String truncate(String text, int maxLen) {

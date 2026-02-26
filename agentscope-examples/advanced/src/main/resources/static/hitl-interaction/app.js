@@ -143,39 +143,45 @@ function autoResizeInput() {
 
 // ==================== Chat Logic ====================
 
-async function sendMessage() {
-    const message = elements.messageInput.value.trim();
-    if (!message || state.isProcessing) return;
-
-    // Remove welcome message if present
-    const welcome = document.querySelector('.welcome-message');
-    if (welcome) welcome.remove();
-
-    elements.messageInput.value = '';
-    autoResizeInput();
-    addMessage('user', message);
+/**
+ * Send a POST request and stream SSE events from the response.
+ */
+async function sseRequest(url, body) {
     setProcessing(true);
     state.currentAssistantMessage = null;
-
     state.currentAbortController = new AbortController();
 
     try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: state.sessionId, message }),
+            body: JSON.stringify(body),
             signal: state.currentAbortController.signal
         });
         await processSSEStream(response);
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error('Chat error:', error);
+            console.error('Request error:', error);
             addMessage('assistant', t('error') + ': ' + error.message);
         }
     } finally {
         setProcessing(false);
         state.currentAbortController = null;
     }
+}
+
+async function sendMessage() {
+    const message = elements.messageInput.value.trim();
+    if (!message || state.isProcessing) return;
+
+    const welcome = document.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+
+    elements.messageInput.value = '';
+    autoResizeInput();
+    addMessage('user', message);
+
+    await sseRequest('/api/chat', { sessionId: state.sessionId, message });
 }
 
 // Called from example buttons in HTML
@@ -439,32 +445,12 @@ async function confirmToolCall(confirmed) {
     const callInfos = toolCalls.map(tc => ({ id: tc.id, name: tc.name }));
     state.pendingToolCalls = null;
 
-    setProcessing(true);
-    state.currentAssistantMessage = null;
-    state.currentAbortController = new AbortController();
-
-    try {
-        const res = await fetch('/api/chat/confirm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: state.sessionId,
-                confirmed,
-                reason: confirmed ? null : 'Cancelled by user',
-                toolCalls: callInfos
-            }),
-            signal: state.currentAbortController.signal
-        });
-        await processSSEStream(res);
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Confirm error:', error);
-            addMessage('assistant', t('error') + ': ' + error.message);
-        }
-    } finally {
-        setProcessing(false);
-        state.currentAbortController = null;
-    }
+    await sseRequest('/api/chat/confirm', {
+        sessionId: state.sessionId,
+        confirmed,
+        reason: confirmed ? null : 'Cancelled by user',
+        toolCalls: callInfos
+    });
 }
 
 // ========================================================
@@ -477,8 +463,8 @@ async function confirmToolCall(confirmed) {
  */
 const componentRegistry = {
     text:         renderTextInput,
-    select:       renderSelect,
-    multi_select: renderMultiSelect,
+    select:       (e) => renderSelectGroup(e, false),
+    multi_select: (e) => renderSelectGroup(e, true),
     confirm:      renderConfirm,
     form:         renderForm,
     date:         renderDateInput,
@@ -554,36 +540,19 @@ function renderTextInput(event) {
     return div;
 }
 
-function renderSelect(event) {
+function renderSelectGroup(event, multi = false) {
     const div = document.createElement('div');
-    div.className = 'interaction-select-group';
+    div.className = 'interaction-select-group' + (multi ? ' multi' : '');
 
-    const options = event.options || [];
-    for (const option of options) {
+    for (const option of (event.options || [])) {
         const btn = document.createElement('button');
         btn.className = 'select-option-btn';
         btn.dataset.value = option.value || option.label || option;
         btn.textContent = option.label || option.value || option;
         btn.onclick = () => {
-            div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
+            if (!multi) div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.toggle('selected');
         };
-        div.appendChild(btn);
-    }
-    return div;
-}
-
-function renderMultiSelect(event) {
-    const div = document.createElement('div');
-    div.className = 'interaction-select-group multi';
-
-    const options = event.options || [];
-    for (const option of options) {
-        const btn = document.createElement('button');
-        btn.className = 'select-option-btn';
-        btn.dataset.value = option.value || option.label || option;
-        btn.textContent = option.label || option.value || option;
-        btn.onclick = () => btn.classList.toggle('selected');
         div.appendChild(btn);
     }
     return div;
@@ -719,31 +688,11 @@ async function submitInteraction(toolId, uiType, card) {
         submitRow.innerHTML = `<span class="responded-badge">✓ ${t('responded')}</span>`;
     }
 
-    setProcessing(true);
-    state.currentAssistantMessage = null;
-    state.currentAbortController = new AbortController();
-
-    try {
-        const res = await fetch('/api/chat/respond', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: state.sessionId,
-                toolId,
-                response
-            }),
-            signal: state.currentAbortController.signal
-        });
-        await processSSEStream(res);
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Respond error:', error);
-            addMessage('assistant', t('error') + ': ' + error.message);
-        }
-    } finally {
-        setProcessing(false);
-        state.currentAbortController = null;
-    }
+    await sseRequest('/api/chat/respond', {
+        sessionId: state.sessionId,
+        toolId,
+        response
+    });
 }
 
 /**

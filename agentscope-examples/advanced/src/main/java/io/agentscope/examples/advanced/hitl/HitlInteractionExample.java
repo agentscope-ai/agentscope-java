@@ -21,7 +21,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,9 +32,6 @@ import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import reactor.core.publisher.Mono;
+import java.util.stream.Collectors;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.http.MediaType;
@@ -163,16 +159,9 @@ public class HitlInteractionExample {
                         .content(TextBlock.builder().text(message).build())
                         .build();
 
-        return agent.stream(userMsg)
-                .flatMap(this::convertEvent)
-                .concatWith(Flux.just(completeEvent()))
-                .doFinally(
-                        signal -> {
-                            runningAgents.remove(sessionId);
-                            agent.saveTo(session, sessionId);
-                        })
-                .onErrorResume(error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
-                .map(data -> ServerSentEvent.<Map<String, Object>>builder().data(data).build());
+        Flux<Map<String, Object>> events =
+                agent.stream(userMsg).flatMap(this::convertEvent);
+        return wrapAsSSE(sessionId, agent, events);
     }
 
     // ==================== User Interaction Response Endpoint ====================
@@ -215,16 +204,9 @@ public class HitlInteractionExample {
 
         Msg responseMsg = Msg.builder().role(MsgRole.TOOL).content(result).build();
 
-        return agent.stream(responseMsg)
-                .flatMap(this::convertEvent)
-                .concatWith(Flux.just(completeEvent()))
-                .doFinally(
-                        signal -> {
-                            runningAgents.remove(sessionId);
-                            agent.saveTo(session, sessionId);
-                        })
-                .onErrorResume(error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
-                .map(data -> ServerSentEvent.<Map<String, Object>>builder().data(data).build());
+        Flux<Map<String, Object>> events =
+                agent.stream(responseMsg).flatMap(this::convertEvent);
+        return wrapAsSSE(sessionId, agent, events);
     }
 
     // ==================== Session Management ====================
@@ -257,7 +239,7 @@ public class HitlInteractionExample {
      * Approve or reject pending tool execution.
      *
      * <p>When the agent calls a tool that requires confirmation (e.g. add_calendar_event),
-     * the {@link ToolConfirmationHook} stops the agent before execution. The frontend
+     * the {@linkplain ToolConfirmationHook} stops the agent before execution. The frontend
      * displays approve/reject buttons. This endpoint handles the user's decision:
      * <ul>
      *   <li>Approved: resumes the agent to execute the pending tools</li>
@@ -299,15 +281,7 @@ public class HitlInteractionExample {
             eventFlux = agent.stream(cancelMsg).flatMap(this::convertEvent);
         }
 
-        return eventFlux
-                .concatWith(Flux.just(completeEvent()))
-                .doFinally(
-                        signal -> {
-                            runningAgents.remove(sessionId);
-                            agent.saveTo(session, sessionId);
-                        })
-                .onErrorResume(error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
-                .map(data -> ServerSentEvent.<Map<String, Object>>builder().data(data).build());
+        return wrapAsSSE(sessionId, agent, eventFlux);
     }
 
     // ==================== Agent Factory ====================
@@ -318,27 +292,6 @@ public class HitlInteractionExample {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new UserInteractionTool());
         toolkit.registerTool(new AddCalendarEventTool());
-
-        Hook confirmationHook = new Hook() {
-            @Override
-            public <T extends HookEvent> Mono<T> onEvent(T event) {
-                if (event instanceof PostReasoningEvent post) {
-                    Msg reasoning = post.getReasoningMessage();
-                    if (reasoning != null) {
-                        boolean needsConfirm =
-                                reasoning.getContentBlocks(ToolUseBlock.class).stream()
-                                        .anyMatch(
-                                                t ->
-                                                        TOOLS_REQUIRING_CONFIRMATION.contains(
-                                                                t.getName()));
-                        if (needsConfirm) {
-                            post.stopAgent();
-                        }
-                    }
-                }
-                return Mono.just(event);
-            }
-        };
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -354,12 +307,27 @@ public class HitlInteractionExample {
                                         .build())
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
-                        .hook(confirmationHook)
+                        .hook(new ToolConfirmationHook(TOOLS_REQUIRING_CONFIRMATION))
                         .hook(new ObservationHook())
                         .build();
 
         agent.loadIfExists(session, sessionId);
         return agent;
+    }
+
+    // ==================== SSE Wrapping ====================
+
+    private Flux<ServerSentEvent<Map<String, Object>>> wrapAsSSE(
+            String sessionId, ReActAgent agent, Flux<Map<String, Object>> events) {
+        return events.concatWith(Flux.just(completeEvent()))
+                .doFinally(
+                        signal -> {
+                            runningAgents.remove(sessionId);
+                            agent.saveTo(session, sessionId);
+                        })
+                .onErrorResume(
+                        error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
+                .map(data -> ServerSentEvent.<Map<String, Object>>builder().data(data).build());
     }
 
     // ==================== Event Conversion ====================
@@ -455,7 +423,7 @@ public class HitlInteractionExample {
         event.put("type", "TOOL_RESULT");
         event.put("toolId", result.getId());
         event.put("toolName", result.getName());
-        event.put("toolResult", extractToolOutput(result));
+        event.put("toolResult", ObservationHook.extractToolOutputText(result, ""));
         return event;
     }
 
@@ -523,25 +491,7 @@ public class HitlInteractionExample {
         if (textBlocks.isEmpty()) {
             return null;
         }
-        StringBuilder sb = new StringBuilder();
-        for (TextBlock block : textBlocks) {
-            sb.append(block.getText());
-        }
-        return sb.toString();
-    }
-
-    private String extractToolOutput(ToolResultBlock result) {
-        List<ContentBlock> outputs = result.getOutput();
-        if (outputs == null || outputs.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : outputs) {
-            if (block instanceof TextBlock tb) {
-                sb.append(tb.getText());
-            }
-        }
-        return sb.toString();
+        return textBlocks.stream().map(TextBlock::getText).collect(Collectors.joining());
     }
 
     @SuppressWarnings("unchecked")

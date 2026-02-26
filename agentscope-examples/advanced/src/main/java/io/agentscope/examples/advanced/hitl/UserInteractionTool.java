@@ -19,6 +19,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.ToolSuspendException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Built-in tool for Human-in-the-Loop (HITL) interactions.
@@ -55,6 +56,7 @@ public class UserInteractionTool {
      * @param question the question to ask the user
      * @param uiType UI component type (defaults to "text")
      * @param options options for select/multi_select
+     * @param fields field definitions for form ui_type
      * @param defaultValue default value for the input field
      * @return never returns normally
      * @throws ToolSuspendException always thrown to suspend agent execution
@@ -88,6 +90,14 @@ public class UserInteractionTool {
                                             + " e.g. [\"Beijing\", \"Shanghai\", \"Tokyo\"]",
                             required = false)
                     List<String> options,
+            @ToolParam(
+                            name = "fields",
+                            description =
+                                    "Field definitions for 'form' ui_type. Array of objects with "
+                                            + "name, label, type (text/number/date/select/textarea), "
+                                            + "placeholder, required, options, min, max, step.",
+                            required = false)
+                    List<Map<String, Object>> fields,
             @ToolParam(
                             name = "default_value",
                             description = "Default value for the input field (string only)",

@@ -353,19 +353,6 @@ body {
     padding: 0 12px 8px;
 }
 
-.tool-event-params .tool-params-pre {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.5;
-    background: var(--bg-primary);
-    padding: 8px 10px;
-    border-radius: var(--radius-sm);
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 0;
-}
-
 .tool-icon {
     font-size: 14px;
 }
@@ -437,19 +424,6 @@ body {
 
 .tool-confirm-card-params {
     padding: 0 12px 8px;
-}
-
-.tool-confirm-card-params .tool-params-pre {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.5;
-    background: var(--bg-primary);
-    padding: 8px 10px;
-    border-radius: var(--radius-sm);
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 0;
 }
 
 .btn-sm {
@@ -527,9 +501,9 @@ body {
     padding: 8px 10px;
     border-radius: var(--radius-sm);
     overflow-x: auto;
-    margin-bottom: 8px;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
+    margin: 0;
 }
 
 /* ==================== Interaction Card ==================== */

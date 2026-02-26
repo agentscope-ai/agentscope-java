@@ -22,8 +22,8 @@ import io.agentscope.core.tool.ToolParam;
  * Mock tool that simulates adding an event to the user's calendar.
  *
  * <p>This tool is configured as a "dangerous" tool that requires user approval
- * before execution via {@link ToolConfirmationHook}. When the agent decides
- * to call this tool, the hook intercepts it, pauses the agent, and the frontend
+ * before execution via the {@link ToolConfirmationHook}. When the agent decides
+ * to call this tool, the hook intercepts it, stops the agent, and the frontend
  * renders approve/reject buttons for the user.
  */
 public class AddCalendarEventTool {
