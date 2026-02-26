@@ -31,6 +31,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -57,6 +58,8 @@ public class DaMengSessionTest {
 
     @Mock private PreparedStatement mockStatement;
 
+    @Mock private Statement mockCreateStatement;
+
     @Mock private ResultSet mockResultSet;
 
     private AutoCloseable mockitoCloseable;
@@ -66,6 +69,7 @@ public class DaMengSessionTest {
         mockitoCloseable = MockitoAnnotations.openMocks(this);
         when(mockDataSource.getConnection()).thenReturn(mockConnection);
         when(mockConnection.prepareStatement(anyString())).thenReturn(mockStatement);
+        when(mockConnection.createStatement()).thenReturn(mockCreateStatement);
     }
 
     @AfterEach

@@ -187,8 +187,8 @@ public class DaMengSession implements Session {
 
             // Create schema if it doesn't exist
             if (!schemaExists) {
-                try (PreparedStatement createStmt = conn.prepareStatement(createSchemaSql)) {
-                    createStmt.execute();
+                try (java.sql.Statement createStmt = conn.createStatement()) {
+                    createStmt.execute(createSchemaSql);
                 }
             }
         } catch (SQLException e) {
@@ -227,8 +227,8 @@ public class DaMengSession implements Session {
 
             // Create table if it doesn't exist
             if (!tableExists) {
-                try (PreparedStatement createStmt = conn.prepareStatement(createTableSql)) {
-                    createStmt.execute();
+                try (java.sql.Statement createStmt = conn.createStatement()) {
+                    createStmt.execute(createTableSql);
                 }
             }
         } catch (SQLException e) {

@@ -166,9 +166,6 @@ public class DaMengSessionExample {
         config.setIdleTimeout(600000);
         config.setMaxLifetime(1800000);
 
-        // DaMeng specific settings
-        config.addDataSourceProperty("loginEncrypt", "false");
-
         try {
             HikariDataSource dataSource = new HikariDataSource(config);
             // Test connection
