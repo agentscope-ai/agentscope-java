@@ -161,6 +161,12 @@ public class HitlInteractionExample {
             @RequestBody Map<String, String> request) {
         String sessionId = request.getOrDefault("sessionId", "default");
         String message = request.get("message");
+        if (message == null || message.isBlank()) {
+            return Flux.just(
+                    ServerSentEvent.<Map<String, Object>>builder()
+                            .data(errorEvent("Missing required parameter: message"))
+                            .build());
+        }
 
         ReActAgent agent = createAgent(sessionId);
         runningAgents.put(sessionId, agent);
@@ -190,6 +196,12 @@ public class HitlInteractionExample {
             @RequestBody Map<String, Object> request) {
         String sessionId = (String) request.getOrDefault("sessionId", "default");
         String toolId = (String) request.get("toolId");
+        if (toolId == null || toolId.isBlank()) {
+            return Flux.just(
+                    ServerSentEvent.<Map<String, Object>>builder()
+                            .data(errorEvent("Missing required parameter: toolId"))
+                            .build());
+        }
         Object response = request.get("response");
 
         ReActAgent agent = createAgent(sessionId);
