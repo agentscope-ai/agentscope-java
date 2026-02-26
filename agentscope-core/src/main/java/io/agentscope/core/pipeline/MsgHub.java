@@ -18,9 +18,11 @@ package io.agentscope.core.pipeline;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.message.Msg;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
@@ -100,6 +102,7 @@ import reactor.core.publisher.Mono;
 public class MsgHub implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MsgHub.class);
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final String name;
     private final List<AgentBase> participants;
@@ -113,7 +116,7 @@ public class MsgHub implements AutoCloseable {
      * @param builder Builder instance
      */
     private MsgHub(Builder builder) {
-        this.name = builder.name != null ? builder.name : UUID.randomUUID().toString();
+        this.name = Objects.requireNonNullElse(builder.name, UUID.randomUUID().toString());
         this.participants = new CopyOnWriteArrayList<>(builder.participants);
         this.announcement = builder.announcement;
         this.enableAutoBroadcast = builder.enableAutoBroadcast;
@@ -195,10 +198,11 @@ public class MsgHub implements AutoCloseable {
     /**
      * Close the MsgHub and cleanup resources.
      * This is the AutoCloseable implementation for try-with-resources support.
+     * Waits up to 10 seconds for exit to complete.
      */
     @Override
     public void close() {
-        exit().block();
+        exit().block(CLOSE_TIMEOUT);
     }
 
     /**
