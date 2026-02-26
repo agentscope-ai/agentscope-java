@@ -37,11 +37,8 @@ import reactor.core.scheduler.Schedulers;
  * <p>This implementation uses direct HTTP calls to DashScope API via OkHttp,
  * without depending on the DashScope Java SDK.
  *
- * <p>Supports both text and vision models through automatic endpoint routing:
- * <ul>
- *   <li>Vision models (names starting with "qvq" or containing "-vl") use MultiModalGeneration API
- *   <li>Text models use TextGeneration API
- * </ul>
+ * <p>Supports both text and vision models through automatic endpoint routing.
+ * Use {@link EndpointType} to explicitly control the endpoint selection.
  *
  * <p>Features:
  * <ul>
@@ -375,16 +372,11 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets the model name to use.
          *
-         * <p>The model name determines which API is used when apiType is AUTO:
-         * <ul>
-         *   <li>Vision models (qvq* or *-vl*) → MultiModal API</li>
-         *   <li>Text models → Text Generation API</li>
-         * </ul>
-         *
-         * <p>Use {@link #endpointType(EndpointType)} to explicitly specify the endpoint type.
+         * <p>The model name determines which API is used when endpointType is AUTO.
          *
          * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
          * @return this builder instance
+         * @see DashScopeHttpClient#isMultimodalModel(String)
          */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -436,28 +428,10 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets the endpoint type to use for endpoint routing.
          *
-         * <p>This allows explicit control over which DashScope API endpoint to use:
-         * <ul>
-         *   <li>{@link EndpointType#AUTO} - Automatic detection based on model name (default)</li>
-         *   <li>{@link EndpointType#TEXT} - Force use of text-generation API</li>
-         *   <li>{@link EndpointType#MULTIMODAL} - Force use of multimodal-generation API</li>
-         * </ul>
-         *
-         * <p>Use this when the model name doesn't match the auto-detection patterns but
-         * you need to use a specific API. For example, qwen3.5-plus is a multimodal-capable
-         * model but its name doesn't match the auto-detection patterns.
-         *
-         * <p>Example:
-         * <pre>{@code
-         * DashScopeChatModel model = DashScopeChatModel.builder()
-         *     .apiKey("sk-xxx")
-         *     .modelName("qwen3.5-plus")
-         *     .endpointType(EndpointType.MULTIMODAL)  // Force multimodal API for image inputs
-         *     .build();
-         * }</pre>
-         *
          * @param endpointType the endpoint type to use (null for AUTO)
          * @return this builder instance
+         * @see EndpointType
+         * @see DashScopeHttpClient#isMultimodalModel(String)
          */
         public Builder endpointType(EndpointType endpointType) {
             this.endpointType = endpointType;

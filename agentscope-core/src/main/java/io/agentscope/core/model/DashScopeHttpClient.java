@@ -327,6 +327,7 @@ public class DashScopeHttpClient {
      *     <ul>
      *       <li>Models starting with "qvq" → multimodal API</li>
      *       <li>Models containing "-vl" → multimodal API</li>
+     *       <li>Models starting with "qwen3.5" → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -364,7 +365,7 @@ public class DashScopeHttpClient {
      * <ul>
      *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-max)</li>
      *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen3-vl-max)</li>
-     *   <li>Models starting with "qwen3.5-plus" (e.g., qwen3.5-plus, qwen3.5-plus-2026-02-15)</li>
+     *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
      * </ul>
      *
      * @param modelName the model name
@@ -377,7 +378,7 @@ public class DashScopeHttpClient {
         String lowerModelName = modelName.toLowerCase();
         return lowerModelName.startsWith("qvq")
                 || lowerModelName.contains("-vl")
-                || lowerModelName.startsWith("qwen3.5-plus");
+                || lowerModelName.startsWith("qwen3.5");
     }
 
     /**

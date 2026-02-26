@@ -180,11 +180,13 @@ class DashScopeHttpClientTest {
     }
 
     @Test
-    void testIsMultimodalModelIncludesQwen35Plus() {
-        // qwen3.5-plus is hardcoded as multimodal model
+    void testIsMultimodalModelIncludesQwen35Family() {
+        // Qwen 3.5 family is entirely multimodal (prefix-based matching)
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus"));
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus-2026-02-15"));
-        // qwen-3.5-plus (with hyphen) does not match
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-flash"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-397b-a17b"));
+        // qwen-3.5-plus (with hyphen before 3.5) does not match
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.5-plus"));
     }
 

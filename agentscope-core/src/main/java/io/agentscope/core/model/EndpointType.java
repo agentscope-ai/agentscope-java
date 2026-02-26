@@ -34,29 +34,19 @@ public enum EndpointType {
     /**
      * Automatically determine endpoint type based on model name.
      *
-     * <p>This is the default behavior. The routing logic:
-     * <ul>
-     *   <li>Models starting with "qvq" → MULTIMODAL</li>
-     *   <li>Models containing "-vl" → MULTIMODAL</li>
-     *   <li>Models starting with "qwen3.5-plus" → MULTIMODAL</li>
-     *   <li>All other models → TEXT</li>
-     * </ul>
+     * <p>This is the default behavior.
+     *
+     * @see DashScopeHttpClient#isMultimodalModel(String)
      */
     AUTO,
 
     /**
      * Force use of text generation API.
-     *
-     * <p>Use this when you want to explicitly use the text-generation endpoint
-     * for a model that would otherwise be auto-detected as multimodal.
      */
     TEXT,
 
     /**
      * Force use of multimodal generation API.
-     *
-     * <p>Use this when you want to use a multimodal-capable model (like qwen3.5-plus)
-     * with image inputs, but the model name doesn't match the auto-detection patterns.
      */
     MULTIMODAL
 }
