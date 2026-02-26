@@ -33,10 +33,10 @@ public class AddCalendarEventTool {
     @Tool(
             name = TOOL_NAME,
             description =
-                    "Add a workout event to the user's calendar. "
-                            + "Call this tool for EACH day's workout separately. "
-                            + "For example, if the plan has workouts on Monday, Tuesday, and Wednesday, "
-                            + "call this tool 3 times with each day's details.")
+                    "Add a workout event to the user's calendar. Call this tool for EACH day's"
+                        + " workout separately. For example, if the plan has workouts on Monday,"
+                        + " Tuesday, and Wednesday, call this tool 3 times with each day's"
+                        + " details.")
     public String addCalendarEvent(
             @ToolParam(name = "title", description = "Event title, e.g. 'Chest + Triceps Workout'")
                     String title,
@@ -47,7 +47,8 @@ public class AddCalendarEventTool {
             @ToolParam(
                             name = "time",
                             description =
-                                    "Start time in HH:mm format, e.g. '08:00'. Defaults to '09:00'.",
+                                    "Start time in HH:mm format, e.g. '08:00'. Defaults to"
+                                            + " '09:00'.",
                             required = false)
                     String time,
             @ToolParam(

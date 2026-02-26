@@ -33,17 +33,13 @@
     --text-secondary: #6b7280;
     --text-muted: #9ca3af;
     --border-color: #e5e7eb;
-    --border-light: #f0f2f5;
     --accent: #4f46e5;
     --accent-hover: #4338ca;
     --accent-light: #eef2ff;
     --success: #10b981;
-    --warning: #f59e0b;
     --error: #ef4444;
     --radius-sm: 8px;
     --radius-md: 12px;
-    --radius-lg: 16px;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
         'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -481,18 +477,6 @@ body {
     gap: 8px;
 }
 
-.tool-params-details {
-    padding: 0 12px;
-}
-
-.tool-params-details summary {
-    cursor: pointer;
-    padding: 6px 0;
-    font-size: 12px;
-    color: var(--text-secondary);
-    user-select: none;
-}
-
 .tool-params-pre {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -572,8 +556,7 @@ body {
 
 /* ==================== Select / MultiSelect Component ==================== */
 
-.interaction-select-group,
-.interaction-confirm-group {
+.interaction-select-group {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;

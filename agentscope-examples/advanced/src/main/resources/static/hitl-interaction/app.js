@@ -30,8 +30,6 @@ const i18n = {
         error: 'Error',
         selectPlaceholder: 'Select an option...',
         responded: 'Responded',
-        approve: 'Approve',
-        reject: 'Reject',
         approveAll: 'Approve All',
         rejectAll: 'Reject All',
         approved: 'Approved',
@@ -54,8 +52,6 @@ const i18n = {
         error: '错误',
         selectPlaceholder: '请选择...',
         responded: '已回复',
-        approve: '批准执行',
-        reject: '拒绝',
         approveAll: '全部批准',
         rejectAll: '全部拒绝',
         approved: '已批准',
@@ -213,9 +209,6 @@ async function clearSession() {
         await fetch(`/api/chat/session/${encodeURIComponent(state.sessionId)}`, {
             method: 'DELETE'
         });
-        state.sessionId = 'session_' + Date.now();
-        elements.chatMessages.innerHTML = '';
-        // Re-add welcome message
         location.reload();
     } catch (error) {
         console.error(t('clearFailed'), error);
@@ -465,7 +458,9 @@ const componentRegistry = {
     text:         renderTextInput,
     select:       (e) => renderSelectGroup(e, false),
     multi_select: (e) => renderSelectGroup(e, true),
-    confirm:      renderConfirm,
+    confirm:      (e) => renderSelectGroup(
+                      { ...e, options: [{ value: 'yes', label: t('yes') }, { value: 'no', label: t('no') }] },
+                      false),
     form:         renderForm,
     date:         renderDateInput,
     number:       renderNumberInput
@@ -555,33 +550,6 @@ function renderSelectGroup(event, multi = false) {
         };
         div.appendChild(btn);
     }
-    return div;
-}
-
-function renderConfirm(event) {
-    const div = document.createElement('div');
-    div.className = 'interaction-confirm-group';
-
-    const yesBtn = document.createElement('button');
-    yesBtn.className = 'select-option-btn confirm-yes';
-    yesBtn.dataset.value = 'yes';
-    yesBtn.textContent = t('yes');
-    yesBtn.onclick = () => {
-        div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
-        yesBtn.classList.add('selected');
-    };
-
-    const noBtn = document.createElement('button');
-    noBtn.className = 'select-option-btn confirm-no';
-    noBtn.dataset.value = 'no';
-    noBtn.textContent = t('no');
-    noBtn.onclick = () => {
-        div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
-        noBtn.classList.add('selected');
-    };
-
-    div.appendChild(yesBtn);
-    div.appendChild(noBtn);
     return div;
 }
 

@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.GenerateReason;
@@ -31,10 +32,9 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SimpleSessionKey;
-import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -120,6 +120,24 @@ public class HitlInteractionExample {
 
     private final ConcurrentHashMap<String, ReActAgent> runningAgents = new ConcurrentHashMap<>();
 
+    private final Toolkit toolkit;
+
+    private final DashScopeChatModel model;
+
+    {
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        toolkit = new Toolkit();
+        toolkit.registerTool(new UserInteractionTool());
+        toolkit.registerTool(new AddCalendarEventTool());
+
+        model =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-max").stream(true)
+                        .enableThinking(false)
+                        .formatter(new DashScopeChatFormatter())
+                        .build();
+    }
+
     public static void main(String[] args) {
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
         if (apiKey == null || apiKey.isEmpty()) {
@@ -159,8 +177,7 @@ public class HitlInteractionExample {
                         .content(TextBlock.builder().text(message).build())
                         .build();
 
-        Flux<Map<String, Object>> events =
-                agent.stream(userMsg).flatMap(this::convertEvent);
+        Flux<Map<String, Object>> events = agent.stream(userMsg).flatMap(this::convertEvent);
         return wrapAsSSE(sessionId, agent, events);
     }
 
@@ -183,10 +200,9 @@ public class HitlInteractionExample {
         ReActAgent agent = createAgent(sessionId);
         runningAgents.put(sessionId, agent);
 
-        // Convert user response to text
         String responseText;
-        if (response instanceof String) {
-            responseText = (String) response;
+        if (response instanceof String s) {
+            responseText = s;
         } else {
             try {
                 responseText = OBJECT_MAPPER.writeValueAsString(response);
@@ -204,8 +220,7 @@ public class HitlInteractionExample {
 
         Msg responseMsg = Msg.builder().role(MsgRole.TOOL).content(result).build();
 
-        Flux<Map<String, Object>> events =
-                agent.stream(responseMsg).flatMap(this::convertEvent);
+        Flux<Map<String, Object>> events = agent.stream(responseMsg).flatMap(this::convertEvent);
         return wrapAsSSE(sessionId, agent, events);
     }
 
@@ -252,8 +267,7 @@ public class HitlInteractionExample {
             @RequestBody Map<String, Object> request) {
         String sessionId = (String) request.getOrDefault("sessionId", "default");
         boolean confirmed = Boolean.TRUE.equals(request.get("confirmed"));
-        List<Map<String, String>> toolCalls =
-                (List<Map<String, String>>) request.get("toolCalls");
+        List<Map<String, String>> toolCalls = (List<Map<String, String>>) request.get("toolCalls");
 
         ReActAgent agent = createAgent(sessionId);
         runningAgents.put(sessionId, agent);
@@ -287,24 +301,11 @@ public class HitlInteractionExample {
     // ==================== Agent Factory ====================
 
     private ReActAgent createAgent(String sessionId) {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
-
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new UserInteractionTool());
-        toolkit.registerTool(new AddCalendarEventTool());
-
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("FitnessCoach")
                         .sysPrompt(SYS_PROMPT)
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(apiKey)
-                                        .modelName("qwen-max")
-                                        .stream(true)
-                                        .enableThinking(false)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
+                        .model(model)
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
                         .hook(new ToolConfirmationHook(TOOLS_REQUIRING_CONFIRMATION))
@@ -320,13 +321,12 @@ public class HitlInteractionExample {
     private Flux<ServerSentEvent<Map<String, Object>>> wrapAsSSE(
             String sessionId, ReActAgent agent, Flux<Map<String, Object>> events) {
         return events.concatWith(Flux.just(completeEvent()))
+                .onErrorResume(error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
                 .doFinally(
                         signal -> {
                             runningAgents.remove(sessionId);
                             agent.saveTo(session, sessionId);
                         })
-                .onErrorResume(
-                        error -> Flux.just(errorEvent(error.getMessage()), completeEvent()))
                 .map(data -> ServerSentEvent.<Map<String, Object>>builder().data(data).build());
     }
 
@@ -402,48 +402,42 @@ public class HitlInteractionExample {
     // ==================== Event Builders ====================
 
     private Map<String, Object> textEvent(String content, boolean incremental) {
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "TEXT");
-        event.put("content", content);
-        event.put("incremental", incremental);
-        return event;
+        return Map.of("type", "TEXT", "content", content, "incremental", incremental);
     }
 
     private Map<String, Object> toolUseEvent(ToolUseBlock tool) {
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "TOOL_USE");
-        event.put("toolId", tool.getId());
-        event.put("toolName", tool.getName());
-        event.put("toolInput", convertInput(tool.getInput()));
-        return event;
+        return Map.of(
+                "type", "TOOL_USE",
+                "toolId", tool.getId(),
+                "toolName", tool.getName(),
+                "toolInput", convertInput(tool.getInput()));
     }
 
     private Map<String, Object> toolResultEvent(ToolResultBlock result) {
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "TOOL_RESULT");
-        event.put("toolId", result.getId());
-        event.put("toolName", result.getName());
-        event.put("toolResult", ObservationHook.extractToolOutputText(result, ""));
-        return event;
+        return Map.of(
+                "type", "TOOL_RESULT",
+                "toolId", result.getId(),
+                "toolName", result.getName(),
+                "toolResult", ObservationHook.extractToolOutputText(result, ""));
     }
 
     /**
      * Build a TOOL_CONFIRM event containing all pending tool calls that need user approval.
      */
     private Map<String, Object> toolConfirmEvent(List<ToolUseBlock> toolCalls) {
-        List<Map<String, Object>> pending = new ArrayList<>();
-        for (ToolUseBlock tool : toolCalls) {
-            Map<String, Object> tc = new HashMap<>();
-            tc.put("id", tool.getId());
-            tc.put("name", tool.getName());
-            tc.put("input", convertInput(tool.getInput()));
-            tc.put("needsConfirm", TOOLS_REQUIRING_CONFIRMATION.contains(tool.getName()));
-            pending.add(tc);
-        }
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "TOOL_CONFIRM");
-        event.put("pendingToolCalls", pending);
-        return event;
+        List<Map<String, Object>> pending =
+                toolCalls.stream()
+                        .map(
+                                tool ->
+                                        Map.<String, Object>of(
+                                                "id", tool.getId(),
+                                                "name", tool.getName(),
+                                                "input", convertInput(tool.getInput()),
+                                                "needsConfirm",
+                                                        TOOLS_REQUIRING_CONFIRMATION.contains(
+                                                                tool.getName())))
+                        .toList();
+        return Map.of("type", "TOOL_CONFIRM", "pendingToolCalls", pending);
     }
 
     /**
@@ -454,7 +448,7 @@ public class HitlInteractionExample {
      */
     private Map<String, Object> userInteractionEvent(ToolUseBlock tool) {
         Map<String, Object> input = tool.getInput();
-        Map<String, Object> event = new HashMap<>();
+        Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "USER_INTERACTION");
         event.put("toolId", tool.getId());
         event.put("question", input.getOrDefault("question", "Please provide more information"));
@@ -478,10 +472,7 @@ public class HitlInteractionExample {
     }
 
     private static Map<String, Object> errorEvent(String error) {
-        Map<String, Object> event = new HashMap<>();
-        event.put("type", "ERROR");
-        event.put("error", error != null ? error : "Unknown error");
-        return event;
+        return Map.of("type", "ERROR", "error", error != null ? error : "Unknown error");
     }
 
     // ==================== Helpers ====================

@@ -64,15 +64,13 @@ public class UserInteractionTool {
     @Tool(
             name = TOOL_NAME,
             description =
-                    "Ask the user for clarification or additional information when the request is "
-                            + "ambiguous or missing required details. Choose the appropriate ui_type: "
-                            + "'text' for free-form input, "
-                            + "'select' for choosing one from a list (provide options), "
-                            + "'multi_select' for choosing multiple from a list, "
-                            + "'confirm' for yes/no questions, "
-                            + "'form' for collecting multiple fields at once (provide fields), "
-                            + "'date' for date selection, "
-                            + "'number' for numeric input.")
+                    "Ask the user for clarification or additional information when the request is"
+                        + " ambiguous or missing required details. Choose the appropriate ui_type:"
+                        + " 'text' for free-form input, 'select' for choosing one from a list"
+                        + " (provide options), 'multi_select' for choosing multiple from a list,"
+                        + " 'confirm' for yes/no questions, 'form' for collecting multiple fields"
+                        + " at once (provide fields), 'date' for date selection, 'number' for"
+                        + " numeric input.")
     public String askUser(
             @ToolParam(name = "question", description = "The question to ask the user")
                     String question,
@@ -93,9 +91,9 @@ public class UserInteractionTool {
             @ToolParam(
                             name = "fields",
                             description =
-                                    "Field definitions for 'form' ui_type. Array of objects with "
-                                            + "name, label, type (text/number/date/select/textarea), "
-                                            + "placeholder, required, options, min, max, step.",
+                                    "Field definitions for 'form' ui_type. Array of objects with"
+                                        + " name, label, type (text/number/date/select/textarea),"
+                                        + " placeholder, required, options, min, max, step.",
                             required = false)
                     List<Map<String, Object>> fields,
             @ToolParam(

@@ -94,50 +94,23 @@ public class ObservationHook implements Hook {
 
     private void logPreCall(PreCallEvent event) {
         List<Msg> inputs = event.getInputMessages();
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD).append(CYAN).append("▶ AGENT CALL").append(RESET);
-        sb.append(DIM)
-                .append("  (")
-                .append(inputs.size())
-                .append(" input message(s))")
-                .append(RESET);
-        sb.append('\n').append(SEPARATOR);
-        for (Msg msg : inputs) {
-            sb.append('\n').append(formatMsg(msg));
-        }
-        log.info(sb.toString());
+        String meta = "(" + inputs.size() + " input message(s))";
+        logMessages(log::info, CYAN, "▶ AGENT CALL", meta, inputs);
     }
 
     private void logPreReasoning(PreReasoningEvent event) {
         List<Msg> messages = event.getInputMessages();
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD).append(CYAN).append("🧠 PRE-REASONING").append(RESET);
-        sb.append(DIM)
-                .append("  model=")
-                .append(event.getModelName())
-                .append(", messages=")
-                .append(messages.size())
-                .append(RESET);
-        sb.append('\n').append(SEPARATOR);
-        for (Msg msg : messages) {
-            sb.append('\n').append(formatMsg(msg));
-        }
-        log.info(sb.toString());
+        String meta = "model=" + event.getModelName() + ", messages=" + messages.size();
+        logMessages(log::info, CYAN, "🧠 PRE-REASONING", meta, messages);
     }
 
     private void logPostReasoning(PostReasoningEvent event) {
         Msg msg = event.getReasoningMessage();
         if (msg == null) return;
 
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD).append(GREEN).append("🧠 POST-REASONING").append(RESET);
-        sb.append('\n').append(SEPARATOR);
+        StringBuilder sb = logHeader(GREEN, "🧠 POST-REASONING", null);
         sb.append('\n').append(formatMsg(msg));
 
-        // Highlight tool calls
         List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolCalls.isEmpty()) {
             sb.append('\n')
@@ -172,14 +145,7 @@ public class ObservationHook implements Hook {
 
     private void logPreActing(PreActingEvent event) {
         ToolUseBlock tool = event.getToolUse();
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD)
-                .append(YELLOW)
-                .append("🔧 TOOL CALL → ")
-                .append(tool.getName())
-                .append(RESET);
-        sb.append('\n').append(SEPARATOR);
+        StringBuilder sb = logHeader(YELLOW, "🔧 TOOL CALL → " + tool.getName(), null);
         sb.append('\n').append(DIM).append("  id:    ").append(RESET).append(tool.getId());
         sb.append('\n')
                 .append(DIM)
@@ -191,14 +157,7 @@ public class ObservationHook implements Hook {
 
     private void logPostActing(PostActingEvent event) {
         ToolResultBlock result = event.getToolResult();
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD)
-                .append(GREEN)
-                .append("✅ TOOL RESULT ← ")
-                .append(result.getName())
-                .append(RESET);
-        sb.append('\n').append(SEPARATOR);
+        StringBuilder sb = logHeader(GREEN, "✅ TOOL RESULT ← " + result.getName(), null);
         sb.append('\n').append(DIM).append("  id:     ").append(RESET).append(result.getId());
         sb.append('\n')
                 .append(DIM)
@@ -219,30 +178,47 @@ public class ObservationHook implements Hook {
         Msg msg = event.getFinalMessage();
         if (msg == null) return;
 
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD).append(GREEN).append("◀ AGENT RESULT").append(RESET);
-        if (msg.getGenerateReason() != null) {
-            sb.append(DIM).append("  reason=").append(msg.getGenerateReason()).append(RESET);
-        }
-        sb.append('\n').append(SEPARATOR);
-        sb.append('\n').append(formatMsg(msg));
-        log.info(sb.toString());
+        String meta = msg.getGenerateReason() != null ? "reason=" + msg.getGenerateReason() : null;
+        logMessages(log::info, GREEN, "◀ AGENT RESULT", meta, List.of(msg));
     }
 
     private void logError(ErrorEvent event) {
-        StringBuilder sb = new StringBuilder();
-        sb.append('\n').append(SEPARATOR).append('\n');
-        sb.append(BOLD).append(RED).append("❌ ERROR").append(RESET);
-        sb.append('\n').append(SEPARATOR);
+        Throwable err = event.getError();
+        StringBuilder sb = logHeader(RED, "❌ ERROR", null);
         sb.append('\n')
                 .append(RED)
                 .append("  ")
-                .append(event.getError().getClass().getSimpleName())
+                .append(err.getClass().getSimpleName())
                 .append(": ")
-                .append(event.getError().getMessage())
+                .append(err.getMessage())
                 .append(RESET);
         log.error(sb.toString());
+    }
+
+    // ==================== Log Helpers ====================
+
+    private StringBuilder logHeader(String color, String title, String meta) {
+        StringBuilder sb = new StringBuilder();
+        sb.append('\n').append(SEPARATOR).append('\n');
+        sb.append(BOLD).append(color).append(title).append(RESET);
+        if (meta != null) {
+            sb.append(DIM).append("  ").append(meta).append(RESET);
+        }
+        sb.append('\n').append(SEPARATOR);
+        return sb;
+    }
+
+    private void logMessages(
+            java.util.function.Consumer<String> logFn,
+            String color,
+            String title,
+            String meta,
+            List<Msg> messages) {
+        StringBuilder sb = logHeader(color, title, meta);
+        for (Msg msg : messages) {
+            sb.append('\n').append(formatMsg(msg));
+        }
+        logFn.accept(sb.toString());
     }
 
     // ==================== Formatting Helpers ====================
