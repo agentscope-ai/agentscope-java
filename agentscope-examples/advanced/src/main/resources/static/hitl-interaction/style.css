@@ -592,6 +592,29 @@ body {
     cursor: not-allowed;
 }
 
+.select-other-btn {
+    border-style: dashed;
+}
+
+.select-other-input {
+    width: 100%;
+    flex-basis: 100%;
+    margin-top: 8px;
+    padding: 9px 12px;
+    font-size: 14px;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    transition: border-color 0.15s ease;
+}
+
+.select-other-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
 /* ==================== Form Component ==================== */
 
 .interaction-form {

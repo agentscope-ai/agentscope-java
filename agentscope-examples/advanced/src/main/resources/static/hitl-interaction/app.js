@@ -36,6 +36,8 @@ const i18n = {
         rejected: 'Rejected',
         pendingApproval: 'Pending Approval',
         toolsPendingApproval: 'tool(s) pending approval',
+        other: 'Other',
+        otherPlaceholder: 'Please specify...',
         clearConfirm: 'Clear the current session?',
         clearFailed: 'Failed to clear session'
     },
@@ -58,6 +60,8 @@ const i18n = {
         rejected: '已拒绝',
         pendingApproval: '等待批准',
         toolsPendingApproval: '个工具等待批准',
+        other: '其他',
+        otherPlaceholder: '请输入...',
         clearConfirm: '确定清除当前会话？',
         clearFailed: '清除会话失败'
     }
@@ -539,17 +543,47 @@ function renderSelectGroup(event, multi = false) {
     const div = document.createElement('div');
     div.className = 'interaction-select-group' + (multi ? ' multi' : '');
 
+    const deselectAll = () => {
+        div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
+        const otherInput = div.querySelector('.select-other-input');
+        if (otherInput) otherInput.classList.add('hidden');
+    };
+
     for (const option of (event.options || [])) {
         const btn = document.createElement('button');
         btn.className = 'select-option-btn';
         btn.dataset.value = option.value || option.label || option;
         btn.textContent = option.label || option.value || option;
         btn.onclick = () => {
-            if (!multi) div.querySelectorAll('.select-option-btn').forEach(b => b.classList.remove('selected'));
+            if (!multi) deselectAll();
             btn.classList.toggle('selected');
         };
         div.appendChild(btn);
     }
+
+    if (event.allowOther) {
+        const otherBtn = document.createElement('button');
+        otherBtn.className = 'select-option-btn select-other-btn';
+        otherBtn.dataset.value = '__other__';
+        otherBtn.textContent = '✏️ ' + t('other');
+
+        const otherInput = document.createElement('input');
+        otherInput.type = 'text';
+        otherInput.className = 'select-other-input hidden';
+        otherInput.name = '_other';
+        otherInput.placeholder = t('otherPlaceholder');
+
+        otherBtn.onclick = () => {
+            if (!multi) deselectAll();
+            otherBtn.classList.toggle('selected');
+            otherInput.classList.toggle('hidden', !otherBtn.classList.contains('selected'));
+            if (otherBtn.classList.contains('selected')) otherInput.focus();
+        };
+
+        div.appendChild(otherBtn);
+        div.appendChild(otherInput);
+    }
+
     return div;
 }
 
@@ -671,12 +705,24 @@ function collectResponse(uiType, card) {
         case 'select':
         case 'confirm': {
             const selected = card.querySelector('.select-option-btn.selected');
-            return selected ? selected.dataset.value : null;
+            if (!selected) return null;
+            if (selected.dataset.value === '__other__') {
+                const otherInput = card.querySelector('.select-other-input');
+                return otherInput && otherInput.value.trim() ? otherInput.value.trim() : null;
+            }
+            return selected.dataset.value;
         }
         case 'multi_select': {
             const selected = card.querySelectorAll('.select-option-btn.selected');
             if (selected.length === 0) return null;
-            return Array.from(selected).map(b => b.dataset.value);
+            const values = Array.from(selected)
+                .map(b => b.dataset.value)
+                .filter(v => v !== '__other__');
+            const otherInput = card.querySelector('.select-other-input');
+            if (otherInput && otherInput.value.trim()) {
+                values.push(otherInput.value.trim());
+            }
+            return values.length > 0 ? values : null;
         }
         case 'form': {
             const result = {};

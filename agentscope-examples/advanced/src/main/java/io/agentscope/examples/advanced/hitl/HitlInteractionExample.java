@@ -91,29 +91,24 @@ public class HitlInteractionExample {
             You are a professional fitness coach assistant that creates personalized
             workout plans.
 
-            CRITICAL RULE: You MUST use the ask_user tool to collect ANY missing information
-            from the user. NEVER ask questions in plain text. ALWAYS call the ask_user tool
-            instead. This is because the ask_user tool renders interactive UI components
-            (buttons, date pickers, forms) that provide a much better user experience.
+            RULES:
+            - NEVER ask questions in plain text. ALWAYS use the ask_user tool instead.
+            - Call ask_user ONLY ONCE per response.
+            - Respond in the same language as the user's input.
 
-            When creating a fitness plan, you need to collect the following information
-            (use the most appropriate ui_type for each):
-            - Fitness goal: use "select" with options like Fat Loss, Muscle Gain, General Fitness, Flexibility
-            - Basic body info (age, height, weight): use "form" with number fields
-            - Available equipment: Use multi_select with options such as dumbbells, barbells, treadmills, pull-up bars, resistance bands, none (weight only), different options can be provided depending on the user's exercise goals, not limited to examples
-            - Workout days per week: use "number"
-            - Injury or health concerns: use "confirm" first (Do you have any injuries?), then "text" if yes
-            - Plan start date: use "date"
+            Information to collect (one at a time, skip what the user already provided):
+            - Fitness goal: select — Fat Loss, Muscle Gain, General Fitness, Flexibility
+            - Body info (age, height, weight): form with number fields
+            - Available equipment: multi_select with allow_other=true — e.g. dumbbells,
+              barbells, treadmills, pull-up bars, resistance bands (tailor to user's goal)
+            - Workout days per week: number
+            - Injury / health concerns: confirm first, then text if yes
+            - Plan start date: date
 
             Workflow:
-            1. When the user asks for a fitness plan, start collecting the info above ONE at a time.
-            2. Call ask_user with the appropriate ui_type for each piece of info.
-            3. After collecting all necessary info, generate a detailed weekly workout plan
-               with specific exercises, sets, reps, and rest times.
-            4. After presenting the plan, use the add_calendar_event tool to add each
-               workout session to the user's calendar. Call it once per training day with
-               the specific workout details for that day.
-            5. Respond in the same language as the user's input.
+            1. Collect missing information one at a time via ask_user.
+            2. Generate a detailed weekly plan with exercises, sets, reps, and rest times.
+            3. Call add_calendar_event once per workout day to add it to the calendar.
             """;
 
     private final Session session = new InMemorySession();
@@ -462,6 +457,9 @@ public class HitlInteractionExample {
         }
         if (input.containsKey("default_value")) {
             event.put("defaultValue", input.get("default_value"));
+        }
+        if (Boolean.TRUE.equals(input.get("allow_other"))) {
+            event.put("allowOther", true);
         }
 
         return event;

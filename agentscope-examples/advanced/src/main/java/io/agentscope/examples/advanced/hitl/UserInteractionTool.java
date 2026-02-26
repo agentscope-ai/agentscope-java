@@ -58,6 +58,7 @@ public class UserInteractionTool {
      * @param options options for select/multi_select
      * @param fields field definitions for form ui_type
      * @param defaultValue default value for the input field
+     * @param allowOther if true, adds an "Other" option with free-text input (select/multi_select)
      * @return never returns normally
      * @throws ToolSuspendException always thrown to suspend agent execution
      */
@@ -100,7 +101,15 @@ public class UserInteractionTool {
                             name = "default_value",
                             description = "Default value for the input field (string only)",
                             required = false)
-                    Object defaultValue) {
+                    Object defaultValue,
+            @ToolParam(
+                            name = "allow_other",
+                            description =
+                                    "If true, adds an 'Other' option with a free-text input so"
+                                            + " users can enter custom values not in the predefined"
+                                            + " list. Use with select or multi_select.",
+                            required = false)
+                    Boolean allowOther) {
         String reason = question != null ? question : "Waiting for user input";
         throw new ToolSuspendException(reason);
     }
