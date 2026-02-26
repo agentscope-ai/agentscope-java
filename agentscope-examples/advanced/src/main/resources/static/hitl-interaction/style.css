@@ -652,6 +652,11 @@ body {
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+.form-field-input.invalid {
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
 select.form-field-input {
     appearance: auto;
     cursor: pointer;

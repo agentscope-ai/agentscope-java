@@ -605,6 +605,7 @@ function renderForm(event) {
             const select = document.createElement('select');
             select.className = 'form-field-input';
             select.name = field.name;
+            if (field.required) select.required = true;
 
             const defaultOpt = document.createElement('option');
             defaultOpt.value = '';
@@ -624,6 +625,7 @@ function renderForm(event) {
             textarea.name = field.name;
             textarea.placeholder = field.placeholder || '';
             textarea.rows = 3;
+            if (field.required) textarea.required = true;
             group.appendChild(textarea);
         } else {
             const input = document.createElement('input');
@@ -631,6 +633,7 @@ function renderForm(event) {
             input.type = field.type || 'text';
             input.name = field.name;
             input.placeholder = field.placeholder || '';
+            if (field.required) input.required = true;
             if (field.type === 'number') {
                 if (field.min !== undefined) input.min = field.min;
                 if (field.max !== undefined) input.max = field.max;
@@ -726,9 +729,17 @@ function collectResponse(uiType, card) {
         }
         case 'form': {
             const result = {};
+            let valid = true;
             card.querySelectorAll('.form-field-input').forEach(el => {
                 if (el.name) result[el.name] = el.value;
+                if (el.required && !el.value.trim()) {
+                    el.classList.add('invalid');
+                    valid = false;
+                } else {
+                    el.classList.remove('invalid');
+                }
             });
+            if (!valid) return null;
             return result;
         }
         case 'text':
