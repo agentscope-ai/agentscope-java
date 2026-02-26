@@ -198,6 +198,8 @@ class DashScopeHttpClientTest {
         // -vl pattern
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen-vl-plus"));
         assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-vl-max"));
+        // -asr pattern
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-asr-flash"));
         // Not multimodal
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-plus"));
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-max"));
