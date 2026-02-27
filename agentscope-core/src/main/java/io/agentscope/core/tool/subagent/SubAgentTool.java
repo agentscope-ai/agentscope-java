@@ -61,13 +61,19 @@ import reactor.core.publisher.Mono;
  * <p><b>Context Sharing Modes:</b>
  *
  * <ul>
- *   <li><b>SHARED (default):</b> Sub-agent shares the same memory instance with parent. All
- *       messages are immediately visible to both. Sub-agent uses parent's system prompt context.
- *   <li><b>FORK:</b> Sub-agent gets a copy of parent's memory at invocation time. Changes don't
- *       affect parent's memory. Sub-agent uses parent's system prompt context.
+ *   <li><b>SHARED (default):</b> Sub-agent receives a forked copy of parent's memory with pending
+ *       tool calls removed. Provides context visibility while avoiding validation issues. Changes
+ *       don't affect parent's memory. Sub-agent uses parent's system prompt context.
+ *   <li><b>FORK:</b> Sub-agent gets a forked copy of parent's memory at invocation time, with
+ *       pending tool calls removed. Changes don't affect parent's memory. Sub-agent uses parent's
+ *       system prompt context.
  *   <li><b>NEW:</b> Sub-agent has completely independent memory with its own system prompt. No
  *       context from parent.
  * </ul>
+ *
+ * <p><b>Note:</b> Both SHARED and FORK modes fork the parent's memory because the parent's memory
+ * contains the pending tool_use block that invoked the sub-agent, which would cause validation
+ * errors if shared directly.
  */
 public class SubAgentTool implements AgentTool {
 

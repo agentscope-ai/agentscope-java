@@ -281,125 +281,6 @@ public class SkillBox implements StateModule {
         skillRegistry.registerSkill(skillId, skill, registered);
 
         logger.info("Registered skill '{}'", skillId);
-
-        // Create sub-agent tool if skill has model configured
-        createSubAgentForSkill(skill, skillId);
-    }
-
-    /**
-     * Creates a SubAgentTool for a skill if it has a model configured.
-     *
-     * <p>This method is called after skill registration to automatically create
-     * sub-agent tools for skills with model configuration.
-     *
-     * @param skill The skill to check for model configuration
-     * @param skillId The skill ID
-     */
-    private void createSubAgentForSkill(AgentSkill skill, String skillId) {
-        String modelRef = skill.getModel();
-        if (modelRef == null || modelRef.isBlank()) {
-            logger.debug(
-                    "Skill '{}' has no model configured, skipping sub-agent creation", skillId);
-            return;
-        }
-
-        if (toolkit == null) {
-            logger.warn(
-                    "No toolkit configured for skill '{}', cannot create sub-agent with model '{}'",
-                    skillId,
-                    modelRef);
-            return;
-        }
-
-        if (modelProvider == null) {
-            logger.warn(
-                    "No SkillModelProvider configured for skill '{}', "
-                            + "cannot create sub-agent with model '{}'",
-                    skillId,
-                    modelRef);
-            return;
-        }
-
-        Model model = modelProvider.getModel(modelRef);
-        if (model == null) {
-            logger.warn(
-                    "Model '{}' not found for skill '{}', skipping sub-agent creation",
-                    modelRef,
-                    skillId);
-            return;
-        }
-
-        // Create tool group if needed
-        String skillToolGroup = skillId + "_skill_tools";
-        if (toolkit.getToolGroup(skillToolGroup) == null) {
-            toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
-        }
-
-        // Build system prompt using SkillSubagentPromptBuilder
-        final Model resolvedModel = model;
-        final Toolkit toolkitCopy = toolkit.copy();
-        final String systemPrompt =
-                SkillSubagentPromptBuilder.builder()
-                        .skill(skill)
-                        .modelName(resolvedModel.getModelName())
-                        .build();
-
-        // Parse context sharing mode from skill
-        final ContextSharingMode contextMode = parseContextSharingMode(skill.getContext());
-
-        // Create SubAgentProvider - context-aware for memory sharing
-        SubAgentProvider<ReActAgent> provider =
-                new SubAgentProvider<>() {
-                    @Override
-                    public ReActAgent provideWithContext(SubAgentContext context) {
-                        ReActAgent.Builder agentBuilder =
-                                ReActAgent.builder()
-                                        .name(skill.getName() + "_agent")
-                                        .description(skill.getDescription())
-                                        .model(resolvedModel)
-                                        .toolkit(toolkitCopy);
-
-                        // Check if context provides a memory to use (SHARED or FORK mode)
-                        Memory memoryToUse = context.getMemoryToUse();
-                        if (memoryToUse != null) {
-                            // Use the provided memory (shared or forked from parent)
-                            agentBuilder.memory(memoryToUse);
-                        } else {
-                            // No memory provided - use independent memory with our system
-                            // prompt
-                            agentBuilder.sysPrompt(systemPrompt).memory(new InMemoryMemory());
-                        }
-
-                        return agentBuilder.build();
-                    }
-                };
-
-        // Register sub-agent tool
-        String toolName = "call_" + skill.getName();
-        toolkit.registration()
-                .group(skillToolGroup)
-                .subAgent(
-                        provider,
-                        SubAgentConfig.builder()
-                                .toolName(toolName)
-                                .description(
-                                        "Execute "
-                                                + skill.getName()
-                                                + " skill task using model '"
-                                                + model.getModelName()
-                                                + "'")
-                                .contextSharingMode(contextMode)
-                                .build())
-                .apply();
-
-        // Activate the tool group
-        toolkit.updateToolGroups(List.of(skillToolGroup), true);
-
-        logger.info(
-                "Created sub-agent tool '{}' for skill '{}' with model '{}'",
-                toolName,
-                skillId,
-                model.getModelName());
     }
 
     /**
@@ -757,148 +638,154 @@ public class SkillBox implements StateModule {
          */
         private void createSubAgentIfHasModel() {
             String effectiveModel = resolveEffectiveModel();
-            logger.debug(
-                    "createSubAgentIfHasModel called for skill '{}', effectiveModel='{}', "
-                            + "toolkit={}, modelProvider={}",
-                    skill.getName(),
-                    effectiveModel,
-                    skillBox.toolkit != null ? "present" : "null",
-                    skillBox.modelProvider != null ? "present" : "null");
-
-            if (effectiveModel == null || effectiveModel.isBlank()) {
-                logger.debug(
-                        "Skill '{}' has no model configured, skipping sub-agent creation",
-                        skill.getName());
-                return; // No model specified
-            }
-
-            if (skillBox.toolkit == null) {
-                logger.warn(
-                        "No toolkit configured for skill '{}', cannot create sub-agent with model"
-                                + " '{}'",
-                        skill.getName(),
-                        effectiveModel);
-                return;
-            }
-
-            if (skillBox.modelProvider == null) {
-                logger.warn(
-                        "No SkillModelProvider configured for skill '{}', "
-                                + "cannot create sub-agent with model '{}'",
-                        skill.getName(),
-                        effectiveModel);
-                return;
-            }
-
-            Model model = skillBox.modelProvider.getModel(effectiveModel);
-            if (model == null) {
-                logger.warn(
-                        "Model '{}' not found for skill '{}', skipping sub-agent creation",
-                        effectiveModel,
-                        skill.getName());
-                return;
-            }
-
-            // Use the same toolkit reference as skillBox
             Toolkit effectiveToolkit = toolkit != null ? toolkit : skillBox.toolkit;
-
-            // Create SubAgentProvider with structured system prompt
-            final Model resolvedModel = model;
-            final Toolkit toolkitCopy = effectiveToolkit.copy();
-            final String systemPrompt =
-                    SkillSubagentPromptBuilder.builder()
-                            .skill(skill)
-                            .modelName(resolvedModel.getModelName())
-                            .build();
-
-            // Parse context sharing mode from skill
-            final ContextSharingMode contextMode = parseContextSharingMode(skill.getContext());
-
-            // Create SubAgentProvider - context-aware for memory sharing
-            SubAgentProvider<ReActAgent> provider =
-                    new SubAgentProvider<>() {
-                        @Override
-                        public ReActAgent provideWithContext(SubAgentContext context) {
-                            ReActAgent.Builder agentBuilder =
-                                    ReActAgent.builder()
-                                            .name(skill.getName() + "_agent")
-                                            .description(skill.getDescription())
-                                            .model(resolvedModel)
-                                            .toolkit(toolkitCopy);
-
-                            // Check if context provides a memory to use (SHARED or FORK mode)
-                            Memory memoryToUse = context.getMemoryToUse();
-                            if (memoryToUse != null) {
-                                // Use the provided memory (shared or forked from parent)
-                                agentBuilder.memory(memoryToUse);
-                            } else {
-                                // No memory provided - use independent memory with our system
-                                // prompt
-                                agentBuilder.sysPrompt(systemPrompt).memory(new InMemoryMemory());
-                            }
-
-                            return agentBuilder.build();
-                        }
-                    };
-
-            // Create tool group if needed
-            String skillToolGroup = skill.getSkillId() + "_skill_tools";
-            if (effectiveToolkit.getToolGroup(skillToolGroup) == null) {
-                effectiveToolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
-            }
-
-            // Register sub-agent tool
-            effectiveToolkit
-                    .registration()
-                    .group(skillToolGroup)
-                    .subAgent(
-                            provider,
-                            SubAgentConfig.builder()
-                                    .toolName("call_" + skill.getName())
-                                    .description(
-                                            "Execute "
-                                                    + skill.getName()
-                                                    + " skill task using configured model")
-                                    .contextSharingMode(contextMode)
-                                    .build())
-                    .apply();
-
-            logger.info(
-                    "Created sub-agent tool 'call_{}' for skill '{}' with model '{}'",
-                    skill.getName(),
-                    skill.getName(),
-                    model.getModelName());
+            skillBox.createSubAgentToolForSkill(skill, effectiveToolkit, effectiveModel);
         }
     }
 
+    // ==================== SubAgent Creation Helper ====================
+
     /**
-     * Parses the context sharing mode from skill's context field.
+     * Creates a SubAgentTool for a skill with the specified model.
      *
-     * <p>Supported values:
+     * <p>This is a shared helper method used by both {@link SkillRegistration} and {@link
+     * SkillToolFactory} to create sub-agent tools for skills with model configuration.
+     *
+     * <p>The method handles:
      *
      * <ul>
-     *   <li>null, empty, "shared" - SHARED (default)
-     *   <li>"fork" - FORK
-     *   <li>"new" - NEW
+     *   <li>Resolving the model from the model provider
+     *   <li>Creating the tool group if needed
+     *   <li>Building the system prompt
+     *   <li>Creating the SubAgentProvider with context-aware memory handling
+     *   <li>Registering the sub-agent tool
      * </ul>
      *
-     * @param context The context string from skill
-     * @return The corresponding ContextSharingMode
+     * @param skill The skill to create sub-agent for
+     * @param effectiveToolkit The toolkit to register the tool with
+     * @param modelRef The model reference to resolve
+     * @return true if sub-agent was created successfully, false otherwise
      */
-    private static ContextSharingMode parseContextSharingMode(String context) {
-        if (context == null || context.isEmpty() || "shared".equalsIgnoreCase(context)) {
-            return ContextSharingMode.SHARED;
-        } else if ("fork".equalsIgnoreCase(context)) {
-            return ContextSharingMode.FORK;
-        } else if ("new".equalsIgnoreCase(context)) {
-            return ContextSharingMode.NEW;
-        } else {
-            logger.warn(
-                    "Unknown context mode '{}', defaulting to SHARED. "
-                            + "Supported values: shared, fork, new",
-                    context);
-            return ContextSharingMode.SHARED;
+    boolean createSubAgentToolForSkill(
+            AgentSkill skill, Toolkit effectiveToolkit, String modelRef) {
+        if (modelRef == null || modelRef.isBlank()) {
+            logger.debug(
+                    "Skill '{}' has no model configured, skipping sub-agent creation",
+                    skill.getName());
+            return false;
         }
+
+        if (effectiveToolkit == null) {
+            logger.warn(
+                    "No toolkit configured for skill '{}', cannot create sub-agent with model '{}'",
+                    skill.getName(),
+                    modelRef);
+            return false;
+        }
+
+        if (modelProvider == null) {
+            logger.warn(
+                    "No SkillModelProvider configured for skill '{}', "
+                            + "cannot create sub-agent with model '{}'",
+                    skill.getName(),
+                    modelRef);
+            return false;
+        }
+
+        Model model = modelProvider.getModel(modelRef);
+        if (model == null) {
+            logger.warn(
+                    "Model '{}' not found for skill '{}', skipping sub-agent creation",
+                    modelRef,
+                    skill.getName());
+            return false;
+        }
+
+        // Create tool group if needed
+        String skillToolGroup = skill.getSkillId() + "_skill_tools";
+        if (effectiveToolkit.getToolGroup(skillToolGroup) == null) {
+            effectiveToolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
+        }
+
+        // Build system prompt using SkillSubagentPromptBuilder
+        final Model resolvedModel = model;
+        final Toolkit toolkitCopy = effectiveToolkit.copy();
+        final String systemPrompt =
+                SkillSubagentPromptBuilder.builder()
+                        .skill(skill)
+                        .modelName(resolvedModel.getModelName())
+                        .build();
+
+        // Parse context sharing mode from skill
+        final ContextSharingMode contextMode = ContextSharingMode.fromString(skill.getContext());
+
+        // Create SubAgentProvider - context-aware for memory sharing
+        SubAgentProvider<ReActAgent> provider =
+                createSubAgentProvider(skill, resolvedModel, toolkitCopy, systemPrompt);
+
+        // Register sub-agent tool
+        String toolName = "call_" + skill.getName();
+        effectiveToolkit
+                .registration()
+                .group(skillToolGroup)
+                .subAgent(
+                        provider,
+                        SubAgentConfig.builder()
+                                .toolName(toolName)
+                                .description(
+                                        "Execute "
+                                                + skill.getName()
+                                                + " skill task using configured model")
+                                .contextSharingMode(contextMode)
+                                .build())
+                .apply();
+
+        logger.info(
+                "Created sub-agent tool '{}' for skill '{}' with model '{}'",
+                toolName,
+                skill.getName(),
+                model.getModelName());
+
+        return true;
+    }
+
+    /**
+     * Creates a SubAgentProvider for the given skill configuration.
+     *
+     * <p>This method creates a context-aware provider that handles memory sharing based on the
+     * context sharing mode.
+     *
+     * @param skill The skill to create provider for
+     * @param resolvedModel The resolved model to use
+     * @param toolkitCopy A copy of the toolkit for the sub-agent
+     * @param systemPrompt The system prompt for NEW mode
+     * @return A SubAgentProvider that creates ReActAgent instances
+     */
+    private SubAgentProvider<ReActAgent> createSubAgentProvider(
+            AgentSkill skill, Model resolvedModel, Toolkit toolkitCopy, String systemPrompt) {
+        return new SubAgentProvider<>() {
+            @Override
+            public ReActAgent provideWithContext(SubAgentContext context) {
+                ReActAgent.Builder agentBuilder =
+                        ReActAgent.builder()
+                                .name(skill.getName() + "_agent")
+                                .description(skill.getDescription())
+                                .model(resolvedModel)
+                                .toolkit(toolkitCopy);
+
+                // Check if context provides a memory to use (SHARED or FORK mode)
+                Memory memoryToUse = context.getMemoryToUse();
+                if (memoryToUse != null) {
+                    // Use the provided memory (shared or forked from parent)
+                    agentBuilder.memory(memoryToUse);
+                } else {
+                    // No memory provided - use independent memory with our system prompt
+                    agentBuilder.sysPrompt(systemPrompt).memory(new InMemoryMemory());
+                }
+
+                return agentBuilder.build();
+            }
+        };
     }
 
     // ==================== Skill Build-In Tools ====================

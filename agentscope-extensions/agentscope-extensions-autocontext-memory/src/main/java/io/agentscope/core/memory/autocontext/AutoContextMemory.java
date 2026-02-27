@@ -1847,8 +1847,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         // Copy original memory messages
         forked.originalMemoryStorage = new ArrayList<>(this.originalMemoryStorage);
 
-        // Copy offload context
-        forked.offloadContext = new HashMap<>(this.offloadContext);
+        // Copy offload context (deep copy to ensure true isolation)
+        forked.offloadContext = new HashMap<>();
+        for (Map.Entry<String, List<Msg>> entry : this.offloadContext.entrySet()) {
+            forked.offloadContext.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
 
         // Copy compression events
         forked.compressionEvents = new ArrayList<>(this.compressionEvents);
