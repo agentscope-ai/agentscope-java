@@ -37,28 +37,23 @@ public class AgentSkillPromptProvider {
             ## Available Skills
 
             <usage>
-            When you need to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities, tools, and domain knowledge.
+            Skills provide specialized capabilities and domain knowledge. Use them when they match your current task.
 
             How to use skills:
             - Load skill: load_skill_through_path(skillId="<skill-id>", path="SKILL.md")
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
-            Usage notes:
-            - Only use skills listed in <available_skills> below
-            - Loading SKILL.md activates the skill and will make its tools available
-
-            Code execution guidance:
-            - If a task requires running code, use the code execution tools (shell/read/write)
-                when they are available
-            - Code execution tools operate in workDir; skill scripts are uploaded to
-                workDir/skills/<skill-id>/scripts (for example: workDir/skills/skill-ID/scripts/shell.sh)
-            - Example (shell): execute_shell_command(command="skills/skill-ID/scripts/shell.sh")
+            Path Information:
+            When you load a skill, the response will include:
+            - Exact paths to all skill resources
+            - Code examples for accessing skill files
+            - Usage instructions specific to that skill
 
             Template fields explanation:
-            - <name>: The skill's display name. Use it along with <description> to determine if this skill is relevant to your current task
-            - <description>: Detailed description of when and how to use this skill. Read carefully to decide whether to load this skill
-            - <skill-id>: The unique identifier used to load the skill via load_skill_through_path tool
+            - <name>: The skill's display name
+            - <description>: When and how to use this skill
+            - <skill-id>: Unique identifier for load_skill_through_path tool
             </usage>
 
             <available_skills>

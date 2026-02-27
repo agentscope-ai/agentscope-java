@@ -35,11 +35,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Merges multi-agent conversation messages for OpenAI HTTP API.
- * Consolidates multiple agent messages into single user messages with history tags.
+ * Merges multi-agent conversation messages for OpenAI HTTP API. Consolidates multiple agent
+ * messages into single user messages with history tags.
  *
- * <p>This class combines all agent messages into a single user message with conversation
- * history wrapped in special tags. Images and audio are preserved as separate ContentParts.
+ * <p>This class combines all agent messages into a single user message with conversation history
+ * wrapped in special tags. Images and audio are preserved as separate ContentParts.
  */
 public class OpenAIConversationMerger {
 
@@ -132,10 +132,6 @@ public class OpenAIConversationMerger {
             List<OpenAIContentPart> allParts,
             boolean includePrefix) {
         String agentName = msg.getName();
-        String roleLabel = roleFormatter.apply(msg);
-        if (roleLabel == null) {
-            roleLabel = "Unknown";
-        }
 
         // Process all blocks
         List<ContentBlock> blocks = msg.getContent();
@@ -145,7 +141,7 @@ public class OpenAIConversationMerger {
         for (ContentBlock block : blocks) {
             if (block instanceof TextBlock tb) {
                 if (includePrefix) {
-                    appendRoleAndName(textBuffer, roleLabel, agentName);
+                    appendNamePrefix(textBuffer, agentName);
                 }
                 textBuffer.append(tb.getText()).append("\n");
 
@@ -162,7 +158,7 @@ public class OpenAIConversationMerger {
                     if (source == null) {
                         log.warn("ImageBlock has null source, skipping");
                         if (includePrefix) {
-                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                            appendNamePrefix(textBuffer, agentName);
                         }
                         textBuffer.append("[Image - null source]\n");
                     } else {
@@ -174,7 +170,7 @@ public class OpenAIConversationMerger {
                             e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     log.warn("Failed to process ImageBlock: {}", errorMsg);
                     if (includePrefix) {
-                        appendRoleAndName(textBuffer, roleLabel, agentName);
+                        appendNamePrefix(textBuffer, agentName);
                     }
                     textBuffer
                             .append("[Image - processing failed: ")
@@ -195,7 +191,7 @@ public class OpenAIConversationMerger {
                     if (source == null) {
                         log.warn("VideoBlock has null source, skipping");
                         if (includePrefix) {
-                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                            appendNamePrefix(textBuffer, agentName);
                         }
                         textBuffer.append("[Video - null source]\n");
                     } else {
@@ -207,7 +203,7 @@ public class OpenAIConversationMerger {
                             e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     log.warn("Failed to process VideoBlock: {}", errorMsg);
                     if (includePrefix) {
-                        appendRoleAndName(textBuffer, roleLabel, agentName);
+                        appendNamePrefix(textBuffer, agentName);
                     }
                     textBuffer
                             .append("[Video - processing failed: ")
@@ -228,7 +224,7 @@ public class OpenAIConversationMerger {
                     if (source == null) {
                         log.warn("AudioBlock has null source, skipping");
                         if (includePrefix) {
-                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                            appendNamePrefix(textBuffer, agentName);
                         }
                         textBuffer.append("[Audio - null source]\n");
                     } else if (source instanceof Base64Source b64) {
@@ -236,7 +232,7 @@ public class OpenAIConversationMerger {
                         if (audioData == null || audioData.isEmpty()) {
                             log.warn("Base64Source has null or empty data, skipping");
                             if (includePrefix) {
-                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                                appendNamePrefix(textBuffer, agentName);
                             }
                             textBuffer.append("[Audio - null or empty data]\n");
                         } else {
@@ -248,7 +244,7 @@ public class OpenAIConversationMerger {
                         if (url == null || url.isEmpty()) {
                             log.warn("URLSource has null or empty URL, skipping");
                             if (includePrefix) {
-                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                                appendNamePrefix(textBuffer, agentName);
                             }
                             textBuffer.append("[Audio - null or empty URL]\n");
                         } else {
@@ -256,14 +252,14 @@ public class OpenAIConversationMerger {
                                     "URL-based audio not directly supported, using text"
                                             + " reference");
                             if (includePrefix) {
-                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                                appendNamePrefix(textBuffer, agentName);
                             }
                             textBuffer.append("[Audio URL: ").append(url).append("]\n");
                         }
                     } else {
                         log.warn("Unknown audio source type: {}", source.getClass());
                         if (includePrefix) {
-                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                            appendNamePrefix(textBuffer, agentName);
                         }
                         textBuffer.append("[Audio - unsupported source type]\n");
                     }
@@ -271,7 +267,7 @@ public class OpenAIConversationMerger {
                     String errorMsg =
                             e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     log.warn("Failed to process AudioBlock: {}", errorMsg);
-                    appendRoleAndName(textBuffer, roleLabel, agentName);
+                    appendNamePrefix(textBuffer, agentName);
                     textBuffer
                             .append("[Audio - processing failed: ")
                             .append(errorMsg)
@@ -281,11 +277,16 @@ public class OpenAIConversationMerger {
             } else if (block instanceof ThinkingBlock thinkingBlock) {
                 // Include ThinkingBlock in conversation history for models that support reasoning
                 if (includePrefix) {
-                    appendRoleAndName(textBuffer, roleLabel, agentName);
-                }
-                String thinking = thinkingBlock.getThinking();
-                if (thinking != null && !thinking.isEmpty()) {
-                    textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    appendNamePrefix(textBuffer, agentName);
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    }
+                } else {
+                    String thinking = thinkingBlock.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                    }
                 }
             } else if (block instanceof ToolResultBlock toolResult) {
                 // Use provided converter to handle multimodal content in tool results
@@ -295,13 +296,8 @@ public class OpenAIConversationMerger {
                                 ? resultText
                                 : "[Empty tool result]";
 
-                // For tool results, we format slightly differently to include tool name
-                textBuffer.append(roleLabel);
-                if (agentName != null
-                        && !agentName.equals(roleLabel)
-                        && !agentName.equals("Unknown")) {
-                    textBuffer.append(" ").append(agentName);
-                }
+                // For tool results, format as: name (tool_name): result
+                textBuffer.append(agentName);
                 textBuffer
                         .append(" (")
                         .append(toolResult.getName())
@@ -312,31 +308,23 @@ public class OpenAIConversationMerger {
         }
     }
 
-    private void appendRoleAndName(StringBuilder buffer, String roleLabel, String agentName) {
-        buffer.append(roleLabel);
-        if (agentName != null && !agentName.equals(roleLabel) && !agentName.equals("Unknown")) {
-            buffer.append(" ").append(agentName);
+    private void appendNamePrefix(StringBuilder buffer, String agentName) {
+        if (agentName != null && !agentName.isEmpty()) {
+            buffer.append(agentName).append(": ");
         }
-        buffer.append(": ");
     }
 
-    /**
-     * Convert image Source to URL string for OpenAI API.
-     */
+    /** Convert image Source to URL string for OpenAI API. */
     private String convertImageSourceToUrl(Source source) {
         return OpenAIConverterUtils.convertImageSourceToUrl(source);
     }
 
-    /**
-     * Convert video Source to URL string for OpenAI API.
-     */
+    /** Convert video Source to URL string for OpenAI API. */
     private String convertVideoSourceToUrl(Source source) {
         return OpenAIConverterUtils.convertVideoSourceToUrl(source);
     }
 
-    /**
-     * Detect audio format from media type.
-     */
+    /** Detect audio format from media type. */
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }

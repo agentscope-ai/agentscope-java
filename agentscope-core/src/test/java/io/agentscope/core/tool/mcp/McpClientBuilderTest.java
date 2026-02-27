@@ -380,7 +380,7 @@ class McpClientBuilderTest {
     void testSseTransport_WithCompleteConfiguration() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token");
-        headers.put("X-Client-Version", "1.0.9-SNAPSHOT");
+        headers.put("X-Client-Version", "1.0.10-SNAPSHOT");
 
         McpClientBuilder builder =
                 McpClientBuilder.create("full-sse-client")

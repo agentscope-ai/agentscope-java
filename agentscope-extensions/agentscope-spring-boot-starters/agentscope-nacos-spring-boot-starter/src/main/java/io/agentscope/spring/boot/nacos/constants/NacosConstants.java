@@ -28,6 +28,8 @@ public class NacosConstants {
 
     public static final String NACOS_PREFIX = Constants.AGENTSCOPE_PREFIX + ".nacos";
 
+    public static final String NACOS_PROMPT_PREFIX = NACOS_PREFIX + ".prompt";
+
     public static final String A2A_NACOS_PREFIX = Constants.A2A_PREFIX + ".nacos";
 
     public static final String A2A_NACOS_REGISTRY_PREFIX = A2A_NACOS_PREFIX + ".registry";

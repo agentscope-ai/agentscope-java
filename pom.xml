@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.9-SNAPSHOT</revision>
+        <revision>1.0.10-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -356,9 +356,24 @@
                             <publishingServerId>central</publishingServerId>
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
-                                <artifact>agentscope-examples-quickstart</artifact>
-                                <artifact>agentscope-examples-werewolf</artifact>
-                                <artifact>agentscope-examples-advanced</artifact>
+                                <artifact>a2a</artifact>
+                                <artifact>advanced</artifact>
+                                <artifact>agui</artifact>
+                                <artifact>boba-tea-shop</artifact>
+                                <artifact>supervisor-agent</artifact>
+                                <artifact>business-mcp-server</artifact>
+                                <artifact>business-sub-agent</artifact>
+                                <artifact>consult-sub-agent</artifact>
+                                <artifact>chat-completions-web</artifact>
+                                <artifact>chat-tts</artifact>
+                                <artifact>hitl-chat</artifact>
+                                <artifact>micronaut</artifact>
+                                <artifact>model-request-compression</artifact>
+                                <artifact>plan-notebook</artifact>
+                                <artifact>quarkus</artifact>
+                                <artifact>quickstart</artifact>
+                                <artifact>werewolf</artifact>
+                                <artifact>werewolf-hitl</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

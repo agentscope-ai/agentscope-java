@@ -37,11 +37,8 @@ import reactor.core.scheduler.Schedulers;
  * <p>This implementation uses direct HTTP calls to DashScope API via OkHttp,
  * without depending on the DashScope Java SDK.
  *
- * <p>Supports both text and vision models through automatic endpoint routing:
- * <ul>
- *   <li>Vision models (names starting with "qvq" or containing "-vl") use MultiModalGeneration API
- *   <li>Text models use TextGeneration API
- * </ul>
+ * <p>Supports both text and vision models through automatic endpoint routing.
+ * Use {@link EndpointType} to explicitly control the endpoint selection.
  *
  * <p>Features:
  * <ul>
@@ -60,6 +57,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final boolean stream;
     private final Boolean enableThinking; // nullable
     private final Boolean enableSearch; // nullable
+    private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
 
@@ -67,7 +65,10 @@ public class DashScopeChatModel extends ChatModelBase {
     private final DashScopeHttpClient httpClient;
 
     /**
-     * Creates a new DashScope chat model instance.
+     * Creates a new DashScope chat model instance with automatic API type detection.
+     *
+     * <p>This constructor maintains backward compatibility. API type defaults to AUTO,
+     * which detects the endpoint based on model name.
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
@@ -93,6 +94,50 @@ public class DashScopeChatModel extends ChatModelBase {
             HttpTransport httpTransport,
             String publicKeyId,
             String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                null,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     */
+    public DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
         this.modelName = modelName;
         // Thinking mode requires streaming; override stream setting if needed
         if (enableThinking != null && enableThinking && !stream) {
@@ -103,6 +148,7 @@ public class DashScopeChatModel extends ChatModelBase {
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
+        this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
@@ -150,8 +196,12 @@ public class DashScopeChatModel extends ChatModelBase {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         if (log.isDebugEnabled()) {
-            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
-            log.debug("DashScope API call: model={}, multimodal={}", modelName, useMultimodal);
+            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
+            log.debug(
+                    "DashScope API call: model={}, endpointType={}, multimodal={}",
+                    modelName,
+                    endpointType,
+                    useMultimodal);
         }
 
         Flux<ChatResponse> responseFlux = streamWithHttpClient(messages, tools, options);
@@ -169,7 +219,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private Flux<ChatResponse> streamWithHttpClient(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant start = Instant.now();
-        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName);
+        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
 
         // Merge options with defaultOptions (options takes precedence)
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
@@ -217,6 +267,9 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
+
+        // Set endpoint type for endpoint selection
+        request.setEndpointType(endpointType);
 
         if (stream) {
             // Streaming mode
@@ -298,6 +351,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean stream = true;
         private Boolean enableThinking;
         private Boolean enableSearch;
+        private EndpointType endpointType;
         private GenerateOptions defaultOptions = null;
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
@@ -318,14 +372,11 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets the model name to use.
          *
-         * <p>The model name determines which API is used:
-         * <ul>
-         *   <li>Vision models (qvq* or *-vl*) → MultiModal API</li>
-         *   <li>Text models → Text Generation API</li>
-         * </ul>
+         * <p>The model name determines which API is used when endpointType is AUTO.
          *
          * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
          * @return this builder instance
+         * @see DashScopeHttpClient#isMultimodalModel(String)
          */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -371,6 +422,19 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableSearch(Boolean enableSearch) {
             this.enableSearch = enableSearch;
+            return this;
+        }
+
+        /**
+         * Sets the endpoint type to use for endpoint routing.
+         *
+         * @param endpointType the endpoint type to use (null for AUTO)
+         * @return this builder instance
+         * @see EndpointType
+         * @see DashScopeHttpClient#isMultimodalModel(String)
+         */
+        public Builder endpointType(EndpointType endpointType) {
+            this.endpointType = endpointType;
             return this;
         }
 
@@ -503,6 +567,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     stream,
                     enableThinking,
                     enableSearch,
+                    endpointType,
                     effectiveOptions,
                     baseUrl,
                     formatter,

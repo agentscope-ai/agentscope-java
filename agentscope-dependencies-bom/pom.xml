@@ -60,25 +60,25 @@
     </developers>
 
     <properties>
-        <revision>1.0.9-SNAPSHOT</revision>
+        <revision>1.0.10-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
-        <opentelemetry.version>1.58.0</opentelemetry.version>
+        <opentelemetry.version>1.59.0</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.2</reactor-bom.version>
         <jackson.version>2.21.0</jackson.version>
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.37.0</google-genai.version>
-        <dashscope-sdk-java.version>2.22.7</dashscope-sdk-java.version>
+        <google-genai.version>1.38.0</google-genai.version>
+        <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
         <bailian.version>2.8.1</bailian.version>
-        <openai-java.version>4.17.0</openai-java.version>
-        <anthropic.version>2.12.0</anthropic.version>
+        <openai-java.version>4.19.0</openai-java.version>
+        <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
@@ -94,7 +94,7 @@
         <mysql.version>9.6.0</mysql.version>
         <opentelemetry-reactor.version>2.24.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.39.0-alpha</opentelemetry-semconv-incubating.version>
-        <redisson.version>4.1.0</redisson.version>
+        <redisson.version>4.2.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
@@ -432,6 +432,12 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.fasterxml.jackson.core</groupId>
+                        <artifactId>jackson-core</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- Victools JSON Schema Module for Jackson annotations support -->
