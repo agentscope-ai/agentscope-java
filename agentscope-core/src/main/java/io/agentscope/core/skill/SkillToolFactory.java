@@ -15,13 +15,23 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.subagent.ContextSharingMode;
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.tool.subagent.SubAgentContext;
+import io.agentscope.core.tool.subagent.SubAgentProvider;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -34,11 +44,16 @@ class SkillToolFactory {
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
     private final SkillRegistry skillRegistry;
+    private final SkillBox skillBox;
     private Toolkit toolkit;
 
-    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
+    /** Tracks which skills have already had their sub-agent tools created. */
+    private final Set<String> skillsWithSubAgentCreated = new HashSet<>();
+
+    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit, SkillBox skillBox) {
         this.skillRegistry = skillRegistry;
         this.toolkit = toolkit;
+        this.skillBox = skillBox;
     }
 
     /**
@@ -186,11 +201,29 @@ class SkillToolFactory {
         result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
         result.append("Name: ").append(skill.getName()).append("\n");
         result.append("Description: ").append(skill.getDescription()).append("\n");
+
+        // Add model info if present
+        if (skill.getModel() != null && !skill.getModel().isBlank()) {
+            result.append("Model: ").append(skill.getModel()).append("\n");
+        }
+
         result.append("Source: ").append(skill.getSource()).append("\n\n");
         result.append("Content:\n");
         result.append("---\n");
         result.append(skill.getSkillContent());
         result.append("\n---\n");
+
+        // Add hint about sub-agent tool if skill has a configured model
+        if (skill.getModel() != null && !skill.getModel().isBlank()) {
+            String toolName = "call_" + skill.getName();
+            result.append("\n**Note:** This skill is configured to use model '")
+                    .append(skill.getModel())
+                    .append("'.\n");
+            result.append("Use the '**")
+                    .append(toolName)
+                    .append("**' tool to execute tasks with this skill's configured model.\n");
+        }
+
         return result.toString();
     }
 
@@ -249,6 +282,9 @@ class SkillToolFactory {
     /**
      * Validate skill exists and activate it and its tool group.
      *
+     * <p>This method also creates a sub-agent tool if the skill has a model configured
+     * and the sub-agent tool hasn't been created yet.
+     *
      * @param skillId The unique identifier of the skill
      * @return The skill instance
      * @throws IllegalArgumentException if skill doesn't exist
@@ -280,6 +316,187 @@ class SkillToolFactory {
                     toolkit.getToolGroup(toolsGroupName).getTools());
         }
 
+        // Create sub-agent tool if skill has model and not already created
+        createSubAgentIfHasModel(skill, skillId);
+
         return skill;
+    }
+
+    /**
+     * Create a SubAgentTool if the skill has a model configured and not already created.
+     *
+     * <p>This method is called when a skill is dynamically loaded via load_skill_through_path.
+     * It ensures that skills with models get their sub-agent tools created on-demand.
+     *
+     * @param skill The skill to check for model configuration
+     * @param skillId The skill ID for tracking creation status
+     */
+    private void createSubAgentIfHasModel(AgentSkill skill, String skillId) {
+        // Check if skill has a model configured
+        String modelRef = skill.getModel();
+        logger.debug(
+                "createSubAgentIfHasModel called for skill '{}', modelRef='{}', "
+                        + "toolkit={}, skillBox={}, modelProvider={}",
+                skill.getName(),
+                modelRef,
+                toolkit != null ? "present" : "null",
+                skillBox != null ? "present" : "null",
+                skillBox != null && skillBox.getModelProvider() != null ? "present" : "null");
+
+        if (modelRef == null || modelRef.isBlank()) {
+            logger.debug(
+                    "Skill '{}' has no model configured, skipping sub-agent creation",
+                    skill.getName());
+            return; // No model specified
+        }
+
+        // Check if sub-agent tool already created for this skill
+        if (skillsWithSubAgentCreated.contains(skillId)) {
+            logger.debug("Sub-agent tool already exists for skill '{}'", skillId);
+            return;
+        }
+
+        // Check prerequisites
+        if (toolkit == null) {
+            logger.warn(
+                    "No toolkit available for skill '{}', cannot create sub-agent with model '{}'",
+                    skill.getName(),
+                    modelRef);
+            return;
+        }
+
+        if (skillBox == null || skillBox.getModelProvider() == null) {
+            logger.warn(
+                    "No SkillModelProvider configured for skill '{}', "
+                            + "cannot create sub-agent with model '{}'",
+                    skill.getName(),
+                    modelRef);
+            return;
+        }
+
+        // Resolve model
+        Model model = skillBox.getModelProvider().getModel(modelRef);
+        if (model == null) {
+            logger.warn(
+                    "Model '{}' not found for skill '{}', skipping sub-agent creation",
+                    modelRef,
+                    skill.getName());
+            return;
+        }
+
+        // Create tool group if needed
+        String skillToolGroup = skillId + "_skill_tools";
+        if (toolkit.getToolGroup(skillToolGroup) == null) {
+            toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
+        }
+
+        // Parse context sharing mode from skill
+        ContextSharingMode contextMode = parseContextSharingMode(skill.getContext());
+
+        // Build system prompt using SkillSubagentPromptBuilder (only used for NEW mode)
+        final Model resolvedModel = model;
+        final Toolkit toolkitCopy = toolkit.copy();
+        final String systemPrompt =
+                SkillSubagentPromptBuilder.builder()
+                        .skill(skill)
+                        .modelName(resolvedModel.getModelName())
+                        .build();
+
+        // Create SubAgentProvider - context-aware for memory sharing
+        // For SHARED and FORK modes, the context will contain the memory to use
+        // For NEW mode, the context will have null memory, so we use our own
+        SubAgentProvider<ReActAgent> provider =
+                new SubAgentProvider<>() {
+                    @Override
+                    public ReActAgent provideWithContext(SubAgentContext context) {
+                        ReActAgent.Builder agentBuilder =
+                                ReActAgent.builder()
+                                        .name(skill.getName() + "_agent")
+                                        .description(skill.getDescription())
+                                        .model(resolvedModel)
+                                        .toolkit(toolkitCopy);
+
+                        // Check if context provides a memory to use (SHARED or FORK mode)
+                        Memory memoryToUse = context.getMemoryToUse();
+                        if (memoryToUse != null) {
+                            // Use the provided memory (shared or forked from parent)
+                            agentBuilder.memory(memoryToUse);
+                            logger.debug(
+                                    "Sub-agent '{}' using {} memory from context",
+                                    skill.getName(),
+                                    context.getContextSharingMode());
+                        } else {
+                            // No memory provided - use independent memory with our system prompt
+                            // This is the NEW mode case
+                            agentBuilder.sysPrompt(systemPrompt).memory(new InMemoryMemory());
+                            logger.debug(
+                                    "Sub-agent '{}' using independent memory with skill system"
+                                            + " prompt",
+                                    skill.getName());
+                        }
+
+                        return agentBuilder.build();
+                    }
+                };
+
+        // Register sub-agent tool with context sharing mode from skill
+        String toolName = "call_" + skill.getName();
+        toolkit.registration()
+                .group(skillToolGroup)
+                .subAgent(
+                        provider,
+                        SubAgentConfig.builder()
+                                .toolName(toolName)
+                                .description(
+                                        "Execute "
+                                                + skill.getName()
+                                                + " skill task using model '"
+                                                + model.getModelName()
+                                                + "'")
+                                .contextSharingMode(contextMode)
+                                .build())
+                .apply();
+
+        // Mark as created
+        skillsWithSubAgentCreated.add(skillId);
+
+        // Activate the tool group
+        toolkit.updateToolGroups(List.of(skillToolGroup), true);
+
+        logger.info(
+                "Created sub-agent tool '{}' for skill '{}' with model '{}' (dynamic loading)",
+                toolName,
+                skill.getName(),
+                model.getModelName());
+    }
+
+    /**
+     * Parses the context sharing mode from skill's context field.
+     *
+     * <p>Supported values:
+     *
+     * <ul>
+     *   <li>null, empty, "shared" - SHARED (default)
+     *   <li>"fork" - FORK
+     *   <li>"new" - NEW
+     * </ul>
+     *
+     * @param context The context string from skill
+     * @return The corresponding ContextSharingMode
+     */
+    private ContextSharingMode parseContextSharingMode(String context) {
+        if (context == null || context.isEmpty() || "shared".equalsIgnoreCase(context)) {
+            return ContextSharingMode.SHARED;
+        } else if ("fork".equalsIgnoreCase(context)) {
+            return ContextSharingMode.FORK;
+        } else if ("new".equalsIgnoreCase(context)) {
+            return ContextSharingMode.NEW;
+        } else {
+            logger.warn(
+                    "Unknown context mode '{}', defaulting to SHARED. "
+                            + "Supported values: shared, fork, new",
+                    context);
+            return ContextSharingMode.SHARED;
+        }
     }
 }

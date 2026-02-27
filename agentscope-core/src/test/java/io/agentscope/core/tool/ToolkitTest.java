@@ -686,19 +686,19 @@ class ToolkitTest {
                 .mcpClient(mcpClientWrapper)
                 .agentTool(agentTool)
                 .tool(testToolObject)
-                .subAgent(() -> mock(Agent.class));
+                .subAgent(context -> mock(Agent.class));
         toolkit.registration()
                 .agentTool(agentTool)
                 .mcpClient(mcpClientWrapper)
                 .tool(testToolObject)
-                .subAgent(() -> mock(Agent.class));
+                .subAgent(context -> mock(Agent.class));
         toolkit.registration()
                 .tool(testToolObject)
                 .agentTool(agentTool)
                 .mcpClient(mcpClientWrapper)
-                .subAgent(() -> mock(Agent.class));
+                .subAgent(context -> mock(Agent.class));
         toolkit.registration()
-                .subAgent(() -> mock(Agent.class))
+                .subAgent(context -> mock(Agent.class))
                 .mcpClient(mcpClientWrapper)
                 .agentTool(agentTool)
                 .tool(testToolObject);
@@ -764,7 +764,7 @@ class ToolkitTest {
 
         // Test 4: Set subAgent, then reset to null, should throw exception
         Toolkit.ToolRegistration registration4 = toolkit.registration();
-        registration4.subAgent(() -> mock(Agent.class)).subAgent(null);
+        registration4.subAgent(context -> mock(Agent.class)).subAgent(null);
         IllegalStateException exception4 =
                 assertThrows(IllegalStateException.class, () -> registration4.apply());
         assertTrue(

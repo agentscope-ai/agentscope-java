@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -759,6 +761,43 @@ class SkillBoxTest {
 
             // Verify validator was preserved
             assertEquals(customValidator, shellTool.getCommandValidator());
+        }
+    }
+
+    @Nested
+    @DisplayName("ModelProvider Tests")
+    class ModelProviderTests {
+        @Test
+        @DisplayName("Should store model provider")
+        void shouldStoreModelProvider() {
+            Model defaultModel = mock(Model.class);
+            SkillModelProvider provider =
+                    MapBasedSkillModelProvider.builder().defaultModel(defaultModel).build();
+
+            SkillBox skillBoxWithProvider = new SkillBox(toolkit, null, null, provider);
+
+            assertSame(provider, skillBoxWithProvider.getModelProvider());
+        }
+
+        @Test
+        @DisplayName("Should allow setting model provider")
+        void shouldAllowSettingModelProvider() {
+            SkillBox skillBoxNoProvider = new SkillBox(toolkit);
+            Model defaultModel = mock(Model.class);
+            SkillModelProvider provider =
+                    MapBasedSkillModelProvider.builder().defaultModel(defaultModel).build();
+
+            skillBoxNoProvider.setModelProvider(provider);
+
+            assertSame(provider, skillBoxNoProvider.getModelProvider());
+        }
+
+        @Test
+        @DisplayName("Should return null model provider when not set")
+        void shouldReturnNullModelProviderWhenNotSet() {
+            SkillBox skillBoxNoProvider = new SkillBox(toolkit);
+
+            assertNull(skillBoxNoProvider.getModelProvider());
         }
     }
 

@@ -1818,6 +1818,47 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         return compressionEvents;
     }
 
+    // ==================== Memory API ====================
+
+    /**
+     * Creates a fork of this memory with copies of all messages.
+     *
+     * <p>The forked memory will have:
+     * <ul>
+     *   <li>Copies of all messages from working memory storage</li>
+     *   <li>Copies of all messages from original memory storage</li>
+     *   <li>Copies of offload context</li>
+     *   <li>Copies of compression events</li>
+     *   <li>The same configuration and model reference</li>
+     * </ul>
+     *
+     * <p>Changes to the forked memory will not affect the original memory and vice versa.
+     * This is used by the ContextSharingMode.FORK feature for sub-agent memory management.
+     *
+     * @return a new AutoContextMemory instance with copied messages
+     */
+    @Override
+    public Memory fork() {
+        AutoContextMemory forked = new AutoContextMemory(autoContextConfig, model);
+
+        // Copy working memory messages
+        forked.workingMemoryStorage = new ArrayList<>(this.workingMemoryStorage);
+
+        // Copy original memory messages
+        forked.originalMemoryStorage = new ArrayList<>(this.originalMemoryStorage);
+
+        // Copy offload context
+        forked.offloadContext = new HashMap<>(this.offloadContext);
+
+        // Copy compression events
+        forked.compressionEvents = new ArrayList<>(this.compressionEvents);
+
+        // Copy plan notebook reference (shared, not deep copied)
+        forked.planNotebook = this.planNotebook;
+
+        return forked;
+    }
+
     // ==================== StateModule API ====================
 
     /**

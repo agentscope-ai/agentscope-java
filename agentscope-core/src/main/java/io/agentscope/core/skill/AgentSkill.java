@@ -67,6 +67,8 @@ public class AgentSkill {
     private final String skillContent;
     private final Map<String, String> resources;
     private final String source;
+    private final String model;
+    private final String context;
 
     /**
      * Creates an AgentSkill with explicit parameters.
@@ -104,6 +106,59 @@ public class AgentSkill {
             String skillContent,
             Map<String, String> resources,
             String source) {
+        this(name, description, skillContent, resources, source, null);
+    }
+
+    /**
+     * Creates an AgentSkill with explicit parameters, custom source, and model.
+     *
+     * <p>Use this constructor when you want to create a skill directly without parsing
+     * markdown. The source parameter indicates where the skill originated from.
+     * The model parameter specifies which AI model should be used when this skill is active.
+     *
+     * @param name Skill name (must not be null or empty)
+     * @param description Skill description (must not be null or empty)
+     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param resources Supporting resources referenced by the skill (can be null)
+     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param model Model reference for the skill (can be null)
+     * @throws IllegalArgumentException if name, description, or skillContent is null or empty
+     */
+    public AgentSkill(
+            String name,
+            String description,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            String model) {
+        this(name, description, skillContent, resources, source, model, null);
+    }
+
+    /**
+     * Creates an AgentSkill with explicit parameters, custom source, model, and context.
+     *
+     * <p>Use this constructor when you want to create a skill directly without parsing markdown.
+     * The source parameter indicates where the skill originated from. The model parameter
+     * specifies which AI model should be used when this skill is active. The context parameter
+     * specifies how memory should be shared with the sub-agent.
+     *
+     * @param name Skill name (must not be null or empty)
+     * @param description Skill description (must not be null or empty)
+     * @param skillContent The skill implementation or instructions (must not be null or empty)
+     * @param resources Supporting resources referenced by the skill (can be null)
+     * @param source Source identifier for the skill (null defaults to "custom")
+     * @param model Model reference for the skill (can be null)
+     * @param context Context sharing mode: "shared" (default), "fork", or "new" (can be null)
+     * @throws IllegalArgumentException if name, description, or skillContent is null or empty
+     */
+    public AgentSkill(
+            String name,
+            String description,
+            String skillContent,
+            Map<String, String> resources,
+            String source,
+            String model,
+            String context) {
         if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
             throw new IllegalArgumentException(
                     "The skill must have `name` and `description` fields.");
@@ -117,6 +172,8 @@ public class AgentSkill {
         this.skillContent = skillContent;
         this.resources = resources != null ? new HashMap<>(resources) : new HashMap<>();
         this.source = source != null ? source : "custom";
+        this.model = model;
+        this.context = context;
     }
 
     /**
@@ -155,6 +212,36 @@ public class AgentSkill {
      */
     public String getSource() {
         return source;
+    }
+
+    /**
+     * Gets the model reference for this skill.
+     *
+     * <p>The model specifies which AI model should be used when this skill is active. For example:
+     * "haiku", "sonnet", "openai:gpt-4o".
+     *
+     * @return The model reference, or null if no specific model is required
+     */
+    public String getModel() {
+        return model;
+    }
+
+    /**
+     * Gets the context sharing mode for this skill.
+     *
+     * <p>The context specifies how memory should be shared between the parent agent and the
+     * sub-agent:
+     *
+     * <ul>
+     *   <li>null or "shared" (default): Sub-agent shares the same memory with parent
+     *   <li>"fork": Sub-agent gets a copy of parent's memory
+     *   <li>"new": Sub-agent has completely independent memory
+     * </ul>
+     *
+     * @return The context mode string, or null if default (shared)
+     */
+    public String getContext() {
+        return context;
     }
 
     /**
@@ -261,6 +348,8 @@ public class AgentSkill {
         private String skillContent;
         private Map<String, String> resources;
         private String source;
+        private String model;
+        private String context;
 
         /**
          * Creates an empty builder.
@@ -280,6 +369,8 @@ public class AgentSkill {
             this.skillContent = baseSkill.skillContent;
             this.resources = new HashMap<>(baseSkill.resources);
             this.source = baseSkill.source;
+            this.model = baseSkill.model;
+            this.context = baseSkill.context;
         }
 
         /**
@@ -371,13 +462,44 @@ public class AgentSkill {
         }
 
         /**
+         * Sets the model reference.
+         *
+         * @param model The model reference (e.g., "haiku", "openai:gpt-4o")
+         * @return This builder
+         */
+        public Builder model(String model) {
+            this.model = model;
+            return this;
+        }
+
+        /**
+         * Sets the context sharing mode.
+         *
+         * <p>The context specifies how memory should be shared:
+         *
+         * <ul>
+         *   <li>null or "shared" (default): Sub-agent shares the same memory with parent
+         *   <li>"fork": Sub-agent gets a copy of parent's memory
+         *   <li>"new": Sub-agent has completely independent memory
+         * </ul>
+         *
+         * @param context The context mode string
+         * @return This builder
+         */
+        public Builder context(String context) {
+            this.context = context;
+            return this;
+        }
+
+        /**
          * Builds the AgentSkill instance.
          *
          * @return A new AgentSkill instance
          * @throws IllegalArgumentException if required fields are missing
          */
         public AgentSkill build() {
-            return new AgentSkill(name, description, skillContent, resources, source);
+            return new AgentSkill(
+                    name, description, skillContent, resources, source, model, context);
         }
     }
 }

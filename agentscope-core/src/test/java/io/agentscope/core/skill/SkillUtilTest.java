@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -221,6 +222,39 @@ class SkillUtilTest {
 
             assertEquals("123", skill.getName());
             assertEquals("456", skill.getDescription());
+        }
+
+        @Test
+        @DisplayName("Should create skill with model from markdown")
+        void shouldCreateSkillWithModelFromMarkdown() {
+            String skillMd =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "description: Test skill\n"
+                            + "model: haiku\n"
+                            + "---\n"
+                            + "# Content\n";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null);
+
+            assertEquals("test_skill", skill.getName());
+            assertEquals("haiku", skill.getModel());
+        }
+
+        @Test
+        @DisplayName("Should create skill without model when not specified")
+        void shouldCreateSkillWithoutModelWhenNotSpecified() {
+            String skillMd =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "description: Test skill\n"
+                            + "---\n"
+                            + "# Content\n";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null);
+
+            assertEquals("test_skill", skill.getName());
+            assertNull(skill.getModel());
         }
     }
 
