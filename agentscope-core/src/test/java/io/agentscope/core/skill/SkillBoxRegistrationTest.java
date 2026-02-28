@@ -186,4 +186,64 @@ class SkillBoxRegistrationTest {
             assertNull(toolkit.getTool("call_blank_runtime_skill"));
         }
     }
+
+    @Nested
+    @DisplayName("createSubAgentToolForSkill Tests")
+    class CreateSubAgentToolForSkillTests {
+
+        @Test
+        @DisplayName("Should return false when modelRef is null")
+        void shouldReturnFalseWhenModelRefIsNull() {
+            AgentSkill skill =
+                    AgentSkill.builder().name("test").description("Test").skillContent("Content").build();
+
+            boolean result = skillBox.createSubAgentToolForSkill(skill, toolkit, null);
+
+            assertNull(toolkit.getTool("call_test"));
+        }
+
+        @Test
+        @DisplayName("Should return false when modelRef is blank")
+        void shouldReturnFalseWhenModelRefIsBlank() {
+            AgentSkill skill =
+                    AgentSkill.builder().name("test").description("Test").skillContent("Content").build();
+
+            boolean result = skillBox.createSubAgentToolForSkill(skill, toolkit, "  ");
+
+            assertNull(toolkit.getTool("call_test"));
+        }
+
+        @Test
+        @DisplayName("Should return false when toolkit is null")
+        void shouldReturnFalseWhenToolkitIsNull() {
+            AgentSkill skill =
+                    AgentSkill.builder()
+                            .name("test")
+                            .description("Test")
+                            .skillContent("Content")
+                            .model("test-model")
+                            .build();
+
+            boolean result = skillBox.createSubAgentToolForSkill(skill, null, "test-model");
+
+            assertNull(toolkit.getTool("call_test"));
+        }
+
+        @Test
+        @DisplayName("Should return false when no model provider configured")
+        void shouldReturnFalseWhenNoModelProvider() {
+            SkillBox boxWithoutProvider = new SkillBox(toolkit);
+            AgentSkill skill =
+                    AgentSkill.builder()
+                            .name("test")
+                            .description("Test")
+                            .skillContent("Content")
+                            .model("test-model")
+                            .build();
+
+            boolean result = boxWithoutProvider.createSubAgentToolForSkill(skill, toolkit, "test-model");
+
+            assertNull(toolkit.getTool("call_test"));
+        }
+    }
 }

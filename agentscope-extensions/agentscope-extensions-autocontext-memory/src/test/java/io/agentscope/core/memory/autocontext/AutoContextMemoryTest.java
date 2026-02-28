@@ -1677,4 +1677,83 @@ class AutoContextMemoryTest {
                 resultDone.contains("Goal: Test Description"),
                 "Should contain goal for DONE state");
     }
+
+    // ==================== Fork Tests ====================
+
+    @Test
+    @DisplayName("Fork should create deep copy of offloadContext")
+    void testForkCreatesDeepCopyOfOffloadContext() {
+        // Add messages to trigger compression and create offload context
+        for (int i = 0; i < 15; i++) {
+            memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Trigger compression to create offload context entries
+        memory.compressIfNeeded();
+
+        // Get original offload context reference for comparison
+        Map<String, List<Msg>> originalOffloadContext = memory.getOffloadContext();
+
+        // Only proceed if we have offload context (compression occurred)
+        if (originalOffloadContext.isEmpty()) {
+            // Force offload by adding large content
+            memory.offload("test-uuid", List.of(createTextMessage("Offloaded content", MsgRole.USER)));
+            originalOffloadContext = memory.getOffloadContext();
+        }
+
+        // Create fork
+        AutoContextMemory forked = (AutoContextMemory) memory.fork();
+        assertNotNull(forked, "Forked memory should not be null");
+
+        // Get forked offload context
+        Map<String, List<Msg>> forkedOffloadContext = forked.getOffloadContext();
+
+        // Verify the maps are different instances (shallow copy check)
+        assertNotSame(originalOffloadContext, forkedOffloadContext, "Offload context maps should be different instances");
+
+        // Verify the map contents are deep copied (list instances are different)
+        for (String key : originalOffloadContext.keySet()) {
+            List<Msg> originalList = originalOffloadContext.get(key);
+            List<Msg> forkedList = forkedOffloadContext.get(key);
+            assertNotSame(originalList, forkedList, "List for key " + key + " should be different instances");
+            assertEquals(originalList.size(), forkedList.size(), "List sizes should match for key " + key);
+        }
+
+        // Verify isolation: modifying forked offload context doesn't affect original
+        String testKey = "isolation-test-key";
+        forked.offload(testKey, List.of(createTextMessage("New message", MsgRole.USER)));
+        assertFalse(originalOffloadContext.containsKey(testKey), "Original should not contain new key added to forked");
+        assertTrue(forked.getOffloadContext().containsKey(testKey), "Forked should contain new key");
+
+        // Verify isolation: modifying list in forked doesn't affect original
+        if (!originalOffloadContext.isEmpty()) {
+            String firstKey = originalOffloadContext.keySet().iterator().next();
+            int originalSize = originalOffloadContext.get(firstKey).size();
+            forkedOffloadContext.get(firstKey).add(createTextMessage("Extra message", MsgRole.USER));
+            assertEquals(
+                    originalSize,
+                    originalOffloadContext.get(firstKey).size(),
+                    "Original list should not be affected by modification to forked list");
+        }
+    }
+
+    @Test
+    @DisplayName("Fork should copy working and original memory storage")
+    void testForkCopiesMemoryStorage() {
+        // Add messages
+        memory.addMessage(createTextMessage("Message 1", MsgRole.USER));
+        memory.addMessage(createTextMessage("Message 2", MsgRole.ASSISTANT));
+
+        // Create fork
+        AutoContextMemory forked = (AutoContextMemory) memory.fork();
+
+        // Verify messages are copied
+        assertEquals(2, forked.getMessages().size(), "Forked should have same number of messages");
+        assertEquals(2, forked.getOriginalMemoryMsgs().size(), "Forked original storage should have same messages");
+
+        // Verify isolation - adding to forked doesn't affect original
+        forked.addMessage(createTextMessage("Message 3", MsgRole.USER));
+        assertEquals(2, memory.getMessages().size(), "Original should still have 2 messages");
+        assertEquals(3, forked.getMessages().size(), "Forked should have 3 messages");
+    }
 }
