@@ -195,7 +195,11 @@ class SkillBoxRegistrationTest {
         @DisplayName("Should return false when modelRef is null")
         void shouldReturnFalseWhenModelRefIsNull() {
             AgentSkill skill =
-                    AgentSkill.builder().name("test").description("Test").skillContent("Content").build();
+                    AgentSkill.builder()
+                            .name("test")
+                            .description("Test")
+                            .skillContent("Content")
+                            .build();
 
             boolean result = skillBox.createSubAgentToolForSkill(skill, toolkit, null);
 
@@ -206,7 +210,11 @@ class SkillBoxRegistrationTest {
         @DisplayName("Should return false when modelRef is blank")
         void shouldReturnFalseWhenModelRefIsBlank() {
             AgentSkill skill =
-                    AgentSkill.builder().name("test").description("Test").skillContent("Content").build();
+                    AgentSkill.builder()
+                            .name("test")
+                            .description("Test")
+                            .skillContent("Content")
+                            .build();
 
             boolean result = skillBox.createSubAgentToolForSkill(skill, toolkit, "  ");
 
@@ -241,7 +249,8 @@ class SkillBoxRegistrationTest {
                             .model("test-model")
                             .build();
 
-            boolean result = boxWithoutProvider.createSubAgentToolForSkill(skill, toolkit, "test-model");
+            boolean result =
+                    boxWithoutProvider.createSubAgentToolForSkill(skill, toolkit, "test-model");
 
             assertNull(toolkit.getTool("call_test"));
         }
