@@ -297,11 +297,22 @@ public class SubAgentTool implements AgentTool {
 
         switch (contextMode) {
             case SHARED:
-                // Fork parent's memory and remove pending tool calls
-                // Note: We cannot directly share parent's memory because it contains
-                // the pending tool call to this sub-agent, which would cause
-                // validation errors when the sub-agent tries to add new messages.
-                // We use a forked copy with pending tool calls removed.
+                // DESIGN NOTE: SHARED and FORK currently have identical implementations.
+                // Both fork the parent's memory and remove pending tool calls.
+                //
+                // Why we cannot implement true memory sharing:
+                // - The parent's memory contains the pending tool_use block that invoked this
+                //   sub-agent
+                // - Directly sharing this memory would cause validation errors when the sub-agent
+                //   tries to add new messages (pending tool calls must be resolved first)
+                // - True sharing would require complex synchronization and state management
+                //
+                // Why we keep SHARED as a separate mode:
+                // - API compatibility with skill.md specifications
+                // - Semantic distinction: SHARED implies "context visibility" while FORK implies
+                //   "explicit copy"
+                // - Future extensibility: if we find a way to implement true sharing, SHARED can
+                //   be updated
                 Memory sharedMemory = parentMemory.fork();
                 removePendingToolCalls(sharedMemory);
                 logger.debug(
@@ -312,6 +323,8 @@ public class SubAgentTool implements AgentTool {
 
             case FORK:
                 // Fork parent's memory and remove pending tool calls
+                // NOTE: This is identical to SHARED mode implementation. See SHARED case for
+                // explanation.
                 Memory forkedMemory = parentMemory.fork();
                 removePendingToolCalls(forkedMemory);
                 logger.debug(
