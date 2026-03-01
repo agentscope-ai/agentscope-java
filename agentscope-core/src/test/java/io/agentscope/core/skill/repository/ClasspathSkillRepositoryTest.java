@@ -279,7 +279,7 @@ class ClasspathSkillRepositoryTest {
                                 try {
                                     String nestedUrlStr =
                                             "jar:nested:"
-                                                    + outerJarPath
+                                                    + outerJarPath.toUri().getRawPath()
                                                     + "/!BOOT-INF/lib/nested-skill.jar!/"
                                                     + name;
                                     return new URL(
