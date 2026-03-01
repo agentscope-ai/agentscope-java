@@ -256,7 +256,7 @@ class ClasspathSkillRepositoryTest {
     @DisplayName("Should load skills from Spring Boot nested lib JAR (BOOT-INF/lib/)")
     void testLoadFromSpringBootNestedLibJar() throws Exception {
         // Simulates the URL pattern used by Spring Boot 3.2+ for multi-module projects:
-        // jar:nested:/opt/app/xxx-app.jar/!BOOT-INF/lib/nested-skill.jar!/jar-skills
+        // jar:nested:/opt/app/nested-springboot.jar/!BOOT-INF/lib/nested-skill.jar!/jar-skills
         Path outerJarPath =
                 createSpringBootNestedLibTestJar(
                         "nested-lib-skill", "Nested Lib Skill", "Nested lib content");
