@@ -39,7 +39,10 @@ implementation 'io.agentscope:agentscope:1.0.9'
 All-in-one 包默认带以下依赖，不用额外配置：
 
 - DashScope SDK（通义千问系列模型）
+- Google Gemini SDK（Google Gemini 系列模型）
+- Anthropic SDK（Anthropic Claude 系列模型）
 - MCP SDK（模型上下文协议）
+- OkHttp（HTTP 客户端）
 - Reactor Core、Jackson、SLF4J（基础框架）
 
 ### 额外功能的依赖
@@ -49,16 +52,14 @@ All-in-one 包默认带以下依赖，不用额外配置：
 | 功能                   | 依赖                                                                                       | Maven 坐标                         |
 |----------------------|------------------------------------------------------------------------------------------|----------------------------------|
 | **OpenAI 模型**        | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
-| **Google Gemini 模型** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
-| **Anthropic 模型**     | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
-| **Mem0 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **ReME 长期记忆**        | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **Mem0 长期记忆**        | OkHttp（已包含）无需额外依赖 | `N/A`    |
+| **ReME 长期记忆**        | OkHttp（已包含）无需额外依赖 | `N/A`    |
 | **百炼 RAG**           | [百炼 SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)               | `com.aliyun:bailian20231229`     |
 | **Qdrant RAG**       | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
 | **PgVector RAG**     | [PostgreSQL Driver](https://central.sonatype.com/artifact/org.postgresql/postgresql) + [pgvector](https://central.sonatype.com/artifact/com.pgvector/pgvector) | `org.postgresql:postgresql` + `com.pgvector:pgvector` |
-| **Dify RAG**         | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **RAGFlow RAG**      | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **HayStack RAG**     | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **Dify RAG**         | OkHttp（已包含）无需额外依赖 | `N/A` |
+| **RAGFlow RAG**      | OkHttp（已包含）无需额外依赖 | `N/A` |
+| **HayStack RAG**     | OkHttp（已包含）无需额外依赖 | `N/A` |
 | **Elasticsearch RAG** | [Elasticsearch Java Client](https://www.elastic.co/docs/reference/elasticsearch/clients/java)   |`co.elastic.clients:elasticsearch-java` |
 | **MySQL Session**    | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j)     | `com.mysql:mysql-connector-j`    |
 | **Redis Session**    | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
@@ -97,7 +98,7 @@ All-in-one 包默认带以下依赖，不用额外配置：
 
 | 依赖 | Maven 坐标 |
 |-----|-----------|
-| [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
+| OkHttp（已包含） | `N/A` |
 | [Socket.IO Client](https://central.sonatype.com/artifact/io.socket/socket.io-client) | `io.socket:socket.io-client` |
 | [OpenTelemetry API](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-api) | `io.opentelemetry:opentelemetry-api` |
 | [OpenTelemetry OTLP Exporter](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-exporter-otlp) | `io.opentelemetry:opentelemetry-exporter-otlp` |
@@ -107,10 +108,6 @@ All-in-one 包默认带以下依赖，不用额外配置：
 
 ```xml
 <!-- 在 agentscope 基础上加 -->
-<dependency>
-    <groupId>com.squareup.okhttp3</groupId>
-    <artifactId>okhttp</artifactId>
-</dependency>
 <dependency>
     <groupId>io.socket</groupId>
     <artifactId>socket.io-client</artifactId>

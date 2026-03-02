@@ -37,7 +37,10 @@ implementation 'io.agentscope:agentscope:1.0.9'
 The all-in-one package includes these dependencies by default:
 
 - DashScope SDK (Qwen series models)
+- Google Gemini SDK (Google Gemini series models)
+- Anthropic SDK (Anthropic Claude series models)
 - MCP SDK (Model Context Protocol)
+- OkHttp (HTTP client)
 - Reactor Core, Jackson, SLF4J (base frameworks)
 
 ### Additional Dependencies
@@ -47,16 +50,14 @@ When using other models or features, add the corresponding dependencies:
 | Feature                   | Dependency                                                                               | Maven Coordinates                |
 |---------------------------|------------------------------------------------------------------------------------------|----------------------------------|
 | **OpenAI Models**         | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java)          | `com.openai:openai-java`         |
-| **Google Gemini Models**  | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai)  | `com.google.genai:google-genai`  |
-| **Anthropic Models**      | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java`   |
-| **Mem0 Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **ReME Long-term Memory** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **Mem0 Long-term Memory** | OkHttp (already included) | `N/A`    |
+| **ReME Long-term Memory** | OkHttp (already included) | `N/A`    |
 | **Bailian RAG**           | [Bailian SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229)          | `com.aliyun:bailian20231229`     |
 | **Qdrant RAG**            | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client)                  | `io.qdrant:client`               |
 | **PgVector RAG**          | [PostgreSQL Driver](https://central.sonatype.com/artifact/org.postgresql/postgresql) + [pgvector](https://central.sonatype.com/artifact/com.pgvector/pgvector) | `org.postgresql:postgresql` + `com.pgvector:pgvector` |
-| **Dify RAG**              | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **RAGFlow RAG**           | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
-| **HayStack RAG**          | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp)              | `com.squareup.okhttp3:okhttp`    |
+| **Dify RAG**              | OkHttp (already included) | `N/A` |
+| **RAGFlow RAG**           | OkHttp (already included) | `N/A` |
+| **HayStack RAG**          | OkHttp (already included) | `N/A` |
 | **Elasticsearch RAG** | [Elasticsearch Java Client](https://www.elastic.co/docs/reference/elasticsearch/clients/java)   |`co.elastic.clients:elasticsearch-java` |
 | **MySQL Session**         | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j)     | `com.mysql:mysql-connector-j`    |
 | **Redis Session**         | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis)                       | `redis.clients:jedis`            |
@@ -95,7 +96,7 @@ Connect to [AgentScope Studio](https://github.com/modelscope/agentscope) for vis
 
 | Dependency | Maven Coordinates |
 |------------|-------------------|
-| [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
+| OkHttp (already included) | `N/A` |
 | [Socket.IO Client](https://central.sonatype.com/artifact/io.socket/socket.io-client) | `io.socket:socket.io-client` |
 | [OpenTelemetry API](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-api) | `io.opentelemetry:opentelemetry-api` |
 | [OpenTelemetry OTLP Exporter](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-exporter-otlp) | `io.opentelemetry:opentelemetry-exporter-otlp` |
@@ -105,10 +106,6 @@ Full configuration:
 
 ```xml
 <!-- Add on top of agentscope -->
-<dependency>
-    <groupId>com.squareup.okhttp3</groupId>
-    <artifactId>okhttp</artifactId>
-</dependency>
 <dependency>
     <groupId>io.socket</groupId>
     <artifactId>socket.io-client</artifactId>
