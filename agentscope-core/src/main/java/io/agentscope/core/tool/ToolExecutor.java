@@ -150,7 +150,11 @@ class ToolExecutor {
                             "Parameter validation failed for tool '%s': %s\n"
                                     + "Please correct the parameters and try again.",
                             toolCall.getName(), validationError);
-            logger.debug(errorMsg);
+            logger.debug(
+                    "ToolExecutor: Validation failed for '{}', content={}, error={}",
+                    toolCall.getName(),
+                    toolCall.getContent(),
+                    validationError);
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 

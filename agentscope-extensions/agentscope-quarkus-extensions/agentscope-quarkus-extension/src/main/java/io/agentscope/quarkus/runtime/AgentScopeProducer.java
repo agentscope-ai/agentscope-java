@@ -186,44 +186,19 @@ public class AgentScopeProducer {
     private Model createGeminiModel() {
         AgentScopeConfig.GeminiConfig gemini = config.gemini();
 
-        GeminiChatModel.Builder builder =
-                GeminiChatModel.builder()
-                        .modelName(gemini.modelName())
-                        .streamEnabled(gemini.stream());
+        String apiKey =
+                gemini.apiKey()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Gemini API key is required. Configure it using"
+                                                        + " agentscope.gemini.api-key."));
 
-        if (gemini.useVertexAi()) {
-            // Vertex AI configuration
-            String project =
-                    gemini.project()
-                            .orElseThrow(
-                                    () ->
-                                            new IllegalStateException(
-                                                    "GCP project is required for Vertex AI. Set"
-                                                            + " agentscope.gemini.project."));
-            String location =
-                    gemini.location()
-                            .orElseThrow(
-                                    () ->
-                                            new IllegalStateException(
-                                                    "GCP location is required for Vertex AI. Set"
-                                                            + " agentscope.gemini.location."));
-
-            builder.project(project).location(location).vertexAI(true);
-        } else {
-            // Direct API configuration - requires API key
-            String apiKey =
-                    gemini.apiKey()
-                            .orElseThrow(
-                                    () ->
-                                            new IllegalStateException(
-                                                    "Gemini API key is required. Configure it using"
-                                                        + " agentscope.gemini.api-key."
-                                                        + " Alternatively, use Vertex AI by setting"
-                                                        + " agentscope.gemini.use-vertex-ai=true"));
-            builder.apiKey(apiKey);
-        }
-
-        return builder.build();
+        return GeminiChatModel.builder()
+                .modelName(gemini.modelName())
+                .streamEnabled(gemini.stream())
+                .apiKey(apiKey)
+                .build();
     }
 
     private Model createAnthropicModel() {

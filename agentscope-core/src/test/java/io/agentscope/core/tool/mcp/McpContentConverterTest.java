@@ -27,6 +27,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class McpContentConverterTest {
         // Test that utility class cannot be instantiated
         var exception =
                 assertThrows(
-                        java.lang.reflect.InvocationTargetException.class,
+                        InvocationTargetException.class,
                         () -> {
                             var constructor = McpContentConverter.class.getDeclaredConstructor();
                             constructor.setAccessible(true);

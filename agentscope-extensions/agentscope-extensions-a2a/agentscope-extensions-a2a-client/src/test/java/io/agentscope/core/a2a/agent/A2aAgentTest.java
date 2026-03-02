@@ -61,6 +61,7 @@ import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -101,7 +102,7 @@ public class A2aAgentTest {
         agentCard = mock(AgentCard.class);
         a2aClient = mock(Client.class);
 
-        lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new java.util.HashMap<>());
+        lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new HashMap<>());
         lenient().when(a2aAgentConfig.clientConfig()).thenReturn(null);
         lenient().when(agentCard.preferredTransport()).thenReturn("JSONRPC");
         lenient().when(agentCard.url()).thenReturn("http://localhost:8080");
@@ -500,7 +501,12 @@ public class A2aAgentTest {
             fail(
                     "interrupt operation should stop task running and stop agent running. But"
                             + " timeout");
-        } catch (InterruptedException | ExecutionException ignored) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupt operation verification was interrupted unexpectedly");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            fail("interrupt operation should finish without execution errors: " + cause, cause);
         } finally {
             // Force stop task
             stopFlag.set(true);

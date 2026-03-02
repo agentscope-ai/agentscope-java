@@ -26,6 +26,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -498,7 +499,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        return hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
     }
 
     /**
