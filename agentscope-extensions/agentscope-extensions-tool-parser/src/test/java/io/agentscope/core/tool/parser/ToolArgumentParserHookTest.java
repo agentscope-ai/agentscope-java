@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.parser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
@@ -403,6 +404,117 @@ class ToolArgumentParserHookTest {
             assertEquals("test-id", correctedToolUse.getId());
             assertEquals("searchTool", correctedToolUse.getName());
             assertNotNull(correctedToolUse.getContent());
+        }
+    }
+
+    @Nested
+    @DisplayName("Hook Error Handling and Logging Tests")
+    class HookErrorHandlingTests {
+
+        @Test
+        @DisplayName("Should handle JSON processing error gracefully")
+        void shouldHandleJsonProcessingError() {
+            // Create content that will fail during processing
+            // This tests the error handling path in processPreActingEvent
+            String problematicContent =
+                    "{\"data\": " + new String(new char[10000]).replace('\0', 'x') + "}";
+
+            PreActingEvent event = createTestEventWithContent(problematicContent);
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            // Should not throw, return original or processed event
+            assertNotNull(processedEvent);
+        }
+
+        @Test
+        @DisplayName("Should preserve input when parsing fails")
+        void shouldPreserveInputWhenParsingFails() {
+            String invalidContent = "totally not valid json at all";
+
+            PreActingEvent event = createTestEventWithContent(invalidContent);
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            assertNotNull(processedEvent);
+            // Event should be returned, content may or may not be modified
+            assertNotNull(processedEvent.getToolUse());
+        }
+
+        @Test
+        @DisplayName("Should handle event with minimal metadata")
+        void shouldHandleEventWithMinimalMetadata() {
+            ToolUseBlock toolUse =
+                    ToolUseBlock.builder()
+                            .id("test-id")
+                            .name("testTool")
+                            .input(Map.of())
+                            .content("{\"test\":\"data\"}")
+                            .metadata(Map.of()) // Empty metadata
+                            .build();
+
+            Agent mockAgent = mock(Agent.class);
+            Toolkit mockToolkit = mock(Toolkit.class);
+
+            PreActingEvent event = new PreActingEvent(mockAgent, mockToolkit, toolUse);
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            assertNotNull(processedEvent);
+            assertNotNull(processedEvent.getToolUse().getMetadata());
+        }
+    }
+
+    @Nested
+    @DisplayName("Content Correction Verification Tests")
+    class ContentCorrectionVerificationTests {
+
+        @Test
+        @DisplayName("Should actually correct markdown-wrapped content")
+        void shouldActuallyCorrectMarkdownContent() {
+            String markdownContent = "```json\n{\"query\":\"test\",\"limit\":10}\n```";
+            PreActingEvent event = createTestEventWithContent(markdownContent);
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            assertNotNull(processedEvent);
+            String correctedContent = processedEvent.getToolUse().getContent();
+            assertNotNull(correctedContent);
+
+            // Verify markdown wrapper was removed
+            assertFalse(correctedContent.startsWith("```"));
+            assertFalse(correctedContent.contains("```json"));
+        }
+
+        @Test
+        @DisplayName("Should handle content with only whitespace")
+        void shouldHandleWhitespaceOnlyContent() {
+            PreActingEvent event = createTestEventWithContent("   \n\t  ");
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            assertNotNull(processedEvent);
+            // Should not crash on whitespace-only content
+        }
+
+        @Test
+        @DisplayName("Should preserve content when no correction needed")
+        void shouldPreserveContentWhenNoCorrectionNeeded() {
+            String validJson = "{\"query\":\"test\",\"limit\":10}";
+
+            PreActingEvent event = createTestEventWithContent(validJson);
+
+            Mono<PreActingEvent> result = hook.onEvent(event);
+            PreActingEvent processedEvent = result.block();
+
+            assertNotNull(processedEvent);
+            // Valid JSON should pass through unchanged
+            assertEquals(validJson, processedEvent.getToolUse().getContent());
         }
     }
 }

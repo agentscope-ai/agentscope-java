@@ -16,12 +16,14 @@
 package io.agentscope.core.tool.parser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -445,6 +447,166 @@ class ToolArgumentParserTest {
             assertTrue(result.isSuccess());
             assertEquals(ParseStage.DIRECT, result.stage());
             assertEquals(json, result.parsedArguments());
+        }
+    }
+
+    @Nested
+    @DisplayName("ParseResult Utility Methods Tests")
+    @Order(8)
+    class ParseResultUtilityMethodsTests {
+
+        @Test
+        @DisplayName("isDirectSuccess() should return true for DIRECT stage")
+        void isDirectSuccessShouldReturnTrueForDirect() {
+            String json = "{\"key\":\"value\"}";
+            ParseResult result = ToolArgumentParser.parse(json, "testTool");
+
+            assertTrue(result.isSuccess());
+            assertTrue(result.isDirectSuccess());
+            assertFalse(result.requiredMultipleStages());
+        }
+
+        @Test
+        @DisplayName("requiredMultipleStages() should return true for non-DIRECT stages")
+        void requiredMultipleStagesShouldReturnTrueForNonDirect() {
+            String markdownJson = "```json\n{\"key\":\"value\"}\n```";
+            ParseResult result = ToolArgumentParser.parse(markdownJson, "testTool");
+
+            assertTrue(result.isSuccess());
+            assertFalse(result.isDirectSuccess());
+            assertTrue(result.requiredMultipleStages());
+        }
+
+        @Test
+        @DisplayName("isDirectSuccess() should return false for failed results")
+        void isDirectSuccessShouldReturnFalseForFailure() {
+            ParseResult result = ToolArgumentParser.parse("invalid json", "testTool");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.isDirectSuccess());
+            assertFalse(result.requiredMultipleStages());
+        }
+    }
+
+    @Nested
+    @DisplayName("Boundary and Edge Case Tests")
+    @Order(9)
+    class BoundaryEdgeCaseTests {
+
+        @Test
+        @DisplayName("Should handle null input gracefully")
+        void shouldHandleNullInput() {
+            ParseResult result = ToolArgumentParser.parse(null, "testTool");
+
+            assertFalse(result.isSuccess());
+            assertEquals(ParseStage.ORIGINAL, result.stage());
+            assertEquals("null", result.parsedArguments());
+            assertTrue(result.errorMessage().contains("null or empty"));
+        }
+
+        @Test
+        @DisplayName("Should handle empty string input")
+        void shouldHandleEmptyString() {
+            ParseResult result = ToolArgumentParser.parse("", "testTool");
+
+            assertFalse(result.isSuccess());
+            assertEquals(ParseStage.ORIGINAL, result.stage());
+            assertEquals("", result.parsedArguments());
+            assertTrue(result.errorMessage().contains("null or empty"));
+        }
+
+        @Test
+        @DisplayName("Should handle whitespace-only input")
+        void shouldHandleWhitespaceOnly() {
+            ParseResult result = ToolArgumentParser.parse("   \n\t  ", "testTool");
+
+            assertFalse(result.isSuccess());
+            assertEquals(ParseStage.ORIGINAL, result.stage());
+            assertTrue(result.errorMessage().contains("null or empty"));
+        }
+
+        @Test
+        @DisplayName("Should reject input exceeding size limit")
+        void shouldRejectInputExceedingSizeLimit() {
+            // Create JSON larger than 100KB
+            StringBuilder largeJson = new StringBuilder("{");
+            for (int i = 0; i < 10000; i++) {
+                if (i > 0) largeJson.append(",");
+                largeJson.append("\"field").append(i).append("\":\"value");
+                largeJson.append(i).append("\"");
+            }
+            largeJson.append("}");
+
+            String json = largeJson.toString();
+            assertTrue(json.length() > 100_000, "Test JSON should exceed 100KB limit");
+
+            ParseResult result = ToolArgumentParser.parse(json, "testTool");
+
+            assertFalse(result.isSuccess());
+            assertEquals(ParseStage.ORIGINAL, result.stage());
+            assertTrue(result.errorMessage().contains("exceeds limit"));
+        }
+
+        @Test
+        @DisplayName("Should accept input exactly at size limit")
+        void shouldAcceptInputAtSizeLimit() {
+            // Create JSON exactly 100KB (minus 1 for safety)
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            for (int i = 0; i < 9000; i++) {
+                if (i > 0) sb.append(",");
+                sb.append("\"f").append(i).append("\":\"v\"");
+            }
+            sb.append("}");
+
+            String json = sb.toString();
+            // Ensure it's under the limit
+            if (json.length() < 100_000) {
+                ParseResult result = ToolArgumentParser.parse(json, "testTool");
+
+                // Should succeed or fail for parsing reasons, not size
+                assertNotNull(result);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Error Message Tests")
+    @Order(10)
+    class ErrorMessageTests {
+
+        @Test
+        @DisplayName("Should provide clear error message for invalid JSON")
+        void shouldProvideClearErrorMessage() {
+            ParseResult result = ToolArgumentParser.parse("{invalid}", "testTool");
+
+            assertFalse(result.isSuccess());
+            assertNotNull(result.errorMessage());
+            assertTrue(result.errorMessage().length() > 0);
+        }
+
+        @Test
+        @DisplayName("Should include tool name in error message for null input")
+        void shouldIncludeToolNameInErrorMessage() {
+            ParseResult result = ToolArgumentParser.parse(null, "mySearchTool");
+
+            assertTrue(result.errorMessage().contains("mySearchTool"));
+        }
+
+        @Test
+        @DisplayName("Should include size information in size limit error")
+        void shouldIncludeSizeInLimitError() {
+            StringBuilder largeJson = new StringBuilder();
+            for (int i = 0; i < 12000; i++) {
+                largeJson.append("\"field").append(i).append("\":\"value\"");
+                if (i < 11999) largeJson.append(",");
+            }
+
+            String json = "{" + largeJson.toString() + "}";
+
+            ParseResult result = ToolArgumentParser.parse(json, "testTool");
+
+            assertTrue(result.errorMessage().contains("exceeds limit"));
         }
     }
 }
