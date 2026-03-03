@@ -285,7 +285,7 @@ class ToolArgumentParserHookTest {
         @Test
         @DisplayName("Should handle nested JSON structures")
         void shouldHandleNestedJsonStructures() {
-            String nestedJson = "{\"data\":{\"items\":[1,2,3],\"meta\":{\"count\":3}}}";
+            String nestedJson = "{\"data\":{\"items\":[1,2,3],\"meta\":{\"count\":3}}";
             PreActingEvent event = createTestEventWithContent(nestedJson);
 
             Mono<PreActingEvent> result = hook.onEvent(event);
