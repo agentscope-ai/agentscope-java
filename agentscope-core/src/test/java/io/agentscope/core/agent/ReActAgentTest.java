@@ -29,6 +29,7 @@ import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -476,9 +477,13 @@ class ReActAgentTest {
 
         // Get response with timeout
         // Verify it completes within reasonable time (not infinite loop)
-        agent.call(userMsg)
-                .timeout(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS))
-                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        Msg response =
+                agent.call(userMsg)
+                        .timeout(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify max iterations generate reason was respected
+        assertEquals(GenerateReason.MAX_ITERATIONS, response.getGenerateReason());
 
         // Verify max iterations was respected
         assertTrue(
