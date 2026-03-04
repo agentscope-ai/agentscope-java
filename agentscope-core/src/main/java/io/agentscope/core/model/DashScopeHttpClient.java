@@ -165,7 +165,9 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
-        String endpoint = selectEndpoint(request.getModel());
+        EndpointType endpointType =
+                request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
+        String endpoint = selectEndpoint(request.getModel(), endpointType);
         String url = buildUrl(endpoint, additionalQueryParams);
 
         try {
@@ -236,7 +238,9 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
-        String endpoint = selectEndpoint(request.getModel());
+        EndpointType endpointType =
+                request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
+        String endpoint = selectEndpoint(request.getModel(), endpointType);
         String url = buildUrl(endpoint, additionalQueryParams);
 
         try {
@@ -303,36 +307,111 @@ public class DashScopeHttpClient {
     /**
      * Select the appropriate API endpoint based on model name.
      *
-     * <p>Routing logic (consistent with existing SDK behavior):
-     * <ul>
-     *   <li>Models starting with "qvq" → multimodal API</li>
-     *   <li>Models containing "-vl" → multimodal API</li>
-     *   <li>All other models → text generation API</li>
-     * </ul>
+     * <p>This is a convenience method that uses {@link EndpointType#AUTO} for automatic detection.
      *
      * @param modelName the model name
      * @return the API endpoint path
      */
     public String selectEndpoint(String modelName) {
+        return selectEndpoint(modelName, EndpointType.AUTO);
+    }
+
+    /**
+     * Select the appropriate API endpoint based on model name and endpoint type.
+     *
+     * <p>Routing logic:
+     * <ul>
+     *   <li>If endpointType is {@link EndpointType#TEXT} → text generation API</li>
+     *   <li>If endpointType is {@link EndpointType#MULTIMODAL} → multimodal API</li>
+     *   <li>If endpointType is {@link EndpointType#AUTO}:
+     *     <ul>
+     *       <li>Models starting with "qvq" → multimodal API</li>
+     *       <li>Models containing "-vl" → multimodal API</li>
+     *       <li>Models containing "-asr" → multimodal API</li>
+     *       <li>Models starting with "qwen3.5" → multimodal API</li>
+     *       <li>All other models → text generation API</li>
+     *     </ul>
+     *   </li>
+     * </ul>
+     *
+     * @param modelName the model name
+     * @param endpointType the endpoint type to use (AUTO for automatic detection)
+     * @return the API endpoint path
+     */
+    public String selectEndpoint(String modelName, EndpointType endpointType) {
+        if (endpointType == EndpointType.TEXT) {
+            log.debug("Using text generation API (explicitly set) for model: {}", modelName);
+            return TEXT_GENERATION_ENDPOINT;
+        }
+        if (endpointType == EndpointType.MULTIMODAL) {
+            log.debug("Using multimodal API (explicitly set) for model: {}", modelName);
+            return MULTIMODAL_GENERATION_ENDPOINT;
+        }
+        // AUTO: use model name detection
         if (modelName == null) {
             return TEXT_GENERATION_ENDPOINT;
         }
-        if (modelName.startsWith("qvq") || modelName.contains("-vl")) {
-            log.debug("Using multimodal API for model: {}", modelName);
+        if (isMultimodalModel(modelName)) {
+            log.debug("Using multimodal API (auto-detected) for model: {}", modelName);
             return MULTIMODAL_GENERATION_ENDPOINT;
         }
-        log.debug("Using text generation API for model: {}", modelName);
+        log.debug("Using text generation API (auto-detected) for model: {}", modelName);
         return TEXT_GENERATION_ENDPOINT;
+    }
+
+    /**
+     * Check if a model is a multimodal model that requires the multimodal-generation API.
+     *
+     * <p>Supported multimodal model patterns (used when endpointType is AUTO):
+     * <ul>
+     *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-max)</li>
+     *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen3-vl-max)</li>
+     *   <li>Models containing "-asr" (e.g., qwen3-asr-flash)</li>
+     *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
+     * </ul>
+     *
+     * @param modelName the model name
+     * @return true if the model is a multimodal model
+     */
+    public static boolean isMultimodalModel(String modelName) {
+        if (modelName == null) {
+            return false;
+        }
+        String lowerModelName = modelName.toLowerCase();
+        return lowerModelName.startsWith("qvq")
+                || lowerModelName.contains("-vl")
+                || lowerModelName.contains("-asr")
+                || lowerModelName.startsWith("qwen3.5");
     }
 
     /**
      * Check if a model requires the multimodal API.
      *
+     * <p>This is a convenience method that uses {@link EndpointType#AUTO} for automatic detection.
+     *
      * @param modelName the model name
      * @return true if the model requires multimodal API
      */
     public boolean requiresMultimodalApi(String modelName) {
-        return MULTIMODAL_GENERATION_ENDPOINT.equals(selectEndpoint(modelName));
+        return requiresMultimodalApi(modelName, EndpointType.AUTO);
+    }
+
+    /**
+     * Check if a model requires the multimodal API based on the specified endpoint type.
+     *
+     * @param modelName the model name
+     * @param endpointType the endpoint type to use
+     * @return true if the model requires multimodal API
+     */
+    public boolean requiresMultimodalApi(String modelName, EndpointType endpointType) {
+        if (endpointType == EndpointType.MULTIMODAL) {
+            return true;
+        }
+        if (endpointType == EndpointType.TEXT) {
+            return false;
+        }
+        // AUTO: use model name detection
+        return isMultimodalModel(modelName);
     }
 
     /**
