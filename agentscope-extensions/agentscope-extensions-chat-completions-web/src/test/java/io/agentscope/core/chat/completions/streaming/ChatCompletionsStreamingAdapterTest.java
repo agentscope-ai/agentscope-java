@@ -295,16 +295,13 @@ class ChatCompletionsStreamingAdapterTest {
                             chunk -> {
                                 assertNotNull(chunk.getChoices());
                                 assertEquals(1, chunk.getChoices().size());
+                                // Tool results are now formatted as assistant content for streaming
+                                // compatibility
                                 assertEquals(
-                                        "tool", chunk.getChoices().get(0).getDelta().getRole());
+                                        "assistant",
+                                        chunk.getChoices().get(0).getDelta().getRole());
                                 assertEquals(
-                                        "call-123",
-                                        chunk.getChoices().get(0).getDelta().getToolCallId());
-                                assertEquals(
-                                        "get_weather",
-                                        chunk.getChoices().get(0).getDelta().getName());
-                                assertEquals(
-                                        "Sunny, 25°C",
+                                        "[Tool: get_weather] Sunny, 25°C",
                                         chunk.getChoices().get(0).getDelta().getContent());
                             })
                     .verifyComplete();
@@ -330,20 +327,23 @@ class ChatCompletionsStreamingAdapterTest {
             StepVerifier.create(result)
                     .assertNext(
                             chunk -> {
+                                // Tool results are now formatted as assistant content with tool
+                                // name
+                                // prefix
                                 assertEquals(
-                                        "call-1",
-                                        chunk.getChoices().get(0).getDelta().getToolCallId());
+                                        "assistant",
+                                        chunk.getChoices().get(0).getDelta().getRole());
                                 assertEquals(
-                                        "Result A",
+                                        "[Tool: tool_a] Result A",
                                         chunk.getChoices().get(0).getDelta().getContent());
                             })
                     .assertNext(
                             chunk -> {
                                 assertEquals(
-                                        "call-2",
-                                        chunk.getChoices().get(0).getDelta().getToolCallId());
+                                        "assistant",
+                                        chunk.getChoices().get(0).getDelta().getRole());
                                 assertEquals(
-                                        "Result B",
+                                        "[Tool: tool_b] Result B",
                                         chunk.getChoices().get(0).getDelta().getContent());
                             })
                     .verifyComplete();
@@ -493,7 +493,9 @@ class ChatCompletionsStreamingAdapterTest {
                                                 .get(0)
                                                 .getFunction()
                                                 .getArguments();
-                                assertEquals("{}", args);
+                                // For streaming, empty arguments should be empty string, not "{}"
+                                // This allows clients to accumulate subsequent chunks correctly
+                                assertEquals("", args);
                             })
                     .verifyComplete();
         }
