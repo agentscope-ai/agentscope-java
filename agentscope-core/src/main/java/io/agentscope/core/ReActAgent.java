@@ -648,7 +648,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                     postEvent -> {
                                                                         Msg finalMsg =
                                                                                 postEvent
-                                                                                        .getSummaryMessage();
+                                                                                        .getSummaryMessage()
+                                                                                        .withGenerateReason(
+                                                                                                GenerateReason
+                                                                                                        .MAX_ITERATIONS);
                                                                         memory.addMessage(finalMsg);
                                                                         return finalMsg;
                                                                     }));
