@@ -138,6 +138,52 @@ class ChatCompletionsChunkTest {
     }
 
     @Nested
+    @DisplayName("Tool Result Chunk Tests")
+    class ToolResultChunkTests {
+
+        @Test
+        @DisplayName("Should create tool result chunk correctly")
+        void shouldCreateToolResultChunkCorrectly() {
+            ChatCompletionsChunk chunk =
+                    ChatCompletionsChunk.toolResultChunk(
+                            "req-123", "gpt-4", "call-1", "get_weather", "Sunny, 25°C");
+
+            assertEquals("req-123", chunk.getId());
+            assertEquals("gpt-4", chunk.getModel());
+            assertNotNull(chunk.getChoices());
+            assertEquals(1, chunk.getChoices().size());
+
+            ChatChoice choice = chunk.getChoices().get(0);
+            assertEquals(0, choice.getIndex());
+            assertNotNull(choice.getDelta());
+            assertEquals("assistant", choice.getDelta().getRole());
+            assertEquals("[Tool: get_weather] Sunny, 25°C", choice.getDelta().getContent());
+        }
+
+        @Test
+        @DisplayName("Should format tool result with tool name prefix")
+        void shouldFormatToolResultWithToolNamePrefix() {
+            ChatCompletionsChunk chunk =
+                    ChatCompletionsChunk.toolResultChunk(
+                            "req-123", "gpt-4", "call-1", "search", "Result content");
+
+            String content = chunk.getChoices().get(0).getDelta().getContent();
+            assertTrue(content.startsWith("[Tool: search] "));
+            assertTrue(content.contains("Result content"));
+        }
+
+        @Test
+        @DisplayName("Should handle empty tool result content")
+        void shouldHandleEmptyToolResultContent() {
+            ChatCompletionsChunk chunk =
+                    ChatCompletionsChunk.toolResultChunk(
+                            "req-123", "gpt-4", "call-1", "empty_tool", "");
+
+            assertEquals("[Tool: empty_tool] ", chunk.getChoices().get(0).getDelta().getContent());
+        }
+    }
+
+    @Nested
     @DisplayName("Finish Chunk Tests")
     class FinishChunkTests {
 

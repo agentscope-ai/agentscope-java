@@ -1135,7 +1135,7 @@ class McpClientBuilderTest {
     void testCompleteConfiguration_WithClientCustomization() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token123");
-        headers.put("X-Client-Version", "1.0.8");
+        headers.put("X-Client-Version", "1.0.10-SNAPSHOT");
 
         Map<String, String> queryParams = new HashMap<>();
         queryParams.put("tenant", "acme");

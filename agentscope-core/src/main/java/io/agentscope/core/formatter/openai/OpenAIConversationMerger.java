@@ -83,38 +83,16 @@ public class OpenAIConversationMerger {
         StringBuilder textBuffer = new StringBuilder();
         textBuffer.append(conversationHistoryPrompt);
         textBuffer.append(HISTORY_START_TAG).append("\n");
-
-        // Process all messages EXCEPT the last one as history
-        int lastIndex = msgs.size() - 1;
-
-        // Append history messages
-        if (lastIndex > 0) {
-            for (int i = 0; i < lastIndex; i++) {
-                processMessage(
-                        msgs.get(i),
-                        roleFormatter,
-                        toolResultConverter,
-                        textBuffer,
-                        allParts,
-                        true);
-            }
+        // Include prefix only if there is history (multi-turn context)
+        // For single-turn user queries,
+        // omitting the prefix makes it look like a standard chat request.
+        boolean includePrefix = msgs.size() > 1;
+        // Process all messages as history (similar to DashScopeConversationMerger)
+        for (Msg msg : msgs) {
+            processMessage(
+                    msg, roleFormatter, toolResultConverter, textBuffer, allParts, includePrefix);
         }
         textBuffer.append(HISTORY_END_TAG).append("\n");
-
-        // Process the last message (current turn)
-        if (lastIndex >= 0) {
-            // Include prefix only if there is history (multi-turn context)
-            // or if it's explicitly needed. For single-turn user queries,
-            // omitting the prefix makes it look like a standard chat request.
-            boolean includePrefix = lastIndex > 0;
-            processMessage(
-                    msgs.get(lastIndex),
-                    roleFormatter,
-                    toolResultConverter,
-                    textBuffer,
-                    allParts,
-                    includePrefix);
-        }
 
         // Flush remaining text
         if (textBuffer.length() > 0) {
