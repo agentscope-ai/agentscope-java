@@ -22,14 +22,34 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessMode;
+import java.nio.file.CopyOption;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileStore;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.FileAttributeView;
+import java.nio.file.spi.FileSystemProvider;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -229,6 +249,70 @@ class ClasspathSkillRepositoryTest {
             assertEquals("sb-skill", skill.getName());
             assertEquals("SB Skill", skill.getDescription());
             assertTrue(skill.getSkillContent().contains("SB content"));
+        }
+    }
+
+    @Test
+    @DisplayName("Should load skills from Spring Boot nested lib JAR (BOOT-INF/lib/)")
+    void testLoadFromSpringBootNestedLibJar() throws Exception {
+        // Simulates the URL pattern used by Spring Boot 3.2+ for multi-module projects:
+        // jar:nested:/opt/app/nested-springboot.jar/!BOOT-INF/lib/nested-skill.jar!/jar-skills
+        Path outerJarPath =
+                createSpringBootNestedLibTestJar(
+                        "nested-lib-skill", "Nested Lib Skill", "Nested lib content");
+
+        // Extract the inner JAR from the outer to a temp file,
+        // simulating Spring Boot's runtime resolution of nested JARs
+        Path innerJarPath = extractInnerJar(outerJarPath, "BOOT-INF/lib/nested-skill.jar");
+
+        // Configure the test FileSystemProvider so that ZipFileSystemProvider can
+        // resolve the nested: URI to the extracted inner JAR path.
+        // In production, Spring Boot's NestedFileSystemProvider handles this.
+        TestNestedFileSystemProvider.configuredInnerJarPath = innerJarPath;
+        try {
+            // Build a ClassLoader that returns a jar:nested: format URL.
+            ClassLoader nestedClassLoader =
+                    new ClassLoader(ClassLoader.getSystemClassLoader()) {
+                        @Override
+                        public URL getResource(String name) {
+                            if ("jar-skills".equals(name)) {
+                                try {
+                                    String nestedUrlStr =
+                                            "jar:nested:"
+                                                    + outerJarPath.toUri().getRawPath()
+                                                    + "/!BOOT-INF/lib/nested-skill.jar!/"
+                                                    + name;
+                                    return new URL(
+                                            null,
+                                            nestedUrlStr,
+                                            new URLStreamHandler() {
+                                                @Override
+                                                protected URLConnection openConnection(URL u)
+                                                        throws IOException {
+                                                    throw new UnsupportedOperationException(
+                                                            "nested URL for test only");
+                                                }
+                                            });
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                            return super.getResource(name);
+                        }
+                    };
+
+            repository =
+                    new ClasspathSkillRepositoryWithClassLoader("jar-skills", nestedClassLoader);
+
+            assertTrue(repository.isJarEnvironment(), "Should detect JAR environment");
+
+            AgentSkill skill = repository.getSkill("nested-lib-skill");
+            assertNotNull(skill);
+            assertEquals("nested-lib-skill", skill.getName());
+            assertEquals("Nested Lib Skill", skill.getDescription());
+            assertTrue(skill.getSkillContent().contains("Nested lib content"));
+        } finally {
+            TestNestedFileSystemProvider.configuredInnerJarPath = null;
         }
     }
 
@@ -518,6 +602,99 @@ class ClasspathSkillRepositoryTest {
     }
 
     /**
+     * Creates a test fat JAR simulating a Spring Boot multi-module project. The
+     * outer JAR contains
+     * BOOT-INF/lib/nested-skill.jar, which itself contains
+     * jar-skills/{skillName}/SKILL.md.
+     *
+     * <p>
+     * This simulates the URL pattern:
+     * jar:nested:/opt/app/xxx-app.jar/!BOOT-INF/lib/nested-skill.jar!/jar-skills
+     */
+    private Path createSpringBootNestedLibTestJar(
+            String skillName, String description, String content) throws IOException {
+        // First, create the inner JAR (the library module jar)
+        byte[] innerJarBytes = createInnerSkillJar(skillName, description, content);
+
+        // Then, create the outer fat JAR containing the inner JAR at BOOT-INF/lib/
+        Path outerJarPath = tempDir.resolve(skillName + "-nested-springboot.jar");
+        try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(outerJarPath))) {
+            // Add Spring Boot directory structure
+            jos.putNextEntry(new JarEntry("BOOT-INF/"));
+            jos.closeEntry();
+            jos.putNextEntry(new JarEntry("BOOT-INF/lib/"));
+            jos.closeEntry();
+
+            // Embed the inner JAR as a nested entry (STORED, not compressed)
+            JarEntry nestedJarEntry = new JarEntry("BOOT-INF/lib/nested-skill.jar");
+            nestedJarEntry.setMethod(JarEntry.STORED);
+            nestedJarEntry.setSize(innerJarBytes.length);
+            nestedJarEntry.setCompressedSize(innerJarBytes.length);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(innerJarBytes);
+            nestedJarEntry.setCrc(crc.getValue());
+            jos.putNextEntry(nestedJarEntry);
+            jos.write(innerJarBytes);
+            jos.closeEntry();
+        }
+
+        return outerJarPath;
+    }
+
+    /**
+     * Creates an inner JAR byte array containing skills at
+     * jar-skills/{skillName}/SKILL.md.
+     */
+    private byte[] createInnerSkillJar(String skillName, String description, String content)
+            throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (JarOutputStream jos = new JarOutputStream(baos)) {
+            // Add parent directory
+            jos.putNextEntry(new JarEntry("jar-skills/"));
+            jos.closeEntry();
+
+            // Add skill directory
+            jos.putNextEntry(new JarEntry("jar-skills/" + skillName + "/"));
+            jos.closeEntry();
+
+            // Add SKILL.md
+            String skillMd =
+                    "---\n"
+                            + "name: "
+                            + skillName
+                            + "\n"
+                            + "description: "
+                            + description
+                            + "\n"
+                            + "---\n"
+                            + content;
+
+            JarEntry entry = new JarEntry("jar-skills/" + skillName + "/SKILL.md");
+            jos.putNextEntry(entry);
+            jos.write(skillMd.getBytes(StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * Extracts an inner JAR from an outer JAR to a temp file. This simulates how
+     * Spring Boot
+     * resolves nested JARs at runtime.
+     */
+    private Path extractInnerJar(Path outerJarPath, String innerEntryName) throws IOException {
+        Path innerJarPath = tempDir.resolve("extracted-inner.jar");
+        try (JarFile outerJar = new JarFile(outerJarPath.toFile())) {
+            JarEntry innerEntry = outerJar.getJarEntry(innerEntryName);
+            assertNotNull(innerEntry, "Inner JAR entry should exist: " + innerEntryName);
+            try (InputStream is = outerJar.getInputStream(innerEntry)) {
+                Files.copy(is, innerJarPath);
+            }
+        }
+        return innerJarPath;
+    }
+
+    /**
      * Custom adapter that uses a specific ClassLoader for testing JAR loading.
      */
     private static class ClasspathSkillRepositoryWithClassLoader extends ClasspathSkillRepository {
@@ -525,6 +702,143 @@ class ClasspathSkillRepositoryTest {
         public ClasspathSkillRepositoryWithClassLoader(String resourcePath, ClassLoader classLoader)
                 throws IOException {
             super(resourcePath, classLoader);
+        }
+    }
+
+    /**
+     * Test-only {@link FileSystemProvider} for the {@code nested:} scheme.
+     *
+     * <p>
+     * In Spring Boot 3.2+, the {@code nested:} scheme is handled by Spring Boot's
+     * {@code NestedFileSystemProvider} from {@code spring-boot-loader}. In our test
+     * environment (without Spring Boot), this provider simulates the same behavior.
+     *
+     * <p>
+     * When {@link ClasspathSkillRepository} processes a {@code jar:nested:} URI,
+     * the
+     * JDK's {@code ZipFileSystemProvider} internally calls
+     * {@code Path.of(new URI("nested:..."))} to locate the JAR file. This provider
+     * intercepts that call and returns the path to the extracted inner JAR.
+     *
+     * <p>
+     * Registered via SPI in
+     * {@code META-INF/services/java.nio.file.spi.FileSystemProvider}.
+     */
+    public static class TestNestedFileSystemProvider extends FileSystemProvider {
+
+        /**
+         * Path to the extracted inner JAR. Must be set before creating a
+         * {@link ClasspathSkillRepository} with a {@code jar:nested:} URL.
+         */
+        static volatile Path configuredInnerJarPath;
+
+        @Override
+        public String getScheme() {
+            return "nested";
+        }
+
+        /**
+         * Returns the configured inner JAR path for the given {@code nested:} URI.
+         *
+         * <p>
+         * Called by {@code ZipFileSystemProvider.uriToPath()} when it encounters
+         * a {@code nested:} URI like
+         * {@code nested:/path/outer.jar/!BOOT-INF/lib/inner.jar}.
+         */
+        @Override
+        public Path getPath(URI uri) {
+            if (configuredInnerJarPath == null) {
+                throw new IllegalStateException(
+                        "TestNestedFileSystemProvider.configuredInnerJarPath not set");
+            }
+            return configuredInnerJarPath;
+        }
+
+        // ---- All methods below are not used; required by abstract contract ----
+
+        @Override
+        public FileSystem newFileSystem(URI uri, Map<String, ?> env) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public FileSystem getFileSystem(URI uri) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public SeekableByteChannel newByteChannel(
+                Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public DirectoryStream<Path> newDirectoryStream(
+                Path dir, DirectoryStream.Filter<? super Path> filter) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void createDirectory(Path dir, FileAttribute<?>... attrs) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void delete(Path path) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void copy(Path source, Path target, CopyOption... options) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void move(Path source, Path target, CopyOption... options) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean isSameFile(Path path, Path path2) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean isHidden(Path path) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public FileStore getFileStore(Path path) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void checkAccess(Path path, AccessMode... modes) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <V extends FileAttributeView> V getFileAttributeView(
+                Path path, Class<V> type, LinkOption... options) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <A extends BasicFileAttributes> A readAttributes(
+                Path path, Class<A> type, LinkOption... options) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Map<String, Object> readAttributes(
+                Path path, String attributes, LinkOption... options) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void setAttribute(Path path, String attribute, Object value, LinkOption... options) {
+            throw new UnsupportedOperationException();
         }
     }
 }
