@@ -77,11 +77,11 @@
         <google-genai.version>1.38.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
         <bailian.version>2.8.1</bailian.version>
-        <openai-java.version>4.19.0</openai-java.version>
+        <openai-java.version>4.22.0</openai-java.version>
         <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <qdrant.version>1.16.2</qdrant.version>
+        <qdrant.version>1.17.0</qdrant.version>
         <milvus.version>2.6.13</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
         <elasticsearch.version>9.3.0</elasticsearch.version>
