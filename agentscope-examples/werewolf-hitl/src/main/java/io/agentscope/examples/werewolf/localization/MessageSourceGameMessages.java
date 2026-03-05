@@ -453,7 +453,7 @@ public class MessageSourceGameMessages implements GameMessages {
     // Human player prompts
     @Override
     public String getPromptWerewolfDiscussion() {
-        return msg("prompt.werewolf.discussion");
+        return msg("human.werewolf.discussion");
     }
 
     @Override
@@ -489,5 +489,91 @@ public class MessageSourceGameMessages implements GameMessages {
     @Override
     public String getPromptHunterShoot() {
         return msg("prompt.hunter.shoot");
+    }
+
+    // Sheriff election related messages
+    @Override
+    public String getSystemSheriffElectionStart() {
+        return msg("prompt.sheriff.election.start");
+    }
+
+    @Override
+    public String getSystemNoCandidates() {
+        return msg("system.no.candidates");
+    }
+
+    @Override
+    public String getSystemCampaignStart() {
+        return msg("system.campaign.start");
+    }
+
+    @Override
+    public String getSystemSheriffVotingStart() {
+        return msg("system.sheriff.voting.start");
+    }
+
+    @Override
+    public String getSystemSheriffTransferStart() {
+        return msg("system.sheriff.transfer.start");
+    }
+
+    @Override
+    public String getSystemSpeakOrderDecision(String sheriffName, String order) {
+        return msg("system.speak.order.decision", sheriffName, order);
+    }
+
+    @Override
+    public String getPromptSheriffRegister() {
+        return msg("prompt.sheriff.register");
+    }
+
+    @Override
+    public String getPromptSheriffCampaign(String playerName) {
+        return msg("prompt.sheriff.campaign", playerName);
+    }
+
+    @Override
+    public String getPromptSheriffVote() {
+        return msg("prompt.sheriff.vote");
+    }
+
+    @Override
+    public String getPromptSpeakOrder() {
+        return msg("prompt.speak.order");
+    }
+
+    @Override
+    public String getPromptSpeakOrderFromPosition(String playerName) {
+        return msg("prompt.speak.order.from.position", playerName);
+    }
+
+    @Override
+    public String getPromptSheriffTransfer() {
+        return msg("prompt.sheriff.transfer");
+    }
+
+    @Override
+    public String getErrorSheriffRegistration(String error) {
+        return msg("error.sheriff.registration", error);
+    }
+
+    @Override
+    public String getErrorSheriffCampaign(String error) {
+        return msg("error.sheriff.campaign", error);
+    }
+
+    @Override
+    public String getErrorSheriffVote(String error) {
+        return msg("error.sheriff.vote", error);
+    }
+
+    @Override
+    public String getErrorSpeakOrder(String error) {
+        return msg("error.speak.order", error);
+    }
+
+    @Override
+    public String getErrorSheriffTransfer(String error) {
+        return msg("error.sheriff.transfer", error);
     }
 }

@@ -17,16 +17,16 @@ package io.agentscope.examples.werewolf.model;
 
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
-/** Structured output model for voting phase. */
-public class VoteModel {
-    @JsonPropertyDescription("目标玩家")
-    public String targetPlayer;
+/**
+ * Model for sheriff campaign speech.
+ */
+public class SheriffCampaignModel {
+    @JsonPropertyDescription("昨夜查验的结果，比如xx号金水，xx号查杀。注意：如果不是预言家，或者不准备跳预言家，则严格留空")
+    public String checkResult; // Seer's check result to announce (if seer)
 
-    @JsonPropertyDescription("投票理由")
-    public String reason;
+    @JsonPropertyDescription("今晚查验的目标。注意：如果不是预言家，或者不准备跳预言家，则严格留空")
+    public String nextCheckTarget; // Next player to check tonight (if seer)
 
-    @JsonPropertyDescription("悍跳狼人候选人姓名（仅第一夜使用）")
-    public String jumpCandidateName; // 悍跳狼人候选人姓名（仅第一夜使用）
-
-    public VoteModel() {}
+    @JsonPropertyDescription("警上发言内容，不能为空")
+    public String campaignSpeech; // Campaign speech content
 }
