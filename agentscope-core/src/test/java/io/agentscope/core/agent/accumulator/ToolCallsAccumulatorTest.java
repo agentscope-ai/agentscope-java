@@ -323,4 +323,32 @@ class ToolCallsAccumulatorTest {
         List<ToolUseBlock> allCalls = accumulator.getAllAccumulatedToolCalls();
         assertEquals(2, allCalls.size());
     }
+
+    @Test
+    @DisplayName("Should parse raw content with literal newlines in string (e.g. HTML from LLM)")
+    void testRawContentWithNewlinesInStringParsedViaFallback() {
+        // Simulate LLM returning tool args as JSON with unescaped newlines inside string
+        // (invalid JSON; parse fails without fallback, leaving input empty)
+        String rawContent =
+                "{\"file_path\":\"out.html\",\"content\":\"<html>\n"
+                        + "  <body>\n"
+                        + "    <p>Hi</p>\n"
+                        + "  </body>\n"
+                        + "</html>\"}";
+        ToolUseBlock chunk =
+                ToolUseBlock.builder().id("call_1").name("write_file").content(rawContent).build();
+
+        accumulator.add(chunk);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        assertEquals("call_1", toolCall.getId());
+        assertEquals("write_file", toolCall.getName());
+        Map<String, Object> input = toolCall.getInput();
+        assertNotNull(input);
+        assertEquals("out.html", input.get("file_path"));
+        assertEquals("<html>\n  <body>\n    <p>Hi</p>\n  </body>\n</html>", input.get("content"));
+    }
 }
