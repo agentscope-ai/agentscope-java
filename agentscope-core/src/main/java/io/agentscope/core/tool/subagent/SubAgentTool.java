@@ -15,9 +15,12 @@
  */
 package io.agentscope.core.tool.subagent;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -27,7 +30,9 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,13 +50,30 @@ import reactor.core.publisher.Mono;
  * <p>Thread safety is ensured by using {@link SubAgentProvider} to create a fresh agent instance
  * for each new session.
  *
- * <p>The tool exposes two parameters:
+ * <p>The tool exposes the following parameters:
  *
  * <ul>
  *   <li>{@code session_id} - Optional. Omit to start a new session, provide to continue an
  *       existing one.
  *   <li>{@code message} - Required. The message to send to the agent.
  * </ul>
+ *
+ * <p><b>Context Sharing Modes:</b>
+ *
+ * <ul>
+ *   <li><b>SHARED (default):</b> Sub-agent receives a forked copy of parent's memory with pending
+ *       tool calls removed. Provides context visibility while avoiding validation issues. Changes
+ *       don't affect parent's memory. Sub-agent uses parent's system prompt context.
+ *   <li><b>FORK:</b> Sub-agent gets a forked copy of parent's memory at invocation time, with
+ *       pending tool calls removed. Changes don't affect parent's memory. Sub-agent uses parent's
+ *       system prompt context.
+ *   <li><b>NEW:</b> Sub-agent has completely independent memory with its own system prompt. No
+ *       context from parent.
+ * </ul>
+ *
+ * <p><b>Note:</b> Both SHARED and FORK modes fork the parent's memory because the parent's memory
+ * contains the pending tool_use block that invoked the sub-agent, which would cause validation
+ * errors if shared directly.
  */
 public class SubAgentTool implements AgentTool {
 
@@ -62,6 +84,17 @@ public class SubAgentTool implements AgentTool {
 
     /** Parameter name for message. */
     private static final String PARAM_MESSAGE = "message";
+
+    /**
+     * Context key for parent session ID.
+     *
+     * <p>Applications can register the parent session ID in ToolExecutionContext to enable session
+     * inheritance for SHARED/FORK modes. The sub-agent will derive its session ID from the parent
+     * session.
+     *
+     * <p>Example: context.register(CONTEXT_KEY_PARENT_SESSION_ID, "parent_session_123", String.class)
+     */
+    public static final String CONTEXT_KEY_PARENT_SESSION_ID = "parentSessionId";
 
     private final String name;
     private final String description;
@@ -114,6 +147,7 @@ public class SubAgentTool implements AgentTool {
      * <ul>
      *   <li>Session ID generation for new conversations
      *   <li>Agent state loading for continued sessions
+     *   <li>Memory sharing based on context sharing mode
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
      * </ul>
@@ -130,8 +164,26 @@ public class SubAgentTool implements AgentTool {
                         // Get or create session ID
                         String sessionId = (String) input.get(PARAM_SESSION_ID);
                         boolean isNewSession = sessionId == null;
+
+                        // Get context sharing mode early for session inheritance logic
+                        ContextSharingMode contextMode = config.getContextSharingMode();
+
                         if (isNewSession) {
-                            sessionId = UUID.randomUUID().toString();
+                            // Try to inherit session ID from parent in SHARED/FORK modes
+                            String parentSessionId = getParentSessionId(param.getContext());
+                            if (parentSessionId != null
+                                    && (contextMode == ContextSharingMode.SHARED
+                                            || contextMode == ContextSharingMode.FORK)) {
+                                // Derive sub-agent session ID from parent session
+                                sessionId = parentSessionId + "_" + name;
+                                logger.debug(
+                                        "Inherited session ID from parent: {} -> {}",
+                                        parentSessionId,
+                                        sessionId);
+                            } else {
+                                // Generate new session ID
+                                sessionId = UUID.randomUUID().toString();
+                            }
                         }
 
                         // Get message
@@ -140,21 +192,48 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
-                        // Create agent for this session
+                        // Prepare context for agent creation
                         final String finalSessionId = sessionId;
-                        Agent agent = agentProvider.provide();
+                        Agent parentAgent = param.getAgent();
 
-                        // Load existing state if continuing session
-                        if (!isNewSession && agent instanceof StateModule) {
+                        // Compute memory to use based on context sharing mode
+                        Memory memoryToUse = computeMemoryToUse(parentAgent, contextMode);
+
+                        // Create SubAgentContext with parent agent and memory
+                        SubAgentContext context =
+                                new SubAgentContext(parentAgent, contextMode, memoryToUse);
+
+                        // Create agent with context (memory is set during construction)
+                        Agent agent = agentProvider.provideWithContext(context);
+
+                        // Log sub-agent execution for debugging - Including model info if available
+                        String modelInfo = "unknown";
+                        if (agent instanceof io.agentscope.core.ReActAgent) {
+                            io.agentscope.core.model.Model agentModel =
+                                    ((io.agentscope.core.ReActAgent) agent).getModel();
+                            if (agentModel != null) {
+                                modelInfo = agentModel.getModelName();
+                            }
+                        }
+                        logger.info(
+                                "SubAgentTool executing: toolName={}, agentName={}, agentId={},"
+                                        + " model={}, contextMode={}",
+                                name,
+                                agent.getName(),
+                                agent.getAgentId(),
+                                modelInfo,
+                                contextMode);
+
+                        // Load existing state if continuing session (only for NEW mode)
+                        if (!isNewSession
+                                && contextMode == ContextSharingMode.NEW
+                                && agent instanceof StateModule) {
                             loadAgentState(finalSessionId, (StateModule) agent);
                         }
 
-                        // Build user message
-                        Msg userMsg =
-                                Msg.builder()
-                                        .role(MsgRole.USER)
-                                        .content(TextBlock.builder().text(message).build())
-                                        .build();
+                        // Build user message - in SHARED/FORK modes, try to preserve images from
+                        // original user message
+                        Msg userMsg = buildUserMessage(message, memoryToUse);
 
                         logger.debug(
                                 "Session {} with agent '{}': {}",
@@ -173,19 +252,164 @@ public class SubAgentTool implements AgentTool {
                             result = executeWithoutStreaming(agent, userMsg, finalSessionId);
                         }
 
-                        // Save state after execution
-                        return result.doOnSuccess(
-                                r -> {
-                                    if (agent instanceof StateModule) {
-                                        saveAgentState(finalSessionId, (StateModule) agent);
-                                    }
-                                });
+                        // Save state after execution (only for NEW mode with independent session)
+                        if (contextMode == ContextSharingMode.NEW && agent instanceof StateModule) {
+                            return result.doOnSuccess(
+                                    r -> saveAgentState(finalSessionId, (StateModule) agent));
+                        }
+
+                        return result;
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
                                 ToolResultBlock.error("Session setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Computes the memory to use based on context sharing mode.
+     *
+     * <p>
+     *
+     * <ul>
+     *   <li>SHARED: Returns parent's memory directly
+     *   <li>FORK: Returns a fork of parent's memory
+     *   <li>NEW: Returns null (sub-agent should use its own independent memory)
+     * </ul>
+     *
+     * @param parentAgent The parent agent (source of memory for SHARED/FORK modes)
+     * @param contextMode The context sharing mode
+     * @return The memory to use, or null for independent memory
+     */
+    private Memory computeMemoryToUse(Agent parentAgent, ContextSharingMode contextMode) {
+        // Only ReActAgent supports memory sharing
+        if (!(parentAgent instanceof ReActAgent parentReactAgent)) {
+            logger.debug("Parent is not a ReActAgent, sub-agent will use independent memory");
+            return null;
+        }
+
+        Memory parentMemory = parentReactAgent.getMemory();
+        if (parentMemory == null) {
+            logger.debug("Parent has no memory, sub-agent will use independent memory");
+            return null;
+        }
+
+        switch (contextMode) {
+            case SHARED:
+                // DESIGN NOTE: SHARED and FORK currently have identical implementations.
+                // Both fork the parent's memory and remove pending tool calls.
+                //
+                // Why we cannot implement true memory sharing:
+                // - The parent's memory contains the pending tool_use block that invoked this
+                //   sub-agent
+                // - Directly sharing this memory would cause validation errors when the sub-agent
+                //   tries to add new messages (pending tool calls must be resolved first)
+                // - True sharing would require complex synchronization and state management
+                //
+                // Why we keep SHARED as a separate mode:
+                // - API compatibility with skill.md specifications
+                // - Semantic distinction: SHARED implies "context visibility" while FORK implies
+                //   "explicit copy"
+                // - Future extensibility: if we find a way to implement true sharing, SHARED can
+                //   be updated
+                Memory sharedMemory = parentMemory.fork();
+                removePendingToolCalls(sharedMemory);
+                logger.debug(
+                        "Sub-agent will use SHARED (forked with pending calls removed) memory from"
+                                + " parent ({} messages)",
+                        sharedMemory.getMessages().size());
+                return sharedMemory;
+
+            case FORK:
+                // Fork parent's memory and remove pending tool calls
+                // NOTE: This is identical to SHARED mode implementation. See SHARED case for
+                // explanation.
+                Memory forkedMemory = parentMemory.fork();
+                removePendingToolCalls(forkedMemory);
+                logger.debug(
+                        "Sub-agent will use FORKed memory from parent ({} messages)",
+                        forkedMemory.getMessages().size());
+                return forkedMemory;
+
+            case NEW:
+                // Use independent memory (return null)
+                logger.debug("Sub-agent will use NEW independent memory");
+                return null;
+
+            default:
+                logger.debug(
+                        "Unknown context sharing mode: {}, using independent memory", contextMode);
+                return null;
+        }
+    }
+
+    /**
+     * Removes pending tool calls from memory.
+     *
+     * <p>This is necessary because when a sub-agent is invoked as a tool, the parent's memory
+     * contains the tool_use block that called the sub-agent. If we share this memory directly,
+     * the sub-agent will fail validation when trying to add new messages because of the pending
+     * tool call.
+     *
+     * <p>This method removes:
+     * <ul>
+     *   <li>ASSISTANT messages that contain only ToolUseBlocks (no text)</li>
+     *   <li>Messages with pending tool calls that haven't been resolved</li>
+     * </ul>
+     *
+     * @param memory The memory to clean up
+     */
+    private void removePendingToolCalls(Memory memory) {
+        List<Msg> messages = memory.getMessages();
+        // Iterate backwards and remove messages with pending tool calls
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            // Check if this is an ASSISTANT message with only tool calls (no text content)
+            if (msg.getRole() == MsgRole.ASSISTANT && hasOnlyToolCalls(msg)) {
+                memory.deleteMessage(i);
+                logger.debug("Removed pending tool call message from shared memory");
+            } else {
+                // Stop at the first message that's not a pending tool call
+                break;
+            }
+        }
+    }
+
+    /**
+     * Checks if a message contains only tool calls (no text content).
+     *
+     * @param msg The message to check
+     * @return true if the message has only ToolUseBlocks
+     */
+    private boolean hasOnlyToolCalls(Msg msg) {
+        List<io.agentscope.core.message.ContentBlock> content = msg.getContent();
+        if (content == null || content.isEmpty()) {
+            return false;
+        }
+        for (io.agentscope.core.message.ContentBlock block : content) {
+            if (block instanceof io.agentscope.core.message.TextBlock) {
+                return false; // Has text content, not just tool calls
+            }
+        }
+        // Check if there are any ToolUseBlocks
+        return content.stream().anyMatch(b -> b instanceof io.agentscope.core.message.ToolUseBlock);
+    }
+
+    /**
+     * Gets the parent session ID from the tool execution context.
+     *
+     * <p>The parent session ID should be registered in the context with the key {@link
+     * #CONTEXT_KEY_PARENT_SESSION_ID}.
+     *
+     * @param context The tool execution context, may be null
+     * @return The parent session ID, or null if not available
+     */
+    private String getParentSessionId(ToolExecutionContext context) {
+        if (context == null) {
+            return null;
+        }
+        return context.get(CONTEXT_KEY_PARENT_SESSION_ID, String.class);
     }
 
     /**
@@ -346,9 +570,41 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
+     * Builds a user message with text content.
+     *
+     * @param message The text message
+     * @return The constructed message
+     */
+    private Msg buildUserMessage(String message, Memory memory) {
+        // Try to extract images from the most recent user message in memory
+        List<io.agentscope.core.message.ContentBlock> contentBlocks = new ArrayList<>();
+        contentBlocks.add(TextBlock.builder().text(message).build());
+
+        if (memory != null) {
+            List<Msg> messages = memory.getMessages();
+            // Search from the most recent message backwards for images
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                Msg msg = messages.get(i);
+                if (msg.getRole() == MsgRole.USER) {
+                    List<ImageBlock> images = msg.getContentBlocks(ImageBlock.class);
+                    if (!images.isEmpty()) {
+                        contentBlocks.addAll(images);
+                        logger.debug(
+                                "Found {} image(s) in user message, forwarding to sub-agent",
+                                images.size());
+                        break; // Only take images from the most recent user message
+                    }
+                }
+            }
+        }
+
+        return Msg.builder().role(MsgRole.USER).content(contentBlocks).build();
+    }
+
+    /**
      * Builds the JSON schema for tool parameters.
      *
-     * <p>Creates a schema with two properties:
+     * <p>Creates a schema with properties:
      *
      * <ul>
      *   <li>{@code session_id} - Optional string for continuing existing conversations
@@ -363,12 +619,12 @@ public class SubAgentTool implements AgentTool {
 
         Map<String, Object> properties = new HashMap<>();
 
-        // Session ID (optional)
+        // Session ID (optional) - allow null since LLMs may explicitly pass null
         Map<String, Object> sessionIdProp = new HashMap<>();
-        sessionIdProp.put("type", "string");
+        sessionIdProp.put("type", List.of("string", "null"));
         sessionIdProp.put(
                 "description",
-                "Session ID for multi-turn dialogue. Omit to start a NEW session."
+                "Session ID for multi-turn dialogue. Omit or pass null to start a NEW session."
                         + " To CONTINUE an existing session and retain memory, you MUST extract"
                         + " the session_id from the previous response and pass it here.");
         properties.put(PARAM_SESSION_ID, sessionIdProp);

@@ -283,4 +283,48 @@ class AgentSkillTest {
         assertNotNull(paths);
         assertTrue(paths.isEmpty());
     }
+
+    @Test
+    @DisplayName("Should create skill with model")
+    void shouldCreateSkillWithModel() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("test_skill")
+                        .description("Test skill")
+                        .skillContent("Content")
+                        .model("qwen-turbo")
+                        .build();
+
+        assertEquals("qwen-turbo", skill.getModel());
+    }
+
+    @Test
+    @DisplayName("Should allow null model")
+    void shouldAllowNullModel() {
+        AgentSkill skill =
+                AgentSkill.builder()
+                        .name("test_skill")
+                        .description("Test skill")
+                        .skillContent("Content")
+                        .build();
+
+        assertEquals(null, skill.getModel());
+    }
+
+    @Test
+    @DisplayName("Should modify model via toBuilder")
+    void shouldModifyModelViaToBuilder() {
+        AgentSkill original =
+                AgentSkill.builder()
+                        .name("test_skill")
+                        .description("Test skill")
+                        .skillContent("Content")
+                        .model("qwen-turbo")
+                        .build();
+
+        AgentSkill modified = original.toBuilder().model("qwen-plus").build();
+
+        assertEquals("qwen-turbo", original.getModel());
+        assertEquals("qwen-plus", modified.getModel());
+    }
 }

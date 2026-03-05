@@ -20,8 +20,10 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -34,11 +36,16 @@ class SkillToolFactory {
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
     private final SkillRegistry skillRegistry;
+    private final SkillBox skillBox;
     private Toolkit toolkit;
 
-    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
+    /** Tracks which skills have already had their sub-agent tools created. */
+    private final Set<String> skillsWithSubAgentCreated = new HashSet<>();
+
+    SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit, SkillBox skillBox) {
         this.skillRegistry = skillRegistry;
         this.toolkit = toolkit;
+        this.skillBox = skillBox;
     }
 
     /**
@@ -186,11 +193,29 @@ class SkillToolFactory {
         result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
         result.append("Name: ").append(skill.getName()).append("\n");
         result.append("Description: ").append(skill.getDescription()).append("\n");
+
+        // Add model info if present
+        if (skill.getModel() != null && !skill.getModel().isBlank()) {
+            result.append("Model: ").append(skill.getModel()).append("\n");
+        }
+
         result.append("Source: ").append(skill.getSource()).append("\n\n");
         result.append("Content:\n");
         result.append("---\n");
         result.append(skill.getSkillContent());
         result.append("\n---\n");
+
+        // Add hint about sub-agent tool if skill has a configured model
+        if (skill.getModel() != null && !skill.getModel().isBlank()) {
+            String toolName = "call_" + skill.getName();
+            result.append("\n**Note:** This skill is configured to use model '")
+                    .append(skill.getModel())
+                    .append("'.\n");
+            result.append("Use the '**")
+                    .append(toolName)
+                    .append("**' tool to execute tasks with this skill's configured model.\n");
+        }
+
         return result.toString();
     }
 
@@ -249,6 +274,9 @@ class SkillToolFactory {
     /**
      * Validate skill exists and activate it and its tool group.
      *
+     * <p>This method also creates a sub-agent tool if the skill has a model configured
+     * and the sub-agent tool hasn't been created yet.
+     *
      * @param skillId The unique identifier of the skill
      * @return The skill instance
      * @throws IllegalArgumentException if skill doesn't exist
@@ -280,6 +308,40 @@ class SkillToolFactory {
                     toolkit.getToolGroup(toolsGroupName).getTools());
         }
 
+        // Create sub-agent tool if skill has model and not already created
+        createSubAgentIfHasModel(skill, skillId);
+
         return skill;
+    }
+
+    /**
+     * Create a SubAgentTool if the skill has a model configured and not already created.
+     *
+     * <p>This method is called when a skill is dynamically loaded via load_skill_through_path.
+     * It ensures that skills with models get their sub-agent tools created on-demand.
+     *
+     * @param skill The skill to check for model configuration
+     * @param skillId The skill ID for tracking creation status
+     */
+    private void createSubAgentIfHasModel(AgentSkill skill, String skillId) {
+        // Check if sub-agent tool already created for this skill
+        if (skillsWithSubAgentCreated.contains(skillId)) {
+            logger.debug("Sub-agent tool already exists for skill '{}'", skillId);
+            return;
+        }
+
+        String modelRef = skill.getModel();
+
+        // Use shared method from SkillBox to create the sub-agent
+        boolean created = skillBox.createSubAgentToolForSkill(skill, toolkit, modelRef);
+
+        if (created) {
+            // Mark as created to prevent duplicates
+            skillsWithSubAgentCreated.add(skillId);
+
+            // Activate the tool group
+            String skillToolGroup = skillId + "_skill_tools";
+            toolkit.updateToolGroups(List.of(skillToolGroup), true);
+        }
     }
 }

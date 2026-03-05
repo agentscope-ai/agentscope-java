@@ -27,12 +27,12 @@ import io.agentscope.core.session.Session;
  * supports smart defaults that derive tool name and description from the agent itself.
  *
  * <p>Sub-agents operate in conversation mode, supporting multi-turn dialogue with session
- * management. The tool exposes two parameters:
+ * management. The tool exposes the following parameters:
  *
  * <ul>
  *   <li>{@code message} - Required. The message to send to the agent.
- *   <li>{@code conversation_id} - Optional. Omit to start a new conversation, provide to continue
- *       an existing one.
+ *   <li>{@code session_id} - Optional. Omit to start a new conversation, provide to continue an
+ *       existing one.
  * </ul>
  *
  * <p><b>Default Behavior:</b>
@@ -42,12 +42,24 @@ import io.agentscope.core.session.Session;
  *   <li>Description: uses agent's description, or generates a default
  *   <li>Session: uses {@link InMemorySession} for conversation state management
  *   <li>Event forwarding: enabled by default
+ *   <li>Context sharing: SHARED by default (sub-agent shares parent's memory)
+ * </ul>
+ *
+ * <p><b>Context Sharing Modes:</b>
+ *
+ * <ul>
+ *   <li>{@link ContextSharingMode#SHARED} (default): Sub-agent shares the same memory instance with
+ *       parent. All messages are immediately visible to both.
+ *   <li>{@link ContextSharingMode#FORK}: Sub-agent gets a copy of parent's memory. Changes don't
+ *       affect parent's memory.
+ *   <li>{@link ContextSharingMode#NEW}: Sub-agent has completely independent memory with its own
+ *       system prompt.
  * </ul>
  *
  * <p>Example usage:
  *
  * <pre>{@code
- * // Minimal configuration - uses all defaults
+ * // Minimal configuration - uses all defaults (SHARED context)
  * SubAgentConfig config = SubAgentConfig.defaults();
  *
  * // Custom configuration with persistent session
@@ -55,6 +67,16 @@ import io.agentscope.core.session.Session;
  *     .toolName("ask_expert")
  *     .description("Ask the expert a question")
  *     .session(new JsonSession(Path.of("sessions")))
+ *     .build();
+ *
+ * // Use FORK mode for isolated context
+ * SubAgentConfig config = SubAgentConfig.builder()
+ *     .contextSharingMode(ContextSharingMode.FORK)
+ *     .build();
+ *
+ * // Use NEW mode for completely independent sub-agent
+ * SubAgentConfig config = SubAgentConfig.builder()
+ *     .contextSharingMode(ContextSharingMode.NEW)
  *     .build();
  * }</pre>
  */
@@ -65,6 +87,7 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final Session session;
+    private final ContextSharingMode contextSharingMode;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -72,6 +95,7 @@ public class SubAgentConfig {
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
         this.session = builder.session != null ? builder.session : new InMemorySession();
+        this.contextSharingMode = builder.contextSharingMode;
     }
 
     /**
@@ -148,6 +172,23 @@ public class SubAgentConfig {
         return session;
     }
 
+    /**
+     * Gets the context sharing mode.
+     *
+     * <p>Controls how memory is shared between the parent agent and sub-agent:
+     *
+     * <ul>
+     *   <li>{@link ContextSharingMode#SHARED} (default): Share same memory instance
+     *   <li>{@link ContextSharingMode#FORK}: Copy parent memory at invocation
+     *   <li>{@link ContextSharingMode#NEW}: Independent memory with own system prompt
+     * </ul>
+     *
+     * @return The context sharing mode
+     */
+    public ContextSharingMode getContextSharingMode() {
+        return contextSharingMode;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -155,6 +196,7 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private Session session;
+        private ContextSharingMode contextSharingMode = ContextSharingMode.SHARED;
 
         private Builder() {}
 
@@ -226,6 +268,25 @@ public class SubAgentConfig {
          */
         public Builder session(Session session) {
             this.session = session;
+            return this;
+        }
+
+        /**
+         * Sets the context sharing mode.
+         *
+         * <p>Controls how memory is shared between the parent agent and sub-agent:
+         *
+         * <ul>
+         *   <li>{@link ContextSharingMode#SHARED} (default): Share same memory instance
+         *   <li>{@link ContextSharingMode#FORK}: Copy parent memory at invocation
+         *   <li>{@link ContextSharingMode#NEW}: Independent memory with own system prompt
+         * </ul>
+         *
+         * @param contextSharingMode The context sharing mode
+         * @return This builder
+         */
+        public Builder contextSharingMode(ContextSharingMode contextSharingMode) {
+            this.contextSharingMode = contextSharingMode;
             return this;
         }
 
