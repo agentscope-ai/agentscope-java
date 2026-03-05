@@ -226,6 +226,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         // Load memory if managed
         if (statePersistence.memoryManaged()) {
             memory.loadFrom(session, sessionKey);
+            // Clean up any pending tool calls from previous session
+            cleanupPendingToolCalls();
         }
 
         // Load toolkit activeGroups if managed
@@ -237,6 +239,31 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         // Load PlanNotebook if managed
         if (statePersistence.planNotebookManaged() && planNotebook != null) {
             planNotebook.loadFrom(session, sessionKey);
+        }
+    }
+
+    /**
+     * Clean up pending tool calls after session restoration.
+     *
+     * <p>When a session is restored, there may be incomplete tool calls from the previous
+     * session. This method removes the last assistant message if it contains tool calls without
+     * corresponding results, preventing IllegalStateException on the next user input.
+     */
+    private void cleanupPendingToolCalls() {
+        Set<String> pendingIds = getPendingToolUseIds();
+        if (!pendingIds.isEmpty()) {
+            // Find and remove the last assistant message with pending tool calls
+            List<Msg> messages = memory.getMessages();
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                Msg msg = messages.get(i);
+                if (msg.getRole() == MsgRole.ASSISTANT) {
+                    memory.deleteMessage(i);
+                    log.warn(
+                            "Removed incomplete tool calls from restored session. Pending IDs: {}",
+                            pendingIds);
+                    break;
+                }
+            }
         }
     }
 
