@@ -37,6 +37,9 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -930,6 +933,224 @@ class ReActAgentTest {
                 TestConstants.CALCULATOR_TOOL_NAME,
                 call2.getName(),
                 "Second tool should be calculator");
+    }
+
+    @Test
+    @DisplayName("Test cleanup of pending tool calls after session restoration")
+    void testCleanupPendingToolCallsAfterSessionRestore() {
+        // Create a memory with incomplete tool calls (simulating restored session)
+        InMemoryMemory memory = new InMemoryMemory();
+
+        // Add user message
+        memory.addMessage(TestUtils.createUserMessage("User", "What's the weather?"));
+
+        // Add assistant message with tool call (but no result)
+        Msg assistantMsg =
+                Msg.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("weather")
+                                                .id("call_dangling_123")
+                                                .input(Map.of("city", "Beijing"))
+                                                .content("{\"city\":\"Beijing\"}")
+                                                .build()))
+                        .build();
+        memory.addMessage(assistantMsg);
+
+        // Create mock model that will respond after cleanup
+        MockModel model = new MockModel("The weather is sunny.");
+
+        // Create agent with session persistence enabled
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .memory(memory)
+                        .statePersistence(StatePersistence.builder().memoryManaged(true).build())
+                        .build();
+
+        // Simulate session restoration by calling loadFrom
+        InMemorySession session = new InMemorySession();
+        SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session");
+
+        // Save memory to session first
+        memory.saveTo(session, sessionKey);
+
+        // Load from session (this should trigger cleanupPendingToolCalls)
+        agent.loadFrom(session, sessionKey);
+
+        // Verify that the dangling assistant message was removed
+        List<Msg> messages = agent.getMemory().getMessages();
+        assertEquals(1, messages.size(), "Should only have user message after cleanup");
+        assertEquals(
+                MsgRole.USER,
+                messages.get(0).getRole(),
+                "Remaining message should be user message");
+
+        // Verify agent can now accept new user input without error
+        Msg newUserMsg = TestUtils.createUserMessage("User", "Tell me more");
+        Msg response =
+                agent.call(newUserMsg)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Agent should respond successfully after cleanup");
+        assertEquals(
+                "The weather is sunny.", response.getTextContent(), "Response should match mock");
+    }
+
+    @Test
+    @DisplayName("Test no cleanup when no pending tool calls exist")
+    void testNoCleanupWhenNoPendingToolCalls() {
+        // Create a memory with complete tool call-result pair
+        InMemoryMemory memory = new InMemoryMemory();
+
+        // Add user message
+        memory.addMessage(TestUtils.createUserMessage("User", "What's the weather?"));
+
+        // Add assistant message with tool call
+        Msg assistantMsg =
+                Msg.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("weather")
+                                                .id("call_complete_456")
+                                                .input(Map.of("city", "Shanghai"))
+                                                .content("{\"city\":\"Shanghai\"}")
+                                                .build()))
+                        .build();
+        memory.addMessage(assistantMsg);
+
+        // Add tool result
+        Msg toolResultMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_complete_456")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Sunny, 25°C")
+                                                                        .build()))
+                                                .build()))
+                        .build();
+        memory.addMessage(toolResultMsg);
+
+        // Add final assistant response
+        Msg finalResponse =
+                Msg.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("The weather in Shanghai is sunny, 25°C.")
+                                                .build()))
+                        .build();
+        memory.addMessage(finalResponse);
+
+        // Create agent with session persistence
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(new MockModel(TestConstants.MOCK_MODEL_SIMPLE_RESPONSE))
+                        .memory(memory)
+                        .statePersistence(StatePersistence.builder().memoryManaged(true).build())
+                        .build();
+
+        // Simulate session restoration
+        InMemorySession session = new InMemorySession();
+        SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-2");
+
+        memory.saveTo(session, sessionKey);
+        agent.loadFrom(session, sessionKey);
+
+        // Verify that no messages were removed (all 4 messages should remain)
+        List<Msg> messages = agent.getMemory().getMessages();
+        assertEquals(4, messages.size(), "All messages should remain when no pending tool calls");
+        assertEquals(MsgRole.USER, messages.get(0).getRole(), "First message should be user");
+        assertEquals(
+                MsgRole.ASSISTANT, messages.get(1).getRole(), "Second message should be assistant");
+        assertEquals(
+                MsgRole.USER,
+                messages.get(2).getRole(),
+                "Third message should be user (tool result)");
+        assertEquals(
+                MsgRole.ASSISTANT, messages.get(3).getRole(), "Fourth message should be assistant");
+    }
+
+    @Test
+    @DisplayName("Test cleanup with multiple assistant messages")
+    void testCleanupOnlyLastAssistantMessage() {
+        // Create a memory with multiple assistant messages, last one has pending tool call
+        InMemoryMemory memory = new InMemoryMemory();
+
+        // First conversation turn (complete)
+        memory.addMessage(TestUtils.createUserMessage("User", "Hello"));
+        memory.addMessage(
+                Msg.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Hi there!").build()))
+                        .build());
+
+        // Second conversation turn (incomplete - has pending tool call)
+        memory.addMessage(TestUtils.createUserMessage("User", "What's the weather?"));
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("weather")
+                                                .id("call_pending_789")
+                                                .input(Map.of("city", "Guangzhou"))
+                                                .content("{\"city\":\"Guangzhou\"}")
+                                                .build()))
+                        .build();
+        memory.addMessage(pendingAssistantMsg);
+
+        // Create agent
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(new MockModel(TestConstants.MOCK_MODEL_SIMPLE_RESPONSE))
+                        .memory(memory)
+                        .statePersistence(StatePersistence.builder().memoryManaged(true).build())
+                        .build();
+
+        // Simulate session restoration
+        InMemorySession session = new InMemorySession();
+        SimpleSessionKey sessionKey = SimpleSessionKey.of("test-session-3");
+
+        memory.saveTo(session, sessionKey);
+        agent.loadFrom(session, sessionKey);
+
+        // Verify that only the last assistant message was removed
+        List<Msg> messages = agent.getMemory().getMessages();
+        assertEquals(3, messages.size(), "Should have 3 messages after cleanup");
+
+        // Verify the remaining messages
+        assertEquals(MsgRole.USER, messages.get(0).getRole(), "First message should be user");
+        assertEquals(
+                MsgRole.ASSISTANT, messages.get(1).getRole(), "Second message should be assistant");
+        assertEquals(
+                "Hi there!",
+                messages.get(1).getTextContent(),
+                "Second message content should be preserved");
+        assertEquals(MsgRole.USER, messages.get(2).getRole(), "Third message should be user");
     }
 
     // Helper method to create tool call response
