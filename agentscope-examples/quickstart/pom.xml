@@ -93,6 +93,18 @@
             <artifactId>agentscope-extensions-rag-simple</artifactId>
         </dependency>
 
+        <!-- DaMeng Session Extension -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-session-dameng</artifactId>
+        </dependency>
+
+        <!-- HikariCP Connection Pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+
         <!-- PostgreSQL Driver for PgVectorStore -->
         <dependency>
             <groupId>org.postgresql</groupId>
