@@ -136,6 +136,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final String sysPrompt;
     private final Model model;
     private final int maxIters;
+    private final GenerateOptions generateOptions;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final PlanNotebook planNotebook;
@@ -157,6 +158,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.maxIters = builder.maxIters;
+        this.generateOptions = builder.generateOptions;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.planNotebook = builder.planNotebook;
@@ -786,11 +788,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected GenerateOptions buildGenerateOptions() {
-        GenerateOptions.Builder builder = GenerateOptions.builder();
-        if (modelExecutionConfig != null) {
-            builder.executionConfig(modelExecutionConfig);
-        }
-        return builder.build();
+        // Build options with modelExecutionConfig (timeout, retry, etc.)
+        GenerateOptions executionOptions =
+                modelExecutionConfig != null
+                        ? GenerateOptions.builder().executionConfig(modelExecutionConfig).build()
+                        : null;
+        // Merge: user's generateOptions (temperature, topP, maxTokens, etc.) as base,
+        // executionOptions overrides executionConfig
+        return GenerateOptions.mergeOptions(executionOptions, generateOptions);
     }
 
     // ==================== Hook Notification Methods ====================
@@ -807,7 +812,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<PreReasoningEvent> notifyPreReasoningEvent(List<Msg> msgs) {
-        return notifyHooks(new PreReasoningEvent(this, model.getModelName(), null, msgs));
+        return notifyHooks(
+                new PreReasoningEvent(this, model.getModelName(), buildGenerateOptions(), msgs));
     }
 
     private Mono<PostReasoningEvent> notifyPostReasoning(Msg msg) {
@@ -977,6 +983,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private Toolkit toolkit = new Toolkit();
         private Memory memory = new InMemoryMemory();
         private int maxIters = 10;
+        private GenerateOptions generateOptions;
         private ExecutionConfig modelExecutionConfig;
         private ExecutionConfig toolExecutionConfig;
         private final Set<Hook> hooks = new LinkedHashSet<>();
@@ -1121,6 +1128,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder enableMetaTool(boolean enableMetaTool) {
             this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
+        /**
+         * Sets the generation options for model API calls.
+         *
+         * <p>This configuration includes generation parameters such as temperature, topP,
+         * maxTokens, etc. When set, these options will be passed to the model and recorded
+         * in trace spans (e.g., gen_ai.request.temperature for OpenTelemetry).
+         *
+         * @param generateOptions The generation options (temperature, topP, maxTokens, etc.)
+         * @return This builder instance for method chaining
+         * @see GenerateOptions
+         */
+        public Builder generateOptions(GenerateOptions generateOptions) {
+            this.generateOptions = generateOptions;
             return this;
         }
 
