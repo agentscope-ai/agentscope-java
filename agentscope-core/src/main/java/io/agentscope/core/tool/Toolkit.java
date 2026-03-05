@@ -25,6 +25,7 @@ import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -935,7 +936,7 @@ public class Toolkit {
                                 disableTools,
                                 groupName,
                                 presetParameters)
-                        .block();
+                        .block(Duration.ofSeconds(30));
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
                 toolkit.registerAgentTool(subAgentTool, groupName, extendedModel, null, null);
