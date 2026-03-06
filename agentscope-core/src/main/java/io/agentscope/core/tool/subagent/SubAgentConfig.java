@@ -65,6 +65,7 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final Session session;
+    private final boolean enableHITL;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -72,6 +73,7 @@ public class SubAgentConfig {
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
         this.session = builder.session != null ? builder.session : new InMemorySession();
+        this.enableHITL = builder.enableHITL;
     }
 
     /**
@@ -148,6 +150,22 @@ public class SubAgentConfig {
         return session;
     }
 
+    /**
+     * Gets whether HITL (Human-in-the-Loop) support is enabled.
+     *
+     * <p>When enabled, the sub-agent tool will:
+     * <ul>
+     *   <li>Detect when the sub-agent is suspended waiting for user input</li>
+     *   <li>Return a suspended result containing session ID and inner tool information</li>
+     *   <li>Support resumption with user-provided tool results</li>
+     * </ul>
+     *
+     * @return true if HITL support is enabled (default: false)
+     */
+    public boolean isEnableHITL() {
+        return enableHITL;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -155,6 +173,7 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private Session session;
+        private boolean enableHITL = false;
 
         private Builder() {}
 
@@ -226,6 +245,23 @@ public class SubAgentConfig {
          */
         public Builder session(Session session) {
             this.session = session;
+            return this;
+        }
+
+        /**
+         * Sets whether HITL (Human-in-the-Loop) support is enabled.
+         *
+         * <p>When enabled, the sub-agent tool will detect when the sub-agent is suspended
+         * waiting for user input and return a suspended result that can be resumed later.
+         *
+         * <p>This is useful when the sub-agent uses tools that require human confirmation
+         * or external execution.
+         *
+         * @param enableHITL true to enable HITL support
+         * @return This builder
+         */
+        public Builder enableHITL(boolean enableHITL) {
+            this.enableHITL = enableHITL;
             return this;
         }
 
