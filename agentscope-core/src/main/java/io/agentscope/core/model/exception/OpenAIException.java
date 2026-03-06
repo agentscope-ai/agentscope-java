@@ -64,7 +64,11 @@ public class OpenAIException extends RuntimeException {
      * @return Appropriate exception subclass
      */
     public static OpenAIException create(
-            int statusCode, String message, String errorCode, String responseBody) {
+            Integer statusCode, String message, String errorCode, String responseBody) {
+        if (null == statusCode) {
+            // When no status code is available, the default is 418
+            statusCode = 418;
+        }
         return switch (statusCode) {
             case 400 -> new BadRequestException(message, errorCode, responseBody);
             case 401 -> new AuthenticationException(message, errorCode, responseBody);
