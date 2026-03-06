@@ -41,7 +41,13 @@ import java.util.Objects;
  * @see HookEventType
  */
 public abstract sealed class HookEvent
-        permits PreCallEvent, PostCallEvent, ReasoningEvent, ActingEvent, SummaryEvent, ErrorEvent {
+        permits PreCallEvent,
+                PostCallEvent,
+                ReasoningEvent,
+                ActingEvent,
+                SummaryEvent,
+                ErrorEvent,
+                InterruptEvent {
 
     private final HookEventType type;
     private final Agent agent;

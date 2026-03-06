@@ -18,11 +18,14 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.InterruptEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.shutdown.GracefulShutdownHook;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
@@ -93,7 +96,9 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
+    private static final List<Hook> systemHooks =
+            new CopyOnWriteArrayList<>(
+                    List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -101,6 +106,8 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
     // Hook non-null
     private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
+    private final AtomicReference<InterruptSource> interruptSource =
+            new AtomicReference<>(InterruptSource.USER);
 
     /**
      * Constructor for AgentBase.
@@ -318,6 +325,7 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public void interrupt() {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
     }
 
@@ -329,10 +337,21 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public void interrupt(Msg msg) {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
         if (msg != null) {
             userInterruptMessage.set(msg);
         }
+    }
+
+    /**
+     * Interrupt execution with explicit source.
+     *
+     * @param source interruption source
+     */
+    public void interrupt(InterruptSource source) {
+        interruptSource.set(source != null ? source : InterruptSource.SYSTEM);
+        interruptFlag.set(true);
     }
 
     /**
@@ -376,6 +395,7 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void resetInterruptFlag() {
         interruptFlag.set(false);
         userInterruptMessage.set(null);
+        interruptSource.set(InterruptSource.USER);
     }
 
     /**
@@ -386,7 +406,7 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     private InterruptContext createInterruptContext() {
         return InterruptContext.builder()
-                .source(InterruptSource.USER)
+                .source(interruptSource.get())
                 .userMessage(userInterruptMessage.get())
                 .build();
     }
@@ -403,7 +423,9 @@ public abstract class AgentBase implements StateModule, Agent {
         return error -> {
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
-                return handleInterrupt(createInterruptContext(), originalArgs);
+                return handleInterrupt(createInterruptContext(), originalArgs)
+                        .flatMap(result -> notifyInterrupt().thenReturn(result))
+                        .onErrorResume(e -> notifyInterrupt().then(Mono.error(e)));
             }
             return notifyError(error).then(Mono.error(error));
         };
@@ -418,6 +440,15 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     protected AtomicBoolean getInterruptFlag() {
         return interruptFlag;
+    }
+
+    /**
+     * Get current interruption source.
+     *
+     * @return interruption source
+     */
+    protected InterruptSource getInterruptSource() {
+        return interruptSource.get();
     }
 
     /**
@@ -557,6 +588,16 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     private Mono<Void> notifyError(Throwable error) {
         ErrorEvent event = new ErrorEvent(this, error);
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+    }
+
+    /**
+     * Notify all hooks about an interrupt before handleInterrupt is invoked.
+     *
+     * @return Mono that completes when all hooks are notified
+     */
+    private Mono<Void> notifyInterrupt() {
+        InterruptEvent event = new InterruptEvent(this);
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 

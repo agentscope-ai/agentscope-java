@@ -1,0 +1,15 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 10m
+
+dashscope:
+  api-key: ${DASHSCOPE_API_KEY}
+
+agent:
+  model-name: qwen3.5-plus
+  shutdown-timeout-seconds: -1
+  shutdown-partial-reasoning-policy: save
