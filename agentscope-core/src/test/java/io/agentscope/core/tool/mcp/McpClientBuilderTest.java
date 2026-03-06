@@ -452,8 +452,10 @@ class McpClientBuilderTest {
     // ==================== extractEndpoint Tests ====================
 
     /**
-     * Helper method to invoke the extractEndpoint method in HttpTransportConfig using reflection.
-     * Creates a builder with the specified URL and query params, then extracts the endpoint.
+     * Helper method to invoke the extractEndpoint method in HttpTransportConfig
+     * using reflection.
+     * Creates a builder with the specified URL and query params, then extracts the
+     * endpoint.
      */
     private String invokeExtractEndpoint(String url, Map<String, String> queryParams)
             throws Exception {
@@ -673,7 +675,8 @@ class McpClientBuilderTest {
         assertNotNull(wrapper);
     }
 
-    // ==================== extractEndpoint with Query Params Tests ====================
+    // ==================== extractEndpoint with Query Params Tests
+    // ====================
 
     @Test
     void testExtractEndpoint_NoAdditionalParams() throws Exception {
@@ -820,7 +823,8 @@ class McpClientBuilderTest {
         McpClientBuilder builder =
                 McpClientBuilder.create("client").stdioTransport("python", "server.py");
 
-        // Should not throw because the method simply returns without calling addQueryParam
+        // Should not throw because the method simply returns without calling
+        // addQueryParam
         assertNotNull(builder.queryParam(null, "value"));
         assertNotNull(builder.queryParam("key", null));
     }
@@ -831,7 +835,8 @@ class McpClientBuilderTest {
         McpClientBuilder builder =
                 McpClientBuilder.create("client").stdioTransport("python", "server.py");
 
-        // Should not throw because the method simply returns without calling setQueryParams
+        // Should not throw because the method simply returns without calling
+        // setQueryParams
         assertNotNull(builder.queryParams(null));
     }
 
@@ -1005,7 +1010,8 @@ class McpClientBuilderTest {
 
     @Test
     void testCustomizeSseClient_OnStdioTransport_ShouldBeIgnored() {
-        // Customizing SSE client on stdio transport should not cause errors (just ignored)
+        // Customizing SSE client on stdio transport should not cause errors (just
+        // ignored)
         McpClientBuilder builder =
                 McpClientBuilder.create("stdio-client")
                         .stdioTransport("python", "-m", "mcp_server_time")
@@ -1020,7 +1026,8 @@ class McpClientBuilderTest {
 
     @Test
     void testCustomizeSseClient_OnStreamableHttpTransport_ShouldBeIgnored() {
-        // Customizing SSE client on streamable http transport should not cause errors (just
+        // Customizing SSE client on streamable http transport should not cause errors
+        // (just
         // ignored)
         McpClientBuilder builder =
                 McpClientBuilder.create("http-client")
@@ -1073,7 +1080,8 @@ class McpClientBuilderTest {
 
     @Test
     void testCustomizeStreamableHttpClient_OnStdioTransport_ShouldBeIgnored() {
-        // Customizing streamable http client on stdio transport should not cause errors (just
+        // Customizing streamable http client on stdio transport should not cause errors
+        // (just
         // ignored)
         McpClientBuilder builder =
                 McpClientBuilder.create("stdio-client")
@@ -1089,7 +1097,8 @@ class McpClientBuilderTest {
 
     @Test
     void testCustomizeStreamableHttpClient_OnSseTransport_ShouldBeIgnored() {
-        // Customizing streamable http client on SSE transport should not cause errors (just
+        // Customizing streamable http client on SSE transport should not cause errors
+        // (just
         // ignored)
         McpClientBuilder builder =
                 McpClientBuilder.create("sse-client")
@@ -1184,5 +1193,108 @@ class McpClientBuilderTest {
         assertNotNull(wrapper);
         assertEquals("all-features-client", wrapper.getName());
         assertFalse(wrapper.isInitialized());
+    }
+
+    // ==================== Elicitation Tests ====================
+
+    @Test
+    void testAsyncElicitation_WithHandler() {
+        // Test that asyncElicitation method can be called and builder is returned
+        McpClientBuilder builder =
+                McpClientBuilder.create("async-elicit-client")
+                        .stdioTransport("echo", "test")
+                        .asyncElicitation(request -> reactor.core.publisher.Mono.empty());
+
+        assertNotNull(builder);
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpAsyncClientWrapper);
+    }
+
+    @Test
+    void testSyncElicitation_WithHandler() {
+        // Test that syncElicitation method can be called and builder is returned
+        McpClientBuilder builder =
+                McpClientBuilder.create("sync-elicit-client")
+                        .stdioTransport("echo", "test")
+                        .syncElicitation(request -> null);
+
+        assertNotNull(builder);
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpSyncClientWrapper);
+    }
+
+    @Test
+    void testAsyncElicitation_WithoutHandler() {
+        // Test that building without elicitation handler works normally
+        McpClientBuilder builder =
+                McpClientBuilder.create("no-elicit-async").stdioTransport("echo", "test");
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpAsyncClientWrapper);
+    }
+
+    @Test
+    void testSyncElicitation_WithoutHandler() {
+        // Test that building without elicitation handler works normally
+        McpClientBuilder builder =
+                McpClientBuilder.create("no-elicit-sync").stdioTransport("echo", "test");
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertTrue(wrapper instanceof McpSyncClientWrapper);
+    }
+
+    @Test
+    void testAsyncElicitation_FluentApi() {
+        // Test fluent API with asyncElicitation
+        McpClientBuilder builder =
+                McpClientBuilder.create("fluent-async-elicit")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .header("Authorization", "Bearer token")
+                        .asyncElicitation(request -> reactor.core.publisher.Mono.empty())
+                        .timeout(Duration.ofSeconds(60));
+
+        assertNotNull(builder);
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testSyncElicitation_FluentApi() {
+        // Test fluent API with syncElicitation
+        McpClientBuilder builder =
+                McpClientBuilder.create("fluent-sync-elicit")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .queryParam("token", "abc123")
+                        .syncElicitation(request -> null)
+                        .timeout(Duration.ofSeconds(90));
+
+        assertNotNull(builder);
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+    }
+
+    @Test
+    void testElicitation_BothHandlersSet() {
+        // Test that setting both handlers doesn't cause issues
+        // Only the appropriate one will be used based on build method
+        McpClientBuilder builder =
+                McpClientBuilder.create("both-handlers")
+                        .stdioTransport("echo", "test")
+                        .asyncElicitation(request -> reactor.core.publisher.Mono.empty())
+                        .syncElicitation(request -> null);
+
+        // Build async - should use async handler
+        McpClientWrapper asyncWrapper = builder.buildAsync().block();
+        assertNotNull(asyncWrapper);
+        assertTrue(asyncWrapper instanceof McpAsyncClientWrapper);
+
+        // Build sync - should use sync handler
+        McpClientWrapper syncWrapper = builder.buildSync();
+        assertNotNull(syncWrapper);
+        assertTrue(syncWrapper instanceof McpSyncClientWrapper);
     }
 }
