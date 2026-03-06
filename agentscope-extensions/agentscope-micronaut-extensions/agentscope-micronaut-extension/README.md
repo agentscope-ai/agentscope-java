@@ -11,13 +11,13 @@ Add the following dependency to your Micronaut project:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-micronaut:1.0.8'
+implementation 'io.agentscope:agentscope-micronaut:1.0.9'
 ```
 
 ## Configuration

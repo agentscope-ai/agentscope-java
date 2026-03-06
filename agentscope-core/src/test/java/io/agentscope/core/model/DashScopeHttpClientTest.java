@@ -120,6 +120,148 @@ class DashScopeHttpClientTest {
         assertEquals(DashScopeHttpClient.TEXT_GENERATION_ENDPOINT, client.selectEndpoint(null));
     }
 
+    // ========== EndpointType Routing Tests ==========
+
+    @Test
+    void testSelectEndpointWithExplicitText() {
+        // Explicit TEXT forces text endpoint regardless of model name
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-vl-plus", EndpointType.TEXT));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qvq-72b", EndpointType.TEXT));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.TEXT));
+    }
+
+    @Test
+    void testSelectEndpointWithExplicitMultimodal() {
+        // Explicit MULTIMODAL forces multimodal endpoint regardless of model name
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-plus", EndpointType.MULTIMODAL));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-max", EndpointType.MULTIMODAL));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.MULTIMODAL));
+    }
+
+    @Test
+    void testSelectEndpointWithAutoFallsBackToModelNameDetection() {
+        // AUTO uses model name detection
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-vl-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qvq-72b", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testRequiresMultimodalApiWithEndpointType() {
+        // Explicit MULTIMODAL always returns true
+        assertTrue(client.requiresMultimodalApi("qwen-plus", EndpointType.MULTIMODAL));
+        // Explicit TEXT always returns false
+        assertFalse(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.TEXT));
+        // AUTO falls back to model name detection
+        assertFalse(client.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen3.5-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testIsMultimodalModelIncludesQwen35Family() {
+        // Qwen 3.5 family is entirely multimodal (prefix-based matching)
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus-2026-02-15"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-flash"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-397b-a17b"));
+        // qwen-3.5-plus (with hyphen before 3.5) does not match
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.5-plus"));
+    }
+
+    @Test
+    void testIsMultimodalModelPatterns() {
+        // qvq prefix
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qvq-72b"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("QVQ-MAX"));
+        // -vl pattern
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen-vl-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-vl-max"));
+        // -asr pattern
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-asr-flash"));
+        // Not multimodal
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-plus"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-max"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel(null));
+        assertFalse(DashScopeHttpClient.isMultimodalModel(""));
+    }
+
+    @Test
+    void testRequestEndpointTypePassedToEndpointSelection() throws Exception {
+        // Verify that endpointType in DashScopeRequest is used for endpoint routing
+        String responseJson =
+                """
+                {
+                  "request_id": "test",
+                  "output": {
+                    "choices": [{
+                      "message": { "role": "assistant", "content": "ok" },
+                      "finish_reason": "stop"
+                    }]
+                  }
+                }
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeMessage userMsg = DashScopeMessage.builder().role("user").content("Hello").build();
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-plus")
+                        .input(new DashScopeInput(List.of(userMsg)))
+                        .parameters(new DashScopeParameters())
+                        .endpointType(EndpointType.MULTIMODAL)
+                        .build();
+
+        assertEquals(EndpointType.MULTIMODAL, request.getEndpointType());
+
+        DashScopeResponse response = client.call(request, null, null, null);
+        assertNotNull(response);
+
+        // Verify the request was sent to the multimodal endpoint
+        var recorded = mockServer.takeRequest();
+        assertTrue(
+                recorded.getPath().contains(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT),
+                "Request should be sent to multimodal endpoint, but was: " + recorded.getPath());
+    }
+
+    @Test
+    void testRequestEndpointTypeDefaultsToAuto() {
+        DashScopeRequest request = new DashScopeRequest();
+        assertEquals(EndpointType.AUTO, request.getEndpointType());
+
+        DashScopeRequest request2 =
+                new DashScopeRequest("qwen-plus", new DashScopeInput(List.of()), null);
+        assertEquals(EndpointType.AUTO, request2.getEndpointType());
+
+        DashScopeRequest request3 = DashScopeRequest.builder().model("qwen-plus").build();
+        assertEquals(EndpointType.AUTO, request3.getEndpointType());
+    }
+
     @Test
     void testCallTextGenerationApi() throws Exception {
         String responseJson =

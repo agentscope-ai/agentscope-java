@@ -155,6 +155,104 @@ class DashScopeChatModelTest {
                 thinkingWithBudgetModel, "Model with thinking mode and budget should be created");
     }
 
+    // ========== EndpointType Builder Tests ==========
+
+    @Test
+    @DisplayName("Should create model with explicit EndpointType.MULTIMODAL")
+    void testBuilderWithEndpointTypeMultimodal() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen3.5-plus")
+                        .endpointType(EndpointType.MULTIMODAL)
+                        .build();
+
+        assertNotNull(model, "Model with MULTIMODAL endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with explicit EndpointType.TEXT")
+    void testBuilderWithEndpointTypeText() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .endpointType(EndpointType.TEXT)
+                        .build();
+
+        assertNotNull(model, "Model with TEXT endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with EndpointType.AUTO (default behavior)")
+    void testBuilderWithEndpointTypeAuto() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .endpointType(EndpointType.AUTO)
+                        .build();
+
+        assertNotNull(model, "Model with AUTO endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model without endpointType (defaults to AUTO)")
+    void testBuilderWithoutEndpointType() {
+        // This tests backward compatibility - not setting endpointType should still work
+        DashScopeChatModel model =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .build();
+
+        assertNotNull(model, "Model without explicit endpointType should be created");
+    }
+
+    // ========== Backward Compatible Constructor Tests ==========
+
+    @Test
+    @DisplayName("Should create model using overloaded constructor without endpointType")
+    void testOverloadedConstructorWithoutEndpointType() {
+        // The overloaded constructor without endpointType should delegate to the full constructor
+        DashScopeChatModel model =
+                new DashScopeChatModel(
+                        mockApiKey,
+                        "qwen-plus",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(model, "Model from overloaded constructor should be created");
+        assertEquals("qwen-plus", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model using full constructor with explicit endpointType")
+    void testFullConstructorWithEndpointType() {
+        DashScopeChatModel model =
+                new DashScopeChatModel(
+                        mockApiKey,
+                        "qwen3.5-plus",
+                        true,
+                        null,
+                        null,
+                        EndpointType.MULTIMODAL,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(model, "Model from full constructor should be created");
+        assertEquals("qwen3.5-plus", model.getModelName());
+    }
+
     // ========== Vision Model Tests ==========
 
     @Test

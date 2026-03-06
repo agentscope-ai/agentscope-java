@@ -26,6 +26,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -98,6 +99,8 @@ public abstract class AgentBase implements StateModule, Agent {
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    // Hook non-null
+    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
     /**
      * Constructor for AgentBase.
@@ -133,6 +136,7 @@ public abstract class AgentBase implements StateModule, Agent {
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
+        sortHooks();
     }
 
     @Override
@@ -160,24 +164,29 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(this::doCall)
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                () -> {
+                    if (checkRunning && !running.compareAndSet(false, true)) {
+                        throw new IllegalStateException(
+                                "Agent is still running, please wait for it to finish");
+                    }
+                    resetInterruptFlag();
+                    return this;
+                },
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(this::doCall)
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                resource -> running.set(false),
+                true);
     }
 
     /**
@@ -191,24 +200,33 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(m -> doCall(m, structuredOutputClass))
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                () -> {
+                    if (checkRunning && !running.compareAndSet(false, true)) {
+                        throw new IllegalStateException(
+                                "Agent is still running, please wait for it to finish");
+                    }
+                    resetInterruptFlag();
+                    return this;
+                },
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(
+                                                                m ->
+                                                                        doCall(
+                                                                                m,
+                                                                                structuredOutputClass))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                resource -> running.set(false),
+                true);
     }
 
     /**
@@ -222,24 +240,29 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(m -> doCall(m, schema))
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                () -> {
+                    if (checkRunning && !running.compareAndSet(false, true)) {
+                        throw new IllegalStateException(
+                                "Agent is still running, please wait for it to finish");
+                    }
+                    resetInterruptFlag();
+                    return this;
+                },
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(m -> doCall(m, schema))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                resource -> running.set(false),
+                true);
     }
 
     /**
@@ -455,7 +478,12 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
+            sortHooks();
         }
+    }
+
+    private void sortHooks() {
+        this.hooks.sort(HOOK_COMPARATOR);
     }
 
     /**
@@ -479,7 +507,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        return hooks;
     }
 
     /**
@@ -673,7 +701,7 @@ public abstract class AgentBase implements StateModule, Agent {
                                                     new StreamingHook(sink, options);
 
                                             // Add temporary hook
-                                            hooks.add(streamingHook);
+                                            addHook(streamingHook);
 
                                             // Use Mono.defer to ensure trace context propagation
                                             // while maintaining streaming hook functionality
