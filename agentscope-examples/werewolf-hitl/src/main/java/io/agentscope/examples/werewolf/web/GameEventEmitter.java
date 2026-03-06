@@ -19,17 +19,19 @@ import io.agentscope.examples.werewolf.entity.Role;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 /**
  * Emitter for game events using Reactor Sinks.
  *
- * <p>This class provides a reactive stream of game events that can be subscribed to by web
- * clients. It supports role-based visibility filtering:
+ * <p>This class provides a reactive stream of game events that can be subscribed to by web clients.
+ * It supports role-based visibility filtering:
+ *
  * <ul>
- *   <li>Player stream: Events visible to the human player based on their role</li>
- *   <li>God view history: Complete event history for replay after game ends</li>
+ *   <li>Player stream: Events visible to the human player based on their role
+ *   <li>God view history: Complete event history for replay after game ends
  * </ul>
  */
 public class GameEventEmitter {
@@ -150,8 +152,8 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a game initialization event.
-     * Shows the human player their own role and teammates (if werewolf).
+     * Emit a game initialization event. Shows the human player their own role and teammates (if
+     * werewolf).
      *
      * @param allPlayers player information (with roles for god view)
      * @param visiblePlayers player information visible to the human player
@@ -188,8 +190,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a phase change event.
-     * This is always public.
+     * Emit a phase change event. This is always public.
      *
      * @param round current round number
      * @param phase phase name (night/day)
@@ -199,8 +200,8 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a player speak event.
-     * Day discussions are public, werewolf discussions are visible only to werewolves.
+     * Emit a player speak event. Day discussions are public, werewolf discussions are visible only
+     * to werewolves.
      *
      * @param playerName player name
      * @param content speech content
@@ -215,8 +216,8 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a player vote event.
-     * God view shows full details including reason, player view hides reason.
+     * Emit a player vote event. God view shows full details including reason, player view hides
+     * reason.
      *
      * @param voterName voter name
      * @param targetName vote target
@@ -236,8 +237,8 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a player action event (for special roles).
-     * Visibility is determined by the role performing the action.
+     * Emit a player action event (for special roles). Visibility is determined by the role
+     * performing the action.
      *
      * @param playerName player name
      * @param role role name
@@ -257,8 +258,8 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a player eliminated event.
-     * Eliminations are public but role and cause are hidden in player view.
+     * Emit a player eliminated event. Eliminations are public but role and cause are hidden in
+     * player view.
      *
      * @param playerName eliminated player name
      * @param role player's role (shown in god view only)
@@ -274,8 +275,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a player resurrected event.
-     * Only visible to the witch.
+     * Emit a player resurrected event. Only visible to the witch.
      *
      * @param playerName resurrected player name
      */
@@ -284,8 +284,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a stats update event.
-     * Stats are always public.
+     * Emit a stats update event. Stats are always public.
      *
      * @param alive total alive players
      * @param werewolves alive werewolves
@@ -296,8 +295,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a system message event.
-     * Default is public.
+     * Emit a system message event. Default is public.
      *
      * @param message system message
      */
@@ -316,8 +314,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit a game end event.
-     * Game end is always public.
+     * Emit a game end event. Game end is always public.
      *
      * @param winner winning side (villagers/werewolves)
      * @param reason win reason
@@ -327,8 +324,7 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit an error event.
-     * Errors are always public.
+     * Emit an error event. Errors are always public.
      *
      * @param message error message
      */
@@ -364,8 +360,136 @@ public class GameEventEmitter {
     }
 
     /**
-     * Emit an audio chunk for TTS.
-     * Audio is always public (everyone can hear day discussion).
+     * Get the player event stream as a Flux. This stream contains events visible to the human
+     * player based on their role.
+     *
+     * @return Flux of game events for the player
+     */
+    public Flux<GameEvent> getPlayerStream() {
+        return playerSink.asFlux();
+    }
+
+    /**
+     * Get the complete event history (god view). This includes all events for replay after game
+     * ends.
+     *
+     * @return unmodifiable list of all game events
+     */
+    public List<GameEvent> getGodViewHistory() {
+        return Collections.unmodifiableList(godViewHistory);
+    }
+
+    /**
+     * Emit sheriff registration event.
+     *
+     * @param playerName player name
+     * @param registered whether player registered for sheriff
+     * @param reason reason for decision
+     */
+    public void emitSheriffRegistration(String playerName, boolean registered, String reason) {
+        emit(GameEvent.sheriffRegistration(playerName, registered, reason), EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit sheriff candidates announced event.
+     *
+     * @param candidateNames list of candidate names
+     */
+    public void emitSheriffCandidatesAnnounced(List<String> candidateNames) {
+        emit(GameEvent.sheriffCandidatesAnnounced(candidateNames), EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit sheriff campaign speech event.
+     *
+     * @param playerName candidate name
+     * @param speech campaign speech
+     * @param checkResult seer's check result (if seer)
+     * @param nextCheckTarget next target to check (if seer)
+     */
+    public void emitSheriffCampaign(
+            String playerName, String speech, String checkResult, String nextCheckTarget) {
+        emit(
+                GameEvent.sheriffCampaign(playerName, speech, checkResult, nextCheckTarget),
+                EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit sheriff vote event.
+     *
+     * @param voter voter name
+     * @param target target candidate name
+     * @param reason reason for voting
+     */
+    public void emitSheriffVote(String voter, String target, String reason) {
+        emit(GameEvent.sheriffVote(voter, target, reason), EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit sheriff elected event.
+     *
+     * @param sheriffName elected sheriff name
+     * @param voteCount number of votes received
+     */
+    public void emitSheriffElected(
+            String sheriffName, int voteCount, Map<String, Object> voteDetails) {
+        emit(GameEvent.sheriffElected(sheriffName, voteCount, voteDetails), EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit sheriff badge transfer event.
+     *
+     * @param fromPlayer previous sheriff name
+     * @param toPlayer new sheriff name (null if no transfer)
+     * @param checkInfo information revealed (for seer)
+     * @param reason reason for transfer
+     */
+    public void emitSheriffTransfer(
+            String fromPlayer, String toPlayer, String checkInfo, String reason) {
+        emit(
+                GameEvent.sheriffTransfer(fromPlayer, toPlayer, checkInfo, reason),
+                EventVisibility.PUBLIC);
+    }
+
+    /**
+     * Emit werewolf kill result popup event.
+     *
+     * @param victimName the player killed by werewolves
+     */
+    public void emitNightActionWerewolfKill(String victimName) {
+        emit(GameEvent.nightActionWerewolfKill(victimName), EventVisibility.WEREWOLF_ONLY);
+    }
+
+    /**
+     * Emit witch heal result popup event.
+     *
+     * @param victimName the player healed by witch
+     */
+    public void emitNightActionWitchHeal(String victimName) {
+        emit(GameEvent.nightActionWitchHeal(victimName), EventVisibility.WITCH_ONLY);
+    }
+
+    /**
+     * Emit witch poison result popup event.
+     *
+     * @param targetName the player poisoned by witch
+     */
+    public void emitNightActionWitchPoison(String targetName) {
+        emit(GameEvent.nightActionWitchPoison(targetName), EventVisibility.WITCH_ONLY);
+    }
+
+    /**
+     * Emit seer check result popup event.
+     *
+     * @param targetName the player checked by seer
+     * @param isWerewolf true if the checked player is a werewolf
+     */
+    public void emitNightActionSeerCheck(String targetName, boolean isWerewolf) {
+        emit(GameEvent.nightActionSeerCheck(targetName, isWerewolf), EventVisibility.SEER_ONLY);
+    }
+
+    /**
+     * Emit an audio chunk for TTS. Audio is always public (everyone can hear day discussion).
      *
      * @param playerName The name of the player speaking
      * @param audioBase64 Base64 encoded audio data
@@ -376,29 +500,7 @@ public class GameEventEmitter {
         playerSink.tryEmitNext(event);
     }
 
-    /**
-     * Get the player event stream as a Flux.
-     * This stream contains events visible to the human player based on their role.
-     *
-     * @return Flux of game events for the player
-     */
-    public Flux<GameEvent> getPlayerStream() {
-        return playerSink.asFlux();
-    }
-
-    /**
-     * Get the complete event history (god view).
-     * This includes all events for replay after game ends.
-     *
-     * @return unmodifiable list of all game events
-     */
-    public List<GameEvent> getGodViewHistory() {
-        return Collections.unmodifiableList(godViewHistory);
-    }
-
-    /**
-     * Complete the event stream.
-     */
+    /** Complete the event stream. */
     public void complete() {
         playerSink.tryEmitComplete();
     }
