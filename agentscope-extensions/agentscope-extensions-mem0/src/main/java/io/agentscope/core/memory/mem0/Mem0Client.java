@@ -243,25 +243,20 @@ public class Mem0Client {
         return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
-                            // Platform Mem0 uses /v2/memories/search/ endpoint and returns
-                            // direct array
-                            // Self-hosted Mem0 uses /search endpoint and returns wrapped format
-                            if (searchEndpoint.contains("/v2/")) {
-                                // Platform Mem0 returns direct array
+                            // Support both response formats: direct array or object with results
+                            String trimmed = responseBody != null ? responseBody.trim() : "";
+                            if (trimmed.startsWith("[")) {
+                                // Response is a JSON array: parse as list and wrap in results
                                 List<Mem0SearchResult> results =
                                         jsonCodec.fromJson(
                                                 responseBody,
                                                 new TypeReference<List<Mem0SearchResult>>() {});
-
-                                // Wrap in Mem0SearchResponse for consistency
                                 Mem0SearchResponse searchResponse = new Mem0SearchResponse();
                                 searchResponse.setResults(results);
                                 return searchResponse;
-                            } else {
-                                // Self-hosted Mem0 returns response wrapped in {"results":
-                                // [...]}
-                                return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                             }
+                            // Response is an object (e.g. {"results": [...]})
+                            return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                         });
     }
 
