@@ -155,7 +155,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public String getSource() {
-        return source != null ? source : "filesystem:" + buildDefaultSourceSuffix();
+        return source != null ? source : "filesystem-" + buildDefaultSourceSuffix();
     }
 
     private String buildDefaultSourceSuffix() {

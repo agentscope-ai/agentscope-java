@@ -319,10 +319,10 @@ class ClasspathSkillRepositoryTest {
     // ==================== getSource Tests ====================
 
     @Test
-    @DisplayName("Should return default source with format: classpath:path")
+    @DisplayName("Should return default source with format: classpath-path")
     void testGetSource_DefaultSource() throws IOException {
         repository = new ClasspathSkillRepository("test-skills");
-        assertEquals("classpath:test-skills", repository.getSource());
+        assertEquals("classpath-test-skills", repository.getSource());
     }
 
     @Test
@@ -336,7 +336,7 @@ class ClasspathSkillRepositoryTest {
     @DisplayName("Should handle trailing slash in path")
     void testGetSource_TrailingSlash() throws IOException {
         repository = new ClasspathSkillRepository("test-skills/");
-        assertEquals("classpath:test-skills", repository.getSource());
+        assertEquals("classpath-test-skills", repository.getSource());
     }
 
     // ==================== Error Handling Tests ====================
