@@ -447,6 +447,10 @@ public class Toolkit {
      * <p>This method is used by ReActAgent to forward tool chunks into ActingChunkEvent hooks
      * without overwriting any user callback configured via {@link #setChunkCallback(BiConsumer)}.
      *
+     * <p><b>Internal API - Not recommended for external use.</b> This method is intended for
+     * framework components such as {@link io.agentscope.core.ReActAgent}. External callers should
+     * use {@link #setChunkCallback(BiConsumer)} instead.
+     *
      * @param callback Internal callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
