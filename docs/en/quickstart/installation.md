@@ -23,13 +23,13 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.8'
+implementation 'io.agentscope:agentscope:1.0.9'
 ```
 
 ### Included Dependencies
@@ -136,13 +136,13 @@ For fine-grained dependency control, use `agentscope-core` with extension module
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.8'
+implementation 'io.agentscope:agentscope-core:1.0.9'
 ```
 
 ### Extension Modules
@@ -202,7 +202,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
@@ -214,7 +214,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
@@ -231,7 +231,7 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
 
@@ -241,6 +241,6 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.8</version>
+    <version>1.0.9</version>
 </dependency>
 ```
