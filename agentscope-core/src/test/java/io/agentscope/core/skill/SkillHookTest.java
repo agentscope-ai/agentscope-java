@@ -254,7 +254,61 @@ class SkillHookTest {
         skillBox.registerSkill(skill);
         activateSkill(skill.getSkillId());
 
-        // Create PreReasoningEvent with multiple messages
+        // Create PreReasoningEvent with multiple messages (no existing SYSTEM message)
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text("User query").build())
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(TextBlock.builder().text("Assistant response").build())
+                                .build());
+
+        PreReasoningEvent event =
+                new PreReasoningEvent(
+                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+
+        // Act: Process event through hook
+        PreReasoningEvent result = skillHook.onEvent(event).block();
+
+        // Assert: Skill prompt should be injected at the FIRST position
+        assertNotNull(result, "Event should be processed");
+        assertEquals(3, result.getInputMessages().size(), "Should add skill prompt message");
+
+        // Verify the first message is the skill prompt (SYSTEM role)
+        Msg firstMsg = result.getInputMessages().get(0);
+        assertEquals(
+                MsgRole.SYSTEM,
+                firstMsg.getRole(),
+                "First message should be SYSTEM message with skill prompt");
+        assertTrue(
+                firstMsg.getTextContent().contains("test_skill"),
+                "First message should contain skill information");
+
+        // Verify original messages are preserved in order after skill prompt
+        assertEquals(
+                "User query",
+                result.getInputMessages().get(1).getTextContent(),
+                "Second message should be original user query");
+        assertEquals(
+                "Assistant response",
+                result.getInputMessages().get(2).getTextContent(),
+                "Third message should be original assistant response");
+    }
+
+    @Test
+    @DisplayName(
+            "[ISSUE#845] should merge skill prompt into existing system message instead of adding a"
+                    + " second one")
+    void testMergeSkillPromptIntoExistingSystemMessage() {
+        // Arrange: Register and activate a skill
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Test Content", null);
+        skillBox.registerSkill(skill);
+        activateSkill(skill.getSkillId());
+
+        // Create PreReasoningEvent with an existing SYSTEM message
         List<Msg> messages =
                 List.of(
                         Msg.builder()
@@ -277,33 +331,40 @@ class SkillHookTest {
         // Act: Process event through hook
         PreReasoningEvent result = skillHook.onEvent(event).block();
 
-        // Assert: Skill prompt should be injected at the FIRST position
+        // Assert: Should still have exactly 3 messages (merged, not added)
         assertNotNull(result, "Event should be processed");
-        assertEquals(4, result.getInputMessages().size(), "Should add skill prompt message");
-
-        // Verify the first message is the skill prompt (SYSTEM role)
-        Msg firstMsg = result.getInputMessages().get(0);
         assertEquals(
-                MsgRole.SYSTEM,
-                firstMsg.getRole(),
-                "First message should be SYSTEM message with skill prompt");
+                3,
+                result.getInputMessages().size(),
+                "Should merge into existing SYSTEM message, not add a new one");
+
+        // Verify there is exactly one SYSTEM message
+        long systemCount =
+                result.getInputMessages().stream()
+                        .filter(m -> m.getRole() == MsgRole.SYSTEM)
+                        .count();
+        assertEquals(1, systemCount, "There should be exactly one SYSTEM message");
+
+        // Verify the SYSTEM message contains both skill prompt and original system instruction
+        Msg systemMsg = result.getInputMessages().get(0);
+        assertEquals(MsgRole.SYSTEM, systemMsg.getRole());
         assertTrue(
-                firstMsg.getContent().toString().contains("test_skill"),
-                "First message should contain skill information");
+                systemMsg.getTextContent().contains("test_skill"),
+                "SYSTEM message should contain skill prompt");
+        assertTrue(
+                systemMsg.getTextContent().contains("System instruction"),
+                "SYSTEM message should contain original system instruction");
 
-        // Verify original messages are preserved in order after skill prompt
-        assertEquals(
-                "System instruction",
-                result.getInputMessages().get(1).getTextContent(),
-                "Second message should be original system instruction");
-        assertEquals(
-                "User query",
-                result.getInputMessages().get(2).getTextContent(),
-                "Third message should be original user query");
-        assertEquals(
-                "Assistant response",
-                result.getInputMessages().get(3).getTextContent(),
-                "Fourth message should be original assistant response");
+        // Verify skill prompt comes before original system instruction
+        int skillIndex = systemMsg.getTextContent().indexOf("test_skill");
+        int sysIndex = systemMsg.getTextContent().indexOf("System instruction");
+        assertTrue(
+                skillIndex < sysIndex,
+                "Skill prompt should be prepended before original system instruction");
+
+        // Verify other messages are preserved
+        assertEquals("User query", result.getInputMessages().get(1).getTextContent());
+        assertEquals("Assistant response", result.getInputMessages().get(2).getTextContent());
     }
 
     private <T extends HookEvent> Mono<T> notifyHooks(T event, List<Hook> hooks) {

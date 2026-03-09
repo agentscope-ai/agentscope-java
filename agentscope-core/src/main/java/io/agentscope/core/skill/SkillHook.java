@@ -38,20 +38,47 @@ public class SkillHook implements Hook {
         if (event instanceof PreReasoningEvent preReasoningEvent) {
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages =
-                        new ArrayList<>(preReasoningEvent.getInputMessages().size() + 1);
-                inputMessages.add(
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text(skillPrompt).build())
-                                .build());
-                inputMessages.addAll(preReasoningEvent.getInputMessages());
-                preReasoningEvent.setInputMessages(inputMessages);
+                List<Msg> inputMessages = preReasoningEvent.getInputMessages();
+                int systemIndex = findFirstSystemMessageIndex(inputMessages);
+                if (systemIndex >= 0) {
+                    // Merge skill prompt into existing system message
+                    Msg existingSystem = inputMessages.get(systemIndex);
+                    String existingText = existingSystem.getTextContent();
+                    String mergedText = skillPrompt + "\n\n" + existingText;
+                    Msg mergedMsg =
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .name(existingSystem.getName())
+                                    .content(TextBlock.builder().text(mergedText).build())
+                                    .build();
+                    List<Msg> newMessages = new ArrayList<>(inputMessages);
+                    newMessages.set(systemIndex, mergedMsg);
+                    preReasoningEvent.setInputMessages(newMessages);
+                } else {
+                    // No existing system message, add one at the beginning
+                    List<Msg> newMessages = new ArrayList<>(inputMessages.size() + 1);
+                    newMessages.add(
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .content(TextBlock.builder().text(skillPrompt).build())
+                                    .build());
+                    newMessages.addAll(inputMessages);
+                    preReasoningEvent.setInputMessages(newMessages);
+                }
             }
             return Mono.just(event);
         }
 
         return Mono.just(event);
+    }
+
+    private int findFirstSystemMessageIndex(List<Msg> messages) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Override
