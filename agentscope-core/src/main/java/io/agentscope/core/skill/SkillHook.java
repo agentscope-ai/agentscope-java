@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -41,15 +42,18 @@ public class SkillHook implements Hook {
                 List<Msg> inputMessages = preReasoningEvent.getInputMessages();
                 int systemIndex = findFirstSystemMessageIndex(inputMessages);
                 if (systemIndex >= 0) {
-                    // Merge skill prompt into existing system message
+                    // Merge skill prompt into existing system message in-place (structural)
                     Msg existingSystem = inputMessages.get(systemIndex);
-                    String existingText = existingSystem.getTextContent();
-                    String mergedText = skillPrompt + "\n\n" + existingText;
+                    List<ContentBlock> mergedContent = new ArrayList<>(existingSystem.getContent());
+                    mergedContent.add(TextBlock.builder().text(skillPrompt).build());
                     Msg mergedMsg =
                             Msg.builder()
+                                    .id(existingSystem.getId())
                                     .role(MsgRole.SYSTEM)
                                     .name(existingSystem.getName())
-                                    .content(TextBlock.builder().text(mergedText).build())
+                                    .content(mergedContent)
+                                    .metadata(existingSystem.getMetadata())
+                                    .timestamp(existingSystem.getTimestamp())
                                     .build();
                     List<Msg> newMessages = new ArrayList<>(inputMessages);
                     newMessages.set(systemIndex, mergedMsg);

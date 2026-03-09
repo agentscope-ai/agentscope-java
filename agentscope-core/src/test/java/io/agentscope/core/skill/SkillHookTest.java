@@ -345,22 +345,26 @@ class SkillHookTest {
                         .count();
         assertEquals(1, systemCount, "There should be exactly one SYSTEM message");
 
-        // Verify the SYSTEM message contains both skill prompt and original system instruction
+        // Verify the merged SYSTEM message is at index 0
         Msg systemMsg = result.getInputMessages().get(0);
         assertEquals(MsgRole.SYSTEM, systemMsg.getRole());
-        assertTrue(
-                systemMsg.getTextContent().contains("test_skill"),
-                "SYSTEM message should contain skill prompt");
-        assertTrue(
-                systemMsg.getTextContent().contains("System instruction"),
-                "SYSTEM message should contain original system instruction");
 
-        // Verify skill prompt comes before original system instruction
-        int skillIndex = systemMsg.getTextContent().indexOf("test_skill");
-        int sysIndex = systemMsg.getTextContent().indexOf("System instruction");
+        // Verify structural merge: content blocks are preserved, not flattened
+        // First content block should be the original system instruction TextBlock,
+        // second should be the skill prompt TextBlock
+        assertEquals(
+                2,
+                systemMsg.getContent().size(),
+                "Merged SYSTEM message should have 2 content blocks (structural merge)");
+        assertInstanceOf(TextBlock.class, systemMsg.getContent().get(0));
+        assertInstanceOf(TextBlock.class, systemMsg.getContent().get(1));
+        assertEquals(
+                "System instruction",
+                ((TextBlock) systemMsg.getContent().get(0)).getText(),
+                "First content block should be the original system instruction");
         assertTrue(
-                skillIndex < sysIndex,
-                "Skill prompt should be prepended before original system instruction");
+                ((TextBlock) systemMsg.getContent().get(1)).getText().contains("test_skill"),
+                "Second content block should be the skill prompt");
 
         // Verify other messages are preserved
         assertEquals("User query", result.getInputMessages().get(1).getTextContent());
