@@ -716,4 +716,94 @@ class PlanNotebookToolTest {
         assertTrue(result.contains("successfully"));
         assertEquals(2, limitedNotebook.getCurrentPlan().getSubtasks().size());
     }
+
+    // ==================== Change Hook Tests ====================
+
+    @Test
+    void testChangeHookTriggeredOnAllPlanMutations() {
+        int[] callCount = {0};
+        Plan[] capturedPlan = {null};
+        notebook.addChangeHook(
+                "testHook",
+                (nb, plan) -> {
+                    callCount[0]++;
+                    capturedPlan[0] = plan;
+                });
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+
+        // createPlan
+        notebook.createPlanWithSubTasks("Test Plan", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0], "createPlan");
+        assertEquals("Test Plan", capturedPlan[0].getName());
+
+        // updatePlanInfo
+        notebook.updatePlanInfo("New Name", null, null).block();
+        assertEquals(2, callCount[0], "updatePlanInfo");
+
+        // reviseCurrentPlan (add)
+        notebook.reviseCurrentPlan(
+                        1,
+                        "add",
+                        PlanNotebook.subtaskToMap(new SubTask("Task2", "Desc2", "Outcome2")))
+                .block();
+        assertEquals(3, callCount[0], "reviseCurrentPlan add");
+
+        // reviseCurrentPlan (revise)
+        notebook.reviseCurrentPlan(
+                        0,
+                        "revise",
+                        PlanNotebook.subtaskToMap(new SubTask("Updated", "Desc", "Outcome")))
+                .block();
+        assertEquals(4, callCount[0], "reviseCurrentPlan revise");
+
+        // reviseCurrentPlan (delete)
+        notebook.reviseCurrentPlan(1, "delete", null).block();
+        assertEquals(5, callCount[0], "reviseCurrentPlan delete");
+
+        // updateSubtaskState
+        notebook.updateSubtaskState(0, "in_progress").block();
+        assertEquals(6, callCount[0], "updateSubtaskState");
+
+        // finishSubtask
+        notebook.finishSubtask(0, "Done").block();
+        assertEquals(7, callCount[0], "finishSubtask");
+
+        // finishPlan
+        notebook.finishPlan("done", "All done").block();
+        assertEquals(8, callCount[0], "finishPlan");
+    }
+
+    @Test
+    void testRemoveChangeHookStopsNotifications() {
+        int[] callCount = {0};
+        notebook.addChangeHook("testHook", (nb, plan) -> callCount[0]++);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan 1", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0]);
+
+        notebook.removeChangeHook("testHook");
+        notebook.createPlanWithSubTasks("Plan 2", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0], "Hook should not be called after removal");
+    }
+
+    @Test
+    void testMultipleHooksAndIdOverwrite() {
+        int[] count1 = {0};
+        int[] count2 = {0};
+        int[] count3 = {0};
+
+        notebook.addChangeHook("hook1", (nb, plan) -> count1[0]++);
+        notebook.addChangeHook("hook2", (nb, plan) -> count2[0]++);
+        // Overwrite hook1
+        notebook.addChangeHook("hook1", (nb, plan) -> count3[0]++);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Test Plan", "Desc", "Outcome", subtasks).block();
+
+        assertEquals(0, count1[0], "Original hook1 should be overwritten");
+        assertEquals(1, count2[0], "hook2 should be called");
+        assertEquals(1, count3[0], "New hook1 should be called");
+    }
 }

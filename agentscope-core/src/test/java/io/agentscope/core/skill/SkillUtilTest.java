@@ -22,187 +22,358 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.SkillUtil;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SkillUtilTest {
 
-    @Test
-    @DisplayName("Should create from markdown with default source")
-    void testCreateFromMarkdownWithDefaultSource() {
-        String skillMd =
-                "---\n"
-                        + "name: test_skill\n"
-                        + "description: A test skill for validation\n"
-                        + "---\n"
-                        + "# Skill Content\n"
-                        + "This is the skill implementation.";
+    @Nested
+    @DisplayName("Markdown")
+    class MarkdownTests {
 
-        Map<String, String> resources = Map.of("config.json", "{\"key\": \"value\"}");
+        @Test
+        @DisplayName("Should create from markdown with default source")
+        void testCreateFromMarkdownWithDefaultSource() {
+            String skillMd =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "description: A test skill for validation\n"
+                            + "---\n"
+                            + "# Skill Content\n"
+                            + "This is the skill implementation.";
 
-        AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
+            Map<String, String> resources = Map.of("config.json", "{\"key\": \"value\"}");
 
-        assertNotNull(skill);
-        assertEquals("test_skill", skill.getName());
-        assertEquals("A test skill for validation", skill.getDescription());
-        assertTrue(skill.getSkillContent().contains("Skill Content"));
-        assertEquals("custom", skill.getSource());
-        assertEquals(1, skill.getResources().size());
+            AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
+
+            assertNotNull(skill);
+            assertEquals("test_skill", skill.getName());
+            assertEquals("A test skill for validation", skill.getDescription());
+            assertTrue(skill.getSkillContent().contains("Skill Content"));
+            assertEquals("custom", skill.getSource());
+            assertEquals(1, skill.getResources().size());
+        }
+
+        @Test
+        @DisplayName("Should create from markdown with custom source")
+        void testCreateFromMarkdownWithCustomSource() {
+            String skillMd =
+                    "---\n"
+                            + "name: github_skill\n"
+                            + "description: From GitHub repository\n"
+                            + "---\n"
+                            + "Content here";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null, "github");
+
+            assertEquals("github_skill", skill.getName());
+            assertEquals("github", skill.getSource());
+            assertEquals("github_skill_github", skill.getSkillId());
+        }
+
+        @Test
+        @DisplayName("Should create from markdown with null resources")
+        void testCreateFromMarkdownWithNullResources() {
+            String skillMd = "---\nname: skill\ndescription: desc\n---\nContent";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null);
+
+            assertNotNull(skill);
+            assertTrue(skill.getResources().isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should create from markdown with null source")
+        void testCreateFromMarkdownWithNullSource() {
+            String skillMd = "---\nname: skill\ndescription: desc\n---\nContent";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null, null);
+
+            assertEquals("custom", skill.getSource());
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for missing name")
+        void testCreateFromThrowsExceptionForMissingName() {
+            String skillMd = "---\ndescription: desc\n---\nContent";
+
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> SkillUtil.createFrom(skillMd, null));
+
+            assertTrue(exception.getMessage().contains("name"));
+            assertTrue(exception.getMessage().contains("description"));
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for missing description")
+        void testCreateFromThrowsExceptionForMissingDescription() {
+            String skillMd = "---\nname: test\n---\nContent";
+
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> SkillUtil.createFrom(skillMd, null));
+
+            assertTrue(exception.getMessage().contains("description"));
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for empty name")
+        void testCreateFromThrowsExceptionForEmptyName() {
+            String skillMd = "---\nname: \ndescription: desc\n---\nContent";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for empty description")
+        void testCreateFromThrowsExceptionForEmptyDescription() {
+            String skillMd = "---\nname: test\ndescription: \n---\nContent";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for missing content")
+        void testCreateFromThrowsExceptionForMissingContent() {
+            String skillMd = "---\nname: test\ndescription: desc\n---";
+
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> SkillUtil.createFrom(skillMd, null));
+
+            assertTrue(exception.getMessage().contains("content"));
+        }
+
+        @Test
+        @DisplayName("Should create from throws exception for no frontmatter")
+        void testCreateFromThrowsExceptionForNoFrontmatter() {
+            String skillMd = "Just content without frontmatter";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should create from edge cases")
+        void testCreateFromEdgeCases() {
+            // Multiline content
+            String multilineSkillMd =
+                    "---\n"
+                            + "name: multiline\n"
+                            + "description: Multi-line skill\n"
+                            + "---\n"
+                            + "Line 1\n"
+                            + "Line 2\n"
+                            + "Line 3";
+            AgentSkill skill1 = SkillUtil.createFrom(multilineSkillMd, null);
+            assertTrue(skill1.getSkillContent().contains("Line 2"));
+
+            // Special characters in metadata (use quotes for values with colons)
+            String specialCharsSkillMd =
+                    "---\n"
+                            + "name: skill-v1.0_test\n"
+                            + "description: 'Special chars @#$%'\n"
+                            + "---\n"
+                            + "Content";
+            AgentSkill skill2 = SkillUtil.createFrom(specialCharsSkillMd, null);
+            assertEquals("skill-v1.0_test", skill2.getName());
+
+            // Unicode characters
+            String unicodeSkillMd =
+                    "---\n" + "name: 测试技能\n" + "description: 这是一个测试\n" + "---\n" + "技能内容";
+            AgentSkill skill3 = SkillUtil.createFrom(unicodeSkillMd, null, "中文源");
+            assertEquals("测试技能", skill3.getName());
+            assertEquals("中文源", skill3.getSource());
+
+            // Additional metadata fields (should be ignored)
+            String extraFieldsSkillMd =
+                    "---\n"
+                            + "name: skill\n"
+                            + "description: desc\n"
+                            + "version: 1.0.0\n"
+                            + "author: John\n"
+                            + "---\n"
+                            + "Content";
+            AgentSkill skill4 = SkillUtil.createFrom(extraFieldsSkillMd, null);
+            assertEquals("skill", skill4.getName());
+        }
+
+        @Test
+        @DisplayName("Should create from with numeric metadata")
+        void testCreateFromWithNumericMetadata() {
+            String skillMd = "---\nname: 123\ndescription: 456\n---\nContent";
+
+            AgentSkill skill = SkillUtil.createFrom(skillMd, null);
+
+            assertEquals("123", skill.getName());
+            assertEquals("456", skill.getDescription());
+        }
     }
 
-    @Test
-    @DisplayName("Should create from markdown with custom source")
-    void testCreateFromMarkdownWithCustomSource() {
-        String skillMd =
-                "---\n"
-                        + "name: github_skill\n"
-                        + "description: From GitHub repository\n"
-                        + "---\n"
-                        + "Content here";
+    @Nested
+    @DisplayName("Zip")
+    class ZipTests {
 
-        AgentSkill skill = SkillUtil.createFrom(skillMd, null, "github");
+        @TempDir Path tempDir;
 
-        assertEquals("github_skill", skill.getName());
-        assertEquals("github", skill.getSource());
-        assertEquals("github_skill_github", skill.getSkillId());
+        @Test
+        @DisplayName("Should create from zip content")
+        void testCreateFromZip() throws IOException {
+            String skillMd =
+                    "---\n"
+                            + "name: zip_skill\n"
+                            + "description: From zip package\n"
+                            + "---\n"
+                            + "Zip skill content";
+
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of(
+                                    "zip-skill/SKILL.md",
+                                    skillMd,
+                                    "zip-skill/docs/info.txt",
+                                    "info content"));
+
+            AgentSkill skill = SkillUtil.createFromZip(zipBytes, "zip");
+
+            assertEquals("zip_skill", skill.getName());
+            assertEquals("From zip package", skill.getDescription());
+            assertEquals("zip", skill.getSource());
+            assertEquals("info content", skill.getResources().get("docs/info.txt"));
+        }
+
+        @Test
+        @DisplayName("Should create from zip with root folder")
+        void testCreateFromZipWithRootFolder() throws IOException {
+            String skillMd =
+                    "---\n"
+                            + "name: folder_skill\n"
+                            + "description: Root folder package\n"
+                            + "---\n"
+                            + "Folder content";
+
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of("folder/" + "SKILL.md", skillMd, "folder/readme.txt", "readme"));
+
+            AgentSkill skill = SkillUtil.createFromZip(zipBytes);
+
+            assertEquals("folder_skill", skill.getName());
+            assertEquals("readme", skill.getResources().get("readme.txt"));
+        }
+
+        @Test
+        @DisplayName("Should create from zip path")
+        void testCreateFromZipPath() throws IOException {
+            String skillMd =
+                    "---\n"
+                            + "name: path_skill\n"
+                            + "description: From path\n"
+                            + "---\n"
+                            + "Path content";
+
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of(
+                                    "path-skill/SKILL.md",
+                                    skillMd,
+                                    "path-skill/readme.txt",
+                                    "readme"));
+            Path zipPath = tempDir.resolve("skill.zip");
+            Files.write(zipPath, zipBytes);
+
+            AgentSkill skill = SkillUtil.createFromZip(zipPath, "zip");
+
+            assertEquals("path_skill", skill.getName());
+            assertEquals("From path", skill.getDescription());
+            assertEquals("readme", skill.getResources().get("readme.txt"));
+        }
+
+        @Test
+        @DisplayName("Should create from zip input stream")
+        void testCreateFromZipInputStream() throws IOException {
+            String skillMd =
+                    "---\n"
+                            + "name: stream_skill\n"
+                            + "description: From stream\n"
+                            + "---\n"
+                            + "Stream content";
+
+            byte[] zipBytes = buildZipBytes(Map.of("stream-skill/SKILL.md", skillMd));
+
+            try (ByteArrayInputStream inputStream = new ByteArrayInputStream(zipBytes)) {
+                AgentSkill skill = SkillUtil.createFromZip(inputStream);
+
+                assertEquals("stream_skill", skill.getName());
+                assertEquals("From stream", skill.getDescription());
+            }
+        }
+
+        @Test
+        @DisplayName("Should throw when zip missing SKILL.md")
+        void testCreateFromZipMissingSkillFile() throws IOException {
+            byte[] zipBytes = buildZipBytes(Map.of("skill/notes.txt", "missing skill file"));
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFromZip(zipBytes));
+        }
+
+        @Test
+        @DisplayName("Should throw when zip has no root directory")
+        void testCreateFromZipNoRootDirectory() throws IOException {
+            String skillMd = "---\nname: rootless\ndescription: desc\n---\nContent";
+            byte[] zipBytes = buildZipBytes(Map.of("SKILL.md", skillMd));
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFromZip(zipBytes));
+        }
+
+        @Test
+        @DisplayName("Should throw when zip has multiple root directories")
+        void testCreateFromZipMultipleRootDirectories() throws IOException {
+            String skillMd = "---\nname: multi\ndescription: desc\n---\nContent";
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of("root-a/SKILL.md", skillMd, "root-b/readme.txt", "readme"));
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFromZip(zipBytes));
+        }
+
+        @Test
+        @DisplayName("Should throw when SKILL.md not under root directly")
+        void testCreateFromZipSkillInNestedDirectory() throws IOException {
+            String skillMd = "---\nname: nested\ndescription: desc\n---\nContent";
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of("root/nested/SKILL.md", skillMd, "root/readme.txt", "readme"));
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFromZip(zipBytes));
+        }
     }
 
-    @Test
-    @DisplayName("Should create from markdown with null resources")
-    void testCreateFromMarkdownWithNullResources() {
-        String skillMd = "---\nname: skill\ndescription: desc\n---\nContent";
-
-        AgentSkill skill = SkillUtil.createFrom(skillMd, null);
-
-        assertNotNull(skill);
-        assertTrue(skill.getResources().isEmpty());
-    }
-
-    @Test
-    @DisplayName("Should create from markdown with null source")
-    void testCreateFromMarkdownWithNullSource() {
-        String skillMd = "---\nname: skill\ndescription: desc\n---\nContent";
-
-        AgentSkill skill = SkillUtil.createFrom(skillMd, null, null);
-
-        assertEquals("custom", skill.getSource());
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for missing name")
-    void testCreateFromThrowsExceptionForMissingName() {
-        String skillMd = "---\ndescription: desc\n---\nContent";
-
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-
-        assertTrue(exception.getMessage().contains("name"));
-        assertTrue(exception.getMessage().contains("description"));
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for missing description")
-    void testCreateFromThrowsExceptionForMissingDescription() {
-        String skillMd = "---\nname: test\n---\nContent";
-
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-
-        assertTrue(exception.getMessage().contains("description"));
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for empty name")
-    void testCreateFromThrowsExceptionForEmptyName() {
-        String skillMd = "---\nname: \ndescription: desc\n---\nContent";
-
-        assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for empty description")
-    void testCreateFromThrowsExceptionForEmptyDescription() {
-        String skillMd = "---\nname: test\ndescription: \n---\nContent";
-
-        assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for missing content")
-    void testCreateFromThrowsExceptionForMissingContent() {
-        String skillMd = "---\nname: test\ndescription: desc\n---";
-
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-
-        assertTrue(exception.getMessage().contains("content"));
-    }
-
-    @Test
-    @DisplayName("Should create from throws exception for no frontmatter")
-    void testCreateFromThrowsExceptionForNoFrontmatter() {
-        String skillMd = "Just content without frontmatter";
-
-        assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
-    }
-
-    @Test
-    @DisplayName("Should create from edge cases")
-    void testCreateFromEdgeCases() {
-        // Multiline content
-        String multilineSkillMd =
-                "---\n"
-                        + "name: multiline\n"
-                        + "description: Multi-line skill\n"
-                        + "---\n"
-                        + "Line 1\n"
-                        + "Line 2\n"
-                        + "Line 3";
-        AgentSkill skill1 = SkillUtil.createFrom(multilineSkillMd, null);
-        assertTrue(skill1.getSkillContent().contains("Line 2"));
-
-        // Special characters in metadata (use quotes for values with colons)
-        String specialCharsSkillMd =
-                "---\n"
-                        + "name: skill-v1.0_test\n"
-                        + "description: 'Special chars @#$%'\n"
-                        + "---\n"
-                        + "Content";
-        AgentSkill skill2 = SkillUtil.createFrom(specialCharsSkillMd, null);
-        assertEquals("skill-v1.0_test", skill2.getName());
-
-        // Unicode characters
-        String unicodeSkillMd =
-                "---\n" + "name: 测试技能\n" + "description: 这是一个测试\n" + "---\n" + "技能内容";
-        AgentSkill skill3 = SkillUtil.createFrom(unicodeSkillMd, null, "中文源");
-        assertEquals("测试技能", skill3.getName());
-        assertEquals("中文源", skill3.getSource());
-
-        // Additional metadata fields (should be ignored)
-        String extraFieldsSkillMd =
-                "---\n"
-                        + "name: skill\n"
-                        + "description: desc\n"
-                        + "version: 1.0.0\n"
-                        + "author: John\n"
-                        + "---\n"
-                        + "Content";
-        AgentSkill skill4 = SkillUtil.createFrom(extraFieldsSkillMd, null);
-        assertEquals("skill", skill4.getName());
-    }
-
-    @Test
-    @DisplayName("Should create from with numeric metadata")
-    void testCreateFromWithNumericMetadata() {
-        String skillMd = "---\nname: 123\ndescription: 456\n---\nContent";
-
-        AgentSkill skill = SkillUtil.createFrom(skillMd, null);
-
-        assertEquals("123", skill.getName());
-        assertEquals("456", skill.getDescription());
+    private static byte[] buildZipBytes(Map<String, String> entries) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try (ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream)) {
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                ZipEntry zipEntry = new ZipEntry(entry.getKey());
+                zipOutputStream.putNextEntry(zipEntry);
+                byte[] content = entry.getValue().getBytes(StandardCharsets.UTF_8);
+                zipOutputStream.write(content);
+                zipOutputStream.closeEntry();
+            }
+        }
+        return outputStream.toByteArray();
     }
 }

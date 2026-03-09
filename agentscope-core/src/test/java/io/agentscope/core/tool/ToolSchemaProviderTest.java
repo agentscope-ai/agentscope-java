@@ -88,7 +88,7 @@ class ToolSchemaProviderTest {
     void testGetToolSchemasForModelWithUngroupedTool() {
         // Arrange
         AgentTool tool = createMockTool("test_tool", "Test tool");
-        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null);
         registry.registerTool("test_tool", tool, registered);
 
         // Act
@@ -107,9 +107,9 @@ class ToolSchemaProviderTest {
         // Arrange
         groupManager.createToolGroup("analytics", "Analytics tools", true);
         AgentTool tool = createMockTool("analyze", "Analyze data");
-        RegisteredToolFunction registered =
-                new RegisteredToolFunction(tool, "analytics", null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null);
         registry.registerTool("analyze", tool, registered);
+        groupManager.addToolToGroup("analytics", "analyze");
 
         // Act
         List<ToolSchema> schemas = schemaProvider.getToolSchemas();
@@ -124,8 +124,9 @@ class ToolSchemaProviderTest {
         // Arrange
         groupManager.createToolGroup("admin", "Admin tools", false);
         AgentTool tool = createMockTool("admin_command", "Admin command");
-        RegisteredToolFunction registered = new RegisteredToolFunction(tool, "admin", null, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, null, null);
         registry.registerTool("admin_command", tool, registered);
+        groupManager.addToolToGroup("admin", "admin_command");
 
         // Act
         List<ToolSchema> schemas = schemaProvider.getToolSchemas();
@@ -140,20 +141,21 @@ class ToolSchemaProviderTest {
         groupManager.createToolGroup("search", "Search tools", true);
         AgentTool searchTool = createMockTool("search", "Search function");
         RegisteredToolFunction searchRegistered =
-                new RegisteredToolFunction(searchTool, "search", null, null);
+                new RegisteredToolFunction(searchTool, null, null);
         registry.registerTool("search", searchTool, searchRegistered);
+        groupManager.addToolToGroup("search", "search");
 
         // Arrange - Inactive group
         groupManager.createToolGroup("admin", "Admin tools", false);
         AgentTool adminTool = createMockTool("admin", "Admin function");
-        RegisteredToolFunction adminRegistered =
-                new RegisteredToolFunction(adminTool, "admin", null, null);
+        RegisteredToolFunction adminRegistered = new RegisteredToolFunction(adminTool, null, null);
         registry.registerTool("admin", adminTool, adminRegistered);
+        groupManager.addToolToGroup("admin", "admin");
 
         // Arrange - Ungrouped tool
         AgentTool ungroupedTool = createMockTool("ungrouped", "Ungrouped function");
         RegisteredToolFunction ungroupedRegistered =
-                new RegisteredToolFunction(ungroupedTool, null, null, null);
+                new RegisteredToolFunction(ungroupedTool, null, null);
         registry.registerTool("ungrouped", ungroupedTool, ungroupedRegistered);
 
         // Act
@@ -181,8 +183,7 @@ class ToolSchemaProviderTest {
 
         ExtendedModel extendedModel = new SimpleExtendedModel(additionalProps, List.of("extra"));
 
-        RegisteredToolFunction registered =
-                new RegisteredToolFunction(tool, null, extendedModel, null);
+        RegisteredToolFunction registered = new RegisteredToolFunction(tool, extendedModel, null);
         registry.registerTool("extended_tool", tool, registered);
 
         // Act
@@ -207,9 +208,9 @@ class ToolSchemaProviderTest {
         AgentTool tool2 = createMockTool("tool2", "Second tool");
         AgentTool tool3 = createMockTool("tool3", "Third tool");
 
-        registry.registerTool("tool1", tool1, new RegisteredToolFunction(tool1, null, null, null));
-        registry.registerTool("tool2", tool2, new RegisteredToolFunction(tool2, null, null, null));
-        registry.registerTool("tool3", tool3, new RegisteredToolFunction(tool3, null, null, null));
+        registry.registerTool("tool1", tool1, new RegisteredToolFunction(tool1, null, null));
+        registry.registerTool("tool2", tool2, new RegisteredToolFunction(tool2, null, null));
+        registry.registerTool("tool3", tool3, new RegisteredToolFunction(tool3, null, null));
 
         // Act
         List<ToolSchema> schemas = schemaProvider.getToolSchemas();

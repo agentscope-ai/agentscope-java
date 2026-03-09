@@ -131,18 +131,14 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // Check group activation
+        // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null) {
-            String groupName = registered.getGroupName();
-            if (!groupManager.isInActiveGroup(groupName)) {
-                String errorMsg =
-                        String.format(
-                                "Unauthorized tool call: '%s' is not available",
-                                toolCall.getName());
-                logger.warn(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
+        if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
+            String errorMsg =
+                    String.format(
+                            "Unauthorized tool call: '%s' is not available", toolCall.getName());
+            logger.warn(errorMsg);
+            return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
         // Validate input against schema

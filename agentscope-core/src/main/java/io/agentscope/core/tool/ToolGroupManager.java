@@ -31,7 +31,8 @@ class ToolGroupManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolGroupManager.class);
 
-    private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>();
+    private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
+    private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
     private List<String> activeGroups = new ArrayList<>();
 
     /**
@@ -118,7 +119,14 @@ class ToolGroupManager {
             }
 
             // Collect tools from this group
-            toolsToRemove.addAll(group.getTools());
+            Set<String> groupTools = group.getTools();
+
+            // Remove group mapping from tool index
+            for (String toolName : groupTools) {
+                if (removeGroupFromToolIndex(toolName, groupName)) {
+                    toolsToRemove.add(toolName);
+                }
+            }
 
             // Remove from active groups
             activeGroups.remove(groupName);
@@ -198,18 +206,70 @@ class ToolGroupManager {
     }
 
     /**
-     * Check if a tool is in an active group.
+     * Check if a group is active.
      *
-     * @param groupName Group name (can be null for ungrouped tools)
-     * @return true if ungrouped or in active group
+     * @param groupName Group name
+     * @return true if the group exists and is active
      */
-    public boolean isInActiveGroup(String groupName) {
+    public boolean isActiveGroup(String groupName) {
         if (groupName == null) {
-            return true; // Ungrouped tools are always active
+            return false;
         }
-
         ToolGroup group = toolGroups.get(groupName);
         return group != null && group.isActive();
+    }
+
+    /**
+     * Check if a tool is in any active group.
+     *
+     * <p>If the tool is not in any group, it is considered active by default.
+     *
+     * @param toolName Tool name
+     * @return true if ungrouped or in at least one active group
+     */
+    public boolean isActiveTool(String toolName) {
+        if (toolName == null) {
+            return false;
+        }
+        Set<String> groups = tools.get(toolName);
+        if (groups == null || groups.isEmpty()) {
+            return true;
+        }
+        for (String groupName : groups) {
+            if (isActiveGroup(groupName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check whether a tool belongs to any group.
+     *
+     * @param toolName Tool name
+     * @return true if the tool is in at least one group
+     */
+    public boolean isGroupedTool(String toolName) {
+        if (toolName == null) {
+            return false;
+        }
+        Set<String> groups = tools.get(toolName);
+        return groups != null && !groups.isEmpty();
+    }
+
+    /**
+     * Get all tools that belong to active groups.
+     *
+     * @return Set of tool names that are in active groups
+     */
+    public Set<String> getActiveToolNames() {
+        Set<String> activeTools = new HashSet<>();
+        for (ToolGroup group : toolGroups.values()) {
+            if (group.isActive()) {
+                activeTools.addAll(group.getTools());
+            }
+        }
+        return activeTools;
     }
 
     /**
@@ -222,6 +282,7 @@ class ToolGroupManager {
         ToolGroup group = toolGroups.get(groupName);
         if (group != null) {
             group.addTool(toolName);
+            tools.computeIfAbsent(toolName, key -> ConcurrentHashMap.newKeySet()).add(groupName);
         }
     }
 
@@ -235,6 +296,7 @@ class ToolGroupManager {
         ToolGroup group = toolGroups.get(groupName);
         if (group != null) {
             group.removeTool(toolName);
+            removeGroupFromToolIndex(toolName, groupName);
         }
     }
 
@@ -289,6 +351,8 @@ class ToolGroupManager {
      * @param target The target manager to copy tool groups to
      */
     void copyTo(ToolGroupManager target) {
+        target.tools.clear();
+        target.toolGroups.clear();
         for (Map.Entry<String, ToolGroup> entry : toolGroups.entrySet()) {
             String groupName = entry.getKey();
             ToolGroup sourceGroup = entry.getValue();
@@ -305,7 +369,24 @@ class ToolGroupManager {
             target.toolGroups.put(groupName, copiedGroup);
         }
 
+        for (Map.Entry<String, Set<String>> entry : tools.entrySet()) {
+            target.tools.put(entry.getKey(), new HashSet<>(entry.getValue()));
+        }
+
         // Copy activeGroups list
         target.activeGroups = new ArrayList<>(this.activeGroups);
+    }
+
+    private boolean removeGroupFromToolIndex(String toolName, String groupName) {
+        Set<String> groupNames = tools.get(toolName);
+        if (groupNames == null) {
+            return false;
+        }
+        groupNames.remove(groupName);
+        if (groupNames.isEmpty()) {
+            tools.remove(toolName);
+            return true;
+        }
+        return false;
     }
 }

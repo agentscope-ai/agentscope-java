@@ -648,7 +648,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                     postEvent -> {
                                                                         Msg finalMsg =
                                                                                 postEvent
-                                                                                        .getSummaryMessage();
+                                                                                        .getSummaryMessage()
+                                                                                        .withGenerateReason(
+                                                                                                GenerateReason
+                                                                                                        .MAX_ITERATIONS);
                                                                         memory.addMessage(finalMsg);
                                                                         return finalMsg;
                                                                     }));
@@ -747,12 +750,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
 
         // No tool calls - finished
-        if (toolCalls.isEmpty()) {
-            return true;
-        }
-
-        // Has tool calls but none are in toolkit - finished
-        return toolCalls.stream().noneMatch(tc -> toolkit.getTool(tc.getName()) != null);
+        // If there are tool calls (even non-existent ones), continue to acting phase
+        // where ToolExecutor will return "Tool not found" error for the model to see
+        return toolCalls.isEmpty();
     }
 
     /**
@@ -1536,7 +1536,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <ul>
          *   <li>Registers skill load tool to the toolkit
          *   <li>Adds the skill hook to inject skill prompts and manage skill activation
-         *   <li>Writes skill scripts to baseDir if code execution is enabled
+         *   <li>Uploads skill files to the upload directory if auto upload is enabled
          * </ul>
          */
         private void configureSkillBox(Toolkit agentToolkit) {
@@ -1544,9 +1544,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             // Register skill loader tools to toolkit
             skillBox.registerSkillLoadTool();
 
-            // If code execution is enabled, write skill scripts to workDir
-            if (skillBox.isCodeExecutionEnabled()) {
-                skillBox.writeSkillScriptsToWorkDir();
+            // If auto upload is enabled, upload skill files
+            if (skillBox.isAutoUploadSkill()) {
+                skillBox.uploadSkillFiles();
             }
 
             hooks.add(new SkillHook(skillBox));

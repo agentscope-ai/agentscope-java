@@ -31,7 +31,7 @@ import java.util.List;
  * AgentSkill skill = repo.getByName("calculate").orElseThrow();
  * }</pre>
  */
-public interface AgentSkillRepository {
+public interface AgentSkillRepository extends AutoCloseable {
 
     /**
      * Gets a skill by its name.
@@ -125,6 +125,7 @@ public interface AgentSkillRepository {
      * <p>Implementations should override this method if they need to release resources
      * such as network connections, file handles, or caches.
      */
+    @Override
     default void close() {
         // Default implementation does nothing
     }

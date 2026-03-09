@@ -38,12 +38,14 @@ public class SkillHook implements Hook {
         if (event instanceof PreReasoningEvent preReasoningEvent) {
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages = new ArrayList<>(preReasoningEvent.getInputMessages());
+                List<Msg> inputMessages =
+                        new ArrayList<>(preReasoningEvent.getInputMessages().size() + 1);
                 inputMessages.add(
                         Msg.builder()
                                 .role(MsgRole.SYSTEM)
                                 .content(TextBlock.builder().text(skillPrompt).build())
                                 .build());
+                inputMessages.addAll(preReasoningEvent.getInputMessages());
                 preReasoningEvent.setInputMessages(inputMessages);
             }
             return Mono.just(event);
@@ -54,8 +56,8 @@ public class SkillHook implements Hook {
 
     @Override
     public int priority() {
-        // High priority (10) to ensure skills system prompt is added early
+        // High priority (55) to ensure skills system prompt is added early
         // before other hooks that might depend on skill system prompt
-        return 10;
+        return 55;
     }
 }

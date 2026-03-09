@@ -425,6 +425,61 @@ class ToolkitTest {
     }
 
     @Test
+    @DisplayName("Should allow tool when any assigned group is active")
+    void testToolAvailableWhenAssignedToMultipleGroups() {
+        // Arrange - Create two groups
+        toolkit.createToolGroup("groupA", "Group A", false);
+        toolkit.createToolGroup("groupB", "Group B", false);
+
+        toolkit.registration().tool(sampleTools).group("groupA").apply();
+        toolkit.registration().tool(sampleTools).group("groupB").apply();
+
+        Map<String, Object> addInput = Map.of("a", 5, "b", 7);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("add")
+                        .input(addInput)
+                        .content(JsonUtils.getJsonCodec().toJson(addInput))
+                        .build();
+
+        // Act & Assert - Activate each group separately and test
+        toolkit.updateToolGroups(List.of("groupA"), true);
+        toolkit.updateToolGroups(List.of("groupB"), false);
+        ToolResultBlock resultWithGroupA =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+        assertNotNull(resultWithGroupA, "Should execute when groupA is active");
+        assertFalse(
+                isErrorResult(resultWithGroupA),
+                "Should succeed when groupA is active: " + getResultText(resultWithGroupA));
+
+        toolkit.updateToolGroups(List.of("groupA"), false);
+        toolkit.updateToolGroups(List.of("groupB"), true);
+        ToolResultBlock resultWithGroupB =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+        assertNotNull(resultWithGroupB, "Should execute when groupB is active");
+        assertFalse(
+                isErrorResult(resultWithGroupB),
+                "Should succeed when groupB is active: " + getResultText(resultWithGroupB));
+
+        toolkit.updateToolGroups(List.of("groupA", "groupB"), true);
+        ToolResultBlock resultWithBoth =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+        assertNotNull(resultWithBoth, "Should execute when both groups are active");
+        assertFalse(
+                isErrorResult(resultWithBoth),
+                "Should succeed when both groups are active: " + getResultText(resultWithBoth));
+
+        toolkit.updateToolGroups(List.of("groupA", "groupB"), false);
+        ToolResultBlock resultWithNone =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+        assertNotNull(resultWithNone, "Should execute when no groups are active");
+        assertTrue(
+                isErrorResult(resultWithNone),
+                "Should fail when no groups are active: " + getResultText(resultWithNone));
+    }
+
+    @Test
     @DisplayName("Should prevent execution after group deactivation")
     void testToolGroupDeactivationPreventsExecution() {
         // Create an active group

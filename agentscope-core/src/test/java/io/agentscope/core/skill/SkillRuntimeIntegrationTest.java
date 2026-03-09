@@ -153,7 +153,7 @@ class SkillRuntimeIntegrationTest {
                 2, result.getInputMessages().size(), "Should add skill prompt to input messages");
         assertEquals(
                 MsgRole.SYSTEM,
-                result.getInputMessages().get(1).getRole(),
+                result.getInputMessages().get(0).getRole(),
                 "Skill prompt should be SYSTEM message");
 
         // Step 8: Verify skill and tool group remain active
