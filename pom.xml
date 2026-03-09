@@ -27,17 +27,17 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.9-SNAPSHOT</revision>
+        <revision>1.0.10-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
-        <spotless.version>3.2.1</spotless.version>
+        <spotless.version>3.3.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -357,9 +357,24 @@
                             <publishingServerId>central</publishingServerId>
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
-                                <artifact>agentscope-examples-quickstart</artifact>
-                                <artifact>agentscope-examples-werewolf</artifact>
-                                <artifact>agentscope-examples-advanced</artifact>
+                                <artifact>a2a</artifact>
+                                <artifact>advanced</artifact>
+                                <artifact>agui</artifact>
+                                <artifact>boba-tea-shop</artifact>
+                                <artifact>supervisor-agent</artifact>
+                                <artifact>business-mcp-server</artifact>
+                                <artifact>business-sub-agent</artifact>
+                                <artifact>consult-sub-agent</artifact>
+                                <artifact>chat-completions-web</artifact>
+                                <artifact>chat-tts</artifact>
+                                <artifact>hitl-chat</artifact>
+                                <artifact>micronaut</artifact>
+                                <artifact>model-request-compression</artifact>
+                                <artifact>plan-notebook</artifact>
+                                <artifact>quarkus</artifact>
+                                <artifact>quickstart</artifact>
+                                <artifact>werewolf</artifact>
+                                <artifact>werewolf-hitl</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

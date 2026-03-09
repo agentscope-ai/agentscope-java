@@ -100,7 +100,7 @@ public static void main(String[] args) {
     <dependency>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope</artifactId>
-        <version>1.0.8</version>
+        <version>1.0.9</version>
     </dependency>
 </dependencies>
 ```
@@ -108,7 +108,7 @@ public static void main(String[] args) {
 **For local development (if working with source code):**
 ```xml
 <properties>
-    <agentscope.version>1.0.8</agentscope.version>
+    <agentscope.version>1.0.9</agentscope.version>
     <java.version>17</java.version>
 </properties>
 
@@ -122,8 +122,8 @@ public static void main(String[] args) {
 ```
 
 **⚠️ IMPORTANT: Version Selection**
-- **Use `agentscope:1.0.8`** for production (stable, from Maven Central)
-- **Use `agentscope-core:1.0.8`** only if you're developing AgentScope itself
+- **Use `agentscope:1.0.9`** for production (stable, from Maven Central)
+- **Use `agentscope-core:1.0.9`** only if you're developing AgentScope itself
 - **NEVER use version `0.1.0-SNAPSHOT`** - this version doesn't exist
 
 ### ⚠️ CRITICAL: Common Dependency Mistakes
@@ -161,7 +161,7 @@ public static void main(String[] args) {
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.8</version>  <!-- ✅ CORRECT -->
+    <version>1.0.9</version>  <!-- ✅ CORRECT -->
 </dependency>
 ```
 

@@ -1011,6 +1011,28 @@ public class PlanNotebook implements StateModule {
         return maxSubtasks;
     }
 
+    /**
+     * Adds a change hook that will be triggered whenever the plan changes.
+     *
+     * <p>The hook receives the PlanNotebook instance and the current plan (which may be null if the
+     * plan was finished or cleared).
+     *
+     * @param id unique identifier for the hook (used for removal)
+     * @param hook the callback to execute when plan changes
+     */
+    public void addChangeHook(String id, BiConsumer<PlanNotebook, Plan> hook) {
+        changeHooks.put(id, hook);
+    }
+
+    /**
+     * Removes a previously registered change hook.
+     *
+     * @param id the identifier of the hook to remove
+     */
+    public void removeChangeHook(String id) {
+        changeHooks.remove(id);
+    }
+
     private Mono<Void> triggerPlanChangeHooks() {
         return Flux.fromIterable(changeHooks.values())
                 .flatMap(hook -> Mono.fromRunnable(() -> hook.accept(this, currentPlan)))

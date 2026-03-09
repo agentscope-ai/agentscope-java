@@ -648,7 +648,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                     postEvent -> {
                                                                         Msg finalMsg =
                                                                                 postEvent
-                                                                                        .getSummaryMessage();
+                                                                                        .getSummaryMessage()
+                                                                                        .withGenerateReason(
+                                                                                                GenerateReason
+                                                                                                        .MAX_ITERATIONS);
                                                                         memory.addMessage(finalMsg);
                                                                         return finalMsg;
                                                                     }));
@@ -747,12 +750,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
 
         // No tool calls - finished
-        if (toolCalls.isEmpty()) {
-            return true;
-        }
-
-        // Has tool calls but none are in toolkit - finished
-        return toolCalls.stream().noneMatch(tc -> toolkit.getTool(tc.getName()) != null);
+        // If there are tool calls (even non-existent ones), continue to acting phase
+        // where ToolExecutor will return "Tool not found" error for the model to see
+        return toolCalls.isEmpty();
     }
 
     /**

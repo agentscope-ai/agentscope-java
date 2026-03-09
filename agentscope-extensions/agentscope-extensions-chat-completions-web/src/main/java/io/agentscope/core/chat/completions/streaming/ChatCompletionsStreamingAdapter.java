@@ -24,6 +24,7 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.chat.completions.model.ChatCompletionsChunk;
 import io.agentscope.core.chat.completions.model.ToolCall;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -196,13 +197,33 @@ public class ChatCompletionsStreamingAdapter {
         // Extract tool calls (only for REASONING events from assistant)
         if (event.getType() == EventType.REASONING) {
             List<ToolCall> toolCalls = new ArrayList<>();
+            int toolCallIndex = 0;
             for (ContentBlock block : contentBlocks) {
                 if (block instanceof ToolUseBlock) {
                     ToolUseBlock toolUseBlock = (ToolUseBlock) block;
-                    String argumentsJson = serializeMapToJson(toolUseBlock.getInput());
+                    // Prioritize content field (raw JSON string) over input map
+                    // DashScope and some providers store arguments in content field
+                    String argumentsJson;
+                    String content = toolUseBlock.getContent();
+                    Map<String, Object> input = toolUseBlock.getInput();
+
+                    if (content != null && !content.isEmpty()) {
+                        argumentsJson = content;
+                    } else if (input != null && !input.isEmpty()) {
+                        // Only serialize input if it's not empty
+                        argumentsJson = serializeMapToJson(input);
+                    } else {
+                        // Both content and input are empty - use empty string for streaming
+                        // This allows clients to accumulate subsequent chunks correctly
+                        argumentsJson = "";
+                    }
                     toolCalls.add(
                             new ToolCall(
-                                    toolUseBlock.getId(), toolUseBlock.getName(), argumentsJson));
+                                    toolCallIndex,
+                                    toolUseBlock.getId(),
+                                    toolUseBlock.getName(),
+                                    argumentsJson));
+                    toolCallIndex++;
                 }
             }
 
@@ -230,9 +251,23 @@ public class ChatCompletionsStreamingAdapter {
 
         // Add finish chunk if this is the last event
         if (event.isLast()) {
-            boolean hasToolCalls =
-                    contentBlocks.stream().anyMatch(block -> block instanceof ToolUseBlock);
-            String finishReason = hasToolCalls ? "tool_calls" : "stop";
+            // Determine finish reason based on GenerateReason or tool calls
+            // This mirrors the logic in ChatCompletionsResponseBuilder
+            String finishReason;
+            GenerateReason generateReason =
+                    event.getMessage() != null ? event.getMessage().getGenerateReason() : null;
+
+            if (generateReason == GenerateReason.TOOL_SUSPENDED) {
+                finishReason = "tool_calls";
+            } else if (generateReason == GenerateReason.MAX_ITERATIONS) {
+                finishReason = "length";
+            } else {
+                // Fall back to checking for tool calls in content
+                boolean hasToolCalls =
+                        contentBlocks.stream().anyMatch(block -> block instanceof ToolUseBlock);
+                finishReason = hasToolCalls ? "tool_calls" : "stop";
+            }
+
             chunks.add(ChatCompletionsChunk.finishChunk(requestId, model, finishReason));
         }
 
