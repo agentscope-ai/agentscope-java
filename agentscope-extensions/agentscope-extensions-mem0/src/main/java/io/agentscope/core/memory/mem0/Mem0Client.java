@@ -227,14 +227,17 @@ public class Mem0Client {
      * memories relevant to the query string. Results are ordered by relevance score
      * (highest first).
      *
-     * <p>The v2 API returns a direct array of results, which this method wraps
-     * into a Mem0SearchResponse object for consistency with the existing API.
+     * <p>Automatically compatible with two Mem0 API response formats:
+     * <ul>
+     *   <li><b>format v1.1</b> — response is a JSON object with a {@code results} field
+     *       (e.g. {@code {"results": [...]}}), deserialized directly into
+     *       {@link Mem0SearchResponse}.</li>
+     *   <li><b>format v1.0</b> — response is a direct JSON array (e.g. {@code [...]}),
+     *       parsed as a list of results and wrapped into a {@link Mem0SearchResponse}.</li>
+     * </ul>
      *
      * <p>The metadata filters (agent_id, user_id, run_id) in the request ensure
      * that only memories from the specified context are returned.
-     *
-     * <p>The operation is performed asynchronously on the bounded elastic scheduler
-     * to avoid blocking the caller thread.
      *
      * @param request The search request containing query and filters
      * @return A Mono emitting the search response with relevant memories
