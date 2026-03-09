@@ -71,6 +71,15 @@ public class ChatCompletionsRequest {
     /** Whether to stream responses via Server-Sent Events (SSE). Optional, defaults to false. */
     private Boolean stream;
 
+    /**
+     * A list of tools the model may call. Currently, only functions are supported as a tool.
+     *
+     * <p>When tools are provided, they are registered as schema-only tools. When the agent decides
+     * to call a tool, execution is suspended and the tool call is returned to the client for
+     * external execution.
+     */
+    private List<OpenAITool> tools;
+
     public String getModel() {
         return model;
     }
@@ -93,5 +102,13 @@ public class ChatCompletionsRequest {
 
     public void setStream(Boolean stream) {
         this.stream = stream;
+    }
+
+    public List<OpenAITool> getTools() {
+        return tools;
+    }
+
+    public void setTools(List<OpenAITool> tools) {
+        this.tools = tools;
     }
 }
