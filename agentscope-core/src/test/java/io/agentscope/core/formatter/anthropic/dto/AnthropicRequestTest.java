@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -59,11 +58,10 @@ class AnthropicRequestTest {
         // And: The original map should still be modifiable
         assertDoesNotThrow(() -> originalMetadata.put("another_key", "another_value"));
 
-        // And: Changes to original map should be reflected in the returned view
-        // (Collections.unmodifiableMap returns a view, not a copy)
+        // And: Changes to the caller-owned map should not affect the request metadata snapshot
         originalMetadata.put("modified_key", "modified_value");
-        assertTrue(returnedMetadata.containsKey("modified_key"));
-        assertEquals("modified_value", returnedMetadata.get("modified_key"));
+        assertFalse(returnedMetadata.containsKey("modified_key"));
+        assertFalse(request.getMetadata().containsKey("modified_key"));
     }
 
     @Test
@@ -133,6 +131,18 @@ class AnthropicRequestTest {
         // Both should be unmodifiable - test remove() operation
         assertThrows(UnsupportedOperationException.class, () -> view1.remove("key"));
         assertThrows(UnsupportedOperationException.class, () -> view2.remove("key"));
+    }
+
+    @Test
+    void testGetMetadataReturnsDefensiveSnapshot() {
+        AnthropicRequest request = new AnthropicRequest();
+        request.setMetadata(new HashMap<>(Map.of("key", "value")));
+
+        Map<String, Object> snapshot = request.getMetadata();
+        request.setMetadata(new HashMap<>(Map.of("key", "updated")));
+
+        assertEquals("value", snapshot.get("key"));
+        assertEquals("updated", request.getMetadata().get("key"));
     }
 
     @Test
