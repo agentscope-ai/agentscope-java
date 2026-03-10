@@ -32,7 +32,7 @@ import org.springframework.util.StringUtils;
  * and/or registered programmatically. Use {@link #addAgentResource(Resource)} for
  * classpath agents (e.g. {@code classpath:agents/*.md}) and {@link #subAgent(String, ReActAgent)}
  * for the single programmatic agent (e.g. dependency-analyzer). Call {@link #build()} to get
- * {@link TaskToolsResult} and register {@link #taskTool()} and {@link #taskOutputTool()} on the
+ * {@link TaskToolsResult} and register taskTool and taskOutputTool on the
  * orchestrator toolkit.
  */
 public final class TaskToolsBuilder {
