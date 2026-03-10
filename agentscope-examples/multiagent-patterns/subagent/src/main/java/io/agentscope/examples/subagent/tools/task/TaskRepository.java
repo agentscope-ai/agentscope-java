@@ -15,7 +15,6 @@
  */
 package io.agentscope.examples.subagent.tools.task;
 
-import com.alibaba.cloud.ai.graph.agent.tools.task.BackgroundTask;
 import java.util.function.Supplier;
 
 /**

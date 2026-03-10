@@ -19,6 +19,7 @@ import static com.alibaba.cloud.ai.graph.StateGraph.END;
 import static com.alibaba.cloud.ai.graph.StateGraph.START;
 import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node.PrepareAgentNode;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node.RetrieveNode;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node.RewriteNode;
@@ -26,7 +27,6 @@ import com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.tools.RagAgen
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.KeyStrategy;
 import com.alibaba.cloud.ai.graph.StateGraph;
-import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
