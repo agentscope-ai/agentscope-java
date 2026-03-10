@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
-        <version>1.0.9-SNAPSHOT</version>
-        <relativePath>../../pom.xml</relativePath>
+        <artifactId>agentscope-extensions</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>org.example</groupId>
+    <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-rocketmq</artifactId>
 
     <properties>
@@ -20,9 +20,8 @@
         <rocketmq-client.version>5.2.0</rocketmq-client.version>
         <fastjson.version>1.2.83_noneautotype</fastjson.version>
         <a2a-sdk.version>0.3.3.Final</a2a-sdk.version>
-        <rocketmq-a2a.version>1.0.8</rocketmq-a2a.version>
+        <rocketmq-a2a.version>1.0.9</rocketmq-a2a.version>
     </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.apache.rocketmq</groupId>
@@ -58,6 +57,14 @@
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-a2a</artifactId>
             <version>${rocketmq-a2a.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-a2a-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
         </dependency>
     </dependencies>
 </project>

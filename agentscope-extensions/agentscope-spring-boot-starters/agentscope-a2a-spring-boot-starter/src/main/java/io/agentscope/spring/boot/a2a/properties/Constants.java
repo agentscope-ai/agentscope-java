@@ -29,7 +29,13 @@ public class Constants {
 
     public static final String A2A_SERVER_CARD_PREFIX = A2A_SERVER_PREFIX + ".card";
 
-    public static final String A2A_ROCKETMQ_SERVER_PREFIX = A2A_SERVER_PREFIX + ".rocketmq";
+    public static final String A2A_SERVER_TRANSPORT_PREFIX = A2A_SERVER_PREFIX + ".transports";
+
+    public static final String A2A_JSON_RPC_SERVER_PREFIX =
+            A2A_SERVER_TRANSPORT_PREFIX + ".jsonrpc";
+
+    public static final String A2A_ROCKETMQ_SERVER_PREFIX =
+            A2A_SERVER_TRANSPORT_PREFIX + ".rocketmq";
 
     public static final String DEFAULT_SERVER_EXPORT_PORT = "server.port";
 
