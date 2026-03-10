@@ -16,7 +16,6 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.user.UserAgent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.rag.RAGMode;
@@ -63,7 +62,6 @@ public class DifyRAGExample {
                                         .build())
                         .ragMode(RAGMode.AGENTIC)
                         .build();
-
 
         Msg msg = agent.call(Msg.builder().textContent("检索机器人知识库").build()).block();
         System.out.println(msg.getTextContent());
