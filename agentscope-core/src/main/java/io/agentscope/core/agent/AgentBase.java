@@ -99,6 +99,8 @@ public abstract class AgentBase implements StateModule, Agent {
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    // Hook non-null
+    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
 
     /**
      * Constructor for AgentBase.
@@ -134,6 +136,7 @@ public abstract class AgentBase implements StateModule, Agent {
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
+        sortHooks();
     }
 
     @Override
@@ -475,7 +478,12 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
+            sortHooks();
         }
+    }
+
+    private void sortHooks() {
+        this.hooks.sort(HOOK_COMPARATOR);
     }
 
     /**
@@ -499,7 +507,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
+        return hooks;
     }
 
     /**
@@ -693,7 +701,7 @@ public abstract class AgentBase implements StateModule, Agent {
                                                     new StreamingHook(sink, options);
 
                                             // Add temporary hook
-                                            hooks.add(streamingHook);
+                                            addHook(streamingHook);
 
                                             // Use Mono.defer to ensure trace context propagation
                                             // while maintaining streaming hook functionality
