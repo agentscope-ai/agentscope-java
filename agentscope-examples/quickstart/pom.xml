@@ -59,6 +59,12 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
+        <!-- DashScope SDK for MultiModalTool -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>dashscope-sdk-java</artifactId>
+        </dependency>
+
         <!-- RAG Extensions -->
         <dependency>
             <groupId>io.agentscope</groupId>

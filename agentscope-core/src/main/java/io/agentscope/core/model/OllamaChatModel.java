@@ -30,6 +30,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * AgentScope ChatModel implementation for Ollama.
@@ -191,15 +192,17 @@ public class OllamaChatModel extends ChatModelBase {
         } else {
             responseFlux =
                     Flux.defer(
-                            () -> {
-                                Instant startTime = Instant.now();
-                                try {
-                                    OllamaResponse response = httpClient.chat(request);
-                                    return Flux.just(formatter.parseResponse(response, startTime));
-                                } catch (Exception e) {
-                                    return Flux.error(e);
-                                }
-                            });
+                                    () -> {
+                                        Instant startTime = Instant.now();
+                                        try {
+                                            OllamaResponse response = httpClient.chat(request);
+                                            return Flux.just(
+                                                    formatter.parseResponse(response, startTime));
+                                        } catch (Exception e) {
+                                            return Flux.error(e);
+                                        }
+                                    })
+                            .subscribeOn(Schedulers.boundedElastic());
         }
 
         return responseFlux.transform(

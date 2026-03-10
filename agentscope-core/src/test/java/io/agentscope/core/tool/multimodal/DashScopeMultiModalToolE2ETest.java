@@ -194,7 +194,8 @@ class DashScopeMultiModalToolE2ETest {
     @DisplayName("Text to audio")
     void testTextToAudio() {
         Mono<ToolResultBlock> result =
-                multiModalTool.dashscopeTextToAudio("hello", "sambert-zhichu-v1", 48000);
+                multiModalTool.dashscopeTextToAudio(
+                        "hello", "sambert-zhichu-v1", null, null, 48000);
 
         StepVerifier.create(result)
                 .assertNext(

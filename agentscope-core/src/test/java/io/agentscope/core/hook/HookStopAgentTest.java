@@ -30,6 +30,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -40,6 +41,8 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -488,10 +491,93 @@ class HookStopAgentTest {
         }
     }
 
-    // ==================== F. Edge Case Tests ====================
+    // ==================== F. Partial Tool Results Tests ====================
 
     @Nested
-    @DisplayName("F. Edge Case Tests")
+    @DisplayName("F. Partial Tool Results Tests")
+    class PartialToolResultsTests {
+
+        @Test
+        @DisplayName("Partial tool results should NOT cause duplicate tool execution")
+        void testPartialToolResultsExecution() {
+            // Track tool execution count
+            AtomicInteger tool1Count = new AtomicInteger(0);
+            AtomicInteger tool2Count = new AtomicInteger(0);
+
+            // Register three tools
+            toolkit.registerTool(new CountingToolClass(tool1Count, tool2Count));
+
+            // Setup model to return 2 tool calls first, then text response
+            Msg threeToolsMsg =
+                    createMultipleToolUseMsg(
+                            List.of(Map.entry("call1", "tool1"), Map.entry("call2", "tool2")));
+            Msg textResponse = createAssistantTextMsg("All tools completed!");
+
+            when(mockModel.stream(anyList(), anyList(), any()))
+                    .thenReturn(createFluxFromMsg(threeToolsMsg))
+                    .thenReturn(createFluxFromMsg(textResponse));
+
+            // Create hook that stops after reasoning
+            Hook stopHook = createPostReasoningStopHook();
+
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("test-agent")
+                            .model(mockModel)
+                            .toolkit(toolkit)
+                            .memory(memory)
+                            .checkRunning(false)
+                            .hook(stopHook)
+                            .build();
+
+            // First call - gets stopped, returns 2 pending tool calls
+            Msg result1 = agent.call(createUserMsg("test")).block(TEST_TIMEOUT);
+            assertTrue(
+                    result1.hasContentBlocks(ToolUseBlock.class),
+                    "First call should return ToolUse message");
+            List<ToolUseBlock> pendingTools = result1.getContentBlocks(ToolUseBlock.class);
+            assertEquals(2, pendingTools.size(), "Should have 2 pending tool calls");
+
+            // Verify no tools executed yet
+            assertEquals(0, tool1Count.get(), "Tool1 should not be executed yet");
+            assertEquals(0, tool2Count.get(), "Tool2 should not be executed yet");
+
+            // User provides only partial results (tool1)
+            Msg partialResultMsg =
+                    Msg.builder()
+                            .name("user")
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    List.of(
+                                            ToolResultBlock.of(
+                                                    "call1",
+                                                    "tool1",
+                                                    TextBlock.builder().text("canceled").build())))
+                            .build();
+
+            // Resume with partial results
+            Msg result2 = agent.call(partialResultMsg).block(TEST_TIMEOUT);
+
+            // BUG: Currently all 2 tools will be executed
+            // Expected behavior: Only tool2 should be executed
+            // Actual behavior: All 2 tools are executed
+            assertTrue(
+                    tool1Count.get() == 0 && tool2Count.get() == 1,
+                    "BUG REPRODUCED: Tools with existing results were re-executed. "
+                            + "tool1Count="
+                            + tool1Count.get()
+                            + ", tool2Count="
+                            + tool2Count.get());
+            assertTrue(
+                    result1.hasContentBlocks(ToolUseBlock.class),
+                    "First call should return ToolUse message");
+        }
+    }
+
+    // ==================== G. Edge Case Tests ====================
+
+    @Nested
+    @DisplayName("G. Edge Case Tests")
     class EdgeCaseTests {
 
         @Test
@@ -671,6 +757,27 @@ class HookStopAgentTest {
         };
     }
 
+    // ==================== Helper Methods for Multiple Tools ====================
+
+    private Msg createMultipleToolUseMsg(List<Map.Entry<String, String>> toolIdNamePairs) {
+        List<ContentBlock> toolUseBlocks = new ArrayList<>();
+        for (Map.Entry<String, String> pair : toolIdNamePairs) {
+            Map<String, Object> emptyInput = Map.of();
+            toolUseBlocks.add(
+                    ToolUseBlock.builder()
+                            .id(pair.getKey())
+                            .name(pair.getValue())
+                            .input(emptyInput)
+                            .content(JsonUtils.getJsonCodec().toJson(emptyInput))
+                            .build());
+        }
+        return Msg.builder()
+                .name("assistant")
+                .role(MsgRole.ASSISTANT)
+                .content(toolUseBlocks)
+                .build();
+    }
+
     // ==================== Test Tool Classes ====================
 
     /** Simple test tool class for verifying tool execution. */
@@ -685,6 +792,29 @@ class HookStopAgentTest {
         public ToolResultBlock testTool() {
             executed.set(true);
             return ToolResultBlock.text("Tool executed");
+        }
+    }
+
+    /** Tool class that counts executions for testing duplicate calls. */
+    static class CountingToolClass {
+        private final AtomicInteger executionCount1;
+        private final AtomicInteger executionCount2;
+
+        CountingToolClass(AtomicInteger executionCount1, AtomicInteger executionCount2) {
+            this.executionCount1 = executionCount1;
+            this.executionCount2 = executionCount2;
+        }
+
+        @io.agentscope.core.tool.Tool(name = "tool1", description = "Counting tool 1")
+        public ToolResultBlock tool1() {
+            executionCount1.incrementAndGet();
+            return ToolResultBlock.text("Tool1 executed: " + executionCount1.get());
+        }
+
+        @io.agentscope.core.tool.Tool(name = "tool2", description = "Counting tool 2")
+        public ToolResultBlock tool2() {
+            executionCount2.incrementAndGet();
+            return ToolResultBlock.text("Tool2 executed: " + executionCount2.get());
         }
     }
 }

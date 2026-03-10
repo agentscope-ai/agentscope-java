@@ -24,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -824,7 +827,7 @@ class ShellCommandToolTest {
         @EnabledOnOs({OS.LINUX, OS.MAC})
         void reproduceLargeFileCatDeadlock() throws Exception {
             // Create a temporary large file
-            java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("test_large_", ".txt");
+            Path tempFile = Files.createTempFile("test_large_", ".txt");
             try {
                 // Write 20KB of data (far exceeds typical pipe buffer size)
                 StringBuilder content = new StringBuilder();
@@ -834,7 +837,7 @@ class ShellCommandToolTest {
                             .append(": ")
                             .append("Some test content to fill the buffer\n");
                 }
-                java.nio.file.Files.writeString(tempFile, content.toString());
+                Files.writeString(tempFile, content.toString());
 
                 String command = "cat " + tempFile.toString();
 
@@ -861,7 +864,7 @@ class ShellCommandToolTest {
                                 })
                         .verifyComplete();
             } finally {
-                java.nio.file.Files.deleteIfExists(tempFile);
+                Files.deleteIfExists(tempFile);
             }
         }
 
@@ -926,6 +929,439 @@ class ShellCommandToolTest {
                                         "Expected output to contain the repeated line");
                             })
                     .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("Getter Methods")
+    class GetterMethodsTests {
+
+        @Test
+        @DisplayName("Should return unmodifiable allowed commands set")
+        void testGetAllowedCommandsReturnsUnmodifiable() {
+            Set<String> original = new HashSet<>(Set.of("python", "node"));
+            ShellCommandTool tool = new ShellCommandTool(original);
+
+            Set<String> retrieved = tool.getAllowedCommands();
+
+            // Verify it's unmodifiable
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> retrieved.add("malicious"),
+                    "Should not be able to modify returned set");
+
+            // Verify it contains the expected commands
+            assertEquals(2, retrieved.size());
+            assertTrue(retrieved.contains("python"));
+            assertTrue(retrieved.contains("node"));
+        }
+
+        @Test
+        @DisplayName("Should return approval callback")
+        void testGetApprovalCallback() {
+            Function<String, Boolean> callback = cmd -> true;
+            ShellCommandTool tool = new ShellCommandTool(null, callback);
+
+            Function<String, Boolean> retrieved = tool.getApprovalCallback();
+
+            assertEquals(callback, retrieved, "Should return the same callback instance");
+        }
+
+        @Test
+        @DisplayName("Should return null approval callback when not set")
+        void testGetApprovalCallbackNull() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Function<String, Boolean> retrieved = tool.getApprovalCallback();
+
+            assertEquals(null, retrieved, "Should return null when callback not set");
+        }
+
+        @Test
+        @DisplayName("Should return command validator")
+        void testGetCommandValidator() {
+            CommandValidator validator = new UnixCommandValidator();
+            ShellCommandTool tool = new ShellCommandTool(null, null, validator);
+
+            CommandValidator retrieved = tool.getCommandValidator();
+
+            assertEquals(validator, retrieved, "Should return the same validator instance");
+        }
+
+        @Test
+        @DisplayName("Should return default command validator when not set")
+        void testGetCommandValidatorDefault() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            CommandValidator retrieved = tool.getCommandValidator();
+
+            assertNotNull(retrieved, "Should return default validator");
+            // Verify it's the correct platform-specific validator
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                assertTrue(
+                        retrieved instanceof WindowsCommandValidator,
+                        "Should be WindowsCommandValidator on Windows");
+            } else {
+                assertTrue(
+                        retrieved instanceof UnixCommandValidator,
+                        "Should be UnixCommandValidator on Unix/Linux/Mac");
+            }
+        }
+
+        @Test
+        @DisplayName("Should return base directory")
+        void testGetBaseDir() {
+            String baseDirStr = "/tmp/test";
+            ShellCommandTool tool = new ShellCommandTool(baseDirStr, null, null);
+
+            Path expectedPath = Paths.get(baseDirStr).toAbsolutePath().normalize();
+            Path retrieved = tool.getBaseDir();
+
+            assertEquals(expectedPath, retrieved, "Should return the normalized base directory");
+        }
+
+        @Test
+        @DisplayName("Should return null base directory when not set")
+        void testGetBaseDirNull() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Path retrieved = tool.getBaseDir();
+
+            assertEquals(null, retrieved, "Should return null when baseDir not set");
+        }
+    }
+
+    @Nested
+    @DisplayName("Base Directory Enforcement Tests")
+    class BaseDirectoryEnforcementTests {
+
+        // Test 1: baseDir sets working directory (Unix/Mac)
+        @Test
+        @DisplayName("Should set working directory to baseDir (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testBaseDirSetsWorkingDirectoryUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("ls", "pwd"), null);
+
+                // Verify baseDir is set
+                assertEquals(
+                        tempDir.toAbsolutePath().normalize(),
+                        tool.getBaseDir(),
+                        "Base directory should be set");
+
+                // Verify ls lists files in baseDir
+                Mono<ToolResultBlock> lsResult = tool.executeShellCommand("ls", 10);
+                StepVerifier.create(lsResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "ls should execute successfully");
+                                    assertTrue(
+                                            text.contains("test.txt"),
+                                            "ls should list test.txt in baseDir");
+                                })
+                        .verifyComplete();
+
+                // Verify pwd shows baseDir
+                Mono<ToolResultBlock> pwdResult = tool.executeShellCommand("pwd", 10);
+                StepVerifier.create(pwdResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "pwd should execute successfully");
+                                    assertTrue(
+                                            text.contains(
+                                                    tempDir.toAbsolutePath()
+                                                            .normalize()
+                                                            .toString()),
+                                            "pwd should show baseDir path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 1: baseDir sets working directory (Windows)
+        @Test
+        @DisplayName("Should set working directory to baseDir (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testBaseDirSetsWorkingDirectoryWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("dir", "cd"), null);
+
+                assertEquals(
+                        tempDir.toAbsolutePath().normalize(),
+                        tool.getBaseDir(),
+                        "Base directory should be set");
+
+                // dir lists files
+                Mono<ToolResultBlock> dirResult = tool.executeShellCommand("dir", 10);
+                StepVerifier.create(dirResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "dir should execute successfully");
+                                    assertTrue(
+                                            text.contains("test.txt"),
+                                            "dir should list test.txt in baseDir");
+                                })
+                        .verifyComplete();
+
+                // cd (no args) shows current directory
+                Mono<ToolResultBlock> cdResult = tool.executeShellCommand("cd", 10);
+                StepVerifier.create(cdResult)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "cd should execute successfully");
+                                    String expectedPath =
+                                            tempDir.toAbsolutePath().normalize().toString();
+                                    assertTrue(
+                                            text.contains(expectedPath),
+                                            "cd should show baseDir path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 2: Relative path resolution (Unix/Mac)
+        @Test
+        @DisplayName("Should resolve relative paths from baseDir (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testRelativePathResolutionUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path restrictedDir = tempDir.resolve("restricted");
+            Files.createDirectories(restrictedDir);
+
+            Path secretFile = tempDir.resolve("secret.txt");
+            Files.writeString(secretFile, "secret content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(restrictedDir.toString(), Set.of("cat"), null);
+
+                // Access parent directory file using relative path
+                Mono<ToolResultBlock> result = tool.executeShellCommand("cat ../secret.txt", 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Relative path should resolve from baseDir");
+                                    assertTrue(
+                                            text.contains("secret content"),
+                                            "Should access parent directory file");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(secretFile);
+                Files.deleteIfExists(restrictedDir);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 2: Relative path resolution (Windows)
+        @Test
+        @DisplayName("Should resolve relative paths from baseDir (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testRelativePathResolutionWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path restrictedDir = tempDir.resolve("restricted");
+            Files.createDirectories(restrictedDir);
+
+            Path secretFile = tempDir.resolve("secret.txt");
+            Files.writeString(secretFile, "secret content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(restrictedDir.toString(), Set.of("type"), null);
+
+                // Windows uses backslash for relative paths
+                Mono<ToolResultBlock> result = tool.executeShellCommand("type ..\\secret.txt", 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Relative path should resolve from baseDir");
+                                    assertTrue(
+                                            text.contains("secret content"),
+                                            "Should access parent directory file");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(secretFile);
+                Files.deleteIfExists(restrictedDir);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 3: Absolute paths with baseDir (Unix/Mac)
+        @Test
+        @DisplayName("Should handle absolute paths with baseDir set (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testAbsolutePathsWithBaseDirUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("cat"), null);
+
+                // Access file using absolute path
+                String absolutePath = testFile.toAbsolutePath().toString();
+                Mono<ToolResultBlock> result = tool.executeShellCommand("cat " + absolutePath, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Absolute path should work with baseDir");
+                                    assertTrue(
+                                            text.contains("test content"),
+                                            "Should read file with absolute path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 3: Absolute paths with baseDir (Windows)
+        @Test
+        @DisplayName("Should handle absolute paths with baseDir set (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testAbsolutePathsWithBaseDirWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+            Path testFile = tempDir.resolve("test.txt");
+            Files.writeString(testFile, "test content");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("type"), null);
+
+                // Access file using absolute path
+                String absolutePath = testFile.toAbsolutePath().toString();
+                Mono<ToolResultBlock> result = tool.executeShellCommand("type " + absolutePath, 10);
+
+                StepVerifier.create(result)
+                        .assertNext(
+                                block -> {
+                                    String text = extractText(block);
+                                    assertTrue(
+                                            text.contains("<returncode>0</returncode>"),
+                                            "Absolute path should work with baseDir");
+                                    assertTrue(
+                                            text.contains("test content"),
+                                            "Should read file with absolute path");
+                                })
+                        .verifyComplete();
+            } finally {
+                Files.deleteIfExists(testFile);
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 4: baseDir persistence across executions (Unix/Mac)
+        @Test
+        @DisplayName("Should maintain baseDir across multiple executions (Unix)")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testBaseDirPersistenceUnix() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("pwd"), null);
+
+                String expectedPath = tempDir.toAbsolutePath().normalize().toString();
+
+                // Execute pwd multiple times - should always show same baseDir
+                for (int i = 0; i < 3; i++) {
+                    Mono<ToolResultBlock> result = tool.executeShellCommand("pwd", 10);
+
+                    StepVerifier.create(result)
+                            .assertNext(
+                                    block -> {
+                                        String text = extractText(block);
+                                        assertTrue(
+                                                text.contains("<returncode>0</returncode>"),
+                                                "Command should execute successfully");
+                                        assertTrue(
+                                                text.contains(expectedPath),
+                                                "Each execution should use same baseDir");
+                                    })
+                            .verifyComplete();
+                }
+            } finally {
+                Files.deleteIfExists(tempDir);
+            }
+        }
+
+        // Test 4: baseDir persistence across executions (Windows)
+        @Test
+        @DisplayName("Should maintain baseDir across multiple executions (Windows)")
+        @EnabledOnOs(OS.WINDOWS)
+        void testBaseDirPersistenceWindows() throws Exception {
+            Path tempDir = Files.createTempDirectory("shell-test-");
+
+            try {
+                ShellCommandTool tool =
+                        new ShellCommandTool(tempDir.toString(), Set.of("cd"), null);
+
+                String expectedPath = tempDir.toAbsolutePath().normalize().toString();
+
+                // Execute cd multiple times - should always show same baseDir
+                for (int i = 0; i < 3; i++) {
+                    Mono<ToolResultBlock> result = tool.executeShellCommand("cd", 10);
+
+                    StepVerifier.create(result)
+                            .assertNext(
+                                    block -> {
+                                        String text = extractText(block);
+                                        assertTrue(
+                                                text.contains("<returncode>0</returncode>"),
+                                                "Command should execute successfully");
+                                        assertTrue(
+                                                text.contains(expectedPath),
+                                                "Each execution should use same baseDir");
+                                    })
+                            .verifyComplete();
+                }
+            } finally {
+                Files.deleteIfExists(tempDir);
+            }
         }
     }
 }

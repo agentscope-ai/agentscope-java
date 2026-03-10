@@ -250,6 +250,42 @@ public class ShellCommandTool implements AgentTool {
         return allowedCommands.contains(command);
     }
 
+    /**
+     * Get the approval callback function.
+     * Returns the callback that is used to request user approval for non-whitelisted commands.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with the same configuration.
+     *
+     * @return The approval callback function, or null if not configured
+     */
+    public Function<String, Boolean> getApprovalCallback() {
+        return approvalCallback;
+    }
+
+    /**
+     * Get the command validator.
+     * Returns the validator used for command security validation.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with the same configuration.
+     *
+     * @return The command validator instance
+     */
+    public CommandValidator getCommandValidator() {
+        return commandValidator;
+    }
+
+    /**
+     * Get the base directory for command execution.
+     * Returns the directory where commands will be executed.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with a different base directory.
+     *
+     * @return The base directory path, or null if using current directory
+     */
+    public Path getBaseDir() {
+        return baseDir;
+    }
+
     // ========================= AgentTool interface implementation =========================
 
     @Override

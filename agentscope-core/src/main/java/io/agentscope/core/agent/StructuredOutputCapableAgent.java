@@ -18,10 +18,12 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
@@ -31,6 +33,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,10 +175,13 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                                         Msg hookResult = hook.getResultMsg();
                                         if (hookResult != null) {
                                             Msg extracted = extractStructuredResult(hookResult);
-                                            // Merge aggregated ChatUsage from reasoning rounds
-                                            ChatUsage usage = hook.getAggregatedUsage();
-                                            if (usage != null && extracted != null) {
-                                                extracted = mergeChatUsage(extracted, usage);
+                                            // Merge aggregated metadata from reasoning rounds
+                                            if (extracted != null) {
+                                                extracted =
+                                                        mergeCollectedMetadata(
+                                                                extracted,
+                                                                hook.getAggregatedUsage(),
+                                                                hook.getAggregatedThinking());
                                             }
                                             return Mono.just(extracted);
                                         }
@@ -305,18 +311,33 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
     }
 
     /**
-     * Create a new message with the given ChatUsage merged into its metadata.
+     * Merge collected metadata (ChatUsage and ThinkingBlock) into the message.
      */
-    private Msg mergeChatUsage(Msg msg, ChatUsage chatUsage) {
+    private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
+        // Merge ChatUsage into metadata
         Map<String, Object> metadata =
                 new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
-        metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        if (chatUsage != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        }
+
+        // Merge ThinkingBlock into content
+        List<ContentBlock> newContent;
+        if (thinking != null) {
+            newContent = new ArrayList<>();
+            newContent.add(thinking); // ThinkingBlock first
+            if (msg.getContent() != null) {
+                newContent.addAll(msg.getContent());
+            }
+        } else {
+            newContent = msg.getContent();
+        }
 
         return Msg.builder()
                 .id(msg.getId())
                 .name(msg.getName())
                 .role(msg.getRole())
-                .content(msg.getContent())
+                .content(newContent)
                 .metadata(metadata)
                 .timestamp(msg.getTimestamp())
                 .build();

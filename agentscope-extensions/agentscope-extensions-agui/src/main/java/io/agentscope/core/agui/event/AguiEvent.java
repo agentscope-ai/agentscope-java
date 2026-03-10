@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -49,6 +50,7 @@ import java.util.Objects;
     @JsonSubTypes.Type(value = AguiEvent.StateSnapshot.class, name = "STATE_SNAPSHOT"),
     @JsonSubTypes.Type(value = AguiEvent.StateDelta.class, name = "STATE_DELTA"),
     @JsonSubTypes.Type(value = AguiEvent.Raw.class, name = "RAW"),
+    @JsonSubTypes.Type(value = AguiEvent.Custom.class, name = "CUSTOM"),
     @JsonSubTypes.Type(value = AguiEvent.ReasoningStart.class, name = "REASONING_START"),
     @JsonSubTypes.Type(
             value = AguiEvent.ReasoningMessageStart.class,
@@ -75,6 +77,7 @@ public sealed interface AguiEvent
                 AguiEvent.StateSnapshot,
                 AguiEvent.StateDelta,
                 AguiEvent.Raw,
+                AguiEvent.Custom,
                 AguiEvent.ReasoningStart,
                 AguiEvent.ReasoningMessageStart,
                 AguiEvent.ReasoningMessageContent,
@@ -87,6 +90,7 @@ public sealed interface AguiEvent
      *
      * @return The event type
      */
+    @JsonIgnore
     AguiEventType getType();
 
     /**
@@ -517,6 +521,40 @@ public sealed interface AguiEvent
         @Override
         public AguiEventType getType() {
             return AguiEventType.RAW;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * The Custom event provides an extension mechanism for implementing
+     * features not covered by the standard event types.
+     */
+    record Custom(String threadId, String runId, String name, Object value) implements AguiEvent {
+
+        @JsonCreator
+        public Custom(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("name") String name,
+                @JsonProperty("value") Object value) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.name = Objects.requireNonNull(name, "name cannot be null");
+            this.value = value; // nullable
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.CUSTOM;
         }
 
         @Override

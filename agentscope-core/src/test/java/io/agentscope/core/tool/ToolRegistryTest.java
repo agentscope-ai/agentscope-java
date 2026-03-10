@@ -46,8 +46,8 @@ class ToolRegistryTest {
         mockTool2 = createMockTool("tool2", "Description 2");
 
         // Create registered wrappers
-        registered1 = new RegisteredToolFunction(mockTool1, "group1", null, null);
-        registered2 = new RegisteredToolFunction(mockTool2, null, null, "mcpClient1");
+        registered1 = new RegisteredToolFunction(mockTool1, null, null);
+        registered2 = new RegisteredToolFunction(mockTool2, null, "mcpClient1");
     }
 
     private AgentTool createMockTool(String name, String description) {
@@ -202,8 +202,7 @@ class ToolRegistryTest {
         registry.registerTool("tool1", mockTool1, registered1);
         registry.registerTool("tool2", mockTool2, registered2);
         AgentTool mockTool3 = createMockTool("tool3", "Description 3");
-        RegisteredToolFunction registered3 =
-                new RegisteredToolFunction(mockTool3, null, null, null);
+        RegisteredToolFunction registered3 = new RegisteredToolFunction(mockTool3, null, null);
         registry.registerTool("tool3", mockTool3, registered3);
 
         // Act
@@ -246,8 +245,7 @@ class ToolRegistryTest {
         // Arrange
         registry.registerTool("tool1", mockTool1, registered1);
         AgentTool newTool = createMockTool("tool1", "New Description");
-        RegisteredToolFunction newRegistered =
-                new RegisteredToolFunction(newTool, "group2", null, null);
+        RegisteredToolFunction newRegistered = new RegisteredToolFunction(newTool, null, null);
 
         // Act
         registry.registerTool("tool1", newTool, newRegistered);
@@ -269,7 +267,7 @@ class ToolRegistryTest {
                             for (int i = 0; i < 100; i++) {
                                 AgentTool tool = createMockTool("tool_t1_" + i, "Desc " + i);
                                 RegisteredToolFunction reg =
-                                        new RegisteredToolFunction(tool, null, null, null);
+                                        new RegisteredToolFunction(tool, null, null);
                                 registry.registerTool("tool_t1_" + i, tool, reg);
                             }
                         });
@@ -280,7 +278,7 @@ class ToolRegistryTest {
                             for (int i = 0; i < 100; i++) {
                                 AgentTool tool = createMockTool("tool_t2_" + i, "Desc " + i);
                                 RegisteredToolFunction reg =
-                                        new RegisteredToolFunction(tool, null, null, null);
+                                        new RegisteredToolFunction(tool, null, null);
                                 registry.registerTool("tool_t2_" + i, tool, reg);
                             }
                         });

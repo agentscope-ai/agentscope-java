@@ -501,6 +501,51 @@ public class MysqlSessionTest {
         assertEquals(maxLengthName, session.getTableName());
     }
 
+    @Test
+    @DisplayName("Should accept database name with hyphens")
+    void testConstructorAcceptsDatabaseNameWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "my-test-db", "my_table", true);
+
+        assertEquals("my-test-db", session.getDatabaseName());
+        assertEquals("my_table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept table name with hyphens")
+    void testConstructorAcceptsTableNameWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "my_db", "my-test-table", true);
+
+        assertEquals("my_db", session.getDatabaseName());
+        assertEquals("my-test-table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept database and table names with hyphens")
+    void testConstructorAcceptsDatabaseAndTableNamesWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "xxx-xxx-xx", "test-table", true);
+
+        assertEquals("xxx-xxx-xx", session.getDatabaseName());
+        assertEquals("test-table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept name with underscore and hyphen")
+    void testConstructorAcceptsNameWithUnderscoreAndHyphen() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session =
+                new MysqlSession(mockDataSource, "my_test-db", "my_table-test", true);
+
+        assertEquals("my_test-db", session.getDatabaseName());
+        assertEquals("my_table-test", session.getTableName());
+    }
+
     /** Simple test state record for testing. */
     public record TestState(String value, int count) implements State {}
 }

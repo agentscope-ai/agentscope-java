@@ -21,6 +21,7 @@ import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -43,20 +44,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @AutoConfiguration
 @ConditionalOnClass({SseEmitter.class, Agent.class})
+@ConditionalOnBean(AguiAgentRegistry.class)
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties(AguiProperties.class)
 public class AgentscopeAguiMvcAutoConfiguration {
-
-    /**
-     * Creates the agent registry bean.
-     *
-     * @return A new AguiAgentRegistry
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    public AguiAgentRegistry aguiAgentRegistry() {
-        return new AguiAgentRegistry();
-    }
 
     /**
      * Creates the thread session manager bean.

@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Result;
+import co.elastic.clients.elasticsearch._types.mapping.DenseVectorSimilarity;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
@@ -277,7 +278,7 @@ public class ElasticsearchStoreTest {
             Property vectorProp = props.get("vector");
             assertTrue(vectorProp.isDenseVector());
             assertEquals(TEST_DIMENSIONS, vectorProp.denseVector().dims());
-            assertEquals("cosine", vectorProp.denseVector().similarity());
+            assertEquals(DenseVectorSimilarity.Cosine, vectorProp.denseVector().similarity());
             assertTrue(vectorProp.denseVector().index());
 
             // Verify Content field

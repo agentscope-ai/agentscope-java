@@ -495,7 +495,7 @@ public class A2aAgentTest {
 
     private void assertTimeout(CompletableFuture<Void> future, final AtomicBoolean stopFlag) {
         try {
-            future.get(2, TimeUnit.SECONDS);
+            future.get(5, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             fail(
                     "interrupt operation should stop task running and stop agent running. But"

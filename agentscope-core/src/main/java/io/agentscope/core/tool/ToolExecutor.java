@@ -61,7 +61,6 @@ class ToolExecutor {
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
-    private final ToolMethodInvoker methodInvoker;
     private final ExecutorService executorService;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
@@ -72,9 +71,8 @@ class ToolExecutor {
             Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
-            ToolkitConfig config,
-            ToolMethodInvoker methodInvoker) {
-        this(toolkit, toolRegistry, groupManager, config, methodInvoker, null);
+            ToolkitConfig config) {
+        this(toolkit, toolRegistry, groupManager, config, null);
     }
 
     /**
@@ -85,13 +83,11 @@ class ToolExecutor {
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
             ToolkitConfig config,
-            ToolMethodInvoker methodInvoker,
             ExecutorService executorService) {
         this.toolkit = toolkit;
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;
         this.config = config;
-        this.methodInvoker = methodInvoker;
         this.executorService = executorService;
     }
 
@@ -100,7 +96,6 @@ class ToolExecutor {
      */
     void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         this.chunkCallback = callback;
-        methodInvoker.setChunkCallback(callback);
     }
 
     // ==================== Single Tool Execution ====================
@@ -136,18 +131,14 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // Check group activation
+        // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null) {
-            String groupName = registered.getGroupName();
-            if (!groupManager.isInActiveGroup(groupName)) {
-                String errorMsg =
-                        String.format(
-                                "Unauthorized tool call: '%s' is not available",
-                                toolCall.getName());
-                logger.warn(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
+        if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
+            String errorMsg =
+                    String.format(
+                            "Unauthorized tool call: '%s' is not available", toolCall.getName());
+            logger.warn(errorMsg);
+            return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
         // Validate input against schema
@@ -249,7 +240,7 @@ class ToolExecutor {
 
         // Parallel or sequential execution
         if (parallel) {
-            return Flux.merge(monos).collectList();
+            return Flux.mergeSequential(monos).collectList();
         }
         return Flux.concat(monos).collectList();
     }

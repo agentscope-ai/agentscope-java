@@ -216,6 +216,47 @@ class ToolEmitterIntegrationTest {
         assertEquals("call-b", capturedToolUseBlocks.get(2).getId());
     }
 
+    @Test
+    @DisplayName("ToolEmitter should work after Toolkit copy")
+    void testToolEmitterWithCopiedToolkit() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "task_a", description = "Task A")
+                    public ToolResultBlock taskA(
+                            @ToolParam(name = "data") String data, ToolEmitter emitter) {
+                        emitter.emit(ToolResultBlock.text("A: Started"));
+                        emitter.emit(ToolResultBlock.text("A: Processing"));
+                        return ToolResultBlock.text("A: Done");
+                    }
+                });
+        var copiedToolkit = toolkit.copy();
+        copiedToolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    capturedChunks.add(chunk);
+                    capturedToolUseBlocks.add(toolUse);
+                });
+
+        // Call task_a
+        Map<String, Object> inputA = Map.of("data", "x");
+        ToolUseBlock toolA =
+                ToolUseBlock.builder()
+                        .id("call-a")
+                        .name("task_a")
+                        .input(inputA)
+                        .content(JsonUtils.getJsonCodec().toJson(inputA))
+                        .build();
+        copiedToolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
+
+        // Verify chunks
+        assertEquals(2, capturedChunks.size());
+        assertEquals("A: Started", extractText(capturedChunks.get(0)));
+        assertEquals("A: Processing", extractText(capturedChunks.get(1)));
+
+        // Verify tool use blocks
+        assertEquals("call-a", capturedToolUseBlocks.get(0).getId());
+        assertEquals("call-a", capturedToolUseBlocks.get(1).getId());
+    }
+
     // NOTE: ActingChunkEvent hook testing is covered in ReActAgentTest and HookEventTest
     // This integration test focuses on ToolEmitter→Toolkit callback, not hook integration
 

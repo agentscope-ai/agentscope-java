@@ -80,6 +80,10 @@ public enum AguiEventType {
     RAW,
 
     /**
+     * A custom event with structured data.
+     */
+    CUSTOM,
+    /**
      * Indicates the start of a reasoning/thinking phase.
      */
     REASONING_START,

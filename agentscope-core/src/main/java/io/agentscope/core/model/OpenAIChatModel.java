@@ -30,6 +30,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Chat Model using native HTTP API.
@@ -150,21 +151,23 @@ public class OpenAIChatModel extends ChatModelBase {
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
-                    () -> {
-                        try {
-                            OpenAIResponse response =
-                                    client.call(apiKey, baseUrl, request, effectiveOptions);
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            return Flux.error(
-                                    new ModelException(
-                                            "Failed to call OpenAI API: " + e.getMessage(),
-                                            e,
-                                            modelName,
-                                            "openai"));
-                        }
-                    });
+                            () -> {
+                                try {
+                                    OpenAIResponse response =
+                                            client.call(apiKey, baseUrl, request, effectiveOptions);
+                                    ChatResponse chatResponse =
+                                            formatter.parseResponse(response, start);
+                                    return Flux.just(chatResponse);
+                                } catch (Exception e) {
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "Failed to call OpenAI API: " + e.getMessage(),
+                                                    e,
+                                                    modelName,
+                                                    "openai"));
+                                }
+                            })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
     }
 

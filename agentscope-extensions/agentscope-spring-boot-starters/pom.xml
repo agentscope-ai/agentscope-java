@@ -32,7 +32,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring-boot.version>4.0.1</spring-boot.version>
+        <spring-boot.version>4.0.2</spring-boot.version>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 

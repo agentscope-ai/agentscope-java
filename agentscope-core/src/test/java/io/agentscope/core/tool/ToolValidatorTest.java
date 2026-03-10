@@ -55,6 +55,21 @@ class ToolValidatorTest {
         }
 
         @Test
+        @DisplayName("Should pass when input is empty object with empty schema")
+        void testEmptyInputWithEmptySchema() {
+            // This simulates a tool with no parameters (like getTime())
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of()); // Empty properties = no parameters
+
+            String result = ToolValidator.validateInput("{}", schema);
+            assertNull(result, "Empty object {} should pass validation with empty schema");
+        }
+
+        @Test
         @DisplayName("Should pass when schema is empty")
         void testEmptySchema() {
             Map<String, Object> input = Map.of("name", "test");

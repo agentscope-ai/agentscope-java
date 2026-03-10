@@ -15,10 +15,12 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.CommandValidator;
 import io.agentscope.core.tool.coding.ShellCommandTool;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -31,27 +33,63 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
+    private static final String BASE64_PREFIX = "base64:";
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
     private Toolkit toolkit;
-    private Path codeExecutionWorkDir;
+    private Path workDir;
+    private Path uploadDir;
+    private SkillFileFilter fileFilter;
+    private boolean autoUploadSkill = true;
 
+    /**
+     * Creates a SkillBox without a toolkit.
+     *
+     * <p>This constructor will be removed in the next release. A SkillBox must hold a
+     * {@link Toolkit} to operate correctly. Relying on automatic toolkit assignment makes
+     * behavior less explicit and harder to reason about.
+     */
+    @Deprecated
     public SkillBox() {
-        this(null);
+        this(null, null, null);
     }
 
     public SkillBox(Toolkit toolkit) {
-        this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
+        this(toolkit, null, null);
+    }
+
+    /**
+     * Creates a SkillBox with custom skill prompt instruction and template.
+     *
+     * @param instruction Custom instruction header (null or blank uses default)
+     * @param template Custom skill template (null or blank uses default)
+     */
+    public SkillBox(String instruction, String template) {
+        this(null, instruction, template);
+    }
+
+    /**
+     * Creates a SkillBox with a toolkit and custom skill prompt instruction and template.
+     *
+     * @param toolkit The toolkit to bind
+     * @param instruction Custom instruction header (null or blank uses default)
+     * @param template Custom skill template (null or blank uses default)
+     */
+    public SkillBox(Toolkit toolkit, String instruction, String template) {
+        this.skillPromptProvider =
+                new AgentSkillPromptProvider(skillRegistry, instruction, template);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
@@ -549,91 +587,63 @@ public class SkillBox implements StateModule {
     // ==================== Code Execution ====================
 
     /**
-     * Enables code execution capabilities for skills with temporary working directory.
+     * Create a fluent builder for configuring code execution with custom options.
      *
-     * <p>This method creates a sandboxed environment for executing scripts from skills.
-     * A temporary directory will be created when scripts are written.
+     * <p>This is the recommended way to enable code execution capabilities for skills.
+     * The builder allows selective enabling of tools and customization of ShellCommandTool.
      *
-     * @throws IllegalStateException if toolkit is not bound
+     * <p>Example usage:
+     * <pre>{@code
+     * // Simple - enable all tools with default configuration
+     * skillBox.codeExecution()
+     *     .withShell()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Custom shell tool with approval callback
+     * ShellCommandTool customShell = new ShellCommandTool(
+     *     null,  // baseDir will be overridden
+     *     Set.of("python3", "node", "npm"),
+     *     command -> askUserApproval(command)
+     * );
+     *
+     * skillBox.codeExecution()
+     *     .workDir("/path/to/workdir")
+     *     .withShell(customShell)  // Clone with workDir
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     *
+     * // Only enable read and write tools
+     * skillBox.codeExecution()
+     *     .withRead()
+     *     .withWrite()
+     *     .enable();
+     * }</pre>
+     *
+     * @return A new CodeExecutionBuilder for configuration
      */
-    public void enableCodeExecution() {
-        enableCodeExecution(null);
+    public CodeExecutionBuilder codeExecution() {
+        return new CodeExecutionBuilder(this);
     }
 
     /**
-     * Enables code execution capabilities for skills.
+     * Sets whether skill files are automatically uploaded.
      *
-     * <p>This method creates a sandboxed environment for executing scripts from skills by:
-     * <ul>
-     *   <li>Registering ShellCommandTool with allowed commands (python, python3, node, nodejs)</li>
-     *   <li>Registering ReadFileTool and WriteFileTool restricted to the working directory</li>
-     *   <li>Creating and activating the "skill_code_execution_tool_group" tool group</li>
-     * </ul>
-     *
-     * <p>After calling this method, scripts from registered skills will be written to the
-     * working directory when the agent is configured.
-     *
-     * <p>
-     * <b>Note:</b> This method should only be called once. Calling it multiple
-     * times
-     * will throw an IllegalStateException.
-     *
-     * @param workDir Working directory for code execution. If null or empty, a
-     *                temporary
-     *                directory will be created when scripts are written.
-     * @throws IllegalStateException if toolkit is not bound or if code execution is
-     *                               already enabled
+     * @param autoUploadSkill true to automatically upload skill files
      */
-    public void enableCodeExecution(String workDir) {
-        if (toolkit == null) {
-            throw new IllegalStateException("Must bind toolkit before enabling code execution");
-        }
-
-        // Prevent duplicate enablement
-        if (isCodeExecutionEnabled()) {
-            throw new IllegalStateException(
-                    "Code execution is already enabled. This method should only be called once.");
-        }
-
-        // Set workDir (null means temporary directory will be created later)
-        if (workDir == null || workDir.isEmpty()) {
-            this.codeExecutionWorkDir = null;
-        } else {
-            this.codeExecutionWorkDir = Paths.get(workDir).toAbsolutePath().normalize();
-        }
-
-        // Create tool group
-        if (toolkit.getToolGroup("skill_code_execution_tool_group") == null) {
-            toolkit.createToolGroup(
-                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
-        }
-
-        // Create and register three tools
-        Set<String> allowedCommands = Set.of("python", "python3", "node", "nodejs");
-        String workDirStr = codeExecutionWorkDir != null ? codeExecutionWorkDir.toString() : null;
-        ShellCommandTool shellTool = new ShellCommandTool(workDirStr, allowedCommands, null);
-        ReadFileTool readTool = new ReadFileTool(workDirStr);
-        WriteFileTool writeTool = new WriteFileTool(workDirStr);
-
-        toolkit.registration()
-                .agentTool(shellTool)
-                .group("skill_code_execution_tool_group")
-                .apply();
-        toolkit.registration().tool(readTool).group("skill_code_execution_tool_group").apply();
-        toolkit.registration().tool(writeTool).group("skill_code_execution_tool_group").apply();
-
-        logger.info(
-                "Code execution enabled with workDir: {}",
-                codeExecutionWorkDir != null ? codeExecutionWorkDir : "temporary directory");
+    public void setAutoUploadSkill(boolean autoUploadSkill) {
+        this.autoUploadSkill = autoUploadSkill;
     }
 
     /**
-     * Checks if code execution is enabled.
+     * Checks whether skill files are automatically uploaded.
      *
-     * @return true if code execution is enabled, false otherwise
+     * @return true if skill files are automatically uploaded
      */
-    public boolean isCodeExecutionEnabled() {
-        return toolkit != null && toolkit.getToolGroup("skill_code_execution_tool_group") != null;
+    public boolean isAutoUploadSkill() {
+        return autoUploadSkill;
     }
 
     /**
@@ -642,7 +652,16 @@ public class SkillBox implements StateModule {
      * @return The working directory path, or null if using temporary directory
      */
     public Path getCodeExecutionWorkDir() {
-        return codeExecutionWorkDir;
+        return workDir;
+    }
+
+    /**
+     * Gets the upload directory for skill files.
+     *
+     * @return The upload directory path, or null if not configured
+     */
+    public Path getUploadDir() {
+        return uploadDir;
     }
 
     /**
@@ -652,38 +671,18 @@ public class SkillBox implements StateModule {
      * @throws RuntimeException if failed to create the directory
      */
     private Path ensureWorkDirExists() {
-        Path workDir;
-
-        if (codeExecutionWorkDir == null) {
+        if (this.workDir == null) {
             // Create temporary directory
             try {
-                workDir = Files.createTempDirectory("agentscope-code-execution-");
+                this.workDir = Files.createTempDirectory("agentscope-code-execution-");
 
-                // Register shutdown hook to clean up temporary directory
-                Runtime.getRuntime()
-                        .addShutdownHook(
-                                new Thread(
-                                        () -> {
-                                            try {
-                                                deleteTempDirectory(workDir);
-                                                logger.info(
-                                                        "Cleaned up temporary working directory:"
-                                                                + " {}",
-                                                        workDir);
-                                            } catch (IOException e) {
-                                                logger.warn(
-                                                        "Failed to clean up temporary directory:"
-                                                                + " {}",
-                                                        e.getMessage());
-                                            }
-                                        }));
+                SkillFileSystemHelper.registerTempDirectoryCleanup(workDir);
 
                 logger.info("Created temporary working directory: {}", workDir);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to create temporary working directory", e);
             }
         } else {
-            workDir = codeExecutionWorkDir;
             // Create directory if it doesn't exist
             if (!Files.exists(workDir)) {
                 try {
@@ -695,96 +694,440 @@ public class SkillBox implements StateModule {
             }
         }
 
-        return workDir;
+        return this.workDir;
     }
 
     /**
-     * Deletes the temporary working directory if it was created.
+     * Ensures the upload directory exists, creating it if necessary.
      *
-     * <p>
-     * This method only deletes directories that were created as temporary
-     * directories
-     * by this SkillBox instance. User-specified directories are never deleted.
-     *
-     * @throws IOException if deletion fails
+     * @return The upload directory path
      */
-    private void deleteTempDirectory(Path temporaryWorkDir) throws IOException {
-        if (temporaryWorkDir != null && Files.exists(temporaryWorkDir)) {
-            Files.walk(temporaryWorkDir)
-                    .sorted(
-                            (a, b) ->
-                                    -a.compareTo(
-                                            b)) // Reverse order to delete files before directories
-                    .forEach(
-                            path -> {
-                                try {
-                                    Files.delete(path);
-                                } catch (IOException e) {
-                                    logger.warn("Failed to delete: {}", path);
-                                }
-                            });
+    private Path ensureUploadDirExists() {
+        if (uploadDir == null) {
+            Path resolvedWorkDir = ensureWorkDirExists();
+            uploadDir = resolvedWorkDir.resolve("skills");
         }
+
+        if (!Files.exists(uploadDir)) {
+            try {
+                Files.createDirectories(uploadDir);
+                logger.info("Created upload directory: {}", uploadDir);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to create upload directory", e);
+            }
+        }
+
+        return uploadDir;
     }
 
     /**
-     * Writes all skill scripts to the code execution working directory.
+     * Uploads skill files to the upload directory with the configured filter.
      *
-     * <p>This method iterates through all registered skills and writes their script
-     * resources to the working directory. Scripts are organized by skill ID:
+     * <p>Upload directory resolution:
      * <ul>
-     *   <li>Scripts are written to workDir/skillId/relativePath</li>
-     *   <li>Scripts are identified by being in "scripts/" directory OR having script extension (.py, .js, .sh)</li>
+     *   <li>If uploadDir is configured, use it.</li>
+     *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
-     * <p>If a script file already exists, it will be overwritten.
+     * <p>If a file already exists, it will be overwritten.
      *
-     * @throws IllegalStateException if code execution is not enabled
      */
-    public void writeSkillScriptsToWorkDir() {
-        if (!isCodeExecutionEnabled()) {
-            throw new IllegalStateException("Code execution is not enabled");
-        }
-
-        Path workDir = ensureWorkDirExists();
-        int scriptCount = 0;
+    public void uploadSkillFiles() {
+        Path targetDir = ensureUploadDirExists();
+        SkillFileFilter filter = fileFilter != null ? fileFilter : SkillFileFilter.acceptAll();
+        int fileCount = 0;
 
         for (String skillId : getAllSkillIds()) {
             AgentSkill skill = getSkill(skillId);
-            Map<String, String> scripts = skill.getScriptResources();
+            Set<String> resourcePaths = skill.getResourcePaths();
 
-            if (scripts.isEmpty()) {
+            if (resourcePaths.isEmpty()) {
                 continue;
             }
 
-            // Create skill-specific directory
-            Path skillDir = workDir.resolve(skillId);
+            Path skillDir = targetDir.resolve(skillId);
 
-            for (Map.Entry<String, String> entry : scripts.entrySet()) {
-                String relativePath = entry.getKey();
-                String content = entry.getValue();
-                Path targetPath = skillDir.resolve(relativePath).normalize();
+            for (String resourcePath : resourcePaths) {
+                if (!filter.accept(resourcePath)) {
+                    continue;
+                }
+
+                String content = skill.getResource(resourcePath);
+                if (content == null) {
+                    logger.warn("Resource not found: {} in skill {}", resourcePath, skillId);
+                    continue;
+                }
+
+                Path targetPath = skillDir.resolve(resourcePath).normalize();
 
                 // Security check: Prevent path traversal attacks
                 if (!targetPath.startsWith(skillDir)) {
-                    logger.warn(
-                            "Skipping script with invalid path (path traversal attempt): {}",
-                            relativePath);
+                    logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
 
                 try {
-                    // Create parent directories if they don't exist
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
-                    Files.writeString(targetPath, content, StandardCharsets.UTF_8);
-                    logger.debug("Wrote script: {}", targetPath);
-                    scriptCount++;
-                } catch (IOException e) {
-                    logger.error("Failed to write script {}: {}", relativePath, e.getMessage());
+                    if (content.startsWith(BASE64_PREFIX)) {
+                        String encoded = content.substring(BASE64_PREFIX.length());
+                        byte[] decoded = Base64.getDecoder().decode(encoded);
+                        Files.write(targetPath, decoded);
+                    } else {
+                        Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                    }
+                    logger.debug("Uploaded file: {}", targetPath);
+                    fileCount++;
+                } catch (IOException | IllegalArgumentException e) {
+                    logger.error("Failed to upload file {}: {}", resourcePath, e.getMessage());
                 }
             }
         }
-        logger.info("Wrote {} skill scripts to workDir: {}", scriptCount, workDir);
+
+        logger.info("Uploaded {} skill files to: {}", fileCount, targetDir);
+    }
+
+    private static class DefaultSkillFileFilter implements SkillFileFilter {
+        private final Set<String> includeFolders;
+        private final Set<String> includeExtensions;
+
+        private DefaultSkillFileFilter(Set<String> includeFolders, Set<String> includeExtensions) {
+            this.includeFolders = includeFolders != null ? includeFolders : Set.of();
+            this.includeExtensions = includeExtensions != null ? includeExtensions : Set.of();
+        }
+
+        @Override
+        public boolean accept(String resourcePath) {
+            if (resourcePath == null || resourcePath.isBlank()) {
+                return false;
+            }
+
+            String normalizedPath = resourcePath.replace("\\", "/");
+
+            if (!includeFolders.isEmpty()) {
+                for (String folder : includeFolders) {
+                    if (normalizedPath.startsWith(folder)) {
+                        return true;
+                    }
+                }
+            }
+
+            if (!includeExtensions.isEmpty()) {
+                for (String extension : includeExtensions) {
+                    if (normalizedPath.endsWith(extension)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+    }
+
+    // ==================== Code Execution Builder ====================
+
+    /**
+     * Fluent builder for configuring code execution with custom options.
+     *
+     * <p>This builder provides a flexible way to enable code execution capabilities
+     * with selective tool enabling and custom ShellCommandTool configuration.
+     *
+     * <p>Key features:
+     * <ul>
+     *   <li>Selective tool enabling: choose which tools (shell/read/write) to enable</li>
+     *   <li>Custom ShellCommandTool: provide your own tool with custom security policies</li>
+     *   <li>WorkDir enforcement: all tools use the same working directory</li>
+     *   <li>Tool cloning: custom ShellCommandTool is cloned with workDir override</li>
+     * </ul>
+     */
+    public static class CodeExecutionBuilder {
+        private static final Set<String> DEFAULT_INCLUDE_FOLDERS = Set.of("scripts/", "assets/");
+        private static final Set<String> DEFAULT_INCLUDE_EXTENSIONS = Set.of(".py", ".js", ".sh");
+
+        private final SkillBox skillBox;
+        private String workDir;
+        private String uploadDir;
+        private SkillFileFilter customFilter;
+        private Set<String> includeFolders;
+        private Set<String> includeExtensions;
+        private ShellCommandTool customShellTool;
+        private boolean withShellCalled = false;
+        private boolean enableRead = false;
+        private boolean enableWrite = false;
+
+        CodeExecutionBuilder(SkillBox skillBox) {
+            this.skillBox = skillBox;
+        }
+
+        /**
+         * Set the working directory for code execution.
+         *
+         * <p>All code execution tools (shell, read, write) will use this directory.
+         * If not set, a temporary directory will be created when files are uploaded.
+         *
+         * @param workDir The working directory path (null or empty for temporary directory)
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder workDir(String workDir) {
+            this.workDir = workDir;
+            return this;
+        }
+
+        /**
+         * Set the upload directory for skill files.
+         *
+         * <p>If not set, the upload directory defaults to workDir/skills.
+         *
+         * @param uploadDir The upload directory path
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder uploadDir(String uploadDir) {
+            this.uploadDir = uploadDir;
+            return this;
+        }
+
+        /**
+         * Set a custom file filter for skill file uploads.
+         *
+         * @param filter The custom filter to use
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if filter is null
+         */
+        public CodeExecutionBuilder fileFilter(SkillFileFilter filter) {
+            if (filter == null) {
+                throw new IllegalArgumentException("SkillFileFilter cannot be null");
+            }
+            this.customFilter = filter;
+            return this;
+        }
+
+        /**
+         * Set the folders to include for uploads.
+         *
+         * @param folders Folder paths to include
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder includeFolders(Set<String> folders) {
+            this.includeFolders = folders;
+            return this;
+        }
+
+        /**
+         * Set the file extensions to include for uploads.
+         *
+         * @param extensions File extensions to include
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder includeExtensions(Set<String> extensions) {
+            this.includeExtensions = extensions;
+            return this;
+        }
+
+        /**
+         * Enable shell command execution with default configuration.
+         *
+         * <p>Default configuration:
+         * <ul>
+         *   <li>Allowed commands: python, python3, node, nodejs</li>
+         *   <li>No approval callback</li>
+         *   <li>Platform-specific validator (Unix or Windows)</li>
+         * </ul>
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withShell() {
+            this.withShellCalled = true;
+            this.customShellTool = null;
+            return this;
+        }
+
+        /**
+         * Enable shell command execution with a custom ShellCommandTool.
+         *
+         * <p>The provided tool will be cloned with the following behavior:
+         * <ul>
+         *   <li>allowedCommands: copied from the source tool</li>
+         *   <li>approvalCallback: copied from the source tool</li>
+         *   <li>commandValidator: copied from the source tool</li>
+         *   <li>baseDir: OVERRIDDEN with the builder's workDir</li>
+         * </ul>
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving your custom security policies.
+         *
+         * @param shellTool The custom ShellCommandTool to clone (must not be null)
+         * @return This builder for chaining
+         * @throws IllegalArgumentException if shellTool is null
+         */
+        public CodeExecutionBuilder withShell(ShellCommandTool shellTool) {
+            if (shellTool == null) {
+                throw new IllegalArgumentException("ShellCommandTool cannot be null");
+            }
+            this.withShellCalled = true;
+            this.customShellTool = shellTool;
+            return this;
+        }
+
+        /**
+         * Enable file reading capabilities.
+         *
+         * <p>Registers ReadFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withRead() {
+            this.enableRead = true;
+            return this;
+        }
+
+        /**
+         * Enable file writing capabilities.
+         *
+         * <p>Registers WriteFileTool with the builder's workDir as base directory.
+         *
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder withWrite() {
+            this.enableWrite = true;
+            return this;
+        }
+
+        /**
+         * Apply the configuration and enable code execution.
+         *
+         * <p>This method:
+         * <ul>
+         *   <li>Validates toolkit is bound</li>
+         *   <li>Removes existing code execution configuration if present</li>
+         *   <li>Creates the code execution tool group</li>
+         *   <li>Registers selected tools (shell, read, write)</li>
+         * </ul>
+         *
+         * @throws IllegalStateException if toolkit is not bound
+         */
+        public void enable() {
+            if (skillBox.toolkit == null) {
+                throw new IllegalStateException("Must bind toolkit before enabling code execution");
+            }
+
+            if (customFilter != null && (includeFolders != null || includeExtensions != null)) {
+                throw new IllegalStateException(
+                        "Cannot use fileFilter() with includeFolders() or includeExtensions()");
+            }
+
+            // Handle replacement: remove existing tool group if present
+            if (skillBox.toolkit != null
+                    && skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
+                skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
+                logger.info("Replacing existing code execution configuration");
+            }
+
+            // Set workDir
+            if (workDir == null || workDir.isEmpty()) {
+                skillBox.workDir = null;
+            } else {
+                skillBox.workDir = Paths.get(workDir).toAbsolutePath().normalize();
+            }
+
+            // Set uploadDir
+            if (uploadDir == null || uploadDir.isBlank()) {
+                skillBox.uploadDir =
+                        skillBox.workDir != null ? skillBox.workDir.resolve("skills") : null;
+            } else {
+                skillBox.uploadDir = Paths.get(uploadDir).toAbsolutePath().normalize();
+            }
+
+            // Set file filter
+            if (customFilter != null) {
+                skillBox.fileFilter = customFilter;
+            } else {
+                Set<String> folders =
+                        includeFolders != null ? includeFolders : DEFAULT_INCLUDE_FOLDERS;
+                Set<String> extensions =
+                        includeExtensions != null ? includeExtensions : DEFAULT_INCLUDE_EXTENSIONS;
+                skillBox.fileFilter = new DefaultSkillFileFilter(folders, extensions);
+            }
+
+            // Create tool group
+            skillBox.toolkit.createToolGroup(
+                    "skill_code_execution_tool_group", "Code execution tools for skills", true);
+
+            String workDirStr = skillBox.workDir != null ? skillBox.workDir.toString() : null;
+
+            boolean shellEnabled = false;
+
+            // Shell Tool - check if withShell() was called
+            if (withShellCalled) {
+                ShellCommandTool shellTool;
+                if (customShellTool != null) {
+                    // Clone custom tool with workDir override
+                    shellTool = cloneShellToolWithWorkDir(customShellTool, workDirStr);
+                } else {
+                    // Create default shell tool
+                    shellTool =
+                            new ShellCommandTool(
+                                    workDirStr,
+                                    Set.of("python", "python3", "node", "nodejs"),
+                                    null);
+                }
+                skillBox.toolkit
+                        .registration()
+                        .agentTool(shellTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+                shellEnabled = true;
+            }
+
+            // Read Tool
+            if (enableRead) {
+                ReadFileTool readTool = new ReadFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(readTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            // Write Tool
+            if (enableWrite) {
+                WriteFileTool writeTool = new WriteFileTool(workDirStr);
+                skillBox.toolkit
+                        .registration()
+                        .tool(writeTool)
+                        .group("skill_code_execution_tool_group")
+                        .apply();
+            }
+
+            logger.info(
+                    "Code execution enabled with workDir: {}, uploadDir: {}, tools: [shell={},"
+                            + " read={}, write={}]",
+                    skillBox.workDir != null ? skillBox.workDir : "temporary",
+                    skillBox.uploadDir != null ? skillBox.uploadDir : "workDir/skills",
+                    shellEnabled,
+                    enableRead,
+                    enableWrite);
+        }
+
+        /**
+         * Clone a ShellCommandTool with a new base directory.
+         *
+         * <p>This ensures all code execution tools use the same working directory
+         * while preserving the custom security policies from the source tool.
+         *
+         * @param source The source ShellCommandTool to clone
+         * @param workDir The new working directory (can be null for temporary)
+         * @return A new ShellCommandTool with the same configuration but different baseDir
+         */
+        private ShellCommandTool cloneShellToolWithWorkDir(
+                ShellCommandTool source, String workDir) {
+            // Get configuration from source tool
+            Set<String> allowedCommands = source.getAllowedCommands();
+            Function<String, Boolean> approvalCallback = source.getApprovalCallback();
+            CommandValidator validator = source.getCommandValidator();
+
+            // Create new instance with workDir override
+            return new ShellCommandTool(workDir, allowedCommands, approvalCallback, validator);
+        }
     }
 }
