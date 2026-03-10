@@ -15,12 +15,9 @@
  */
 package io.agentscope.core.shutdown;
 
-import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.InterruptEvent;
 import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreCallEvent;
@@ -32,10 +29,13 @@ import reactor.core.publisher.Mono;
 /**
  * System hook that integrates graceful shutdown into the agent lifecycle.
  *
- * <p>Lifecycle management:
+ * <p>Request registration and unregistration are handled by {@code AgentBase.call()}
+ * via {@code Mono.using} (setup registers, cleanup unregisters), guaranteeing that
+ * every registered request is always unregistered regardless of success, error, or cancel.
+ *
+ * <p>This hook is responsible for:
  * <ul>
- *   <li>{@link PreCallEvent} — reject new requests if shutting down; register active request</li>
- *   <li>{@link PostCallEvent} / {@link ErrorEvent} / {@link InterruptEvent} — unregister completed request</li>
+ *   <li>{@link PreCallEvent} — deduplicate input if resuming from a shutdown-interrupted session</li>
  * </ul>
  *
  * <p>Shutdown checkpoints — when the system is in SHUTTING_DOWN state, the agent is
@@ -49,7 +49,7 @@ import reactor.core.publisher.Mono;
  * <p>This means during shutdown, reasoning/acting/summary phases are allowed to complete
  * before the interrupt is issued — output tokens are not wasted. Only when the global
  * shutdown timeout is reached will the agent be force-interrupted mid-phase (handled by
- * {@link GracefulShutdownManager#enforceTimeoutAndInterrupt}).
+ * GracefulShutdownManager#enforceTimeoutAndInterrupt).
  */
 public final class GracefulShutdownHook implements Hook {
 
@@ -64,17 +64,8 @@ public final class GracefulShutdownHook implements Hook {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
 
-        // --- Lifecycle: request registration / unregistration ---
         if (event instanceof PreCallEvent pre) {
-            manager.ensureAcceptingRequests();
             deduplicateIfResuming(pre);
-            manager.registerRequest(pre.getAgent());
-        } else if (event instanceof PostCallEvent post) {
-            manager.unregisterRequest(post.getAgent());
-        } else if (event instanceof ErrorEvent error) {
-            manager.unregisterRequest(error.getAgent());
-        } else if (event instanceof InterruptEvent interrupt) {
-            manager.unregisterRequest(interrupt.getAgent());
         }
 
         // --- Shutdown checkpoints: interrupt agent if system is shutting down ---

@@ -59,8 +59,5 @@ public enum HookEventType {
     SUMMARY_CHUNK,
 
     /** When an error occurs */
-    ERROR,
-
-    /** When agent execution is interrupted */
-    INTERRUPT
+    ERROR
 }

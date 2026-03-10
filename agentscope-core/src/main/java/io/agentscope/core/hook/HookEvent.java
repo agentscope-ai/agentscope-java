@@ -46,8 +46,7 @@ public abstract sealed class HookEvent
                 ReasoningEvent,
                 ActingEvent,
                 SummaryEvent,
-                ErrorEvent,
-                InterruptEvent {
+                ErrorEvent {
 
     private final HookEventType type;
     private final Agent agent;

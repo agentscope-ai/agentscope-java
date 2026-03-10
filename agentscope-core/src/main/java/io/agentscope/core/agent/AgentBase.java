@@ -18,7 +18,6 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.InterruptEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
@@ -172,14 +171,7 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
         return Mono.using(
-                () -> {
-                    if (checkRunning && !running.compareAndSet(false, true)) {
-                        throw new IllegalStateException(
-                                "Agent is still running, please wait for it to finish");
-                    }
-                    resetInterruptFlag();
-                    return this;
-                },
+                this::acquireExecution,
                 resource ->
                         TracerRegistry.get()
                                 .callAgent(
@@ -192,7 +184,7 @@ public abstract class AgentBase implements StateModule, Agent {
                                                         .onErrorResume(
                                                                 createErrorHandler(
                                                                         msgs.toArray(new Msg[0])))),
-                resource -> running.set(false),
+                this::releaseExecution,
                 true);
     }
 
@@ -208,14 +200,7 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         return Mono.using(
-                () -> {
-                    if (checkRunning && !running.compareAndSet(false, true)) {
-                        throw new IllegalStateException(
-                                "Agent is still running, please wait for it to finish");
-                    }
-                    resetInterruptFlag();
-                    return this;
-                },
+                this::acquireExecution,
                 resource ->
                         TracerRegistry.get()
                                 .callAgent(
@@ -232,7 +217,7 @@ public abstract class AgentBase implements StateModule, Agent {
                                                         .onErrorResume(
                                                                 createErrorHandler(
                                                                         msgs.toArray(new Msg[0])))),
-                resource -> running.set(false),
+                this::releaseExecution,
                 true);
     }
 
@@ -248,14 +233,7 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
         return Mono.using(
-                () -> {
-                    if (checkRunning && !running.compareAndSet(false, true)) {
-                        throw new IllegalStateException(
-                                "Agent is still running, please wait for it to finish");
-                    }
-                    resetInterruptFlag();
-                    return this;
-                },
+                this::acquireExecution,
                 resource ->
                         TracerRegistry.get()
                                 .callAgent(
@@ -268,7 +246,7 @@ public abstract class AgentBase implements StateModule, Agent {
                                                         .onErrorResume(
                                                                 createErrorHandler(
                                                                         msgs.toArray(new Msg[0])))),
-                resource -> running.set(false),
+                this::releaseExecution,
                 true);
     }
 
@@ -412,6 +390,36 @@ public abstract class AgentBase implements StateModule, Agent {
     }
 
     /**
+     * Acquire execution resources for a {@code call()} invocation.
+     * Used as the {@code resourceSupplier} in {@link Mono#using} to guarantee that
+     * {@link #releaseExecution} is always called on completion, error, or cancellation.
+     *
+     * @return this agent instance
+     */
+    private AgentBase acquireExecution() {
+        if (checkRunning && !running.compareAndSet(false, true)) {
+            throw new IllegalStateException(
+                    "Agent is still running, please wait for it to finish");
+        }
+        resetInterruptFlag();
+        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+        GracefulShutdownManager.getInstance().registerRequest(this);
+        return this;
+    }
+
+    /**
+     * Release execution resources after a {@code call()} invocation.
+     * Used as the {@code resourceCleanup} in {@link Mono#using} — guaranteed to run
+     * regardless of how the reactive chain terminates (success, error, or cancel).
+     *
+     * @param resource the agent instance (ignored, uses {@code this})
+     */
+    private void releaseExecution(AgentBase resource) {
+        running.set(false);
+        GracefulShutdownManager.getInstance().unregisterRequest(this);
+    }
+
+    /**
      * Create error handler for call() methods.
      * Handles InterruptedException specially and delegates to handleInterrupt,
      * while notifying hooks for other errors.
@@ -423,9 +431,7 @@ public abstract class AgentBase implements StateModule, Agent {
         return error -> {
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
-                return handleInterrupt(createInterruptContext(), originalArgs)
-                        .flatMap(result -> notifyInterrupt().thenReturn(result))
-                        .onErrorResume(e -> notifyInterrupt().then(Mono.error(e)));
+                return handleInterrupt(createInterruptContext(), originalArgs);
             }
             return notifyError(error).then(Mono.error(error));
         };
@@ -591,15 +597,6 @@ public abstract class AgentBase implements StateModule, Agent {
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
-    /**
-     * Notify all hooks about an interrupt before handleInterrupt is invoked.
-     *
-     * @return Mono that completes when all hooks are notified
-     */
-    private Mono<Void> notifyInterrupt() {
-        InterruptEvent event = new InterruptEvent(this);
-        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-    }
 
     /**
      * Remove all subscribers for a specific MsgHub.
