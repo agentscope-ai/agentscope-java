@@ -125,12 +125,14 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<String> getAllSkillNames() {
-        throw new UnsupportedOperationException("getAllSkillNames is not implemented for NacosSkillRepository");
+        throw new UnsupportedOperationException(
+                "getAllSkillNames is not implemented for NacosSkillRepository");
     }
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        throw new UnsupportedOperationException("getAllSkills is not implemented for NacosSkillRepository");
+        throw new UnsupportedOperationException(
+                "getAllSkills is not implemented for NacosSkillRepository");
     }
 
     @Override
@@ -140,7 +142,8 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     @Override
     public boolean delete(String skillName) {
-        throw new UnsupportedOperationException("delete is not implemented for NacosSkillRepository");
+        throw new UnsupportedOperationException(
+                "delete is not implemented for NacosSkillRepository");
     }
 
     @Override
