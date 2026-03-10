@@ -94,8 +94,7 @@ class NacosSkillRepositoryTest {
 
         IllegalArgumentException e =
                 assertThrows(
-                        IllegalArgumentException.class,
-                        () -> repository.getSkill("missing-skill"));
+                        IllegalArgumentException.class, () -> repository.getSkill("missing-skill"));
         assertEquals("Skill not found: missing-skill", e.getMessage());
     }
 
@@ -107,8 +106,7 @@ class NacosSkillRepositoryTest {
 
         IllegalArgumentException e =
                 assertThrows(
-                        IllegalArgumentException.class,
-                        () -> repository.getSkill("missing-skill"));
+                        IllegalArgumentException.class, () -> repository.getSkill("missing-skill"));
         assertEquals("Skill not found: missing-skill", e.getMessage());
         assertEquals(nacosEx, e.getCause());
     }

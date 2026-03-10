@@ -60,7 +60,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("unknown", result.getName());
     }
@@ -73,7 +74,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("unknown", result.getName());
     }
@@ -86,7 +88,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("(no description)", result.getDescription());
     }
@@ -99,7 +102,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("(no description)", result.getDescription());
     }
@@ -112,7 +116,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn(null);
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("(no instruction)", result.getSkillContent());
     }
@@ -125,7 +130,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("  ");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("(no instruction)", result.getSkillContent());
     }
@@ -138,7 +144,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("  content  ");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("my-skill", result.getName());
         assertEquals("desc", result.getDescription());
@@ -153,7 +160,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(null);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertNotNull(result.getResources());
         assertTrue(result.getResources().isEmpty());
@@ -167,7 +175,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(new HashMap<>());
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertTrue(result.getResources().isEmpty());
     }
@@ -209,7 +218,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(resourceMap);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("content", result.getResource("resource"));
     }
@@ -227,7 +237,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(resourceMap);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("", result.getResource("key"));
     }
@@ -243,7 +254,8 @@ class NacosSkillToAgentSkillConverterTest {
         when(nacosSkill.getInstruction()).thenReturn("instruction");
         when(nacosSkill.getResource()).thenReturn(resourceMap);
 
-        AgentSkill result = NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
+        AgentSkill result =
+                NacosSkillToAgentSkillConverter.toAgentSkill(nacosSkill, "nacos:public");
 
         assertEquals("", result.getResource("key"));
     }
