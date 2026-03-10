@@ -105,12 +105,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export PATH="$HOME/.mvnd/bin:$PATH"
-          mvnd --no-daemon -B clean verify
+          mvnd -B clean verify
 
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
         run: |
-          & "~\.mvnd\bin\mvnd.cmd" --no-daemon -B clean verify
+          & "~\.mvnd\bin\mvnd.cmd" -B clean verify
 
       - name: Upload coverage reports to Codecov
         if: runner.os == 'Linux'
