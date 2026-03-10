@@ -885,6 +885,11 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * @return the number of skills deleted
      */
     public int clearAllSkills() {
+        if (!writeable) {
+            logger.warn("Cannot clear skills: repository is read-only");
+            return 0;
+        }
+
         // Resources will be deleted automatically via ON DELETE CASCADE
         String deleteSkillsSql = "DELETE FROM " + getFullTableName(skillsTableName);
 

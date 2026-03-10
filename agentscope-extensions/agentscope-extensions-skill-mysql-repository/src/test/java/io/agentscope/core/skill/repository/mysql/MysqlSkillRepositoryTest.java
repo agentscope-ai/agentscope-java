@@ -843,6 +843,25 @@ public class MysqlSkillRepositoryTest {
         }
 
         @Test
+        @DisplayName("Should not clear all skills when repository is read-only")
+        void testClearAllSkillsWhenReadOnly() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            MysqlSkillRepository repo =
+                    MysqlSkillRepository.builder(mockDataSource)
+                            .databaseName("db")
+                            .skillsTableName("skills")
+                            .resourcesTableName("resources")
+                            .createIfNotExist(true)
+                            .writeable(false)
+                            .build();
+
+            int deleted = repo.clearAllSkills();
+
+            assertEquals(0, deleted);
+        }
+
+        @Test
         @DisplayName("Should toggle writeable flag")
         void testSetWriteable() throws SQLException {
             when(mockStatement.execute()).thenReturn(true);
