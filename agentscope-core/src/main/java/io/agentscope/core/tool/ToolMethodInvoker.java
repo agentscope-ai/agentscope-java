@@ -85,14 +85,8 @@ class ToolMethodInvoker {
                                                     r ->
                                                             converter.convert(
                                                                     r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -108,14 +102,8 @@ class ToolMethodInvoker {
                     .flatMap(
                             mono ->
                                     mono.map(r -> converter.convert(r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else {
             // Sync method: wrap in Mono.fromCallable
@@ -127,13 +115,7 @@ class ToolMethodInvoker {
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+                    .onErrorResume(this::handleError);
         }
     }
 
@@ -295,19 +277,23 @@ class ToolMethodInvoker {
             return null;
         }
 
-        Class<?> paramType = parameter.getType();
+        Class<?> rawType = parameter.getType();
+        Type paramType = parameter.getParameterizedType();
 
-        // Direct assignment if types match
-        if (paramType.isAssignableFrom(value.getClass())) {
+        // Direct assignment only if:
+        // 1. Raw types match, AND
+        // 2. The parameter is not a parameterized type (no generic info to preserve)
+        if (rawType.isAssignableFrom(value.getClass())
+                && !(paramType instanceof ParameterizedType)) {
             return value;
         }
 
-        // Try JsonCodec conversion first
+        // Use JsonCodec conversion with full type information to preserve generics.
         try {
             return JsonUtils.getJsonCodec().convertValue(value, paramType);
         } catch (Exception e) {
             // Fallback to string-based conversion for primitives
-            return convertFromString(value.toString(), paramType);
+            return convertFromString(value.toString(), rawType);
         }
     }
 
@@ -334,13 +320,41 @@ class ToolMethodInvoker {
     }
 
     /**
+     * Reactive error handler for use with {@code onErrorResume}.
+     *
+     * <p>Delegates to {@link #handleInvocationError(Throwable)} and wraps the
+     * result in {@code Mono.just(...)}.
+     *
+     * @param e the error from the reactive chain
+     * @return Mono containing ToolResultBlock with error info
+     * @throws ToolSuspendException if found in the exception chain
+     */
+    private Mono<ToolResultBlock> handleError(Throwable e) {
+        return Mono.just(handleInvocationError(e));
+    }
+
+    /**
      * Handle invocation errors with informative messages.
      *
-     * @param e the exception
+     * <p>Special handling for {@link ToolSuspendException}: if found in the exception chain,
+     * it will be re-thrown to allow proper suspension handling by {@link ToolExecutor}.
+     *
+     * @param e the throwable
      * @return ToolResultBlock with error message
+     * @throws ToolSuspendException if found in the exception chain
      */
-    private ToolResultBlock handleInvocationError(Exception e) {
+    private ToolResultBlock handleInvocationError(Throwable e) {
+        // Check if the exception itself is ToolSuspendException
+        if (e instanceof ToolSuspendException) {
+            throw (ToolSuspendException) e;
+        }
+
         Throwable cause = e.getCause();
+        // Check for ToolSuspendException in the exception chain
+        if (cause instanceof ToolSuspendException) {
+            throw (ToolSuspendException) cause;
+        }
+
         String errorMsg =
                 cause != null
                         ? ExceptionUtils.getErrorMessage(cause)

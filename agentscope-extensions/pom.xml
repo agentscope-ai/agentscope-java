@@ -45,6 +45,7 @@
         <module>agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-session-redis</module>
         <module>agentscope-extensions-session-mysql</module>
+        <module>agentscope-extensions-training</module>
         <module>agentscope-micronaut-extensions</module>
         <module>agentscope-quarkus-extensions</module>
         <module>agentscope-spring-boot-starters</module>

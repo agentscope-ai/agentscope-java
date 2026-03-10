@@ -155,7 +155,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public String getSource() {
-        return source != null ? source : "filesystem_" + buildDefaultSourceSuffix();
+        return source != null ? source : "filesystem:" + buildDefaultSourceSuffix();
     }
 
     private String buildDefaultSourceSuffix() {
@@ -170,7 +170,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return fileName.toString();
         }
 
-        return parent.getFileName() + "/" + fileName;
+        return parent.getFileName() + "_" + fileName;
     }
 
     @Override

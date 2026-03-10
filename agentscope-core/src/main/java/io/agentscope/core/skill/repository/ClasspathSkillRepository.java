@@ -139,7 +139,9 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
             if ("jar".equals(uri.getScheme())) {
                 this.isJar = true;
                 this.fileSystem = FileSystems.newFileSystem(uri, Collections.emptyMap());
-                String actualResourcePath = uri.getSchemeSpecificPart().split("!")[1];
+                String schemeSpecificUriPath = uri.getSchemeSpecificPart();
+                String actualResourcePath =
+                        schemeSpecificUriPath.substring(schemeSpecificUriPath.lastIndexOf("!") + 1);
                 logger.info("Actual resource path: {}", actualResourcePath);
                 this.skillBasePath = fileSystem.getPath(actualResourcePath);
             } else {

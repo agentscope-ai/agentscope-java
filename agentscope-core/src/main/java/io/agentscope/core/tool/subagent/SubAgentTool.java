@@ -122,8 +122,8 @@ public class SubAgentTool implements AgentTool {
      * @return A Mono emitting the tool result block
      */
     private Mono<ToolResultBlock> executeConversation(ToolCallParam param) {
-        return Mono.defer(
-                () -> {
+        return Mono.deferContextual(
+                (ctxView) -> {
                     try {
                         Map<String, Object> input = param.getInput();
 
@@ -246,21 +246,28 @@ public class SubAgentTool implements AgentTool {
                         ? config.getStreamOptions()
                         : StreamOptions.defaults();
 
-        return agent.stream(List.of(userMsg), streamOptions)
-                .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
-                .filter(Event::isLast)
-                .last()
-                .map(
-                        lastEvent -> {
-                            Msg response = lastEvent.getMessage();
-                            return buildResult(response, sessionId);
-                        })
-                .onErrorResume(
-                        e -> {
-                            logger.error("Error in streaming execution: {}", e.getMessage(), e);
-                            return Mono.just(
-                                    ToolResultBlock.error("Execution error: " + e.getMessage()));
-                        });
+        return Mono.deferContextual(
+                ctxView ->
+                        agent.stream(List.of(userMsg), streamOptions)
+                                .doOnNext(event -> forwardEvent(event, emitter, agent, sessionId))
+                                .filter(Event::isLast)
+                                .last()
+                                .map(
+                                        lastEvent -> {
+                                            Msg response = lastEvent.getMessage();
+                                            return buildResult(response, sessionId);
+                                        })
+                                .contextWrite(context -> context.putAll(ctxView))
+                                .onErrorResume(
+                                        e -> {
+                                            logger.error(
+                                                    "Error in streaming execution:" + " {}",
+                                                    e.getMessage(),
+                                                    e);
+                                            return Mono.just(
+                                                    ToolResultBlock.error(
+                                                            "Execution error: " + e.getMessage()));
+                                        }));
     }
 
     /**
@@ -276,14 +283,19 @@ public class SubAgentTool implements AgentTool {
     private Mono<ToolResultBlock> executeWithoutStreaming(
             Agent agent, Msg userMsg, String sessionId) {
 
-        return agent.call(List.of(userMsg))
-                .map(response -> buildResult(response, sessionId))
-                .onErrorResume(
-                        e -> {
-                            logger.error("Error in execution: {}", e.getMessage(), e);
-                            return Mono.just(
-                                    ToolResultBlock.error("Execution error: " + e.getMessage()));
-                        });
+        return Mono.deferContextual(
+                ctxView ->
+                        agent.call(List.of(userMsg))
+                                .map(response -> buildResult(response, sessionId))
+                                .onErrorResume(
+                                        e -> {
+                                            logger.error(
+                                                    "Error in execution: {}", e.getMessage(), e);
+                                            return Mono.just(
+                                                    ToolResultBlock.error(
+                                                            "Execution error: " + e.getMessage()));
+                                        })
+                                .contextWrite(context -> context.putAll(ctxView)));
     }
 
     /**
