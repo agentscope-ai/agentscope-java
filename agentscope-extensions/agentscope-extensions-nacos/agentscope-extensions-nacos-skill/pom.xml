@@ -37,23 +37,9 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
-        <!-- nacos-api provides AiService, Skill, NacosException, etc. -->
-        <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-common</artifactId>
-            <version>3.2.0-BETA</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.alibaba.nacos</groupId>
-            <artifactId>nacos-api</artifactId>
-            <version>3.2.0-BETA</version>
-        </dependency>
-
         <dependency>
             <groupId>com.alibaba.nacos</groupId>
             <artifactId>nacos-client</artifactId>
-            <version>3.2.0-BETA</version>
         </dependency>
 
     </dependencies>

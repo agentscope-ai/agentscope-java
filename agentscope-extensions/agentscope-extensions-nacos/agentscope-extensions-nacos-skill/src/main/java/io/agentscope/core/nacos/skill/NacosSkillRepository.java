@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Nacos-based implementation of {@link AgentSkillRepository}.
  *
- * <p>Reads skills from Nacos Config via {@link AiService#loadSkill(String)}. This implementation
+ * <p>Reads skills from Nacos Config via {@code AiService.loadSkill(String)}. This implementation
  * currently supports only read operations: {@link #getSkill(String)}, {@link #skillExists(String)},
  * {@link #getRepositoryInfo()}, {@link #getSource()}, and {@link #isWriteable()}. List and write
  * operations are not implemented.
