@@ -305,5 +305,5 @@ hub.enter()
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
-- [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern
+- [Pipeline](../multi-agent/pipeline.md) - Sequential and parallel agent execution
+- [Multi-Agent Debate](../multi-agent/multiagent-debate.md) - Debate workflow pattern

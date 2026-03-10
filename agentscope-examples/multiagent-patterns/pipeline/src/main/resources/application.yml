@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: multi-agent-pipeline
+  ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+
+# Set to true to run pipeline test (Sequential, Parallel, Loop) on startup.
+pipeline.runner.enabled: true

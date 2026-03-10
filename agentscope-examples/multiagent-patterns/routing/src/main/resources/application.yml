@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: routing-knowledge-base
+
+# Set to true to run the routing (classify → parallel agents → synthesize) demo on startup.
+routing.runner.enabled: true

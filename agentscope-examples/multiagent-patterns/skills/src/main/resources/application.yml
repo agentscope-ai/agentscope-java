@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: skills-sql-assistant
+
+# Set to true to run the skills (progressive disclosure) demo on startup.
+skills.runner.enabled: true
