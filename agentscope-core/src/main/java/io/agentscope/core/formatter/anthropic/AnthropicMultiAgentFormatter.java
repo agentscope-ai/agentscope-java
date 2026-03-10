@@ -55,7 +55,6 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
 
     private final AnthropicMediaConverter mediaConverter;
     private final String conversationHistoryPrompt;
-    private boolean isFirstAgentMessageGroup = true;
 
     /**
      * Create an AnthropicMultiAgentFormatter with default conversation history
@@ -104,7 +103,7 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     @Override
     public List<AnthropicMessage> doFormat(List<Msg> msgs) {
         List<AnthropicMessage> result = new ArrayList<>();
-        this.isFirstAgentMessageGroup = true;
+        boolean isFirstAgentMessageGroup = true;
 
         // Group messages
         List<MessageGroup> groups = groupMessages(msgs);
@@ -116,7 +115,11 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
                     result.addAll(messageConverter.convert(List.of(systemMsg)));
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
-                case AGENT_CONVERSATION -> result.addAll(formatAgentConversation(group.messages));
+                case AGENT_CONVERSATION -> {
+                    result.addAll(
+                            formatAgentConversation(group.messages, isFirstAgentMessageGroup));
+                    isFirstAgentMessageGroup = false;
+                }
             }
         }
 
@@ -204,11 +207,9 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     }
 
     /** Format agent conversation messages with history tags. */
-    private List<AnthropicMessage> formatAgentConversation(List<Msg> messages) {
-        boolean isFirst = isFirstAgentMessageGroup;
-        isFirstAgentMessageGroup = false;
-
-        String prompt = isFirst ? conversationHistoryPrompt : "";
+    private List<AnthropicMessage> formatAgentConversation(
+            List<Msg> messages, boolean isFirstAgentMessageGroup) {
+        String prompt = isFirstAgentMessageGroup ? conversationHistoryPrompt : "";
 
         // Merge conversation with history tags
         List<Object> conversationBlocks =

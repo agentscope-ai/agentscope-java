@@ -44,6 +44,20 @@ public class AnthropicToolsHelper {
      */
     public static void applyTools(
             AnthropicRequest request, List<ToolSchema> tools, GenerateOptions options) {
+        applyTools(request, tools);
+
+        if (options != null && options.getToolChoice() != null) {
+            applyToolChoice(request, options.getToolChoice());
+        }
+    }
+
+    /**
+     * Apply tools to the Anthropic request.
+     *
+     * @param request The Anthropic request
+     * @param tools   List of tool schemas
+     */
+    public static void applyTools(AnthropicRequest request, List<ToolSchema> tools) {
         if (tools == null || tools.isEmpty()) {
             return;
         }
@@ -59,11 +73,6 @@ public class AnthropicToolsHelper {
         }
 
         request.setTools(anthropicTools);
-
-        // Apply tool choice if specified
-        if (options != null && options.getToolChoice() != null) {
-            applyToolChoice(request, options.getToolChoice());
-        }
     }
 
     /**
@@ -87,7 +96,7 @@ public class AnthropicToolsHelper {
     /**
      * Apply tool choice to the request.
      */
-    private static void applyToolChoice(AnthropicRequest request, ToolChoice toolChoice) {
+    public static void applyToolChoice(AnthropicRequest request, ToolChoice toolChoice) {
         if (toolChoice instanceof ToolChoice.Auto) {
             Map<String, String> choice = new HashMap<>();
             choice.put("type", "auto");
@@ -161,12 +170,12 @@ public class AnthropicToolsHelper {
         if (opts == null) return;
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
-            Map<String, Object> metadata = request.getMetadata();
-            if (metadata == null) {
-                metadata = new HashMap<>();
-                request.setMetadata(metadata);
-            }
+            Map<String, Object> metadata =
+                    request.getMetadata() != null
+                            ? new HashMap<>(request.getMetadata())
+                            : new HashMap<>();
             metadata.putAll(params);
+            request.setMetadata(metadata);
             log.debug("Applied {} additional body params to Anthropic request", params.size());
         }
     }

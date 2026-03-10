@@ -322,4 +322,22 @@ class AnthropicToolsHelperTest {
         assertEquals(0.5, request.getTemperature(), 0.001);
         assertEquals(30, request.getTopK());
     }
+
+    @Test
+    void testApplyOptionsWithAdditionalBodyParamsPreservesExistingMetadata() {
+        AnthropicRequest request = new AnthropicRequest();
+        request.setMetadata(new HashMap<>(Map.of("trace_id", "trace-123")));
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("custom_flag", true)
+                        .additionalBodyParam("priority", "high")
+                        .build();
+
+        AnthropicToolsHelper.applyOptions(request, options, null);
+
+        assertEquals("trace-123", request.getMetadata().get("trace_id"));
+        assertEquals(true, request.getMetadata().get("custom_flag"));
+        assertEquals("high", request.getMetadata().get("priority"));
+    }
 }

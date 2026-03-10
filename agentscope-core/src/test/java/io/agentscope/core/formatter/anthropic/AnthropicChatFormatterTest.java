@@ -214,13 +214,8 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                         .description("Search the web")
                         .parameters(Map.of("type", "object", "properties", Map.of()))
                         .build();
-
-        // First set options, then apply tools (tools need options for tool_choice)
-        GenerateOptions options =
-                GenerateOptions.builder().toolChoice(new ToolChoice.Auto()).build();
-
-        formatter.applyOptions(request, options, GenerateOptions.builder().build());
         formatter.applyTools(request, List.of(searchTool));
+        formatter.applyToolChoice(request, new ToolChoice.Auto());
 
         assertNotNull(request.getTools());
         assertEquals(1, request.getTools().size());
@@ -235,8 +230,6 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     @Test
     void testApplyToolsWithEmptyList() {
         AnthropicRequest request = new AnthropicRequest();
-        GenerateOptions options = GenerateOptions.builder().build();
-        formatter.applyOptions(request, options, GenerateOptions.builder().build());
         formatter.applyTools(request, List.of());
 
         assertTrue(request.getTools() == null || request.getTools().isEmpty());
@@ -245,8 +238,6 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     @Test
     void testApplyToolsWithNullList() {
         AnthropicRequest request = new AnthropicRequest();
-        GenerateOptions options = GenerateOptions.builder().build();
-        formatter.applyOptions(request, options, GenerateOptions.builder().build());
         formatter.applyTools(request, null);
 
         assertTrue(request.getTools() == null);

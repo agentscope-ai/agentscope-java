@@ -21,6 +21,7 @@ import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
 import io.agentscope.core.formatter.anthropic.dto.AnthropicResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 
@@ -43,12 +44,6 @@ public abstract class AnthropicBaseFormatter
 
     protected final AnthropicMessageConverter messageConverter;
 
-    /**
-     * Thread-local storage for generation options (passed from applyOptions to
-     * applyTools).
-     */
-    private final ThreadLocal<GenerateOptions> currentOptions = new ThreadLocal<>();
-
     protected AnthropicBaseFormatter() {
         this.messageConverter = new AnthropicMessageConverter(this::convertToolResultToString);
     }
@@ -67,34 +62,23 @@ public abstract class AnthropicBaseFormatter
     @Override
     public void applyOptions(
             AnthropicRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
-        // Save options for applyTools
-        currentOptions.set(options);
-
-        // Apply other options
         AnthropicToolsHelper.applyOptions(request, options, defaultOptions);
     }
 
     /**
-     * Apply tool schemas to Anthropic request parameters. This method uses the
-     * options saved from
-     * applyOptions to apply tool choice configuration.
+     * Apply tool schemas to Anthropic request parameters.
      *
      * @param request Anthropic request
      * @param tools   List of tool schemas to apply (may be null or empty)
      */
     @Override
     public void applyTools(AnthropicRequest request, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            currentOptions.remove();
-            return;
-        }
+        AnthropicToolsHelper.applyTools(request, tools);
+    }
 
-        // Use saved options to apply tools with tool choice
-        GenerateOptions options = currentOptions.get();
-        AnthropicToolsHelper.applyTools(request, tools, options);
-
-        // Clean up thread-local storage
-        currentOptions.remove();
+    @Override
+    public void applyToolChoice(AnthropicRequest request, ToolChoice toolChoice) {
+        AnthropicToolsHelper.applyToolChoice(request, toolChoice);
     }
 
     /**

@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Anthropic Chat Model implementation using native HTTP client via OkHttp.
@@ -116,6 +117,7 @@ public class AnthropicChatModel extends ChatModelBase {
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
         log.debug(
                 "Anthropic stream: model={}, messages={}, tools_present={}",
                 modelName,
@@ -140,25 +142,34 @@ public class AnthropicChatModel extends ChatModelBase {
                                 request.setMessages(formattedMessages);
 
                                 // Apply generation options via formatter
-                                formatter.applyOptions(request, options, defaultOptions);
+                                formatter.applyOptions(request, effectiveOptions, null);
 
                                 // Add tools if provided
                                 if (tools != null && !tools.isEmpty()) {
                                     formatter.applyTools(request, tools);
+                                    if (effectiveOptions != null
+                                            && effectiveOptions.getToolChoice() != null) {
+                                        formatter.applyToolChoice(
+                                                request, effectiveOptions.getToolChoice());
+                                    }
                                 }
 
                                 if (streamEnabled) {
                                     // Make streaming API call
                                     return AnthropicResponseParser.parseStreamEvents(
-                                            client.stream(apiKey, baseUrl, request, options),
+                                            client.stream(
+                                                    apiKey, baseUrl, request, effectiveOptions),
                                             startTime);
                                 } else {
                                     // For non-streaming, make a single call
                                     return Mono.fromCallable(
                                                     () ->
                                                             client.call(
-                                                                    apiKey, baseUrl, request,
-                                                                    options))
+                                                                    apiKey,
+                                                                    baseUrl,
+                                                                    request,
+                                                                    effectiveOptions))
+                                            .subscribeOn(Schedulers.boundedElastic())
                                             .map(
                                                     response ->
                                                             formatter.parseResponse(
@@ -177,7 +188,7 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                responseFlux, effectiveOptions, null, modelName, "anthropic");
     }
 
     /**
