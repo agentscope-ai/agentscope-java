@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-10T03:40:03+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
+    <meta property="article:modified_time" content="2026-03-10T15:10:37+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -709,6 +709,20 @@
 <div><p>注意: <code class="docutils literal notranslate"><span class="pre">JarSkillRepositoryAdapter</span></code> 已废弃,请使用 <code class="docutils literal notranslate"><span class="pre">ClasspathSkillRepository</span></code>。</p>
 </div></blockquote>
 </section>
+<section id="nacos">
+<h4>Nacos 仓库 (只读)<a class="headerlink" href="#nacos" title="Link to this heading">¶</a></h4>
+<p>通过已构建的 <code class="docutils literal notranslate"><span class="pre">AiService</span></code>（或 Nacos 连接配置）从 Nacos 拉取或订阅 Skill，Agent 运行时从 Nacos 实时获取，支持变更订阅与自动感知，适合需要与 Nacos 保持同步的在线场景。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 使用已构建的 AiService 创建 Nacos 技能仓库</span>
+<span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">NacosSkillRepository</span><span class="w"> </span><span class="n">repository</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosSkillRepository</span><span class="p">(</span><span class="n">aiService</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;namespace&quot;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">boolean</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repository</span><span class="p">.</span><span class="na">skillExists</span><span class="p">(</span><span class="s">&quot;data-analysis&quot;</span><span class="p">);</span>
+<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="c1">//...</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p>注意: 需引入 <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-nacos-skill</span></code> 依赖</p>
+</div></blockquote>
+</section>
 </section>
 <section id="id14">
 <h3>性能优化建议<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
@@ -783,7 +797,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-10</div>
+              Last updated on 2026-03-10</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -850,6 +864,7 @@
 <li><a class="reference internal" href="#mysql">MySQL数据库存储 (暂未实现)</a></li>
 <li><a class="reference internal" href="#git">Git仓库 (只读)</a></li>
 <li><a class="reference internal" href="#classpath">Classpath 仓库 (只读)</a></li>
+<li><a class="reference internal" href="#nacos">Nacos 仓库 (只读)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id14">性能优化建议</a></li>

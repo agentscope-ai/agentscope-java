@@ -2349,6 +2349,20 @@ Resource structure: Place multiple skill subdirectories under `src/main/resource
 
 > Note: `JarSkillRepositoryAdapter` is deprecated. Use `ClasspathSkillRepository` instead.
 
+#### Nacos Repository (Read-Only)
+
+Pulls or subscribes to Skills from Nacos via a pre-built `AiService` (or Nacos connection config). The Agent fetches Skills from Nacos at runtime in real time, with support for change subscription and automatic awareness. Suitable for online scenarios that need to stay in sync with Nacos.
+
+```java
+// Create Nacos skill repository with a pre-built AiService
+try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "namespace")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    boolean exists = repository.skillExists("data-analysis");
+} catch //...
+```
+
+> Note: Add the `agentscope-extensions-nacos-skill` dependency.
+
 ### Performance Optimization Recommendations
 
 1. **Control SKILL.md Size**: Keep under 5k tokens, recommended 1.5-2k tokens
