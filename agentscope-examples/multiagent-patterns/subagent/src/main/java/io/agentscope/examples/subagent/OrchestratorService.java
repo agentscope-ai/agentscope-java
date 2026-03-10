@@ -15,14 +15,13 @@
  */
 package io.agentscope.examples.subagent;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.springframework.ai.chat.messages.Message;
 
 /**
@@ -30,29 +29,29 @@ import org.springframework.ai.chat.messages.Message;
  */
 public class OrchestratorService {
 
-	private final CompiledGraph graph;
+    private final CompiledGraph graph;
 
-	public OrchestratorService(CompiledGraph graph) {
-		this.graph = graph;
-	}
+    public OrchestratorService(CompiledGraph graph) {
+        this.graph = graph;
+    }
 
-	public String run(String userInput) throws GraphRunnerException {
-		Map<String, Object> inputs = Map.of("input", userInput);
-		Optional<OverAllState> resultOpt = graph.invoke(inputs, RunnableConfig.builder().build());
-		if (resultOpt.isEmpty()) {
-			return "(no response)";
-		}
-		OverAllState state = resultOpt.get();
-		Optional<Object> messagesOpt = state.value("messages");
-		if (messagesOpt.isEmpty()) {
-			return "";
-		}
-		@SuppressWarnings("unchecked")
-		List<Message> messages = (List<Message>) messagesOpt.get();
-		if (messages.isEmpty()) {
-			return "";
-		}
-		Message last = messages.get(messages.size() - 1);
-		return last.getText() != null ? last.getText() : "";
-	}
+    public String run(String userInput) throws GraphRunnerException {
+        Map<String, Object> inputs = Map.of("input", userInput);
+        Optional<OverAllState> resultOpt = graph.invoke(inputs, RunnableConfig.builder().build());
+        if (resultOpt.isEmpty()) {
+            return "(no response)";
+        }
+        OverAllState state = resultOpt.get();
+        Optional<Object> messagesOpt = state.value("messages");
+        if (messagesOpt.isEmpty()) {
+            return "";
+        }
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) messagesOpt.get();
+        if (messages.isEmpty()) {
+            return "";
+        }
+        Message last = messages.get(messages.size() - 1);
+        return last.getText() != null ? last.getText() : "";
+    }
 }

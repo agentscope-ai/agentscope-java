@@ -35,17 +35,20 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class PipelineApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(PipelineApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(PipelineApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ Pipeline (Sequential / Parallel / Loop) example has started!");
-			System.out.println("   Agents: sequential_sql_agent, parallel_research_agent, loop_sql_refinement_agent");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ Pipeline (Sequential / Parallel / Loop) example has started!");
+            System.out.println(
+                    "   Agents: sequential_sql_agent, parallel_research_agent,"
+                            + " loop_sql_refinement_agent");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

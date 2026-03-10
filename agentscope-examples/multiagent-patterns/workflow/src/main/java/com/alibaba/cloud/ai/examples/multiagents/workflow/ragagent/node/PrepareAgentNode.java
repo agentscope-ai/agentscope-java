@@ -18,24 +18,24 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.RagAgentConfig;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import org.springframework.ai.chat.messages.UserMessage;
-
 import java.util.List;
 import java.util.Map;
+import org.springframework.ai.chat.messages.UserMessage;
 
 /**
  * Prepares the agent input by formatting context (retrieved documents) and question into a prompt.
  */
 public class PrepareAgentNode implements NodeAction {
 
-	@Override
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		String question = state.value("question").map(Object::toString).orElse("");
-		@SuppressWarnings("unchecked")
-		List<String> docs = (List<String>) state.value("documents").orElse(List.of());
-		String context = String.join("\n\n", docs);
-		String prompt = RagAgentConfig.buildAgentPrompt(context, question);
-		// "messages" for graph compatibility; "input" for AgentScopeAgent instruction placeholder {input}
-		return Map.of("messages", List.of(new UserMessage(prompt)), "input", prompt);
-	}
+    @Override
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        String question = state.value("question").map(Object::toString).orElse("");
+        @SuppressWarnings("unchecked")
+        List<String> docs = (List<String>) state.value("documents").orElse(List.of());
+        String context = String.join("\n\n", docs);
+        String prompt = RagAgentConfig.buildAgentPrompt(context, question);
+        // "messages" for graph compatibility; "input" for AgentScopeAgent instruction placeholder
+        // {input}
+        return Map.of("messages", List.of(new UserMessage(prompt)), "input", prompt);
+    }
 }

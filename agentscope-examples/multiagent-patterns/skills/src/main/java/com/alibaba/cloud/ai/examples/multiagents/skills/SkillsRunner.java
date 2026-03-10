@@ -35,24 +35,27 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "skills.runner.enabled", havingValue = "true")
 public class SkillsRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(SkillsRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(SkillsRunner.class);
 
-	private final ReActAgent sqlAssistantAgent;
+    private final ReActAgent sqlAssistantAgent;
 
-	public SkillsRunner(ReActAgent sqlAssistantAgent) {
-		this.sqlAssistantAgent = sqlAssistantAgent;
-	}
+    public SkillsRunner(ReActAgent sqlAssistantAgent) {
+        this.sqlAssistantAgent = sqlAssistantAgent;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		String query = "Write a SQL query to find all customers who made orders over $1000 in the last month";
-		log.info("User: {}", query);
-		Msg userMsg = Msg.builder()
-				.role(MsgRole.USER)
-				.content(TextBlock.builder().text(query).build())
-				.build();
-		Msg response = sqlAssistantAgent.call(userMsg).block();
-		String text = response != null ? response.getTextContent() : "";
-		log.info("Assistant: {}", text);
-	}
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        String query =
+                "Write a SQL query to find all customers who made orders over $1000 in the last"
+                        + " month";
+        log.info("User: {}", query);
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text(query).build())
+                        .build();
+        Msg response = sqlAssistantAgent.call(userMsg).block();
+        String text = response != null ? response.getTextContent() : "";
+        log.info("Assistant: {}", text);
+    }
 }

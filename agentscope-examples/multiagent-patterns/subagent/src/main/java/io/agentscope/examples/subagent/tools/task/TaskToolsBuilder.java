@@ -15,15 +15,14 @@
  */
 package io.agentscope.examples.subagent.tools.task;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.CallableAgent;
+import io.agentscope.core.model.Model;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.CallableAgent;
-import io.agentscope.core.model.Model;
 import org.springframework.core.io.Resource;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -38,112 +37,114 @@ import org.springframework.util.StringUtils;
  */
 public final class TaskToolsBuilder {
 
-	private TaskRepository taskRepository = new DefaultTaskRepository();
-	private final Map<String, CallableAgent> subAgents = new HashMap<>();
-	private final List<Resource> agentResources = new ArrayList<>();
-	private Model model;
-	private Map<String, Object> defaultToolsByName = Map.of();
+    private TaskRepository taskRepository = new DefaultTaskRepository();
+    private final Map<String, CallableAgent> subAgents = new HashMap<>();
+    private final List<Resource> agentResources = new ArrayList<>();
+    private Model model;
+    private Map<String, Object> defaultToolsByName = Map.of();
 
-	private TaskToolsBuilder() {
-	}
+    private TaskToolsBuilder() {}
 
-	public static TaskToolsBuilder builder() {
-		return new TaskToolsBuilder();
-	}
+    public static TaskToolsBuilder builder() {
+        return new TaskToolsBuilder();
+    }
 
-	/**
-	 * Set the task repository (required for background execution).
-	 */
-	public TaskToolsBuilder taskRepository(TaskRepository taskRepository) {
-		Assert.notNull(taskRepository, "taskRepository must not be null");
-		this.taskRepository = taskRepository;
-		return this;
-	}
+    /**
+     * Set the task repository (required for background execution).
+     */
+    public TaskToolsBuilder taskRepository(TaskRepository taskRepository) {
+        Assert.notNull(taskRepository, "taskRepository must not be null");
+        this.taskRepository = taskRepository;
+        return this;
+    }
 
-	/**
-	 * Set the Model used to create ReActAgents from agent spec resources.
-	 */
-	public TaskToolsBuilder model(Model model) {
-		this.model = model;
-		return this;
-	}
+    /**
+     * Set the Model used to create ReActAgents from agent spec resources.
+     */
+    public TaskToolsBuilder model(Model model) {
+        this.model = model;
+        return this;
+    }
 
-	/**
-	 * Set default tools by name for sub-agents built from specs. Keys must match
-	 * tool names (e.g. glob_search, grep_search, web_fetch); values are the tool instances.
-	 */
-	public TaskToolsBuilder defaultToolsByName(Map<String, Object> defaultToolsByName) {
-		this.defaultToolsByName = defaultToolsByName != null ? Map.copyOf(defaultToolsByName) : Map.of();
-		return this;
-	}
+    /**
+     * Set default tools by name for sub-agents built from specs. Keys must match
+     * tool names (e.g. glob_search, grep_search, web_fetch); values are the tool instances.
+     */
+    public TaskToolsBuilder defaultToolsByName(Map<String, Object> defaultToolsByName) {
+        this.defaultToolsByName =
+                defaultToolsByName != null ? Map.copyOf(defaultToolsByName) : Map.of();
+        return this;
+    }
 
-	/**
-	 * Add a single sub-agent (programmatic). Use for e.g. dependency-analyzer.
-	 */
-	public TaskToolsBuilder subAgent(String type, ReActAgent agent) {
-		Assert.hasText(type, "type must not be empty");
-		Assert.notNull(agent, "agent must not be null");
-		this.subAgents.put(type, agent);
-		return this;
-	}
+    /**
+     * Add a single sub-agent (programmatic). Use for e.g. dependency-analyzer.
+     */
+    public TaskToolsBuilder subAgent(String type, ReActAgent agent) {
+        Assert.hasText(type, "type must not be empty");
+        Assert.notNull(agent, "agent must not be null");
+        this.subAgents.put(type, agent);
+        return this;
+    }
 
-	/**
-	 * Add a Spring Resource to load an agent spec from (e.g. classpath:agents/codebase-explorer.md).
-	 */
-	public TaskToolsBuilder addAgentResource(Resource resource) {
-		if (resource != null) {
-			this.agentResources.add(resource);
-		}
-		return this;
-	}
+    /**
+     * Add a Spring Resource to load an agent spec from (e.g. classpath:agents/codebase-explorer.md).
+     */
+    public TaskToolsBuilder addAgentResource(Resource resource) {
+        if (resource != null) {
+            this.agentResources.add(resource);
+        }
+        return this;
+    }
 
-	/**
-	 * Build and return Task and TaskOutput tools. Resolves sub-agents from resources
-	 * (using {@link AgentSpecLoader} and {@link AgentSpecReActAgentFactory}) and merges
-	 * with any programmatic sub-agents.
-	 */
-	public TaskToolsResult build() {
-		Assert.notNull(taskRepository, "taskRepository must be provided");
+    /**
+     * Build and return Task and TaskOutput tools. Resolves sub-agents from resources
+     * (using {@link AgentSpecLoader} and {@link AgentSpecReActAgentFactory}) and merges
+     * with any programmatic sub-agents.
+     */
+    public TaskToolsResult build() {
+        Assert.notNull(taskRepository, "taskRepository must be provided");
 
-		Map<String, CallableAgent> resolved = new HashMap<>(this.subAgents);
-		loadFromResourcesAndMerge(resolved);
+        Map<String, CallableAgent> resolved = new HashMap<>(this.subAgents);
+        loadFromResourcesAndMerge(resolved);
 
-		Assert.notEmpty(resolved, "At least one sub-agent must be configured (via subAgent or addAgentResource)");
+        Assert.notEmpty(
+                resolved,
+                "At least one sub-agent must be configured (via subAgent or addAgentResource)");
 
-		TaskTool taskTool = new TaskTool(resolved, taskRepository);
-		TaskOutputTool taskOutputTool = new TaskOutputTool(taskRepository);
-		return new TaskToolsResult(taskTool, taskOutputTool);
-	}
+        TaskTool taskTool = new TaskTool(resolved, taskRepository);
+        TaskOutputTool taskOutputTool = new TaskOutputTool(taskRepository);
+        return new TaskToolsResult(taskTool, taskOutputTool);
+    }
 
-	private void loadFromResourcesAndMerge(Map<String, CallableAgent> into) {
-		if (agentResources.isEmpty()) {
-			return;
-		}
-		Assert.notNull(model, "model must be set when using addAgentResource");
-		Assert.notEmpty(defaultToolsByName, "defaultToolsByName must be set when using addAgentResource");
+    private void loadFromResourcesAndMerge(Map<String, CallableAgent> into) {
+        if (agentResources.isEmpty()) {
+            return;
+        }
+        Assert.notNull(model, "model must be set when using addAgentResource");
+        Assert.notEmpty(
+                defaultToolsByName, "defaultToolsByName must be set when using addAgentResource");
 
-		AgentSpecReActAgentFactory factory = new AgentSpecReActAgentFactory(model, defaultToolsByName);
+        AgentSpecReActAgentFactory factory =
+                new AgentSpecReActAgentFactory(model, defaultToolsByName);
 
-		for (Resource resource : agentResources) {
-			try {
-				if (!resource.exists() || !resource.isReadable()) {
-					continue;
-				}
-				AgentSpec spec = AgentSpecLoader.loadFromResource(resource);
-				if (spec != null && StringUtils.hasText(spec.name())) {
-					into.put(spec.name(), factory.create(spec));
-				}
-			}
-			catch (IOException e) {
-				throw new RuntimeException("Failed to load agent spec from " + resource, e);
-			}
-		}
-	}
+        for (Resource resource : agentResources) {
+            try {
+                if (!resource.exists() || !resource.isReadable()) {
+                    continue;
+                }
+                AgentSpec spec = AgentSpecLoader.loadFromResource(resource);
+                if (spec != null && StringUtils.hasText(spec.name())) {
+                    into.put(spec.name(), factory.create(spec));
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load agent spec from " + resource, e);
+            }
+        }
+    }
 
-	/**
-	 * Result of {@link TaskToolsBuilder#build()}: register {@link #taskTool()} and
-	 * {@link #taskOutputTool()} on the orchestrator toolkit.
-	 */
-	public record TaskToolsResult(TaskTool taskTool, TaskOutputTool taskOutputTool) {
-	}
+    /**
+     * Result of {@link TaskToolsBuilder#build()}: register {@link #taskTool()} and
+     * {@link #taskOutputTool()} on the orchestrator toolkit.
+     */
+    public record TaskToolsResult(TaskTool taskTool, TaskOutputTool taskOutputTool) {}
 }

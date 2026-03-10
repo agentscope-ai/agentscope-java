@@ -15,14 +15,13 @@
  */
 package io.agentscope.examples.routing.graph.node;
 
-import com.alibaba.cloud.ai.graph.agent.flow.node.RoutingMergeNode;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.alibaba.cloud.ai.graph.agent.flow.node.RoutingMergeNode;
 import java.time.Instant;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Postprocessing node: formatting, logging, metadata.
@@ -30,36 +29,42 @@ import java.util.Map;
  */
 public class PostprocessNode implements NodeAction {
 
-	private static final Logger log = LoggerFactory.getLogger(PostprocessNode.class);
+    private static final Logger log = LoggerFactory.getLogger(PostprocessNode.class);
 
-	@Override
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		String mergedResult = state.value(RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY)
-				.map(Object::toString)
-				.orElse("No result from routing.");
+    @Override
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        String mergedResult =
+                state.value(RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY)
+                        .map(Object::toString)
+                        .orElse("No result from routing.");
 
-		@SuppressWarnings("unchecked")
-		Map<String, Object> preprocessMeta = (Map<String, Object>) state.value("preprocess_metadata")
-				.orElse(Map.of());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> preprocessMeta =
+                (Map<String, Object>) state.value("preprocess_metadata").orElse(Map.of());
 
-		String traceId = (String) preprocessMeta.getOrDefault("traceId", "unknown");
-		String timestamp = Instant.now().toString();
+        String traceId = (String) preprocessMeta.getOrDefault("traceId", "unknown");
+        String timestamp = Instant.now().toString();
 
-		// Format final answer with metadata header
-		String formatted = String.format("""
-				--- Answer (traceId=%s) ---
-				%s
-				---
-				Generated at: %s
-				""", traceId, mergedResult, timestamp);
+        // Format final answer with metadata header
+        String formatted =
+                String.format(
+                        """
+                        --- Answer (traceId=%s) ---
+                        %s
+                        ---
+                        Generated at: %s
+                        """,
+                        traceId, mergedResult, timestamp);
 
-		log.info("Postprocess: traceId={}, result length={}", traceId, mergedResult.length());
+        log.info("Postprocess: traceId={}, result length={}", traceId, mergedResult.length());
 
-		return Map.of(
-				"final_answer", formatted,
-				"postprocess_metadata", Map.of(
-						"traceId", traceId,
-						"timestamp", timestamp,
-						"resultLength", mergedResult.length()));
-	}
+        return Map.of(
+                "final_answer",
+                formatted,
+                "postprocess_metadata",
+                Map.of(
+                        "traceId", traceId,
+                        "timestamp", timestamp,
+                        "resultLength", mergedResult.length()));
+    }
 }

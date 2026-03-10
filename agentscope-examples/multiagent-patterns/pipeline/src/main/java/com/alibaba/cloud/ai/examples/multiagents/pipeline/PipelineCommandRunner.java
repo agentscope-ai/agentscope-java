@@ -31,69 +31,66 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "pipeline.runner.enabled", havingValue = "true")
 public class PipelineCommandRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(PipelineCommandRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(PipelineCommandRunner.class);
 
-	private final PipelineService pipelineService;
+    private final PipelineService pipelineService;
 
-	public PipelineCommandRunner(PipelineService pipelineService) {
-		this.pipelineService = pipelineService;
-	}
+    public PipelineCommandRunner(PipelineService pipelineService) {
+        this.pipelineService = pipelineService;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		log.info("=== Pipeline Command Runner (test) ===");
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        log.info("=== Pipeline Command Runner (test) ===");
 
-		runSequentialDemo();
-		runParallelDemo();
-		runLoopDemo();
+        runSequentialDemo();
+        runParallelDemo();
+        runLoopDemo();
 
-		log.info("=== Pipeline test run finished ===");
-	}
+        log.info("=== Pipeline test run finished ===");
+    }
 
-	private void runSequentialDemo() {
-		String input = "List all orders from the last 30 days with total amount greater than 500";
-		log.info("--- SequentialAgent demo ---");
-		log.info("Input: {}", input);
-		try {
-			PipelineService.SequentialResult result = pipelineService.runSequential(input);
-			log.info("SQL: {}", result.sql());
-			log.info("Score: {}", result.score());
-		}
-		catch (GraphRunnerException e) {
-			log.error("Sequential pipeline failed", e);
-		}
-	}
+    private void runSequentialDemo() {
+        String input = "List all orders from the last 30 days with total amount greater than 500";
+        log.info("--- SequentialAgent demo ---");
+        log.info("Input: {}", input);
+        try {
+            PipelineService.SequentialResult result = pipelineService.runSequential(input);
+            log.info("SQL: {}", result.sql());
+            log.info("Score: {}", result.score());
+        } catch (GraphRunnerException e) {
+            log.error("Sequential pipeline failed", e);
+        }
+    }
 
-	private void runParallelDemo() {
-		String input = "AI agents in enterprise software";
-		log.info("--- ParallelAgent demo ---");
-		log.info("Input: {}", input);
-		try {
-			PipelineService.ParallelResult result = pipelineService.runParallel(input);
-			log.info("Research report (excerpt): {}", truncate(result.researchReport(), 400));
-		}
-		catch (GraphRunnerException e) {
-			log.error("Parallel pipeline failed", e);
-		}
-	}
+    private void runParallelDemo() {
+        String input = "AI agents in enterprise software";
+        log.info("--- ParallelAgent demo ---");
+        log.info("Input: {}", input);
+        try {
+            PipelineService.ParallelResult result = pipelineService.runParallel(input);
+            log.info("Research report (excerpt): {}", truncate(result.researchReport(), 400));
+        } catch (GraphRunnerException e) {
+            log.error("Parallel pipeline failed", e);
+        }
+    }
 
-	private void runLoopDemo() {
-		String input = "Find customers who placed more than 3 orders in 2024";
-		log.info("--- LoopAgent demo ---");
-		log.info("Input: {}", input);
-		try {
-			PipelineService.LoopResult result = pipelineService.runLoop(input);
-			log.info("SQL: {}", result.sql());
-			log.info("Score: {}", result.score());
-		}
-		catch (GraphRunnerException e) {
-			log.error("Loop pipeline failed", e);
-		}
-	}
+    private void runLoopDemo() {
+        String input = "Find customers who placed more than 3 orders in 2024";
+        log.info("--- LoopAgent demo ---");
+        log.info("Input: {}", input);
+        try {
+            PipelineService.LoopResult result = pipelineService.runLoop(input);
+            log.info("SQL: {}", result.sql());
+            log.info("Score: {}", result.score());
+        } catch (GraphRunnerException e) {
+            log.error("Loop pipeline failed", e);
+        }
+    }
 
-	private static String truncate(String s, int maxLen) {
-		if (s == null) return "null";
-		if (s.length() <= maxLen) return s;
-		return s.substring(0, maxLen) + "...";
-	}
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return "null";
+        if (s.length() <= maxLen) return s;
+        return s.substring(0, maxLen) + "...";
+    }
 }

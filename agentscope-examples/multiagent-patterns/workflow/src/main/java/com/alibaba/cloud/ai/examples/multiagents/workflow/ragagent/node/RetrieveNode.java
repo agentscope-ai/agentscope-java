@@ -15,39 +15,44 @@
  */
 package com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node;
 
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
 import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Retrieves documents from the AgentScope Knowledge base (embedding + vector store) based on the rewritten query.
  */
 public class RetrieveNode implements NodeAction {
 
-	private static final int TOP_K = 5;
+    private static final int TOP_K = 5;
 
-	private final Knowledge knowledge;
+    private final Knowledge knowledge;
 
-	public RetrieveNode(Knowledge knowledge) {
-		this.knowledge = knowledge;
-	}
+    public RetrieveNode(Knowledge knowledge) {
+        this.knowledge = knowledge;
+    }
 
-	@Override
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		String query = state.value("rewritten_query").map(Object::toString).orElse("");
-		List<Document> docs = knowledge.retrieve(query, RetrieveConfig.builder().limit(TOP_K).build()).block();
-		List<String> docContents = docs != null
-				? docs.stream()
-						.map(d -> d.getMetadata() != null ? d.getMetadata().getContentText() : "")
-						.filter(s -> !s.isEmpty())
-						.collect(Collectors.toList())
-				: List.of();
-		return Map.of("documents", docContents);
-	}
+    @Override
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        String query = state.value("rewritten_query").map(Object::toString).orElse("");
+        List<Document> docs =
+                knowledge.retrieve(query, RetrieveConfig.builder().limit(TOP_K).build()).block();
+        List<String> docContents =
+                docs != null
+                        ? docs.stream()
+                                .map(
+                                        d ->
+                                                d.getMetadata() != null
+                                                        ? d.getMetadata().getContentText()
+                                                        : "")
+                                .filter(s -> !s.isEmpty())
+                                .collect(Collectors.toList())
+                        : List.of();
+        return Map.of("documents", docContents);
+    }
 }

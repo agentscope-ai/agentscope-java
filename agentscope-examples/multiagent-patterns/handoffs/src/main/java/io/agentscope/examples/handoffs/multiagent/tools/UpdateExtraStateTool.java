@@ -19,9 +19,8 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import org.springframework.ai.chat.model.ToolContext;
-
 import java.util.Map;
+import org.springframework.ai.chat.model.ToolContext;
 
 /**
  * Example AgentScope tool that demonstrates how to read graph state and update extraState.
@@ -38,40 +37,55 @@ import java.util.Map;
  */
 public final class UpdateExtraStateTool {
 
-	public static final String TOOL_NAME = "update_extra_state";
+    public static final String TOOL_NAME = "update_extra_state";
 
-	private UpdateExtraStateTool() {
-	}
+    private UpdateExtraStateTool() {}
 
-	@Tool(
-			name = TOOL_NAME,
-			description = "Update the extra state with an observation. Use this tool to record what you observe from the current graph state.")
-	public String updateExtraState(
-			@ToolParam(name = "observation", description = "A string describing what you observe from the current state") String observation,
-			ToolContext toolContext) {
-		// 1. Read graph state
-		OverAllState state = ToolContextHelper.getState(toolContext).orElse(null);
-		String stateSummary = state != null ? summarizeState(state) : "no_state";
+    @Tool(
+            name = TOOL_NAME,
+            description =
+                    "Update the extra state with an observation. Use this tool to record what you"
+                            + " observe from the current graph state.")
+    public String updateExtraState(
+            @ToolParam(
+                            name = "observation",
+                            description =
+                                    "A string describing what you observe from the current state")
+                    String observation,
+            ToolContext toolContext) {
+        // 1. Read graph state
+        OverAllState state = ToolContextHelper.getState(toolContext).orElse(null);
+        String stateSummary = state != null ? summarizeState(state) : "no_state";
 
-		// 2. Update extraState via stateForUpdate (merged when node completes)
-		ToolContextHelper.getStateForUpdate(toolContext).ifPresent(update ->
-				update.put("extraState", Map.of(
-						"observation", observation != null ? observation : "",
-						"stateSummary", stateSummary,
-						"updatedByTool", true)));
+        // 2. Update extraState via stateForUpdate (merged when node completes)
+        ToolContextHelper.getStateForUpdate(toolContext)
+                .ifPresent(
+                        update ->
+                                update.put(
+                                        "extraState",
+                                        Map.of(
+                                                "observation",
+                                                observation != null ? observation : "",
+                                                "stateSummary",
+                                                stateSummary,
+                                                "updatedByTool",
+                                                true)));
 
-		return "Updated extraState with observation: " + observation + ", stateSummary: " + stateSummary;
-	}
+        return "Updated extraState with observation: "
+                + observation
+                + ", stateSummary: "
+                + stateSummary;
+    }
 
-	private static String summarizeState(OverAllState state) {
-		Map<String, Object> data = state.data();
-		if (data == null || data.isEmpty()) {
-			return "empty";
-		}
-		return "keys=" + data.keySet();
-	}
+    private static String summarizeState(OverAllState state) {
+        Map<String, Object> data = state.data();
+        if (data == null || data.isEmpty()) {
+            return "empty";
+        }
+        return "keys=" + data.keySet();
+    }
 
-	public static UpdateExtraStateTool create() {
-		return new UpdateExtraStateTool();
-	}
+    public static UpdateExtraStateTool create() {
+        return new UpdateExtraStateTool();
+    }
 }

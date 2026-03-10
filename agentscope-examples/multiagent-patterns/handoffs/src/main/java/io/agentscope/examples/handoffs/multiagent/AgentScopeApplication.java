@@ -25,16 +25,17 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class AgentScopeApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(AgentScopeApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(AgentScopeApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ AgentScope Multi-Agent example has started!");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ AgentScope Multi-Agent example has started!");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

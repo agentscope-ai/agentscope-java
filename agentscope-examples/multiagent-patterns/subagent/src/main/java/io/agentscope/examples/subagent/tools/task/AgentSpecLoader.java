@@ -15,10 +15,6 @@
  */
 package io.agentscope.examples.subagent.tools.task;
 
-import org.springframework.core.io.Resource;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,9 +24,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 import org.yaml.snakeyaml.Yaml;
 
 /**
@@ -53,139 +51,141 @@ import org.yaml.snakeyaml.Yaml;
  */
 public final class AgentSpecLoader {
 
-	private static final Logger logger = LoggerFactory.getLogger(AgentSpecLoader.class);
+    private static final Logger logger = LoggerFactory.getLogger(AgentSpecLoader.class);
 
-	private static final Yaml YAML = new Yaml();
+    private static final Yaml YAML = new Yaml();
 
-	private AgentSpecLoader() {
-	}
+    private AgentSpecLoader() {}
 
-	/**
-	 * Load agent specs from a directory (recursively scans for .md files).
-	 * @param directoryPath path to directory containing agent spec files
-	 * @return list of parsed specs
-	 */
-	public static List<AgentSpec> loadFromDirectory(String directoryPath) throws IOException {
-		if (!StringUtils.hasText(directoryPath)) {
-			return List.of();
-		}
-		return loadFromDirectory(Paths.get(directoryPath));
-	}
+    /**
+     * Load agent specs from a directory (recursively scans for .md files).
+     * @param directoryPath path to directory containing agent spec files
+     * @return list of parsed specs
+     */
+    public static List<AgentSpec> loadFromDirectory(String directoryPath) throws IOException {
+        if (!StringUtils.hasText(directoryPath)) {
+            return List.of();
+        }
+        return loadFromDirectory(Paths.get(directoryPath));
+    }
 
-	/**
-	 * Load agent specs from a directory (recursively scans for .md files).
-	 */
-	public static List<AgentSpec> loadFromDirectory(Path rootPath) throws IOException {
-		if (rootPath == null || !Files.exists(rootPath)) {
-			logger.warn("Agent spec directory does not exist: {}", rootPath);
-			return List.of();
-		}
-		if (!Files.isDirectory(rootPath)) {
-			throw new IOException("Path is not a directory: " + rootPath);
-		}
+    /**
+     * Load agent specs from a directory (recursively scans for .md files).
+     */
+    public static List<AgentSpec> loadFromDirectory(Path rootPath) throws IOException {
+        if (rootPath == null || !Files.exists(rootPath)) {
+            logger.warn("Agent spec directory does not exist: {}", rootPath);
+            return List.of();
+        }
+        if (!Files.isDirectory(rootPath)) {
+            throw new IOException("Path is not a directory: " + rootPath);
+        }
 
-		List<AgentSpec> specs = new ArrayList<>();
-		try (Stream<Path> paths = Files.walk(rootPath)) {
-			paths.filter(Files::isRegularFile)
-					.filter(p -> p.getFileName().toString().endsWith(".md"))
-					.forEach(path -> {
-						try {
-							AgentSpec spec = loadFromFile(path);
-							if (spec != null) {
-								specs.add(spec);
-								logger.debug("Loaded agent spec: {} from {}", spec.name(), path);
-							}
-						}
-						catch (Exception e) {
-							logger.warn("Failed to load agent spec from {}: {}", path, e.getMessage());
-						}
-					});
-		}
-		return specs;
-	}
+        List<AgentSpec> specs = new ArrayList<>();
+        try (Stream<Path> paths = Files.walk(rootPath)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".md"))
+                    .forEach(
+                            path -> {
+                                try {
+                                    AgentSpec spec = loadFromFile(path);
+                                    if (spec != null) {
+                                        specs.add(spec);
+                                        logger.debug(
+                                                "Loaded agent spec: {} from {}", spec.name(), path);
+                                    }
+                                } catch (Exception e) {
+                                    logger.warn(
+                                            "Failed to load agent spec from {}: {}",
+                                            path,
+                                            e.getMessage());
+                                }
+                            });
+        }
+        return specs;
+    }
 
-	/**
-	 * Load a single agent spec from a file.
-	 */
-	public static AgentSpec loadFromFile(Path filePath) throws IOException {
-		String content = Files.readString(filePath, StandardCharsets.UTF_8);
-		return parse(content);
-	}
+    /**
+     * Load a single agent spec from a file.
+     */
+    public static AgentSpec loadFromFile(Path filePath) throws IOException {
+        String content = Files.readString(filePath, StandardCharsets.UTF_8);
+        return parse(content);
+    }
 
-	/**
-	 * Load agent spec from a Spring Resource.
-	 */
-	public static AgentSpec loadFromResource(Resource resource) throws IOException {
-		String content = resource.getContentAsString(StandardCharsets.UTF_8);
-		return parse(content);
-	}
+    /**
+     * Load agent spec from a Spring Resource.
+     */
+    public static AgentSpec loadFromResource(Resource resource) throws IOException {
+        String content = resource.getContentAsString(StandardCharsets.UTF_8);
+        return parse(content);
+    }
 
-	/**
-	 * Parse markdown content with YAML front matter into AgentSpec.
-	 */
-	public static AgentSpec parse(String markdown) {
-		if (!StringUtils.hasText(markdown)) {
-			return null;
-		}
-		if (!markdown.startsWith("---")) {
-			logger.warn("Agent spec must start with YAML front matter (---)");
-			return null;
-		}
+    /**
+     * Parse markdown content with YAML front matter into AgentSpec.
+     */
+    public static AgentSpec parse(String markdown) {
+        if (!StringUtils.hasText(markdown)) {
+            return null;
+        }
+        if (!markdown.startsWith("---")) {
+            logger.warn("Agent spec must start with YAML front matter (---)");
+            return null;
+        }
 
-		int endIndex = markdown.indexOf("---", 3);
-		if (endIndex == -1) {
-			logger.warn("Agent spec front matter not properly closed with ---");
-			return null;
-		}
+        int endIndex = markdown.indexOf("---", 3);
+        if (endIndex == -1) {
+            logger.warn("Agent spec front matter not properly closed with ---");
+            return null;
+        }
 
-		String frontMatterStr = markdown.substring(3, endIndex).trim();
-		String content = markdown.substring(endIndex + 3).trim();
+        String frontMatterStr = markdown.substring(3, endIndex).trim();
+        String content = markdown.substring(endIndex + 3).trim();
 
-		Map<String, Object> frontMatter;
-		try {
-			@SuppressWarnings("unchecked")
-			Map<String, Object> parsed = YAML.load(frontMatterStr);
-			frontMatter = parsed;
-		}
-		catch (Exception e) {
-			logger.warn("Failed to parse YAML front matter: {}", e.getMessage());
-			return null;
-		}
+        Map<String, Object> frontMatter;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = YAML.load(frontMatterStr);
+            frontMatter = parsed;
+        } catch (Exception e) {
+            logger.warn("Failed to parse YAML front matter: {}", e.getMessage());
+            return null;
+        }
 
-		if (CollectionUtils.isEmpty(frontMatter)) {
-			return null;
-		}
+        if (CollectionUtils.isEmpty(frontMatter)) {
+            return null;
+        }
 
-		String name = getString(frontMatter, "name");
-		String description = getString(frontMatter, "description");
+        String name = getString(frontMatter, "name");
+        String description = getString(frontMatter, "description");
 
-		if (!StringUtils.hasText(name)) {
-			logger.warn("Agent spec missing required 'name' in front matter");
-			return null;
-		}
-		if (!StringUtils.hasText(description)) {
-			logger.warn("Agent spec missing required 'description' in front matter");
-			return null;
-		}
+        if (!StringUtils.hasText(name)) {
+            logger.warn("Agent spec missing required 'name' in front matter");
+            return null;
+        }
+        if (!StringUtils.hasText(description)) {
+            logger.warn("Agent spec missing required 'description' in front matter");
+            return null;
+        }
 
-		List<String> toolNames = parseToolNames(getString(frontMatter, "tools"));
-		String model = getString(frontMatter, "model");
+        List<String> toolNames = parseToolNames(getString(frontMatter, "tools"));
+        String model = getString(frontMatter, "model");
 
-		return new AgentSpec(name, description, content, toolNames, model);
-	}
+        return new AgentSpec(name, description, content, toolNames, model);
+    }
 
-	private static String getString(Map<String, Object> map, String key) {
-		Object v = map.get(key);
-		return v != null ? v.toString().trim() : null;
-	}
+    private static String getString(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        return v != null ? v.toString().trim() : null;
+    }
 
-	private static List<String> parseToolNames(String toolsStr) {
-		if (!StringUtils.hasText(toolsStr)) {
-			return List.of();
-		}
-		return Stream.of(toolsStr.split(","))
-				.map(String::trim)
-				.filter(StringUtils::hasText)
-				.toList();
-	}
+    private static List<String> parseToolNames(String toolsStr) {
+        if (!StringUtils.hasText(toolsStr)) {
+            return List.of();
+        }
+        return Stream.of(toolsStr.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
+    }
 }

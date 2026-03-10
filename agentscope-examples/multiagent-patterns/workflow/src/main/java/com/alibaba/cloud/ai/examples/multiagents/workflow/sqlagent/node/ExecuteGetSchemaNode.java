@@ -15,14 +15,13 @@
  */
 package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node;
 
+import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.tools.SqlTools;
+import com.alibaba.cloud.ai.graph.OverAllState;
+import com.alibaba.cloud.ai.graph.action.NodeAction;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.tools.SqlTools;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.alibaba.cloud.ai.graph.OverAllState;
-import com.alibaba.cloud.ai.graph.action.NodeAction;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -33,53 +32,56 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
  */
 public class ExecuteGetSchemaNode implements NodeAction {
 
-	private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
-	private final SqlTools sqlTools;
+    private final SqlTools sqlTools;
 
-	public ExecuteGetSchemaNode(SqlTools sqlTools) {
-		this.sqlTools = sqlTools;
-	}
+    public ExecuteGetSchemaNode(SqlTools sqlTools) {
+        this.sqlTools = sqlTools;
+    }
 
-	@Override
-	@SuppressWarnings("unchecked")
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
-		Message last = messages.isEmpty() ? null : messages.get(messages.size() - 1);
-		if (!(last instanceof AssistantMessage am) || am.getToolCalls() == null || am.getToolCalls().isEmpty()) {
-			return Map.of();
-		}
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
+        Message last = messages.isEmpty() ? null : messages.get(messages.size() - 1);
+        if (!(last instanceof AssistantMessage am)
+                || am.getToolCalls() == null
+                || am.getToolCalls().isEmpty()) {
+            return Map.of();
+        }
 
-		List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
-		for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
-			if (!"sql_db_schema".equals(tc.name())) {
-				continue;
-			}
-			String tableNames = parseTableNames(tc.arguments());
-			String result = sqlTools.getSchema(tableNames);
-			responses.add(new ToolResponseMessage.ToolResponse(tc.id(), tc.name(), result));
-		}
-		if (responses.isEmpty()) {
-			return Map.of();
-		}
+        List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>();
+        for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
+            if (!"sql_db_schema".equals(tc.name())) {
+                continue;
+            }
+            String tableNames = parseTableNames(tc.arguments());
+            String result = sqlTools.getSchema(tableNames);
+            responses.add(new ToolResponseMessage.ToolResponse(tc.id(), tc.name(), result));
+        }
+        if (responses.isEmpty()) {
+            return Map.of();
+        }
 
-		ToolResponseMessage toolResponse = ToolResponseMessage.builder().responses(responses).build();
-		AssistantMessage summary = new AssistantMessage("Schema retrieved. Proceed to generate the SQL query.");
-		return Map.of("messages", List.of(toolResponse, summary));
-	}
+        ToolResponseMessage toolResponse =
+                ToolResponseMessage.builder().responses(responses).build();
+        AssistantMessage summary =
+                new AssistantMessage("Schema retrieved. Proceed to generate the SQL query.");
+        return Map.of("messages", List.of(toolResponse, summary));
+    }
 
-	@SuppressWarnings("unchecked")
-	private static String parseTableNames(String arguments) {
-		if (arguments == null || arguments.isBlank()) {
-			return "";
-		}
-		try {
-			Map<String, Object> map = JSON.readValue(arguments, Map.class);
-			Object v = map.get("tableNames");
-			return v != null ? v.toString().trim() : "";
-		}
-		catch (Exception e) {
-			return arguments.trim();
-		}
-	}
+    @SuppressWarnings("unchecked")
+    private static String parseTableNames(String arguments) {
+        if (arguments == null || arguments.isBlank()) {
+            return "";
+        }
+        try {
+            Map<String, Object> map = JSON.readValue(arguments, Map.class);
+            Object v = map.get("tableNames");
+            return v != null ? v.toString().trim() : "";
+        } catch (Exception e) {
+            return arguments.trim();
+        }
+    }
 }

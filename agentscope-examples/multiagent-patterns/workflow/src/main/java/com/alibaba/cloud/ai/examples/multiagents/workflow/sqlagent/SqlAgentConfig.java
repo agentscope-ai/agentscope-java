@@ -15,8 +15,9 @@
  */
 package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent;
 
-import java.util.HashMap;
-import java.util.Map;
+import static com.alibaba.cloud.ai.graph.StateGraph.END;
+import static com.alibaba.cloud.ai.graph.StateGraph.START;
+import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
 import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node.CallGetSchemaNode;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node.ExecuteGetSchemaNode;
@@ -34,16 +35,14 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
-
-import static com.alibaba.cloud.ai.graph.StateGraph.END;
-import static com.alibaba.cloud.ai.graph.StateGraph.START;
-import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
 /**
  * SQL agent workflow using StateGraph and AgentScope.
@@ -54,83 +53,87 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 @ConditionalOnProperty(name = "workflow.sql.enabled", havingValue = "true")
 public class SqlAgentConfig {
 
-	private static final String DIALECT = "H2";
-	private static final int TOP_K = 5;
+    private static final String DIALECT = "H2";
+    private static final int TOP_K = 5;
 
-	private static final String GENERATE_QUERY_PROMPT = """
-			You are an agent designed to interact with a SQL database.
-			Given an input question, create a syntactically correct %s query to run,
-			then look at the results of the query and return the answer. Unless the user
-			specifies a specific number of examples they wish to obtain, always limit your
-			query to at most %d results.
+    private static final String GENERATE_QUERY_PROMPT =
+            """
+            You are an agent designed to interact with a SQL database.
+            Given an input question, create a syntactically correct %s query to run,
+            then look at the results of the query and return the answer. Unless the user
+            specifies a specific number of examples they wish to obtain, always limit your
+            query to at most %d results.
 
-			You can order the results by a relevant column to return the most interesting
-			examples in the database. Never query for all the columns from a specific table,
-			only ask for the relevant columns given the question.
+            You can order the results by a relevant column to return the most interesting
+            examples in the database. Never query for all the columns from a specific table,
+            only ask for the relevant columns given the question.
 
-			DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
-			""".formatted(DIALECT, TOP_K);
+            DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
+            """
+                    .formatted(DIALECT, TOP_K);
 
-	@Bean
-	public SqlTools sqlTools(JdbcTemplate jdbcTemplate) {
-		return new SqlTools(jdbcTemplate);
-	}
+    @Bean
+    public SqlTools sqlTools(JdbcTemplate jdbcTemplate) {
+        return new SqlTools(jdbcTemplate);
+    }
 
-	@Bean
-	public Model dashScopeChatModel(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
-		String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
-		return DashScopeChatModel.builder()
-				.apiKey(key)
-				.modelName("qwen-plus")
-				.build();
-	}
+    @Bean
+    public Model dashScopeChatModel(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
+        String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
+        return DashScopeChatModel.builder().apiKey(key).modelName("qwen-plus").build();
+    }
 
-	@Bean
-	public CompiledGraph sqlGraph(Model model, SqlTools sqlTools)
-			throws GraphStateException {
-		StateGraph graph = new StateGraph("sql_workflow", () -> {
-			Map<String, KeyStrategy> strategies = new HashMap<>();
-			strategies.put("messages", new AppendStrategy(false));
-			strategies.put("llm_response", new ReplaceStrategy());
-			strategies.put("question", new ReplaceStrategy());
-			return strategies;
-		});
+    @Bean
+    public CompiledGraph sqlGraph(Model model, SqlTools sqlTools) throws GraphStateException {
+        StateGraph graph =
+                new StateGraph(
+                        "sql_workflow",
+                        () -> {
+                            Map<String, KeyStrategy> strategies = new HashMap<>();
+                            strategies.put("messages", new AppendStrategy(false));
+                            strategies.put("llm_response", new ReplaceStrategy());
+                            strategies.put("question", new ReplaceStrategy());
+                            return strategies;
+                        });
 
-		ListTablesNode listTablesNode = new ListTablesNode(sqlTools);
-		CallGetSchemaNode callGetSchemaNode = new CallGetSchemaNode(model, sqlTools);
-		ExecuteGetSchemaNode executeGetSchemaNode = new ExecuteGetSchemaNode(sqlTools);
+        ListTablesNode listTablesNode = new ListTablesNode(sqlTools);
+        CallGetSchemaNode callGetSchemaNode = new CallGetSchemaNode(model, sqlTools);
+        ExecuteGetSchemaNode executeGetSchemaNode = new ExecuteGetSchemaNode(sqlTools);
 
-		Toolkit generateQueryToolkit = new Toolkit();
-		generateQueryToolkit.registerTool(sqlTools);
-		AgentScopeAgent generateQueryAgent = AgentScopeAgent.fromBuilder(
-				ReActAgent.builder()
-						.name("generate_query")
-						.sysPrompt(GENERATE_QUERY_PROMPT)
-						.model(model)
-						.toolkit(generateQueryToolkit)
-						.memory(new InMemoryMemory()))
-				.name("generate_query")
-				.description("Generate and run SQL query")
-				// Either set includeContents to true, or use instruction with {input} placeholder to pass the original user question to the agent, so it can generate relevant SQL.
-				.includeContents(true)
-				.returnReasoningContents(false)
-				.build();
+        Toolkit generateQueryToolkit = new Toolkit();
+        generateQueryToolkit.registerTool(sqlTools);
+        AgentScopeAgent generateQueryAgent =
+                AgentScopeAgent.fromBuilder(
+                                ReActAgent.builder()
+                                        .name("generate_query")
+                                        .sysPrompt(GENERATE_QUERY_PROMPT)
+                                        .model(model)
+                                        .toolkit(generateQueryToolkit)
+                                        .memory(new InMemoryMemory()))
+                        .name("generate_query")
+                        .description("Generate and run SQL query")
+                        // Either set includeContents to true, or use instruction with {input}
+                        // placeholder to pass the original user question to the agent, so it can
+                        // generate relevant SQL.
+                        .includeContents(true)
+                        .returnReasoningContents(false)
+                        .build();
 
-		graph.addNode("list_tables", node_async(listTablesNode))
-				.addNode("call_get_schema", node_async(callGetSchemaNode))
-				.addNode("get_schema", node_async(executeGetSchemaNode))
-				.addNode("generate_query", generateQueryAgent.asNode())
-				.addEdge(START, "list_tables")
-				.addEdge("list_tables", "call_get_schema")
-				.addEdge("call_get_schema", "get_schema")
-				.addEdge("get_schema", "generate_query")
-				.addEdge("generate_query", END);
+        graph.addNode("list_tables", node_async(listTablesNode))
+                .addNode("call_get_schema", node_async(callGetSchemaNode))
+                .addNode("get_schema", node_async(executeGetSchemaNode))
+                .addNode("generate_query", generateQueryAgent.asNode())
+                .addEdge(START, "list_tables")
+                .addEdge("list_tables", "call_get_schema")
+                .addEdge("call_get_schema", "get_schema")
+                .addEdge("get_schema", "generate_query")
+                .addEdge("generate_query", END);
 
-		return graph.compile();
-	}
+        return graph.compile();
+    }
 
-	@Bean
-	public SqlAgentService sqlAgentService(CompiledGraph sqlGraph) {
-		return new SqlAgentService(sqlGraph);
-	}
+    @Bean
+    public SqlAgentService sqlAgentService(CompiledGraph sqlGraph) {
+        return new SqlAgentService(sqlGraph);
+    }
 }

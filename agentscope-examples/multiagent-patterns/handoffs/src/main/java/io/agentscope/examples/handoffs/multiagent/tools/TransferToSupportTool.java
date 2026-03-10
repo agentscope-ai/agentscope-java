@@ -15,9 +15,9 @@
  */
 package io.agentscope.examples.handoffs.multiagent.tools;
 
-import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import org.springframework.ai.chat.model.ToolContext;
 
 /**
@@ -31,21 +31,26 @@ import org.springframework.ai.chat.model.ToolContext;
  */
 public final class TransferToSupportTool {
 
-	public static final String TOOL_NAME = "transfer_to_support";
+    public static final String TOOL_NAME = "transfer_to_support";
 
-	private TransferToSupportTool() {
-	}
+    private TransferToSupportTool() {}
 
-	@Tool(
-			name = TOOL_NAME,
-			description = "Transfer the conversation to the support agent. Use when the customer asks about technical issues, troubleshooting, or account problems.")
-	public String transferToSupport(ToolContext toolContext) {
-		ToolContextHelper.getStateForUpdate(toolContext).ifPresent(update ->
-				update.put(AgentScopeStateConstants.ACTIVE_AGENT, AgentScopeStateConstants.SUPPORT_AGENT));
-		return "Transferred to support agent from sales agent.";
-	}
+    @Tool(
+            name = TOOL_NAME,
+            description =
+                    "Transfer the conversation to the support agent. Use when the customer asks"
+                            + " about technical issues, troubleshooting, or account problems.")
+    public String transferToSupport(ToolContext toolContext) {
+        ToolContextHelper.getStateForUpdate(toolContext)
+                .ifPresent(
+                        update ->
+                                update.put(
+                                        AgentScopeStateConstants.ACTIVE_AGENT,
+                                        AgentScopeStateConstants.SUPPORT_AGENT));
+        return "Transferred to support agent from sales agent.";
+    }
 
-	public static TransferToSupportTool create() {
-		return new TransferToSupportTool();
-	}
+    public static TransferToSupportTool create() {
+        return new TransferToSupportTool();
+    }
 }

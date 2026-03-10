@@ -20,12 +20,10 @@ package io.agentscope.examples.handoffs.multiagent.state;
  */
 public final class AgentScopeStateConstants {
 
-	private AgentScopeStateConstants() {
-	}
+    private AgentScopeStateConstants() {}
 
-	public static final String ACTIVE_AGENT = "active_agent";
+    public static final String ACTIVE_AGENT = "active_agent";
 
-	public static final String SALES_AGENT = "sales_agent";
-	public static final String SUPPORT_AGENT = "support_agent";
-
+    public static final String SALES_AGENT = "sales_agent";
+    public static final String SUPPORT_AGENT = "support_agent";
 }

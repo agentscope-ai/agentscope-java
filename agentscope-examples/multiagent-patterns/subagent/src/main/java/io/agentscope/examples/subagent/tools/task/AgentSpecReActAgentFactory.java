@@ -15,13 +15,12 @@
  */
 package io.agentscope.examples.subagent.tools.task;
 
-import java.util.List;
-import java.util.Map;
-
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import java.util.List;
+import java.util.Map;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 
@@ -44,68 +43,68 @@ import org.springframework.util.CollectionUtils;
  */
 public final class AgentSpecReActAgentFactory {
 
-	private final Model model;
-	private final Map<String, Object> defaultToolsByName;
+    private final Model model;
+    private final Map<String, Object> defaultToolsByName;
 
-	public AgentSpecReActAgentFactory(Model model, Map<String, Object> defaultToolsByName) {
-		Assert.notNull(model, "model must not be null");
-		this.model = model;
-		this.defaultToolsByName = defaultToolsByName != null ? Map.copyOf(defaultToolsByName) : Map.of();
-	}
+    public AgentSpecReActAgentFactory(Model model, Map<String, Object> defaultToolsByName) {
+        Assert.notNull(model, "model must not be null");
+        this.model = model;
+        this.defaultToolsByName =
+                defaultToolsByName != null ? Map.copyOf(defaultToolsByName) : Map.of();
+    }
 
-	/**
-	 * Create a ReActAgent from the given spec.
-	 * If {@link AgentSpec#toolNames()} is empty, the agent receives all default tools;
-	 * otherwise only tools whose name is in the list are registered.
-	 */
-	public ReActAgent create(AgentSpec spec) {
-		Assert.notNull(spec, "spec must not be null");
+    /**
+     * Create a ReActAgent from the given spec.
+     * If {@link AgentSpec#toolNames()} is empty, the agent receives all default tools;
+     * otherwise only tools whose name is in the list are registered.
+     */
+    public ReActAgent create(AgentSpec spec) {
+        Assert.notNull(spec, "spec must not be null");
 
-		Toolkit toolkit = new Toolkit();
-		List<String> toolNames = spec.toolNames();
-		if (CollectionUtils.isEmpty(toolNames)) {
-			defaultToolsByName.values().forEach(toolkit::registerTool);
-		}
-		else {
-			for (String name : toolNames) {
-				Object tool = defaultToolsByName.get(name);
-				if (tool != null) {
-					toolkit.registerTool(tool);
-				}
-			}
-		}
+        Toolkit toolkit = new Toolkit();
+        List<String> toolNames = spec.toolNames();
+        if (CollectionUtils.isEmpty(toolNames)) {
+            defaultToolsByName.values().forEach(toolkit::registerTool);
+        } else {
+            for (String name : toolNames) {
+                Object tool = defaultToolsByName.get(name);
+                if (tool != null) {
+                    toolkit.registerTool(tool);
+                }
+            }
+        }
 
-		return ReActAgent.builder()
-				.name(spec.name())
-				.description(spec.description())
-				.sysPrompt(spec.systemPrompt() != null ? spec.systemPrompt() : "")
-				.model(model)
-				.toolkit(toolkit)
-				.memory(new InMemoryMemory())
-				.build();
-	}
+        return ReActAgent.builder()
+                .name(spec.name())
+                .description(spec.description())
+                .sysPrompt(spec.systemPrompt() != null ? spec.systemPrompt() : "")
+                .model(model)
+                .toolkit(toolkit)
+                .memory(new InMemoryMemory())
+                .build();
+    }
 
-	public static Builder builder() {
-		return new Builder();
-	}
+    public static Builder builder() {
+        return new Builder();
+    }
 
-	public static final class Builder {
-		private Model model;
-		private Map<String, Object> defaultToolsByName = Map.of();
+    public static final class Builder {
+        private Model model;
+        private Map<String, Object> defaultToolsByName = Map.of();
 
-		public Builder model(Model model) {
-			this.model = model;
-			return this;
-		}
+        public Builder model(Model model) {
+            this.model = model;
+            return this;
+        }
 
-		public Builder defaultToolsByName(Map<String, Object> defaultToolsByName) {
-			this.defaultToolsByName = defaultToolsByName != null ? defaultToolsByName : Map.of();
-			return this;
-		}
+        public Builder defaultToolsByName(Map<String, Object> defaultToolsByName) {
+            this.defaultToolsByName = defaultToolsByName != null ? defaultToolsByName : Map.of();
+            return this;
+        }
 
-		public AgentSpecReActAgentFactory build() {
-			Assert.notNull(model, "model must be provided");
-			return new AgentSpecReActAgentFactory(model, defaultToolsByName);
-		}
-	}
+        public AgentSpecReActAgentFactory build() {
+            Assert.notNull(model, "model must be provided");
+            return new AgentSpecReActAgentFactory(model, defaultToolsByName);
+        }
+    }
 }

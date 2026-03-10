@@ -22,10 +22,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Output from a single specialist agent (source name + result text).
  */
 public record AgentOutput(
-		@JsonProperty("source") String source,
-		@JsonProperty("result") String result) {
+        @JsonProperty("source") String source, @JsonProperty("result") String result) {
 
-	@JsonCreator
-	public AgentOutput {
-	}
+    @JsonCreator
+    public AgentOutput {}
 }

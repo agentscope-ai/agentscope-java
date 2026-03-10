@@ -25,16 +25,17 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class SupervisorApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(SupervisorApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(SupervisorApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ Supervisor (personal assistant) example has started!");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ Supervisor (personal assistant) example has started!");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

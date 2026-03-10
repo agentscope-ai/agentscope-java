@@ -23,8 +23,10 @@ import io.agentscope.core.tool.ToolParam;
  */
 public class RagAgentTools {
 
-	@Tool(name = "get_latest_news", description = "Get the latest WNBA news and updates.")
-	public String getLatestNews(@ToolParam(name = "query", description = "Query for news") String query) {
-		return "Latest: The WNBA announced expanded playoff format for 2025. Caitlin Clark breaks rookie assist record.";
-	}
+    @Tool(name = "get_latest_news", description = "Get the latest WNBA news and updates.")
+    public String getLatestNews(
+            @ToolParam(name = "query", description = "Query for news") String query) {
+        return "Latest: The WNBA announced expanded playoff format for 2025. Caitlin Clark breaks"
+                + " rookie assist record.";
+    }
 }

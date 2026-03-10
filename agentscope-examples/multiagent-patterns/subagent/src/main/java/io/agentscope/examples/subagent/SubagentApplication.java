@@ -25,16 +25,17 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class SubagentApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(SubagentApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(SubagentApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ Subagent (Tech Due Diligence) example has started!");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ Subagent (Tech Due Diligence) example has started!");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

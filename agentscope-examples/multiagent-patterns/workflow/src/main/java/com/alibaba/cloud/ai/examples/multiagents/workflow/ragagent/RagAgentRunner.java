@@ -27,27 +27,29 @@ import org.springframework.stereotype.Component;
  * workflow.runner.enabled=true to run on startup.
  */
 @Component
-@ConditionalOnProperty(name = { "workflow.rag.enabled", "workflow.runner.enabled" }, havingValue = "true")
+@ConditionalOnProperty(
+        name = {"workflow.rag.enabled", "workflow.runner.enabled"},
+        havingValue = "true")
 public class RagAgentRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(RagAgentRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(RagAgentRunner.class);
 
-	private final RagAgentService ragAgentService;
+    private final RagAgentService ragAgentService;
 
-	public RagAgentRunner(RagAgentService ragAgentService) {
-		this.ragAgentService = ragAgentService;
-	}
+    public RagAgentRunner(RagAgentService ragAgentService) {
+        this.ragAgentService = ragAgentService;
+    }
 
-	@EventListener(ApplicationReadyEvent.class)
-	public void onReady() {
-		log.info("Running RAG agent demo...");
-		try {
-			RagAgentService.RagAgentResult result = ragAgentService.run("Who won the 2024 WNBA Championship?");
-			log.info("Question: {}", result.question());
-			log.info("Answer: {}", result.answer());
-		}
-		catch (Exception e) {
-			log.error("RAG agent demo failed", e);
-		}
-	}
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        log.info("Running RAG agent demo...");
+        try {
+            RagAgentService.RagAgentResult result =
+                    ragAgentService.run("Who won the 2024 WNBA Championship?");
+            log.info("Question: {}", result.question());
+            log.info("Answer: {}", result.answer());
+        } catch (Exception e) {
+            log.error("RAG agent demo failed", e);
+        }
+    }
 }

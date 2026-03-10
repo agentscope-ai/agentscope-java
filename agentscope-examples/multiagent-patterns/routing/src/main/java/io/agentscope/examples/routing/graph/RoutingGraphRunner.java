@@ -29,19 +29,19 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "routing-graph.runner.enabled", havingValue = "true")
 public class RoutingGraphRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(RoutingGraphRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(RoutingGraphRunner.class);
 
-	private final RoutingGraphService routingGraphService;
+    private final RoutingGraphService routingGraphService;
 
-	public RoutingGraphRunner(RoutingGraphService routingGraphService) {
-		this.routingGraphService = routingGraphService;
-	}
+    public RoutingGraphRunner(RoutingGraphService routingGraphService) {
+        this.routingGraphService = routingGraphService;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		String query = "How do I authenticate API requests?";
-		log.info("Query: {}", query);
-		RoutingGraphService.RoutingGraphResult result = routingGraphService.run(query);
-		log.info("Final answer:\n{}", result.finalAnswer());
-	}
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        String query = "How do I authenticate API requests?";
+        log.info("Query: {}", query);
+        RoutingGraphService.RoutingGraphResult result = routingGraphService.run(query);
+        log.info("Final answer:\n{}", result.finalAnswer());
+    }
 }

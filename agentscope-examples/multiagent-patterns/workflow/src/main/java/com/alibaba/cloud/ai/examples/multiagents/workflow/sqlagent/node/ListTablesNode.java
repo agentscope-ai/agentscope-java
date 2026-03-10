@@ -18,13 +18,12 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.node;
 import com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent.tools.SqlTools;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 
 /**
  * Lists database tables. Creates a synthetic tool call, invokes list_tables, returns messages.
@@ -32,30 +31,32 @@ import java.util.UUID;
  */
 public class ListTablesNode implements NodeAction {
 
-	private final SqlTools sqlTools;
+    private final SqlTools sqlTools;
 
-	public ListTablesNode(SqlTools sqlTools) {
-		this.sqlTools = sqlTools;
-	}
+    public ListTablesNode(SqlTools sqlTools) {
+        this.sqlTools = sqlTools;
+    }
 
-	@Override
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		String callId = "list-tables-" + UUID.randomUUID();
-		AssistantMessage.ToolCall toolCall = new AssistantMessage.ToolCall(
-				callId, "function", "sql_db_list_tables", "{}");
-		AssistantMessage toolCallMessage = AssistantMessage.builder()
-				.content("")
-				.toolCalls(List.of(toolCall))
-				.build();
+    @Override
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        String callId = "list-tables-" + UUID.randomUUID();
+        AssistantMessage.ToolCall toolCall =
+                new AssistantMessage.ToolCall(callId, "function", "sql_db_list_tables", "{}");
+        AssistantMessage toolCallMessage =
+                AssistantMessage.builder().content("").toolCalls(List.of(toolCall)).build();
 
-		String result = sqlTools.listTables("");
-		ToolResponseMessage toolResponse = ToolResponseMessage.builder()
-				.responses(List.of(new ToolResponseMessage.ToolResponse(callId, "sql_db_list_tables", result)))
-				.build();
+        String result = sqlTools.listTables("");
+        ToolResponseMessage toolResponse =
+                ToolResponseMessage.builder()
+                        .responses(
+                                List.of(
+                                        new ToolResponseMessage.ToolResponse(
+                                                callId, "sql_db_list_tables", result)))
+                        .build();
 
-		AssistantMessage responseMessage = new AssistantMessage("Available tables: " + result);
+        AssistantMessage responseMessage = new AssistantMessage("Available tables: " + result);
 
-		List<Message> toAppend = List.of(toolCallMessage, toolResponse, responseMessage);
-		return Map.of("messages", toAppend);
-	}
+        List<Message> toAppend = List.of(toolCallMessage, toolResponse, responseMessage);
+        return Map.of("messages", toAppend);
+    }
 }

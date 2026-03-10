@@ -29,20 +29,21 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "agentscope.runner.enabled", havingValue = "true")
 public class AgentScopeHandoffsRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(AgentScopeHandoffsRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeHandoffsRunner.class);
 
-	private final AgentScopeHandoffsService service;
+    private final AgentScopeHandoffsService service;
 
-	public AgentScopeHandoffsRunner(AgentScopeHandoffsService service) {
-		this.service = service;
-	}
+    public AgentScopeHandoffsRunner(AgentScopeHandoffsService service) {
+        this.service = service;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		String query = "Hi, I'm having trouble with my account login. Can you help?";
-		log.info("Query: {}", query);
-		AgentScopeHandoffsService.AgentScopeHandoffsResult result = service.run(query);
-		log.info("Response messages:");
-		result.messages().forEach(msg -> log.info("  [{}] {}", msg.getMessageType(), msg.getText()));
-	}
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        String query = "Hi, I'm having trouble with my account login. Can you help?";
+        log.info("Query: {}", query);
+        AgentScopeHandoffsService.AgentScopeHandoffsResult result = service.run(query);
+        log.info("Response messages:");
+        result.messages()
+                .forEach(msg -> log.info("  [{}] {}", msg.getMessageType(), msg.getText()));
+    }
 }

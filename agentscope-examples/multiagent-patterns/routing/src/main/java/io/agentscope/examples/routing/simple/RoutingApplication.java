@@ -25,16 +25,17 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class RoutingApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(RoutingApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(RoutingApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ Routing (simple) example has started!");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ Routing (simple) example has started!");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

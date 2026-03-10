@@ -30,22 +30,22 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "routing.runner.enabled", havingValue = "true")
 public class RoutingRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(RoutingRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(RoutingRunner.class);
 
-	private final RouterService routerService;
+    private final RouterService routerService;
 
-	public RoutingRunner(RouterService routerService) {
-		this.routerService = routerService;
-	}
+    public RoutingRunner(RouterService routerService) {
+        this.routerService = routerService;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		String query = "How do I authenticate API requests?";
-		log.info("Query: {}", query);
-		RouterService.RouterResult result = routerService.run(query);
-		log.info("Classifications:");
-		result.classifications().forEach(c -> log.info("  {}: {}", c.source(), c.query()));
-		log.info("---");
-		log.info("Final answer:\n{}", result.finalAnswer());
-	}
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        String query = "How do I authenticate API requests?";
+        log.info("Query: {}", query);
+        RouterService.RouterResult result = routerService.run(query);
+        log.info("Classifications:");
+        result.classifications().forEach(c -> log.info("  {}: {}", c.source(), c.query()));
+        log.info("---");
+        log.info("Final answer:\n{}", result.finalAnswer());
+    }
 }

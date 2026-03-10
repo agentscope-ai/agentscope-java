@@ -16,7 +16,6 @@
 package io.agentscope.examples.subagent;
 
 import java.util.Scanner;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -34,40 +33,42 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "subagent.run-interactive", havingValue = "true")
 public class SubagentRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(SubagentRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(SubagentRunner.class);
 
-	private final OrchestratorService orchestratorService;
+    private final OrchestratorService orchestratorService;
 
-	public SubagentRunner(OrchestratorService orchestratorService) {
-		this.orchestratorService = orchestratorService;
-	}
+    public SubagentRunner(OrchestratorService orchestratorService) {
+        this.orchestratorService = orchestratorService;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) {
-		log.info("Tech Due Diligence Assistant ready. Type your request (or 'quit' to exit).");
-		log.info("Example: Analyze this codebase for Spring usage and research Spring AI alternatives.");
-		log.info("");
+    @Override
+    public void run(ApplicationArguments args) {
+        log.info("Tech Due Diligence Assistant ready. Type your request (or 'quit' to exit).");
+        log.info(
+                "Example: Analyze this codebase for Spring usage and research Spring AI"
+                        + " alternatives.");
+        log.info("");
 
-		try (Scanner scanner = new Scanner(System.in)) {
-			while (true) {
-				System.out.print("\nUSER: ");
-				String input = scanner.nextLine();
-				if (input == null || input.isBlank()) {
-					continue;
-				}
-				if ("quit".equalsIgnoreCase(input.trim()) || "exit".equalsIgnoreCase(input.trim())) {
-					log.info("Goodbye.");
-					break;
-				}
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("\nUSER: ");
+                String input = scanner.nextLine();
+                if (input == null || input.isBlank()) {
+                    continue;
+                }
+                if ("quit".equalsIgnoreCase(input.trim())
+                        || "exit".equalsIgnoreCase(input.trim())) {
+                    log.info("Goodbye.");
+                    break;
+                }
 
-				try {
-					String response = orchestratorService.run(input);
-					log.info("ASSISTANT: {}", response != null ? response : "(no response)");
-				} catch (Exception e) {
-					log.error("Error: {}", e.getMessage());
-				}
-			}
-		}
-	}
-
+                try {
+                    String response = orchestratorService.run(input);
+                    log.info("ASSISTANT: {}", response != null ? response : "(no response)");
+                } catch (Exception e) {
+                    log.error("Error: {}", e.getMessage());
+                }
+            }
+        }
+    }
 }

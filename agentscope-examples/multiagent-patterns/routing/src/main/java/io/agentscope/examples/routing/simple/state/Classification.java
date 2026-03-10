@@ -22,10 +22,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * A single routing decision: which agent to call with what sub-query.
  */
 public record Classification(
-		@JsonProperty("source") String source,
-		@JsonProperty("query") String query) {
+        @JsonProperty("source") String source, @JsonProperty("query") String query) {
 
-	@JsonCreator
-	public Classification {
-	}
+    @JsonCreator
+    public Classification {}
 }

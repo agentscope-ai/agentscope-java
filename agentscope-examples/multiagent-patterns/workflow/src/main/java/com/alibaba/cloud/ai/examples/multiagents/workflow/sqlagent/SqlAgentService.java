@@ -18,48 +18,56 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.sqlagent;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 
 /**
  * Service that invokes the SQL agent graph.
  */
 public class SqlAgentService {
 
-	private final CompiledGraph graph;
+    private final CompiledGraph graph;
 
-	public SqlAgentService(CompiledGraph graph) {
-		this.graph = graph;
-	}
+    public SqlAgentService(CompiledGraph graph) {
+        this.graph = graph;
+    }
 
-	/**
-	 * Run the SQL agent with the given question.
-	 */
-	public SqlAgentResult run(String question) throws GraphRunnerException {
-		Map<String, Object> inputs = Map.of("messages", List.of(new UserMessage(question)), "question", question);
-		Optional<OverAllState> resultOpt = graph.invoke(inputs);
+    /**
+     * Run the SQL agent with the given question.
+     */
+    public SqlAgentResult run(String question) throws GraphRunnerException {
+        Map<String, Object> inputs =
+                Map.of("messages", List.of(new UserMessage(question)), "question", question);
+        Optional<OverAllState> resultOpt = graph.invoke(inputs);
 
-		if (resultOpt.isEmpty()) {
-			return new SqlAgentResult(question, null, null);
-		}
+        if (resultOpt.isEmpty()) {
+            return new SqlAgentResult(question, null, null);
+        }
 
-		OverAllState state = resultOpt.get();
-		@SuppressWarnings("unchecked")
-		List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
-		String answer = messages.stream()
-				.filter(m -> m instanceof AssistantMessage)
-				.map(m -> m instanceof org.springframework.ai.chat.messages.AssistantMessage am ? am.getText() : "")
-				.reduce((a, b) -> b)
-				.orElse(null);
+        OverAllState state = resultOpt.get();
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
+        String answer =
+                messages.stream()
+                        .filter(m -> m instanceof AssistantMessage)
+                        .map(
+                                m ->
+                                        m
+                                                        instanceof
+                                                        org.springframework.ai.chat.messages
+                                                                        .AssistantMessage
+                                                                am
+                                                ? am.getText()
+                                                : "")
+                        .reduce((a, b) -> b)
+                        .orElse(null);
 
-		return new SqlAgentResult(question, answer, state);
-	}
+        return new SqlAgentResult(question, answer, state);
+    }
 
-	public record SqlAgentResult(String question, String answer, OverAllState state) {
-	}
+    public record SqlAgentResult(String question, String answer, OverAllState state) {}
 }

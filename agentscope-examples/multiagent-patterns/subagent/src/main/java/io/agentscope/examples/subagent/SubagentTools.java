@@ -15,9 +15,8 @@
  */
 package io.agentscope.examples.subagent;
 
-import java.util.List;
-
 import io.agentscope.core.ReActAgent;
+import java.util.List;
 
 /**
  * Holds default AgentScope tools and the dependency-analyzer ReActAgent plus the
@@ -25,7 +24,6 @@ import io.agentscope.core.ReActAgent;
  * AgentScopeAgent beans and the orchestrator graph.
  */
 public record SubagentTools(
-		List<Object> defaultTools,
-		ReActAgent dependencyAnalyzerReAct,
-		ReActAgent.Builder orchestratorBuilder) {
-}
+        List<Object> defaultTools,
+        ReActAgent dependencyAnalyzerReAct,
+        ReActAgent.Builder orchestratorBuilder) {}

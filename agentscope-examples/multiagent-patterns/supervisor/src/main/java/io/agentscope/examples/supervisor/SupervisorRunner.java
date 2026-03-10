@@ -37,38 +37,41 @@ import org.springframework.util.StringUtils;
 @ConditionalOnProperty(name = "supervisor.run-examples", havingValue = "true")
 public class SupervisorRunner implements ApplicationRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(SupervisorRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(SupervisorRunner.class);
 
-	private final ReActAgent supervisorAgent;
+    private final ReActAgent supervisorAgent;
 
-	public SupervisorRunner(@Qualifier("supervisorAgent") ReActAgent supervisorAgent) {
-		this.supervisorAgent = supervisorAgent;
-	}
+    public SupervisorRunner(@Qualifier("supervisorAgent") ReActAgent supervisorAgent) {
+        this.supervisorAgent = supervisorAgent;
+    }
 
-	@Override
-	public void run(ApplicationArguments args) throws Exception {
-		// Example 1: Simple single-domain request (calendar only)
-		String query1 = "Schedule a team standup for tomorrow at 9am";
-		log.info("User request: {}", query1);
-		log.info("---");
-		Msg response1 = supervisorAgent.call(buildUserMsg(query1)).block();
-		log.info("Assistant: {}", getText(response1));
-		log.info("");
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        // Example 1: Simple single-domain request (calendar only)
+        String query1 = "Schedule a team standup for tomorrow at 9am";
+        log.info("User request: {}", query1);
+        log.info("---");
+        Msg response1 = supervisorAgent.call(buildUserMsg(query1)).block();
+        log.info("Assistant: {}", getText(response1));
+        log.info("");
 
-		// Example 2: Complex multi-domain request (calendar + email)
-		String query2 = "Schedule a meeting with the design team next Tuesday at 2pm for 1 hour, "
-				+ "and send them an email reminder about reviewing the new mockups.";
-		log.info("User request: {}", query2);
-		log.info("---");
-		Msg response2 = supervisorAgent.call(buildUserMsg(query2)).block();
-		log.info("Assistant: {}", getText(response2));
-	}
+        // Example 2: Complex multi-domain request (calendar + email)
+        String query2 =
+                "Schedule a meeting with the design team next Tuesday at 2pm for 1 hour, "
+                        + "and send them an email reminder about reviewing the new mockups.";
+        log.info("User request: {}", query2);
+        log.info("---");
+        Msg response2 = supervisorAgent.call(buildUserMsg(query2)).block();
+        log.info("Assistant: {}", getText(response2));
+    }
 
-	private static Msg buildUserMsg(String text) {
-		return Msg.builder().role(MsgRole.USER).textContent(text).build();
-	}
+    private static Msg buildUserMsg(String text) {
+        return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
 
-	private static String getText(Msg msg) {
-		return msg != null && StringUtils.hasText(msg.getTextContent()) ? msg.getTextContent() : "(No response)";
-	}
+    private static String getText(Msg msg) {
+        return msg != null && StringUtils.hasText(msg.getTextContent())
+                ? msg.getTextContent()
+                : "(No response)";
+    }
 }

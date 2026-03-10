@@ -15,16 +15,13 @@
  */
 package io.agentscope.examples.handoffs.multiagent;
 
-import io.agentscope.examples.handoffs.multiagent.route.RouteAfterSalesAction;
-import io.agentscope.examples.handoffs.multiagent.route.RouteAfterSupportAction;
-import io.agentscope.examples.handoffs.multiagent.route.RouteInitialAction;
-import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
-import io.agentscope.examples.handoffs.multiagent.tools.TransferToSalesTool;
-import io.agentscope.examples.handoffs.multiagent.tools.TransferToSupportTool;
+import static com.alibaba.cloud.ai.graph.StateGraph.END;
+import static com.alibaba.cloud.ai.graph.StateGraph.START;
+
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.KeyStrategy;
 import com.alibaba.cloud.ai.graph.StateGraph;
-import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
@@ -33,16 +30,18 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.handoffs.multiagent.route.RouteAfterSalesAction;
+import io.agentscope.examples.handoffs.multiagent.route.RouteAfterSupportAction;
+import io.agentscope.examples.handoffs.multiagent.route.RouteInitialAction;
+import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
+import io.agentscope.examples.handoffs.multiagent.tools.TransferToSalesTool;
+import io.agentscope.examples.handoffs.multiagent.tools.TransferToSupportTool;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
-
-import java.util.HashMap;
-import java.util.Map;
-
-import static com.alibaba.cloud.ai.graph.StateGraph.END;
-import static com.alibaba.cloud.ai.graph.StateGraph.START;
 
 /**
  * Configures the AgentScope multi-agent handoffs pattern: sales and support agents
@@ -57,112 +56,128 @@ import static com.alibaba.cloud.ai.graph.StateGraph.START;
 @Configuration
 public class AgentScopeHandoffsConfig {
 
-	private static final String SALES_PROMPT = """
-			You are a sales agent. Help with sales inquiries, pricing, and product availability.
-			If the customer asks about technical issues, troubleshooting, or account problems,
-			use transfer_to_support to hand off to the support agent.
-			""";
+    private static final String SALES_PROMPT =
+            """
+            You are a sales agent. Help with sales inquiries, pricing, and product availability.
+            If the customer asks about technical issues, troubleshooting, or account problems,
+            use transfer_to_support to hand off to the support agent.
+            """;
 
-	private static final String SUPPORT_PROMPT = """
-			You are a support agent. Help with technical issues, troubleshooting, and account problems.
-			If the customer asks about pricing, purchasing, or product availability,
-			use transfer_to_sales to hand off to the sales agent.
-			""";
+    private static final String SUPPORT_PROMPT =
+            """
+            You are a support agent. Help with technical issues, troubleshooting, and account problems.
+            If the customer asks about pricing, purchasing, or product availability,
+            use transfer_to_sales to hand off to the sales agent.
+            """;
 
-	@Bean
-	public AgentScopeAgent salesAgent(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
-		String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
-		Model scopeModel = DashScopeChatModel.builder()
-				.apiKey(key)
-				.modelName("qwen-plus")
-				.build();
+    @Bean
+    public AgentScopeAgent salesAgent(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
+        String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
+        Model scopeModel = DashScopeChatModel.builder().apiKey(key).modelName("qwen-plus").build();
 
-		Toolkit toolkit = new Toolkit();
-		toolkit.registerTool(TransferToSupportTool.create());
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(TransferToSupportTool.create());
 
-		ReActAgent.Builder scopeReActBuilder = ReActAgent.builder()
-				.name(AgentScopeStateConstants.SALES_AGENT)
-				.description("Sales agent for pricing, product availability, and sales inquiries")
-				.sysPrompt(SALES_PROMPT)
-				.model(scopeModel)
-				.toolkit(toolkit)
-				.memory(new InMemoryMemory());
+        ReActAgent.Builder scopeReActBuilder =
+                ReActAgent.builder()
+                        .name(AgentScopeStateConstants.SALES_AGENT)
+                        .description(
+                                "Sales agent for pricing, product availability, and sales"
+                                        + " inquiries")
+                        .sysPrompt(SALES_PROMPT)
+                        .model(scopeModel)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory());
 
-		return AgentScopeAgent.fromBuilder(scopeReActBuilder)
-				.name(AgentScopeStateConstants.SALES_AGENT)
-				.description("Sales agent for pricing, product availability, and sales inquiries")
-				.instruction("please assist the customer with their sales inquiry: {input}.")
-				.includeContents(true)
-				.returnReasoningContents(true)
-				.build();
-	}
+        return AgentScopeAgent.fromBuilder(scopeReActBuilder)
+                .name(AgentScopeStateConstants.SALES_AGENT)
+                .description("Sales agent for pricing, product availability, and sales inquiries")
+                .instruction("please assist the customer with their sales inquiry: {input}.")
+                .includeContents(true)
+                .returnReasoningContents(true)
+                .build();
+    }
 
-	@Bean
-	public AgentScopeAgent supportAgent(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
-		String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
-		Model scopeModel = DashScopeChatModel.builder()
-				.apiKey(key)
-				.modelName("qwen-plus")
-				.build();
+    @Bean
+    public AgentScopeAgent supportAgent(@Value("${spring.ai.dashscope.api-key:}") String apiKey) {
+        String key = StringUtils.hasText(apiKey) ? apiKey : System.getenv("AI_DASHSCOPE_API_KEY");
+        Model scopeModel = DashScopeChatModel.builder().apiKey(key).modelName("qwen-plus").build();
 
-		Toolkit toolkit = new Toolkit();
-		toolkit.registerTool(TransferToSalesTool.create());
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(TransferToSalesTool.create());
 
-		ReActAgent.Builder scopeReActBuilder = ReActAgent.builder()
-				.name(AgentScopeStateConstants.SUPPORT_AGENT)
-				.description("Support agent for technical issues and troubleshooting")
-				.sysPrompt(SUPPORT_PROMPT)
-				.model(scopeModel)
-				.toolkit(toolkit)
-				.memory(new InMemoryMemory());
+        ReActAgent.Builder scopeReActBuilder =
+                ReActAgent.builder()
+                        .name(AgentScopeStateConstants.SUPPORT_AGENT)
+                        .description("Support agent for technical issues and troubleshooting")
+                        .sysPrompt(SUPPORT_PROMPT)
+                        .model(scopeModel)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory());
 
-		return AgentScopeAgent.fromBuilder(scopeReActBuilder)
-				.name(AgentScopeStateConstants.SUPPORT_AGENT)
-				.description("Support agent for technical issues and troubleshooting")
-				.instruction("please assist the customer with their product technical inquiry: {input}.")
-				.includeContents(true)
-				.returnReasoningContents(true)
-				.build();
-	}
+        return AgentScopeAgent.fromBuilder(scopeReActBuilder)
+                .name(AgentScopeStateConstants.SUPPORT_AGENT)
+                .description("Support agent for technical issues and troubleshooting")
+                .instruction(
+                        "please assist the customer with their product technical inquiry: {input}.")
+                .includeContents(true)
+                .returnReasoningContents(true)
+                .build();
+    }
 
-	@Bean
-	public CompiledGraph agentScopeHandoffsGraph(AgentScopeAgent salesAgent, AgentScopeAgent supportAgent)
-			throws GraphStateException {
+    @Bean
+    public CompiledGraph agentScopeHandoffsGraph(
+            AgentScopeAgent salesAgent, AgentScopeAgent supportAgent) throws GraphStateException {
 
-		StateGraph graph = new StateGraph("agent_scope_handoffs", () -> {
-			Map<String, KeyStrategy> strategies = new HashMap<>();
-			strategies.put("messages", new AppendStrategy(false));
-			strategies.put(AgentScopeStateConstants.ACTIVE_AGENT, new ReplaceStrategy());
-			return strategies;
-		});
+        StateGraph graph =
+                new StateGraph(
+                        "agent_scope_handoffs",
+                        () -> {
+                            Map<String, KeyStrategy> strategies = new HashMap<>();
+                            strategies.put("messages", new AppendStrategy(false));
+                            strategies.put(
+                                    AgentScopeStateConstants.ACTIVE_AGENT, new ReplaceStrategy());
+                            return strategies;
+                        });
 
-		graph.addNode(AgentScopeStateConstants.SALES_AGENT, salesAgent.asNode());
-		graph.addNode(AgentScopeStateConstants.SUPPORT_AGENT, supportAgent.asNode());
+        graph.addNode(AgentScopeStateConstants.SALES_AGENT, salesAgent.asNode());
+        graph.addNode(AgentScopeStateConstants.SUPPORT_AGENT, supportAgent.asNode());
 
-		// route_initial: default to sales_agent
-		graph.addConditionalEdges(START, new RouteInitialAction(), Map.of(
-				AgentScopeStateConstants.SALES_AGENT, AgentScopeStateConstants.SALES_AGENT,
-				AgentScopeStateConstants.SUPPORT_AGENT, AgentScopeStateConstants.SUPPORT_AGENT));
+        // route_initial: default to sales_agent
+        graph.addConditionalEdges(
+                START,
+                new RouteInitialAction(),
+                Map.of(
+                        AgentScopeStateConstants.SALES_AGENT, AgentScopeStateConstants.SALES_AGENT,
+                        AgentScopeStateConstants.SUPPORT_AGENT,
+                                AgentScopeStateConstants.SUPPORT_AGENT));
 
-		// route_after_sales: handoff to support or END
-		graph.addConditionalEdges(AgentScopeStateConstants.SALES_AGENT,
-				new RouteAfterSalesAction(),
-				Map.of(
-						AgentScopeStateConstants.SUPPORT_AGENT, AgentScopeStateConstants.SUPPORT_AGENT,
-						"__end__", END));
+        // route_after_sales: handoff to support or END
+        graph.addConditionalEdges(
+                AgentScopeStateConstants.SALES_AGENT,
+                new RouteAfterSalesAction(),
+                Map.of(
+                        AgentScopeStateConstants.SUPPORT_AGENT,
+                        AgentScopeStateConstants.SUPPORT_AGENT,
+                        "__end__",
+                        END));
 
-		// route_after_support: handoff to sales or END
-		graph.addConditionalEdges(AgentScopeStateConstants.SUPPORT_AGENT,
-				new RouteAfterSupportAction(),
-				Map.of(
-						AgentScopeStateConstants.SALES_AGENT, AgentScopeStateConstants.SALES_AGENT,
-						"__end__", END));
+        // route_after_support: handoff to sales or END
+        graph.addConditionalEdges(
+                AgentScopeStateConstants.SUPPORT_AGENT,
+                new RouteAfterSupportAction(),
+                Map.of(
+                        AgentScopeStateConstants.SALES_AGENT,
+                        AgentScopeStateConstants.SALES_AGENT,
+                        "__end__",
+                        END));
 
-		return graph.compile();
-	}
+        return graph.compile();
+    }
 
-	@Bean
-	public AgentScopeHandoffsService agentScopeHandoffsService(CompiledGraph agentScopeHandoffsGraph) {
-		return new AgentScopeHandoffsService(agentScopeHandoffsGraph);
-	}
+    @Bean
+    public AgentScopeHandoffsService agentScopeHandoffsService(
+            CompiledGraph agentScopeHandoffsGraph) {
+        return new AgentScopeHandoffsService(agentScopeHandoffsGraph);
+    }
 }

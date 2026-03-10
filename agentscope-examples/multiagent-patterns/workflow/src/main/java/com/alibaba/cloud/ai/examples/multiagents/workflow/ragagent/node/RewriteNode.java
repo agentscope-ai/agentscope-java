@@ -15,8 +15,6 @@
  */
 package com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent.node;
 
-import java.util.Map;
-
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.action.NodeAction;
 import io.agentscope.core.ReActAgent;
@@ -25,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import java.util.Map;
 import org.springframework.util.StringUtils;
 
 /**
@@ -32,30 +31,32 @@ import org.springframework.util.StringUtils;
  */
 public class RewriteNode implements NodeAction {
 
-	private final Model model;
-	private final String systemPromptTemplate;
+    private final Model model;
+    private final String systemPromptTemplate;
 
-	public RewriteNode(Model model, String systemPromptTemplate) {
-		this.model = model;
-		this.systemPromptTemplate = systemPromptTemplate;
-	}
+    public RewriteNode(Model model, String systemPromptTemplate) {
+        this.model = model;
+        this.systemPromptTemplate = systemPromptTemplate;
+    }
 
-	@Override
-	public Map<String, Object> apply(OverAllState state) throws Exception {
-		String question = state.value("question").map(Object::toString).orElse("");
-		String prompt = systemPromptTemplate.formatted(question);
+    @Override
+    public Map<String, Object> apply(OverAllState state) throws Exception {
+        String question = state.value("question").map(Object::toString).orElse("");
+        String prompt = systemPromptTemplate.formatted(question);
 
-		ReActAgent rewriter = ReActAgent.builder()
-				.name("rewriter")
-				.sysPrompt("Respond with only the rewritten query, nothing else.")
-				.model(model)
-				.toolkit(new Toolkit())
-				.memory(new InMemoryMemory())
-				.build();
+        ReActAgent rewriter =
+                ReActAgent.builder()
+                        .name("rewriter")
+                        .sysPrompt("Respond with only the rewritten query, nothing else.")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .memory(new InMemoryMemory())
+                        .build();
 
-		Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(prompt).build();
-		Msg response = rewriter.call(userMsg).block();
-		String rewritten = response != null ? response.getTextContent() : null;
-		return Map.of("rewritten_query", StringUtils.hasText(rewritten) ? rewritten.trim() : question);
-	}
+        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(prompt).build();
+        Msg response = rewriter.call(userMsg).block();
+        String rewritten = response != null ? response.getTextContent() : null;
+        return Map.of(
+                "rewritten_query", StringUtils.hasText(rewritten) ? rewritten.trim() : question);
+    }
 }

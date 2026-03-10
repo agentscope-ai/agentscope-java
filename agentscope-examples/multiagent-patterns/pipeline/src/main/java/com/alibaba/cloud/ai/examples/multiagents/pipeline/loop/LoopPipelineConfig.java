@@ -22,13 +22,11 @@ import com.alibaba.cloud.ai.graph.agent.flow.agent.loop.LoopMode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.tool.Toolkit;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.util.List;
 
 /**
  * LoopAgent example: SQL refinement until quality threshold.
@@ -46,82 +44,99 @@ import java.util.List;
 @Configuration
 public class LoopPipelineConfig {
 
-	private static final Logger log = LoggerFactory.getLogger(LoopPipelineConfig.class);
+    private static final Logger log = LoggerFactory.getLogger(LoopPipelineConfig.class);
 
-	private static final double QUALITY_THRESHOLD = 0.5;
+    private static final double QUALITY_THRESHOLD = 0.5;
 
-	private static final String SQL_GENERATOR_PROMPT = """
-			You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.
-			Only output valid MySQL SQL. Do not include explanations.
-			""";
+    private static final String SQL_GENERATOR_PROMPT =
+            """
+            You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.
+            Only output valid MySQL SQL. Do not include explanations.
+            """;
 
-	private static final String SQL_RATER_PROMPT = """
-			You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,
-			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.
-			Output ONLY the number, no other text. Example: 0.85
-			""";
+    private static final String SQL_RATER_PROMPT =
+            """
+            You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,
+            output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.
+            Output ONLY the number, no other text. Example: 0.85
+            """;
 
-	@Bean("loopSqlRefinementAgent")
-	public LoopAgent loopSqlRefinementAgent(Model dashScopeChatModel) {
-		ReActAgent.Builder sqlGenBuilder = ReActAgent.builder()
-				.name("sql_generator")
-				.model(dashScopeChatModel)
-				.description("Converts natural language to MySQL SQL")
-				.sysPrompt(SQL_GENERATOR_PROMPT)
-				.memory(new InMemoryMemory());
-		AgentScopeAgent sqlGenerateAgent = AgentScopeAgent.fromBuilder(sqlGenBuilder)
-				.name("sql_generator")
-				.description("Converts natural language to MySQL SQL")
-				.instruction("{input}")
-				.includeContents(false)
-				.outputKey("sql")
-				.build();
+    @Bean("loopSqlRefinementAgent")
+    public LoopAgent loopSqlRefinementAgent(Model dashScopeChatModel) {
+        ReActAgent.Builder sqlGenBuilder =
+                ReActAgent.builder()
+                        .name("sql_generator")
+                        .model(dashScopeChatModel)
+                        .description("Converts natural language to MySQL SQL")
+                        .sysPrompt(SQL_GENERATOR_PROMPT)
+                        .memory(new InMemoryMemory());
+        AgentScopeAgent sqlGenerateAgent =
+                AgentScopeAgent.fromBuilder(sqlGenBuilder)
+                        .name("sql_generator")
+                        .description("Converts natural language to MySQL SQL")
+                        .instruction("{input}")
+                        .includeContents(false)
+                        .outputKey("sql")
+                        .build();
 
-		ReActAgent.Builder sqlRaterBuilder = ReActAgent.builder()
-				.name("sql_rater")
-				.model(dashScopeChatModel)
-				.description("Scores SQL against user intent")
-				.sysPrompt(SQL_RATER_PROMPT)
-				.memory(new InMemoryMemory());
-		AgentScopeAgent sqlRatingAgent = AgentScopeAgent.fromBuilder(sqlRaterBuilder)
-				.name("sql_rater")
-				.description("Scores SQL against user intent")
-				.instruction("Here's the generated SQL:\n {sql}.\n\n Here's the original user request:\n {input}.")
-				.includeContents(false)
-				.outputKey("score")
-				.build();
+        ReActAgent.Builder sqlRaterBuilder =
+                ReActAgent.builder()
+                        .name("sql_rater")
+                        .model(dashScopeChatModel)
+                        .description("Scores SQL against user intent")
+                        .sysPrompt(SQL_RATER_PROMPT)
+                        .memory(new InMemoryMemory());
+        AgentScopeAgent sqlRatingAgent =
+                AgentScopeAgent.fromBuilder(sqlRaterBuilder)
+                        .name("sql_rater")
+                        .description("Scores SQL against user intent")
+                        .instruction(
+                                "Here's the generated SQL:\n"
+                                        + " {sql}.\n\n"
+                                        + " Here's the original user request:\n"
+                                        + " {input}.")
+                        .includeContents(false)
+                        .outputKey("score")
+                        .build();
 
-		SequentialAgent sqlAgent = SequentialAgent.builder()
-				.name("sql_agent")
-				.description("Generates SQL and scores its quality")
-				.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
-				.build();
+        SequentialAgent sqlAgent =
+                SequentialAgent.builder()
+                        .name("sql_agent")
+                        .description("Generates SQL and scores its quality")
+                        .subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+                        .build();
 
-		return LoopAgent.builder()
-				.name("loop_sql_refinement_agent")
-				.description("Iteratively refines SQL until quality score exceeds " + QUALITY_THRESHOLD)
-				.subAgent(sqlAgent)
-				.loopStrategy(LoopMode.condition(messages -> {
-					if (messages == null || messages.isEmpty()) {
-						return false;
-					}
-					String text = messages.get(messages.size() - 1).getText();
-					if (text == null || text.isBlank()) {
-						return false;
-					}
-					try {
-						double score = Double.parseDouble(text.trim());
-						boolean satisfied = score > QUALITY_THRESHOLD;
-						if (satisfied) {
-							log.debug("SQL quality score {} exceeds threshold {}, stopping loop", score, QUALITY_THRESHOLD);
-						}
-						return satisfied;
-					}
-					catch (NumberFormatException e) {
-						log.debug("Could not parse score from: {}", text);
-						return false;
-					}
-				}))
-				.build();
-	}
+        return LoopAgent.builder()
+                .name("loop_sql_refinement_agent")
+                .description(
+                        "Iteratively refines SQL until quality score exceeds " + QUALITY_THRESHOLD)
+                .subAgent(sqlAgent)
+                .loopStrategy(
+                        LoopMode.condition(
+                                messages -> {
+                                    if (messages == null || messages.isEmpty()) {
+                                        return false;
+                                    }
+                                    String text = messages.get(messages.size() - 1).getText();
+                                    if (text == null || text.isBlank()) {
+                                        return false;
+                                    }
+                                    try {
+                                        double score = Double.parseDouble(text.trim());
+                                        boolean satisfied = score > QUALITY_THRESHOLD;
+                                        if (satisfied) {
+                                            log.debug(
+                                                    "SQL quality score {} exceeds threshold {},"
+                                                            + " stopping loop",
+                                                    score,
+                                                    QUALITY_THRESHOLD);
+                                        }
+                                        return satisfied;
+                                    } catch (NumberFormatException e) {
+                                        log.debug("Could not parse score from: {}", text);
+                                        return false;
+                                    }
+                                }))
+                .build();
+    }
 }

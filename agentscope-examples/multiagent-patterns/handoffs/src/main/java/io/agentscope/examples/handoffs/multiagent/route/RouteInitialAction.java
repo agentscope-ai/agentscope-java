@@ -15,12 +15,11 @@
  */
 package io.agentscope.examples.handoffs.multiagent.route;
 
-import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.action.AsyncCommandAction;
 import com.alibaba.cloud.ai.graph.action.Command;
-
+import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -29,12 +28,13 @@ import java.util.concurrent.CompletableFuture;
  */
 public class RouteInitialAction implements AsyncCommandAction {
 
-	@Override
-	public CompletableFuture<Command> apply(OverAllState state, RunnableConfig config) {
-		String target = state.value(AgentScopeStateConstants.ACTIVE_AGENT)
-				.map(Object::toString)
-				.filter(AgentScopeStateConstants.SUPPORT_AGENT::equals)
-				.orElse(AgentScopeStateConstants.SALES_AGENT);
-		return CompletableFuture.completedFuture(new Command(target));
-	}
+    @Override
+    public CompletableFuture<Command> apply(OverAllState state, RunnableConfig config) {
+        String target =
+                state.value(AgentScopeStateConstants.ACTIVE_AGENT)
+                        .map(Object::toString)
+                        .filter(AgentScopeStateConstants.SUPPORT_AGENT::equals)
+                        .orElse(AgentScopeStateConstants.SALES_AGENT);
+        return CompletableFuture.completedFuture(new Command(target));
+    }
 }

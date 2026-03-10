@@ -27,28 +27,29 @@ import org.springframework.stereotype.Component;
  * workflow.runner.enabled=true to run on startup.
  */
 @Component
-@ConditionalOnProperty(name = { "workflow.sql.enabled", "workflow.runner.enabled" }, havingValue = "true")
+@ConditionalOnProperty(
+        name = {"workflow.sql.enabled", "workflow.runner.enabled"},
+        havingValue = "true")
 public class SqlAgentRunner {
 
-	private static final Logger log = LoggerFactory.getLogger(SqlAgentRunner.class);
+    private static final Logger log = LoggerFactory.getLogger(SqlAgentRunner.class);
 
-	private final SqlAgentService sqlAgentService;
+    private final SqlAgentService sqlAgentService;
 
-	public SqlAgentRunner(SqlAgentService sqlAgentService) {
-		this.sqlAgentService = sqlAgentService;
-	}
+    public SqlAgentRunner(SqlAgentService sqlAgentService) {
+        this.sqlAgentService = sqlAgentService;
+    }
 
-	@EventListener(ApplicationReadyEvent.class)
-	public void onReady() {
-		log.info("Running SQL agent demo...");
-		try {
-			SqlAgentService.SqlAgentResult result = sqlAgentService
-					.run("Which genre on average has the longest tracks?");
-			log.info("Question: {}", result.question());
-			log.info("Answer: {}", result.answer());
-		}
-		catch (Exception e) {
-			log.error("SQL agent demo failed", e);
-		}
-	}
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        log.info("Running SQL agent demo...");
+        try {
+            SqlAgentService.SqlAgentResult result =
+                    sqlAgentService.run("Which genre on average has the longest tracks?");
+            log.info("Question: {}", result.question());
+            log.info("Answer: {}", result.answer());
+        } catch (Exception e) {
+            log.error("SQL agent demo failed", e);
+        }
+    }
 }

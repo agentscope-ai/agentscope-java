@@ -18,42 +18,40 @@ package io.agentscope.examples.handoffs.multiagent;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.ai.chat.messages.Message;
 
 /**
  * Service that invokes the AgentScope multi-agent handoffs graph (sales + support with handoff tools).
  */
 public class AgentScopeHandoffsService {
 
-	private final CompiledGraph graph;
+    private final CompiledGraph graph;
 
-	public AgentScopeHandoffsService(CompiledGraph graph) {
-		this.graph = graph;
-	}
+    public AgentScopeHandoffsService(CompiledGraph graph) {
+        this.graph = graph;
+    }
 
-	/**
-	 * Run the multi-agent handoffs pipeline with the given user message.
-	 */
-	public AgentScopeHandoffsResult run(String userMessage) throws GraphRunnerException {
-		Map<String, Object> inputs = Map.of("input", userMessage);
-		Optional<OverAllState> resultOpt = graph.invoke(inputs);
+    /**
+     * Run the multi-agent handoffs pipeline with the given user message.
+     */
+    public AgentScopeHandoffsResult run(String userMessage) throws GraphRunnerException {
+        Map<String, Object> inputs = Map.of("input", userMessage);
+        Optional<OverAllState> resultOpt = graph.invoke(inputs);
 
-		if (resultOpt.isEmpty()) {
-			return new AgentScopeHandoffsResult(userMessage, null, List.of());
-		}
+        if (resultOpt.isEmpty()) {
+            return new AgentScopeHandoffsResult(userMessage, null, List.of());
+        }
 
-		OverAllState state = resultOpt.get();
-		@SuppressWarnings("unchecked")
-		List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
+        OverAllState state = resultOpt.get();
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
 
-		return new AgentScopeHandoffsResult(userMessage, state, messages);
-	}
+        return new AgentScopeHandoffsResult(userMessage, state, messages);
+    }
 
-	public record AgentScopeHandoffsResult(String query, OverAllState state, List<Message> messages) {
-	}
+    public record AgentScopeHandoffsResult(
+            String query, OverAllState state, List<Message> messages) {}
 }

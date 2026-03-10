@@ -18,46 +18,48 @@ package io.agentscope.examples.routing.graph;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Service that invokes the routing graph: preprocess → routing (LlmRoutingAgent with merge) → postprocess.
  */
 public class RoutingGraphService {
 
-	private static final Logger log = LoggerFactory.getLogger(RoutingGraphService.class);
+    private static final Logger log = LoggerFactory.getLogger(RoutingGraphService.class);
 
-	private final CompiledGraph routingGraph;
+    private final CompiledGraph routingGraph;
 
-	public RoutingGraphService(CompiledGraph routingGraph) {
-		this.routingGraph = routingGraph;
-	}
+    public RoutingGraphService(CompiledGraph routingGraph) {
+        this.routingGraph = routingGraph;
+    }
 
-	/**
-	 * Run the full pipeline: preprocess → routing (with merge) → postprocess.
-	 */
-	public RoutingGraphResult run(String query) throws GraphRunnerException {
-		Map<String, Object> inputs = Map.of("input", query);
-		Optional<OverAllState> resultOpt = routingGraph.invoke(inputs);
+    /**
+     * Run the full pipeline: preprocess → routing (with merge) → postprocess.
+     */
+    public RoutingGraphResult run(String query) throws GraphRunnerException {
+        Map<String, Object> inputs = Map.of("input", query);
+        Optional<OverAllState> resultOpt = routingGraph.invoke(inputs);
 
-		if (resultOpt.isEmpty()) {
-			return new RoutingGraphResult(query, null, "No result from graph.");
-		}
+        if (resultOpt.isEmpty()) {
+            return new RoutingGraphResult(query, null, "No result from graph.");
+        }
 
-		OverAllState state = resultOpt.get();
-		String finalAnswer = state.value("final_answer")
-				.map(Object::toString)
-				.orElse(state.value("merged_result").map(Object::toString).orElse("No result."));
+        OverAllState state = resultOpt.get();
+        String finalAnswer =
+                state.value("final_answer")
+                        .map(Object::toString)
+                        .orElse(
+                                state.value("merged_result")
+                                        .map(Object::toString)
+                                        .orElse("No result."));
 
-		log.debug("Routing graph completed, answer length={}", finalAnswer.length());
+        log.debug("Routing graph completed, answer length={}", finalAnswer.length());
 
-		return new RoutingGraphResult(query, state, finalAnswer);
-	}
+        return new RoutingGraphResult(query, state, finalAnswer);
+    }
 
-	public record RoutingGraphResult(String query, OverAllState state, String finalAnswer) {
-	}
+    public record RoutingGraphResult(String query, OverAllState state, String finalAnswer) {}
 }

@@ -29,105 +29,99 @@ import java.util.concurrent.TimeoutException;
  */
 public class BackgroundTask {
 
-	private final String taskId;
+    private final String taskId;
 
-	private final CompletableFuture<String> future;
+    private final CompletableFuture<String> future;
 
-	/**
-	 * Create a BackgroundTask with an existing future.
-	 * @param taskId the task identifier
-	 * @param future the completable future to wrap
-	 */
-	public BackgroundTask(String taskId, CompletableFuture<String> future) {
-		this.taskId = taskId;
-		this.future = future;
-	}
+    /**
+     * Create a BackgroundTask with an existing future.
+     * @param taskId the task identifier
+     * @param future the completable future to wrap
+     */
+    public BackgroundTask(String taskId, CompletableFuture<String> future) {
+        this.taskId = taskId;
+        this.future = future;
+    }
 
-	/**
-	 * Check if the task has completed execution.
-	 */
-	public boolean isCompleted() {
-		return this.future.isDone();
-	}
+    /**
+     * Check if the task has completed execution.
+     */
+    public boolean isCompleted() {
+        return this.future.isDone();
+    }
 
-	/**
-	 * Get the result of the task execution (non-blocking).
-	 * @return the task result, or null if not yet completed or if an error occurred
-	 */
-	public String getResult() {
-		try {
-			return this.future.getNow(null);
-		}
-		catch (Exception e) {
-			return null;
-		}
-	}
+    /**
+     * Get the result of the task execution (non-blocking).
+     * @return the task result, or null if not yet completed or if an error occurred
+     */
+    public String getResult() {
+        try {
+            return this.future.getNow(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
-	/**
-	 * Get the error that occurred during task execution, if any.
-	 */
-	public Exception getError() {
-		if (this.future.isCompletedExceptionally()) {
-			try {
-				this.future.getNow(null);
-			}
-			catch (Exception e) {
-				if (e.getCause() instanceof Exception cause) {
-					return cause;
-				}
-				return e;
-			}
-		}
-		return null;
-	}
+    /**
+     * Get the error that occurred during task execution, if any.
+     */
+    public Exception getError() {
+        if (this.future.isCompletedExceptionally()) {
+            try {
+                this.future.getNow(null);
+            } catch (Exception e) {
+                if (e.getCause() instanceof Exception cause) {
+                    return cause;
+                }
+                return e;
+            }
+        }
+        return null;
+    }
 
-	/**
-	 * Get a human-readable status description of the task.
-	 */
-	public String getStatus() {
-		if (this.future.isCompletedExceptionally()) {
-			Exception error = getError();
-			return "Failed: " + (error != null ? error.getMessage() : "Unknown error");
-		}
-		return this.future.isDone() ? "Completed" : "Running";
-	}
+    /**
+     * Get a human-readable status description of the task.
+     */
+    public String getStatus() {
+        if (this.future.isCompletedExceptionally()) {
+            Exception error = getError();
+            return "Failed: " + (error != null ? error.getMessage() : "Unknown error");
+        }
+        return this.future.isDone() ? "Completed" : "Running";
+    }
 
-	/**
-	 * Wait for the task to complete within the specified timeout.
-	 * @param timeoutMs the maximum time to wait in milliseconds
-	 * @return true if the task completed within the timeout, false if it timed out
-	 */
-	public boolean waitForCompletion(long timeoutMs) throws InterruptedException {
-		if (this.future.isDone()) {
-			return true;
-		}
-		try {
-			this.future.get(timeoutMs, TimeUnit.MILLISECONDS);
-			return true;
-		}
-		catch (InterruptedException e) {
-			throw e;
-		}
-		catch (TimeoutException e) {
-			return false;
-		}
-		catch (Exception e) {
-			return true;
-		}
-	}
+    /**
+     * Wait for the task to complete within the specified timeout.
+     * @param timeoutMs the maximum time to wait in milliseconds
+     * @return true if the task completed within the timeout, false if it timed out
+     */
+    public boolean waitForCompletion(long timeoutMs) throws InterruptedException {
+        if (this.future.isDone()) {
+            return true;
+        }
+        try {
+            this.future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (TimeoutException e) {
+            return false;
+        } catch (Exception e) {
+            return true;
+        }
+    }
 
-	/**
-	 * Cancel the task if it hasn't completed yet.
-	 */
-	public boolean cancel(boolean mayInterruptIfRunning) {
-		return this.future.cancel(mayInterruptIfRunning);
-	}
+    /**
+     * Cancel the task if it hasn't completed yet.
+     */
+    public boolean cancel(boolean mayInterruptIfRunning) {
+        return this.future.cancel(mayInterruptIfRunning);
+    }
 
-	/**
-	 * Get the task ID.
-	 */
-	public String getTaskId() {
-		return this.taskId;
-	}
-
+    /**
+     * Get the task ID.
+     */
+    public String getTaskId() {
+        return this.taskId;
+    }
 }

@@ -25,16 +25,17 @@ import org.springframework.core.env.Environment;
 @SpringBootApplication
 public class SkillsApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(SkillsApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(SkillsApplication.class, args);
+    }
 
-	@Bean
-	public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(Environment environment) {
-		return event -> {
-			System.out.println("\n🎉========================================🎉");
-			System.out.println("✅ Skills (SQL assistant) example has started!");
-			System.out.println("🎉========================================🎉\n");
-		};
-	}
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> applicationReadyEventListener(
+            Environment environment) {
+        return event -> {
+            System.out.println("\n🎉========================================🎉");
+            System.out.println("✅ Skills (SQL assistant) example has started!");
+            System.out.println("🎉========================================🎉\n");
+        };
+    }
 }

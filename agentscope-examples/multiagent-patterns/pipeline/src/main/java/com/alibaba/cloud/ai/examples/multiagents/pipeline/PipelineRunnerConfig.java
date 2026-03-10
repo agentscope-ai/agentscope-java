@@ -27,10 +27,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class PipelineRunnerConfig {
 
-	@Bean
-	public PipelineService pipelineService(SequentialAgent sequentialSqlAgent,
-			ParallelAgent parallelResearchAgent,
-			LoopAgent loopSqlRefinementAgent) {
-		return new PipelineService(sequentialSqlAgent, parallelResearchAgent, loopSqlRefinementAgent);
-	}
+    @Bean
+    public PipelineService pipelineService(
+            SequentialAgent sequentialSqlAgent,
+            ParallelAgent parallelResearchAgent,
+            LoopAgent loopSqlRefinementAgent) {
+        return new PipelineService(
+                sequentialSqlAgent, parallelResearchAgent, loopSqlRefinementAgent);
+    }
 }

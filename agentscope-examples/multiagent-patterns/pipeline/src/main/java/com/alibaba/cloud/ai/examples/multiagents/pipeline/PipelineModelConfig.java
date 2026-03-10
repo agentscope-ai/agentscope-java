@@ -17,10 +17,8 @@ package com.alibaba.cloud.ai.examples.multiagents.pipeline;
 
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.util.StringUtils;
 
 /**
  * AgentScope DashScope model bean for pipeline sub-agents (AgentScopeAgent).
@@ -28,12 +26,9 @@ import org.springframework.util.StringUtils;
 @Configuration
 public class PipelineModelConfig {
 
-	@Bean
-	public Model dashScopeChatModel() {
-		String key = System.getenv("AI_DASHSCOPE_API_KEY");
-		return DashScopeChatModel.builder()
-				.apiKey(key)
-				.modelName("qwen-plus")
-				.build();
-	}
+    @Bean
+    public Model dashScopeChatModel() {
+        String key = System.getenv("AI_DASHSCOPE_API_KEY");
+        return DashScopeChatModel.builder().apiKey(key).modelName("qwen-plus").build();
+    }
 }

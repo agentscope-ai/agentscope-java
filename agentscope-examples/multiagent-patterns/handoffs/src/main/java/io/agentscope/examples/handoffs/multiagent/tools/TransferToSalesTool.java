@@ -15,10 +15,10 @@
  */
 package io.agentscope.examples.handoffs.multiagent.tools;
 
-import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.examples.handoffs.multiagent.state.AgentScopeStateConstants;
 import org.springframework.ai.chat.model.ToolContext;
 
 /**
@@ -32,23 +32,34 @@ import org.springframework.ai.chat.model.ToolContext;
  */
 public final class TransferToSalesTool {
 
-	public static final String TOOL_NAME = "transfer_to_sales";
+    public static final String TOOL_NAME = "transfer_to_sales";
 
-	private TransferToSalesTool() {
-	}
+    private TransferToSalesTool() {}
 
-	@Tool(
-			name = TOOL_NAME,
-			description = "Transfer the conversation to the sales agent. Use when the customer asks about pricing, purchasing, or product availability.")
-	public String transferToSales(
-			@ToolParam(name = "reason", description = "Brief reason for the transfer (e.g. customer asked about pricing)") String reason,
-			ToolContext toolContext) {
-		ToolContextHelper.getStateForUpdate(toolContext).ifPresent(update ->
-				update.put(AgentScopeStateConstants.ACTIVE_AGENT, AgentScopeStateConstants.SALES_AGENT));
-		return "Transferred to sales agent from support agent. Reason: " + (reason != null ? reason : "customer needs sales");
-	}
+    @Tool(
+            name = TOOL_NAME,
+            description =
+                    "Transfer the conversation to the sales agent. Use when the customer asks about"
+                            + " pricing, purchasing, or product availability.")
+    public String transferToSales(
+            @ToolParam(
+                            name = "reason",
+                            description =
+                                    "Brief reason for the transfer (e.g. customer asked about"
+                                            + " pricing)")
+                    String reason,
+            ToolContext toolContext) {
+        ToolContextHelper.getStateForUpdate(toolContext)
+                .ifPresent(
+                        update ->
+                                update.put(
+                                        AgentScopeStateConstants.ACTIVE_AGENT,
+                                        AgentScopeStateConstants.SALES_AGENT));
+        return "Transferred to sales agent from support agent. Reason: "
+                + (reason != null ? reason : "customer needs sales");
+    }
 
-	public static TransferToSalesTool create() {
-		return new TransferToSalesTool();
-	}
+    public static TransferToSalesTool create() {
+        return new TransferToSalesTool();
+    }
 }

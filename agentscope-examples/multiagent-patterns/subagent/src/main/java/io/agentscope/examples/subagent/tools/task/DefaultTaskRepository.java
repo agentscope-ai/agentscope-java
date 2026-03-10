@@ -28,85 +28,87 @@ import java.util.function.Supplier;
  */
 public class DefaultTaskRepository implements TaskRepository {
 
-	private final Map<String, BackgroundTask> backgroundTasks = new ConcurrentHashMap<>();
+    private final Map<String, BackgroundTask> backgroundTasks = new ConcurrentHashMap<>();
 
-	private final ExecutorService executor;
+    private final ExecutorService executor;
 
-	private final boolean ownsExecutor;
+    private final boolean ownsExecutor;
 
-	/**
-	 * Create a repository with a default cached thread pool executor.
-	 */
-	public DefaultTaskRepository() {
-		this(Executors.newCachedThreadPool(r -> {
-			Thread thread = new Thread(r);
-			thread.setDaemon(true);
-			thread.setName("background-task-" + thread.getId());
-			return thread;
-		}), true);
-	}
+    /**
+     * Create a repository with a default cached thread pool executor.
+     */
+    public DefaultTaskRepository() {
+        this(
+                Executors.newCachedThreadPool(
+                        r -> {
+                            Thread thread = new Thread(r);
+                            thread.setDaemon(true);
+                            thread.setName("background-task-" + thread.getId());
+                            return thread;
+                        }),
+                true);
+    }
 
-	/**
-	 * Create a repository with a custom executor service.
-	 */
-	public DefaultTaskRepository(ExecutorService executor) {
-		this(executor, false);
-	}
+    /**
+     * Create a repository with a custom executor service.
+     */
+    public DefaultTaskRepository(ExecutorService executor) {
+        this(executor, false);
+    }
 
-	/**
-	 * Internal constructor for specifying executor ownership.
-	 */
-	public DefaultTaskRepository(ExecutorService executor, boolean ownsExecutor) {
-		this.executor = executor;
-		this.ownsExecutor = ownsExecutor;
-	}
+    /**
+     * Internal constructor for specifying executor ownership.
+     */
+    public DefaultTaskRepository(ExecutorService executor, boolean ownsExecutor) {
+        this.executor = executor;
+        this.ownsExecutor = ownsExecutor;
+    }
 
-	@Override
-	public BackgroundTask getTask(String taskId) {
-		return this.backgroundTasks.get(taskId);
-	}
+    @Override
+    public BackgroundTask getTask(String taskId) {
+        return this.backgroundTasks.get(taskId);
+    }
 
-	@Override
-	public BackgroundTask putTask(String taskId, Supplier<String> taskExecution) {
-		CompletableFuture<String> future = CompletableFuture.supplyAsync(taskExecution, this.executor);
-		BackgroundTask backgroundTask = new BackgroundTask(taskId, future);
-		this.backgroundTasks.put(taskId, backgroundTask);
-		return backgroundTask;
-	}
+    @Override
+    public BackgroundTask putTask(String taskId, Supplier<String> taskExecution) {
+        CompletableFuture<String> future =
+                CompletableFuture.supplyAsync(taskExecution, this.executor);
+        BackgroundTask backgroundTask = new BackgroundTask(taskId, future);
+        this.backgroundTasks.put(taskId, backgroundTask);
+        return backgroundTask;
+    }
 
-	@Override
-	public void removeTask(String taskId) {
-		this.backgroundTasks.remove(taskId);
-	}
+    @Override
+    public void removeTask(String taskId) {
+        this.backgroundTasks.remove(taskId);
+    }
 
-	@Override
-	public void clear() {
-		this.backgroundTasks.clear();
-	}
+    @Override
+    public void clear() {
+        this.backgroundTasks.clear();
+    }
 
-	/**
-	 * Remove completed tasks from the repository.
-	 */
-	public void clearCompletedTasks() {
-		this.backgroundTasks.entrySet().removeIf(entry -> entry.getValue().isCompleted());
-	}
+    /**
+     * Remove completed tasks from the repository.
+     */
+    public void clearCompletedTasks() {
+        this.backgroundTasks.entrySet().removeIf(entry -> entry.getValue().isCompleted());
+    }
 
-	/**
-	 * Shutdown the executor service if this repository owns it.
-	 */
-	public void shutdown() {
-		if (this.ownsExecutor && this.executor != null) {
-			this.executor.shutdown();
-			try {
-				if (!this.executor.awaitTermination(60, TimeUnit.SECONDS)) {
-					this.executor.shutdownNow();
-				}
-			}
-			catch (InterruptedException e) {
-				this.executor.shutdownNow();
-				Thread.currentThread().interrupt();
-			}
-		}
-	}
-
+    /**
+     * Shutdown the executor service if this repository owns it.
+     */
+    public void shutdown() {
+        if (this.ownsExecutor && this.executor != null) {
+            this.executor.shutdown();
+            try {
+                if (!this.executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    this.executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                this.executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 }

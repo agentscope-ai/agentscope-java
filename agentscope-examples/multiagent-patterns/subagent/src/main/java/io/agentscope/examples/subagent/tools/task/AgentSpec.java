@@ -25,35 +25,35 @@ import java.util.List;
  *
  */
 public record AgentSpec(
-		/**
-		 * Unique identifier for the sub-agent (used as subagent_type in Task tool).
-		 */
-		String name,
+        /**
+         * Unique identifier for the sub-agent (used as subagent_type in Task tool).
+         */
+        String name,
 
-		/**
-		 * Natural language description of when and how to use this agent.
-		 */
-		String description,
+        /**
+         * Natural language description of when and how to use this agent.
+         */
+        String description,
 
-		/**
-		 * System prompt content (markdown body, used as ReactAgent system prompt).
-		 */
-		String systemPrompt,
+        /**
+         * System prompt content (markdown body, used as ReactAgent system prompt).
+         */
+        String systemPrompt,
 
-		/**
-		 * Optional list of tool names this agent can use. Empty means all tools.
-		 */
-		List<String> toolNames,
+        /**
+         * Optional list of tool names this agent can use. Empty means all tools.
+         */
+        List<String> toolNames,
 
-		/**
-		 * Optional model override (e.g., "sonnet", "opus"). Not yet supported.
-		 */
-		String model) {
+        /**
+         * Optional model override (e.g., "sonnet", "opus"). Not yet supported.
+         */
+        String model) {
 
-	/**
-	 * Create a minimal spec with required fields only.
-	 */
-	public static AgentSpec of(String name, String description, String systemPrompt) {
-		return new AgentSpec(name, description, systemPrompt, List.of(), null);
-	}
+    /**
+     * Create a minimal spec with required fields only.
+     */
+    public static AgentSpec of(String name, String description, String systemPrompt) {
+        return new AgentSpec(name, description, systemPrompt, List.of(), null);
+    }
 }

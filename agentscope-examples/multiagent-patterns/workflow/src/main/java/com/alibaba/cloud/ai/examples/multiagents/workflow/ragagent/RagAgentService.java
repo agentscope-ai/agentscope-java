@@ -18,47 +18,54 @@ package com.alibaba.cloud.ai.examples.multiagents.workflow.ragagent;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 
 /**
  * Service that invokes the RAG workflow graph (rewrite → retrieve → agent).
  */
 public class RagAgentService {
 
-	private final CompiledGraph graph;
+    private final CompiledGraph graph;
 
-	public RagAgentService(CompiledGraph graph) {
-		this.graph = graph;
-	}
+    public RagAgentService(CompiledGraph graph) {
+        this.graph = graph;
+    }
 
-	/**
-	 * Run the RAG pipeline with the given question.
-	 */
-	public RagAgentResult run(String question) throws GraphRunnerException {
-		Map<String, Object> inputs = Map.of("question", question);
-		Optional<OverAllState> resultOpt = graph.invoke(inputs);
+    /**
+     * Run the RAG pipeline with the given question.
+     */
+    public RagAgentResult run(String question) throws GraphRunnerException {
+        Map<String, Object> inputs = Map.of("question", question);
+        Optional<OverAllState> resultOpt = graph.invoke(inputs);
 
-		if (resultOpt.isEmpty()) {
-			return new RagAgentResult(question, null, null);
-		}
+        if (resultOpt.isEmpty()) {
+            return new RagAgentResult(question, null, null);
+        }
 
-		OverAllState state = resultOpt.get();
-		@SuppressWarnings("unchecked")
-		List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
-		String answer = messages.stream()
-				.filter(m -> m instanceof AssistantMessage)
-				.map(m -> m instanceof org.springframework.ai.chat.messages.AssistantMessage am ? am.getText() : "")
-				.reduce((a, b) -> b)
-				.orElse(null);
+        OverAllState state = resultOpt.get();
+        @SuppressWarnings("unchecked")
+        List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
+        String answer =
+                messages.stream()
+                        .filter(m -> m instanceof AssistantMessage)
+                        .map(
+                                m ->
+                                        m
+                                                        instanceof
+                                                        org.springframework.ai.chat.messages
+                                                                        .AssistantMessage
+                                                                am
+                                                ? am.getText()
+                                                : "")
+                        .reduce((a, b) -> b)
+                        .orElse(null);
 
-		return new RagAgentResult(question, answer, state);
-	}
+        return new RagAgentResult(question, answer, state);
+    }
 
-	public record RagAgentResult(String question, String answer, OverAllState state) {
-	}
+    public record RagAgentResult(String question, String answer, OverAllState state) {}
 }
