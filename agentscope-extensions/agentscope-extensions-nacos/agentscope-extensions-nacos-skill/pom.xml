@@ -27,7 +27,7 @@
     </parent>
 
     <artifactId>agentscope-extensions-nacos-skill</artifactId>
-    <name>AgentScope Java - Nacos A2A skill</name>
+    <name>AgentScope Java - Nacos Skill Repository</name>
     <description>agentscope-extensions-nacos-skill</description>
 
     <dependencies>

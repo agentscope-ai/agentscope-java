@@ -22,6 +22,7 @@ import com.alibaba.nacos.common.utils.StringUtils;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,9 +31,11 @@ import org.slf4j.LoggerFactory;
  * Nacos-based implementation of {@link AgentSkillRepository}.
  *
  * <p>Reads skills from Nacos Config via {@code AiService.loadSkill(String)}. This implementation
- * currently supports only read operations: {@link #getSkill(String)}, {@link #skillExists(String)},
- * {@link #getRepositoryInfo()}, {@link #getSource()}, and {@link #isWriteable()}. List and write
- * operations are not implemented.
+ * supports read operations: {@link #getSkill(String)}, {@link #skillExists(String)}, {@link
+ * #getRepositoryInfo()}, {@link #getSource()}, and {@link #isWriteable()}. List and write
+ * operations ({@link #getAllSkillNames()}, {@link #getAllSkills()}, {@link #save(List, boolean)},
+ * {@link #delete(String)})
+ * are implemented as read-only no-ops: they return empty list or {@code false} and log a warning.
  */
 public class NacosSkillRepository implements AgentSkillRepository {
 
@@ -45,7 +48,6 @@ public class NacosSkillRepository implements AgentSkillRepository {
     private final String namespaceId;
     private final String source;
     private final String location;
-    private boolean writeable;
 
     /**
      * Creates a Nacos skill repository.
@@ -61,7 +63,6 @@ public class NacosSkillRepository implements AgentSkillRepository {
         this.namespaceId = StringUtils.isBlank(namespaceId) ? "public" : namespaceId.trim();
         this.source = REPO_TYPE + ":" + this.namespaceId;
         this.location = LOCATION_PREFIX + this.namespaceId;
-        this.writeable = false;
         log.info("NacosSkillRepository initialized for namespace: {}", this.namespaceId);
     }
 
@@ -103,7 +104,7 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     @Override
     public AgentSkillRepositoryInfo getRepositoryInfo() {
-        return new AgentSkillRepositoryInfo(REPO_TYPE, location, writeable);
+        return new AgentSkillRepositoryInfo(REPO_TYPE, location, false);
     }
 
     @Override
@@ -113,37 +114,38 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
     @Override
     public void setWriteable(boolean writeable) {
-        this.writeable = writeable;
+        log.warn("NacosSkillRepository is read-only, set writeable operation ignored");
     }
 
     @Override
     public boolean isWriteable() {
-        return writeable;
+        return false;
     }
 
-    // ---------- Unsupported operations (list and write) ----------
+    // ---------- Read-only no-op operations (list and write) ----------
 
     @Override
     public List<String> getAllSkillNames() {
-        throw new UnsupportedOperationException(
-                "getAllSkillNames is not implemented for NacosSkillRepository");
+        log.warn("NacosSkillRepository is read-only, getAllSkillNames returns empty list");
+        return Collections.emptyList();
     }
 
     @Override
     public List<AgentSkill> getAllSkills() {
-        throw new UnsupportedOperationException(
-                "getAllSkills is not implemented for NacosSkillRepository");
+        log.warn("NacosSkillRepository is read-only, getAllSkills returns empty list");
+        return Collections.emptyList();
     }
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {
-        throw new UnsupportedOperationException("save is not implemented for NacosSkillRepository");
+        log.warn("NacosSkillRepository is read-only, save operation ignored");
+        return false;
     }
 
     @Override
     public boolean delete(String skillName) {
-        throw new UnsupportedOperationException(
-                "delete is not implemented for NacosSkillRepository");
+        log.warn("NacosSkillRepository is read-only, delete operation ignored");
+        return false;
     }
 
     @Override

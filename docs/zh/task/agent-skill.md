@@ -307,19 +307,7 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 } catch //...
 ```
 
-**特性说明**:
-- 支持按名称拉取 Skill：`getSkill(String)`、`skillExists(String)`
-- 每次获取均从 Nacos 读取最新配置，实现运行时实时同步
-- 当前仅支持读操作，不支持 `getAllSkillNames`、`getAllSkills`、`save`、`delete`
-- 需引入以下依赖：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-nacos-skill</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
+> 注意: 需引入 `agentscope-extensions-nacos-skill` 依赖
 
 ### 性能优化建议
 
