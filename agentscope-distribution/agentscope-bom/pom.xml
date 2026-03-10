@@ -282,6 +282,12 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-nacos-skill</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Nacos Spring Boot Starter -->
             <dependency>
                 <groupId>io.agentscope</groupId>
