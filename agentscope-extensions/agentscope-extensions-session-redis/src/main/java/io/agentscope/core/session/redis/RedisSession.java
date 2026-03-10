@@ -29,6 +29,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.cluster.RedisClusterClient;
 import org.redisson.api.RedissonClient;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -117,13 +120,13 @@ import redis.clients.jedis.UnifiedJedis;
  * <p>Lettuce Cluster:
  *
  * <pre>{@code
- * // Create Lettuce RedisClient for cluster
- * RedisURI clusterUri = RedisURI.create("redis://localhost:7000");
- * RedisClient redisClient = RedisClient.create(clusterUri);
+ * // Create Lettuce RedisClusterClient for cluster mode
+ * RedisClusterClient clusterClient = RedisClusterClient.create(
+ *     RedisURI.create("localhost", 7000));
  *
  * // Build RedisSession
  * Session session = RedisSession.builder()
- *     .lettuceClient(redisClient)
+ *     .lettuceClusterClient(clusterClient)
  *     .build();
  * }</pre>
  *
@@ -433,7 +436,8 @@ public class RedisSession implements Session {
      * <p>Supported client types:
      * <ul>
      *   <li>Jedis: {@link #jedisClient(UnifiedJedis)}
-     *   <li>Lettuce: {@link #lettuceClient(io.lettuce.core.RedisClient)}
+     *   <li>Lettuce Standalone/Sentinel: {@link #lettuceClient(RedisClient)}
+     *   <li>Lettuce Cluster: {@link #lettuceClusterClient(RedisClusterClient)}
      *   <li>Redisson: {@link #redissonClient(RedissonClient)}
      *   <li>Custom: {@link #clientAdapter(RedisClientAdapter)}
      * </ul>
@@ -454,8 +458,13 @@ public class RedisSession implements Session {
             return this;
         }
 
-        public Builder lettuceClient(io.lettuce.core.RedisClient redisClient) {
+        public Builder lettuceClient(RedisClient redisClient) {
             this.client = LettuceClientAdapter.of(redisClient);
+            return this;
+        }
+
+        public Builder lettuceClusterClient(RedisClusterClient redisClusterClient) {
+            this.client = LettuceClientAdapter.of(redisClusterClient);
             return this;
         }
 
