@@ -107,7 +107,7 @@ final class GeminiRequestAssembler {
         }
 
         String requestJson = jsonCodec.toJson(requestDto);
-        log.info("Gemini Request JSON: {}", requestJson);
+        log.debug("Gemini Request JSON: {}", requestJson);
         log.debug(
                 "Gemini request: model={}, system_instruction={}, contents_count={}",
                 modelName,

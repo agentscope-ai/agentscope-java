@@ -80,6 +80,7 @@ final class GeminiResponseGuard {
             return response;
         }
 
+        // Intentionally broad match for the Gemini 3 family, including gemini-3.x variants.
         // For Gemini 3 models, throw exception on problematic finish reasons
         // to trigger retry logic (workaround for API instability).
         if (modelName.toLowerCase().contains("gemini-3")) {

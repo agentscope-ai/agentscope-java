@@ -68,15 +68,15 @@ final class GeminiTransport {
 
                 GeminiResponse geminiResponse =
                         jsonCodec.fromJson(bodyString, GeminiResponse.class);
-                log.info("Gemini Response JSON: {}", bodyString);
-                log.info(
+                log.debug("Gemini Response JSON: {}", bodyString);
+                log.debug(
                         "Parsed GeminiResponse: candidates={}, promptFeedback={}",
                         geminiResponse.getCandidates() != null
                                 ? geminiResponse.getCandidates().size()
                                 : 0,
                         geminiResponse.getPromptFeedback());
                 ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
-                log.info(
+                log.debug(
                         "Parsed ChatResponse: contentBlocks={}, metadata={}",
                         chatResponse.getContent() != null ? chatResponse.getContent().size() : 0,
                         chatResponse.getMetadata());

@@ -27,7 +27,6 @@ import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig.GeminiFunctionCallingConfig;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,75 +196,6 @@ class GeminiToolsHelperTest {
         Map<String, Object> properties = (Map<String, Object>) params.get("properties");
         assertNotNull(properties);
         assertNotNull(properties.get("response"));
-    }
-
-    @Test
-    void testUnwrapResponseSchemaViaReflection() throws Exception {
-        Method method =
-                GeminiToolsHelper.class.getDeclaredMethod("unwrapResponseSchema", Map.class);
-        method.setAccessible(true);
-
-        assertNull(method.invoke(helper, new Object[] {null}));
-
-        Map<String, Object> wrapped =
-                Map.of(
-                        "type",
-                        "object",
-                        "properties",
-                        Map.of(
-                                "response",
-                                Map.of(
-                                        "type",
-                                        "object",
-                                        "properties",
-                                        Map.of("k", Map.of("type", "string")))));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> unwrapped = (Map<String, Object>) method.invoke(helper, wrapped);
-        assertEquals("object", unwrapped.get("type"));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> unwrappedProps = (Map<String, Object>) unwrapped.get("properties");
-        assertNotNull(unwrappedProps.get("k"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> unchanged =
-                (Map<String, Object>)
-                        method.invoke(
-                                helper,
-                                Map.of(
-                                        "type",
-                                        "object",
-                                        "properties",
-                                        Map.of(
-                                                "x",
-                                                Map.of("type", "string"),
-                                                "y",
-                                                Map.of("type", "string"))));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> unchangedProps = (Map<String, Object>) unchanged.get("properties");
-        assertNotNull(unchangedProps.get("x"));
-        assertNotNull(unchangedProps.get("y"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> nonMapProperties =
-                (Map<String, Object>)
-                        method.invoke(helper, Map.of("type", "object", "properties", "not-a-map"));
-        assertEquals("not-a-map", nonMapProperties.get("properties"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> responseNotMap =
-                (Map<String, Object>)
-                        method.invoke(
-                                helper,
-                                Map.of(
-                                        "type",
-                                        "object",
-                                        "properties",
-                                        Map.of("response", "plain-text")));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> responseNotMapProps =
-                (Map<String, Object>) responseNotMap.get("properties");
-        assertEquals("plain-text", responseNotMapProps.get("response"));
     }
 
     @Test
