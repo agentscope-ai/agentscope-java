@@ -28,6 +28,8 @@ import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Adapter for Lettuce Redis client.
@@ -42,15 +44,16 @@ import java.util.Set;
  * <p>The adapter internally manages a shared connection and commands instance for efficient
  * connection usage.
  *
+ * <p>This implementation uses direct conditional checks to handle Lettuce's separate command
+ * APIs for standalone/sentinel and cluster modes. This is the simplest approach given
+ * Lettuce's lack of a unified API across deployment modes.
+ *
  * <p>Usage Examples:
  *
  * <p>Standalone Mode:
  * <pre>{@code
  * // Create standalone RedisClient
  * RedisClient redisClient = RedisClient.create("redis://localhost:6379");
- *
- * // Create adapter
- * LettuceClientAdapter adapter = LettuceClientAdapter.of(redisClient);
  *
  * // Use with RedisSession
  * Session session = RedisSession.builder()
@@ -61,11 +64,7 @@ import java.util.Set;
  * <p>Cluster Mode:
  * <pre>{@code
  * // Create cluster client
- * RedisClusterClient clusterClient = RedisClusterClient.create(
- *     RedisURI.create("localhost", 7000));
- *
- * // Create adapter
- * LettuceClientAdapter adapter = LettuceClientAdapter.of(clusterClient);
+ * RedisClusterClient clusterClient = RedisClusterClient.create("redis://localhost:7000");
  *
  * // Use with RedisSession
  * Session session = RedisSession.builder()
@@ -85,291 +84,253 @@ import java.util.Set;
  *     .build();
  * RedisClient redisClient = RedisClient.create(sentinelUri);
  *
- * // Create adapter
- * LettuceClientAdapter adapter = LettuceClientAdapter.of(redisClient);
+ * // Use with RedisSession
+ * Session session = RedisSession.builder()
+ *     .lettuceClient(redisClient)
+ *     .build();
  * }</pre>
  */
 public class LettuceClientAdapter implements RedisClientAdapter {
 
-    private final CommandExecutor executor;
+    private static final Logger log = LoggerFactory.getLogger(LettuceClientAdapter.class);
 
-    private final Runnable closeHandler;
+    /**
+     * Redis commands for standalone and sentinel modes.
+     * Null when operating in cluster mode.
+     */
+    private final RedisCommands<String, String> commands;
 
-    private LettuceClientAdapter(CommandExecutor executor, Runnable closeHandler) {
-        this.executor = executor;
-        this.closeHandler = closeHandler;
+    /**
+     * Redis cluster commands for cluster mode.
+     * Null when operating in standalone or sentinel mode.
+     */
+    private final RedisAdvancedClusterCommands<String, String> clusterCommands;
+
+    /**
+     * Closeable resource handler for cleaning up connections and clients.
+     * Uses a strategy pattern to handle different cleanup logic for
+     * standalone/sentinel and cluster modes.
+     */
+    private final AutoCloseable closeable;
+
+    private LettuceClientAdapter(
+            RedisCommands<String, String> commands,
+            RedisAdvancedClusterCommands<String, String> clusterCommands,
+            AutoCloseable closeable) {
+        this.commands = commands;
+        this.clusterCommands = clusterCommands;
+        this.closeable = closeable;
     }
 
     /**
      * Create adapter from RedisClient (standalone/sentinel mode).
      *
-     * <p>The RedisClient can be configured for standalone or sentinel mode by providing an
-     * appropriate RedisURI configuration.
-     *
      * @param redisClient the RedisClient for standalone or sentinel mode
      * @return a new LettuceClientAdapter
+     * @throws NullPointerException if redisClient is null
      */
     public static LettuceClientAdapter of(RedisClient redisClient) {
+        if (redisClient == null) {
+            throw new NullPointerException("redisClient must not be null");
+        }
         StatefulRedisConnection<String, String> connection = redisClient.connect();
-        RedisCommands<String, String> commands = connection.sync();
         return new LettuceClientAdapter(
-                new StandaloneCommandExecutor(commands),
-                () -> {
-                    connection.close();
-                    redisClient.shutdown();
-                });
+                connection.sync(), null, new StandaloneCloser(connection, redisClient));
     }
 
     /**
      * Create adapter from RedisClusterClient (cluster mode).
      *
-     * <p>The RedisClusterClient handles connections to multiple Redis cluster nodes.
-     *
      * @param redisClusterClient the RedisClusterClient for cluster mode
      * @return a new LettuceClientAdapter
+     * @throws NullPointerException if redisClusterClient is null
      */
     public static LettuceClientAdapter of(RedisClusterClient redisClusterClient) {
+        if (redisClusterClient == null) {
+            throw new NullPointerException("redisClusterClient must not be null");
+        }
         StatefulRedisClusterConnection<String, String> connection = redisClusterClient.connect();
-        RedisAdvancedClusterCommands<String, String> commands = connection.sync();
         return new LettuceClientAdapter(
-                new ClusterCommandExecutor(commands),
-                () -> {
-                    connection.close();
-                    redisClusterClient.shutdown();
-                });
+                null, connection.sync(), new ClusterCloser(connection, redisClusterClient));
     }
 
     @Override
     public void set(String key, String value) {
-        executor.set(key, value);
+        if (commands != null) {
+            commands.set(key, value);
+        } else {
+            clusterCommands.set(key, value);
+        }
     }
 
     @Override
     public String get(String key) {
-        return executor.get(key);
+        if (commands != null) {
+            return commands.get(key);
+        } else {
+            return clusterCommands.get(key);
+        }
     }
 
     @Override
     public void rightPushList(String key, String value) {
-        executor.rightPushList(key, value);
+        if (commands != null) {
+            commands.rpush(key, value);
+        } else {
+            clusterCommands.rpush(key, value);
+        }
     }
 
     @Override
     public List<String> rangeList(String key, long start, long end) {
-        return executor.rangeList(key, start, end);
+        if (commands != null) {
+            return commands.lrange(key, start, end);
+        } else {
+            return clusterCommands.lrange(key, start, end);
+        }
     }
 
     @Override
     public long getListLength(String key) {
-        return executor.getListLength(key);
+        if (commands != null) {
+            return commands.llen(key);
+        } else {
+            return clusterCommands.llen(key);
+        }
     }
 
     @Override
     public void deleteKeys(String... keys) {
-        executor.deleteKeys(keys);
+        if (commands != null) {
+            commands.del(keys);
+        } else {
+            clusterCommands.del(keys);
+        }
     }
 
     @Override
     public void addToSet(String key, String member) {
-        executor.addToSet(key, member);
+        if (commands != null) {
+            commands.sadd(key, member);
+        } else {
+            clusterCommands.sadd(key, member);
+        }
     }
 
     @Override
     public Set<String> getSetMembers(String key) {
-        return executor.getSetMembers(key);
+        if (commands != null) {
+            return new HashSet<>(commands.smembers(key));
+        } else {
+            return new HashSet<>(clusterCommands.smembers(key));
+        }
     }
 
     @Override
     public long getSetSize(String key) {
-        return executor.getSetSize(key);
+        if (commands != null) {
+            return commands.scard(key);
+        } else {
+            return clusterCommands.scard(key);
+        }
     }
 
     @Override
     public boolean keyExists(String key) {
-        return executor.keyExists(key);
+        if (commands != null) {
+            return commands.exists(key) > 0;
+        } else {
+            return clusterCommands.exists(key) > 0;
+        }
     }
 
     @Override
     public Set<String> findKeysByPattern(String pattern) {
-        return executor.findKeysByPattern(pattern);
+        if (commands != null) {
+            return scanKeys(pattern, commands::scan);
+        } else {
+            return scanKeys(pattern, clusterCommands::scan);
+        }
+    }
+
+    /**
+     * Helper method to scan keys using the provided scan function.
+     *
+     * @param pattern the key pattern to match
+     * @param scanFunction the function to perform the scan
+     * @return the set of matching keys
+     */
+    private static Set<String> scanKeys(String pattern, ScanFunction scanFunction) {
+        Set<String> keys = new HashSet<>();
+        ScanCursor cursor = ScanCursor.INITIAL;
+        ScanArgs scanArgs = ScanArgs.Builder.matches(pattern);
+        while (!cursor.isFinished()) {
+            KeyScanCursor<String> scanResult = scanFunction.scan(cursor, scanArgs);
+            keys.addAll(scanResult.getKeys());
+            cursor = scanResult;
+        }
+        return keys;
+    }
+
+    /**
+     * Functional interface for scan operations.
+     */
+    @FunctionalInterface
+    private interface ScanFunction {
+        KeyScanCursor<String> scan(ScanCursor cursor, ScanArgs scanArgs);
     }
 
     @Override
     public void close() {
-        closeHandler.run();
-    }
-
-    private interface CommandExecutor {
-        void set(String key, String value);
-
-        String get(String key);
-
-        void rightPushList(String key, String value);
-
-        List<String> rangeList(String key, long start, long end);
-
-        long getListLength(String key);
-
-        void deleteKeys(String... keys);
-
-        void addToSet(String key, String member);
-
-        Set<String> getSetMembers(String key);
-
-        long getSetSize(String key);
-
-        boolean keyExists(String key);
-
-        Set<String> findKeysByPattern(String pattern);
-    }
-
-    private static class StandaloneCommandExecutor implements CommandExecutor {
-        private final RedisCommands<String, String> commands;
-
-        StandaloneCommandExecutor(RedisCommands<String, String> commands) {
-            this.commands = commands;
-        }
-
-        @Override
-        public void set(String key, String value) {
-            commands.set(key, value);
-        }
-
-        @Override
-        public String get(String key) {
-            return commands.get(key);
-        }
-
-        @Override
-        public void rightPushList(String key, String value) {
-            commands.rpush(key, value);
-        }
-
-        @Override
-        public List<String> rangeList(String key, long start, long end) {
-            return commands.lrange(key, start, end);
-        }
-
-        @Override
-        public long getListLength(String key) {
-            return commands.llen(key);
-        }
-
-        @Override
-        public void deleteKeys(String... keys) {
-            commands.del(keys);
-        }
-
-        @Override
-        public void addToSet(String key, String member) {
-            commands.sadd(key, member);
-        }
-
-        @Override
-        public Set<String> getSetMembers(String key) {
-            return new HashSet<>(commands.smembers(key));
-        }
-
-        @Override
-        public long getSetSize(String key) {
-            return commands.scard(key);
-        }
-
-        @Override
-        public boolean keyExists(String key) {
-            return commands.exists(key) > 0;
-        }
-
-        @Override
-        public Set<String> findKeysByPattern(String pattern) {
-            Set<String> keys = new HashSet<>();
-            ScanCursor cursor = ScanCursor.INITIAL;
-            while (!cursor.isFinished()) {
-                KeyScanCursor<String> scanResult =
-                        commands.scan(cursor, ScanArgs.Builder.matches(pattern));
-                if (scanResult != null) {
-                    keys.addAll(scanResult.getKeys());
-                    cursor = scanResult;
-                } else {
-                    break;
-                }
+        try {
+            closeable.close();
+        } catch (Exception e) {
+            log.warn("Exception while closing Lettuce adapter: {}", e.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Full stack trace:", e);
             }
-            return keys;
         }
     }
 
-    private static class ClusterCommandExecutor implements CommandExecutor {
-        private final RedisAdvancedClusterCommands<String, String> commands;
+    private static class StandaloneCloser implements AutoCloseable {
+        private final StatefulRedisConnection<String, String> connection;
+        private final RedisClient client;
 
-        ClusterCommandExecutor(RedisAdvancedClusterCommands<String, String> commands) {
-            this.commands = commands;
+        StandaloneCloser(StatefulRedisConnection<String, String> connection, RedisClient client) {
+            this.connection = connection;
+            this.client = client;
         }
 
         @Override
-        public void set(String key, String value) {
-            commands.set(key, value);
-        }
-
-        @Override
-        public String get(String key) {
-            return commands.get(key);
-        }
-
-        @Override
-        public void rightPushList(String key, String value) {
-            commands.rpush(key, value);
-        }
-
-        @Override
-        public List<String> rangeList(String key, long start, long end) {
-            return commands.lrange(key, start, end);
-        }
-
-        @Override
-        public long getListLength(String key) {
-            return commands.llen(key);
-        }
-
-        @Override
-        public void deleteKeys(String... keys) {
-            commands.del(keys);
-        }
-
-        @Override
-        public void addToSet(String key, String member) {
-            commands.sadd(key, member);
-        }
-
-        @Override
-        public Set<String> getSetMembers(String key) {
-            return new HashSet<>(commands.smembers(key));
-        }
-
-        @Override
-        public long getSetSize(String key) {
-            return commands.scard(key);
-        }
-
-        @Override
-        public boolean keyExists(String key) {
-            return commands.exists(key) > 0;
-        }
-
-        @Override
-        public Set<String> findKeysByPattern(String pattern) {
-            Set<String> keys = new HashSet<>();
-            ScanCursor cursor = ScanCursor.INITIAL;
-            while (!cursor.isFinished()) {
-                KeyScanCursor<String> scanResult =
-                        commands.scan(cursor, ScanArgs.Builder.matches(pattern));
-                if (scanResult != null) {
-                    keys.addAll(scanResult.getKeys());
-                    cursor = scanResult;
-                } else {
-                    break;
-                }
+        public void close() {
+            try {
+                connection.close();
+                client.shutdown();
+            } catch (Exception e) {
+                log.debug("Exception closing Lettuce standalone: {}", e.getMessage());
             }
-            return keys;
+        }
+    }
+
+    private static class ClusterCloser implements AutoCloseable {
+        private final StatefulRedisClusterConnection<String, String> connection;
+        private final RedisClusterClient client;
+
+        ClusterCloser(
+                StatefulRedisClusterConnection<String, String> connection,
+                RedisClusterClient client) {
+            this.connection = connection;
+            this.client = client;
+        }
+
+        @Override
+        public void close() {
+            try {
+                connection.close();
+                client.shutdown();
+            } catch (Exception e) {
+                log.debug("Exception closing Lettuce cluster: {}", e.getMessage());
+            }
         }
     }
 }

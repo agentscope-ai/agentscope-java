@@ -24,14 +24,13 @@ import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
 import io.agentscope.core.util.JsonUtils;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.cluster.RedisClusterClient;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.cluster.RedisClusterClient;
 import org.redisson.api.RedissonClient;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
