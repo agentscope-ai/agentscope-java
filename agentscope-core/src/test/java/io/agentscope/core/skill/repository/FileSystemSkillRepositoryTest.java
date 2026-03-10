@@ -131,9 +131,9 @@ class FileSystemSkillRepositoryTest {
     // ==================== getSource Tests ====================
 
     @Test
-    @DisplayName("Should return default source with format: filesystem:parent_child")
+    @DisplayName("Should return default source with format: filesystem_parent_child")
     void testGetSource_DefaultSource() {
-        assertTrue(repository.getSource().matches("filesystem:[^_]+_skills"));
+        assertTrue(repository.getSource().matches("filesystem_[^_]+_skills"));
     }
 
     @Test
@@ -148,7 +148,7 @@ class FileSystemSkillRepositoryTest {
     @DisplayName("Should use default source when null")
     void testGetSource_Null() {
         FileSystemSkillRepository repo = new FileSystemSkillRepository(skillsBaseDir, true, null);
-        assertTrue(repo.getSource().startsWith("filesystem:"));
+        assertTrue(repo.getSource().startsWith("filesystem_"));
     }
 
     // ==================== buildDefaultSourceSuffix Tests ====================
@@ -158,7 +158,7 @@ class FileSystemSkillRepositoryTest {
     void testBuildSourceSuffix_TwoLevels() throws IOException {
         Path dir = tempDir.resolve("parent").resolve("child");
         Files.createDirectories(dir);
-        assertEquals("filesystem:parent_child", new FileSystemSkillRepository(dir).getSource());
+        assertEquals("filesystem_parent_child", new FileSystemSkillRepository(dir).getSource());
     }
 
     @Test
@@ -166,7 +166,7 @@ class FileSystemSkillRepositoryTest {
     void testBuildSourceSuffix_DeepPath() throws IOException {
         Path dir = tempDir.resolve("a/b/c/d");
         Files.createDirectories(dir);
-        assertEquals("filesystem:c_d", new FileSystemSkillRepository(dir).getSource());
+        assertEquals("filesystem_c_d", new FileSystemSkillRepository(dir).getSource());
     }
 
     @Test
@@ -175,7 +175,7 @@ class FileSystemSkillRepositoryTest {
         Path dir = tempDir.resolve("my-project").resolve("skills_v1.0");
         Files.createDirectories(dir);
         assertEquals(
-                "filesystem:my-project_skills_v1.0",
+                "filesystem_my-project_skills_v1.0",
                 new FileSystemSkillRepository(dir).getSource());
     }
 
