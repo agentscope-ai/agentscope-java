@@ -58,8 +58,8 @@ final class GeminiTransport {
 
     Flux<ChatResponse> handleUnaryResponse(Request request, Instant startTime) {
         try {
-            Response response = httpClient.newCall(request).execute();
-            try (ResponseBody responseBody = response.body()) {
+            try (Response response = httpClient.newCall(request).execute();
+                    ResponseBody responseBody = response.body()) {
                 String bodyString = responseBody != null ? responseBody.string() : null;
                 if (!response.isSuccessful() || bodyString == null) {
                     String errorBody = bodyString != null ? bodyString : "null";

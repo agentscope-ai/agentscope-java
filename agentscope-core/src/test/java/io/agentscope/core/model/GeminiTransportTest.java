@@ -17,11 +17,13 @@ package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -93,6 +95,26 @@ class GeminiTransportTest {
     }
 
     @Test
+    @DisplayName("Should close unary response body on error")
+    void testUnaryErrorStatusClosesResponseBody() {
+        AtomicBoolean closed = new AtomicBoolean(false);
+        GeminiTransport transport =
+                newTransport(
+                        okClientWithTrackingBody(
+                                429, "Too Many Requests", "{\"error\":\"rate\"}", closed));
+        Request request =
+                new Request.Builder()
+                        .url("https://example.com")
+                        .post(RequestBody.create("{}", MediaType.get("application/json")))
+                        .build();
+
+        assertThrows(
+                GeminiApiException.class,
+                () -> transport.handleUnaryResponse(request, Instant.now()));
+        assertTrue(closed.get());
+    }
+
+    @Test
     @DisplayName("Should emit GeminiApiException for streaming non-success status")
     void testStreamingErrorStatus() {
         GeminiTransport transport =
@@ -127,6 +149,56 @@ class GeminiTransportTest {
                                 .body(ResponseBody.create(body, MediaType.get("application/json")))
                                 .build();
         return new OkHttpClient.Builder().addInterceptor(interceptor).build();
+    }
+
+    private static OkHttpClient okClientWithTrackingBody(
+            int code, String message, String body, AtomicBoolean closed) {
+        Interceptor interceptor =
+                chain ->
+                        new Response.Builder()
+                                .request(chain.request())
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(code)
+                                .message(message)
+                                .body(new TrackingResponseBody(body, closed))
+                                .build();
+        return new OkHttpClient.Builder().addInterceptor(interceptor).build();
+    }
+
+    private static final class TrackingResponseBody extends ResponseBody {
+
+        private final ResponseBody delegate;
+        private final AtomicBoolean closed;
+
+        private TrackingResponseBody(String body, AtomicBoolean closed) {
+            this.delegate = ResponseBody.create(body, MediaType.get("application/json"));
+            this.closed = closed;
+        }
+
+        @Override
+        public MediaType contentType() {
+            return delegate.contentType();
+        }
+
+        @Override
+        public long contentLength() {
+            return delegate.contentLength();
+        }
+
+        @Override
+        public okio.BufferedSource source() {
+            return delegate.source();
+        }
+
+        @Override
+        public void close() {
+            closed.set(true);
+            try {
+                delegate.close();
+            } catch (RuntimeException e) {
+                throw e;
+            }
+        }
     }
 
     private static String textOf(ChatResponse response) {

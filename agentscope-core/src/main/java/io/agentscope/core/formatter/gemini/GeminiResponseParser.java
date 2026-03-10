@@ -265,7 +265,7 @@ public class GeminiResponseParser {
         try {
             String id = functionCall.getId();
             if (id == null || id.isEmpty()) {
-                id = "tool_call_" + System.currentTimeMillis(); // Fallback if ID is missing
+                id = "tool_call_" + UUID.randomUUID(); // Fallback if ID is missing
             }
             String name = functionCall.getName() != null ? functionCall.getName() : "";
 

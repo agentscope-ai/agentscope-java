@@ -385,6 +385,30 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseToolCallWithoutIdGeneratesUniqueFallbackIds() {
+        GeminiFunctionCall firstCall = new GeminiFunctionCall();
+        firstCall.setName("search");
+        firstCall.setArgs(Map.of("query", "first"));
+
+        GeminiFunctionCall secondCall = new GeminiFunctionCall();
+        secondCall.setName("search");
+        secondCall.setArgs(Map.of("query", "second"));
+
+        List<ContentBlock> firstBlocks = new ArrayList<>();
+        List<ContentBlock> secondBlocks = new ArrayList<>();
+
+        parser.parseToolCall(firstCall, null, firstBlocks);
+        parser.parseToolCall(secondCall, null, secondBlocks);
+
+        ToolUseBlock firstToolUse = (ToolUseBlock) firstBlocks.get(0);
+        ToolUseBlock secondToolUse = (ToolUseBlock) secondBlocks.get(0);
+
+        assertTrue(firstToolUse.getId().startsWith("tool_call_"));
+        assertTrue(secondToolUse.getId().startsWith("tool_call_"));
+        assertTrue(!firstToolUse.getId().equals(secondToolUse.getId()));
+    }
+
+    @Test
     void testParseThinkingResponseWithSignature() {
         // Build response with thinking content and signature
         GeminiPart thinkingPart = new GeminiPart();
