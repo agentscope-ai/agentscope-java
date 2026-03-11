@@ -28,8 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Configures the SQL assistant agent using AgentScope skill support (aligned with
- * {@link io.agentscope.examples.quickstart.AgentSkillExample}):
+ * Configures the SQL assistant agent using AgentScope skill support.
  *
  * <ul>
  *   <li>{@link ClasspathSkillRepository} loads skills from classpath {@code skills/}
