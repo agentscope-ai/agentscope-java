@@ -295,6 +295,20 @@ try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills"
 
 > 注意: `JarSkillRepositoryAdapter` 已废弃,请使用 `ClasspathSkillRepository`。
 
+#### Nacos 仓库 (只读)
+
+通过已构建的 `AiService`（或 Nacos 连接配置）从 Nacos 拉取或订阅 Skill，Agent 运行时从 Nacos 实时获取，支持变更订阅与自动感知，适合需要与 Nacos 保持同步的在线场景。
+
+```java
+// 使用已构建的 AiService 创建 Nacos 技能仓库
+try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "namespace")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    boolean exists = repository.skillExists("data-analysis");
+} catch //...
+```
+
+> 注意: 需引入 `agentscope-extensions-nacos-skill` 依赖
+
 ### 性能优化建议
 
 1. **控制 SKILL.md 大小**: 保持在 5k tokens 以内,建议 1.5-2k tokens
