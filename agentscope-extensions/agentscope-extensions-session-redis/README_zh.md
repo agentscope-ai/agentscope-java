@@ -103,14 +103,13 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.agentscope.core.session.redis.RedisSession;
 
-// 创建Lettuce RedisClient用于集群
-RedisURI clusterUri = RedisURI.create("redis://localhost:7000");
-RedisClient redisClient = RedisClient.create(clusterUri);
+// 创建Lettuce RedisClusterClient用于集群
+RedisClusterClient clusterClient = RedisClusterClient.create("redis://localhost:7000");
 
 // 构建RedisSession
 Session session = RedisSession.builder()
-    .lettuceClient(redisClient)
-    .build();
+     .lettuceClusterClient(clusterClient)
+     .build();
 ```
 
 #### 哨兵模式

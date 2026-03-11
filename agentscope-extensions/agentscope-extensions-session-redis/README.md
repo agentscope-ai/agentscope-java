@@ -103,13 +103,12 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.agentscope.core.session.redis.RedisSession;
 
-// Create Lettuce RedisClient for cluster
-RedisURI clusterUri = RedisURI.create("redis://localhost:7000");
-RedisClient redisClient = RedisClient.create(clusterUri);
+// Create Lettuce RedisClusterClient for cluster
+RedisClusterClient clusterClient = RedisClusterClient.create("redis://localhost:7000");
 
 // Build RedisSession
 Session session = RedisSession.builder()
-    .lettuceClient(redisClient)
+    .lettuceClusterClient(clusterClient)
     .build();
 ```
 
