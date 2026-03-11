@@ -199,7 +199,7 @@ public class OpenAIChatModel extends ChatModelBase {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private Boolean stream;
+        private boolean stream = true;
         private GenerateOptions defaultOptions;
         private String baseUrl;
         private String endpointPath;
