@@ -398,8 +398,7 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     private AgentBase acquireExecution() {
         if (checkRunning && !running.compareAndSet(false, true)) {
-            throw new IllegalStateException(
-                    "Agent is still running, please wait for it to finish");
+            throw new IllegalStateException("Agent is still running, please wait for it to finish");
         }
         resetInterruptFlag();
         GracefulShutdownManager.getInstance().ensureAcceptingRequests();
@@ -596,7 +595,6 @@ public abstract class AgentBase implements StateModule, Agent {
         ErrorEvent event = new ErrorEvent(this, error);
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
-
 
     /**
      * Remove all subscribers for a specific MsgHub.
