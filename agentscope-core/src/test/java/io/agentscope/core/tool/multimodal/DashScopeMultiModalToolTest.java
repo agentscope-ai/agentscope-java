@@ -17,6 +17,7 @@ package io.agentscope.core.tool.multimodal;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,6 +42,10 @@ import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationOutput;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationResult;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesis;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisOutput;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisParam;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisResult;
 import com.alibaba.dashscope.api.SynchronizeFullDuplexApi;
 import com.alibaba.dashscope.audio.asr.recognition.Recognition;
 import com.alibaba.dashscope.audio.asr.recognition.RecognitionParam;
@@ -57,6 +62,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -89,12 +95,20 @@ class DashScopeMultiModalToolTest {
     private static final String TEST_API_KEY = "test_api_key";
     private static final String TEXT_TO_IMAGE_PROMPT = "A small dog.";
     private static final String IMAGE_TO_TEXT_PROMPT = "Describe the image.";
+    private static final String TEXT_TO_VIDEO_PROMPT = "A smart cat is running in the moonlight.";
+    private static final String VIDEO_TO_TEXT_PROMPT = "Describe the video.";
     private static final String TEST_IMAGE0_URL = "https://example.com/image0.png";
     private static final String TEST_IMAGE1_URL = "https://example.com/image1.png";
     private static final String TEST_IMAGE_PATH = "/path/image.png";
+    private static final String TEST_IMAGE_BASE64_DATA_URL =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDg...";
     private static final String TEST_AUDIO_URL = "https://example.com/audio.wav";
     private static final String TEST_AUDIO_PATH = "/path/audio.wav";
-    private static final String TEST_AUDIO_TEXT = "text audio text";
+    private static final String TEST_AUDIO_TEXT = "test audio text";
+    private static final String TEST_VIDEO_URL = "https://example.com/video.mp4";
+    private static final String TEST_VIDEO_PATH = "/path/video.mp4";
+    private static final String TEST_VIDEO_BASE64_DATA_URL =
+            "data:video/mp4;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA...";
     // base64 of "hello"
     private static final String TEST_BASE64_DATA = "aGVsbG8=";
     private static final String TEST_MULTI_MODAL_CONTENT = "This is a small dog.";
@@ -131,9 +145,9 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof ImageBlock);
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(0));
                             ImageBlock imageBlock = (ImageBlock) toolResultBlock.getOutput().get(0);
-                            assertTrue(imageBlock.getSource() instanceof URLSource);
+                            assertInstanceOf(URLSource.class, imageBlock.getSource());
                             assertEquals(
                                     TEST_IMAGE0_URL, ((URLSource) imageBlock.getSource()).getUrl());
                         })
@@ -171,9 +185,9 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof ImageBlock);
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(0));
                             ImageBlock imageBlock = (ImageBlock) toolResultBlock.getOutput().get(0);
-                            assertTrue(imageBlock.getSource() instanceof Base64Source);
+                            assertInstanceOf(Base64Source.class, imageBlock.getSource());
                             assertEquals(
                                     "image/png",
                                     ((Base64Source) imageBlock.getSource()).getMediaType());
@@ -215,17 +229,17 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(2, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof ImageBlock);
-                            assertTrue(toolResultBlock.getOutput().get(1) instanceof ImageBlock);
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(0));
+                            assertInstanceOf(ImageBlock.class, toolResultBlock.getOutput().get(1));
                             ImageBlock image0Block =
                                     (ImageBlock) toolResultBlock.getOutput().get(0);
-                            assertTrue(image0Block.getSource() instanceof URLSource);
+                            assertInstanceOf(URLSource.class, image0Block.getSource());
                             assertEquals(
                                     TEST_IMAGE0_URL,
                                     ((URLSource) image0Block.getSource()).getUrl());
                             ImageBlock image1Block =
                                     (ImageBlock) toolResultBlock.getOutput().get(1);
-                            assertTrue(image1Block.getSource() instanceof URLSource);
+                            assertInstanceOf(URLSource.class, image1Block.getSource());
                             assertEquals(
                                     TEST_IMAGE1_URL,
                                     ((URLSource) image1Block.getSource()).getUrl());
@@ -259,7 +273,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate images."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -293,7 +307,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate images."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -309,9 +323,9 @@ class DashScopeMultiModalToolTest {
         MockedConstruction<ImageSynthesis> mockCtor =
                 mockConstruction(
                         ImageSynthesis.class,
-                        (mock, context) -> {
-                            when(mock.call(any(ImageSynthesisParam.class))).thenThrow(TEST_ERROR);
-                        });
+                        (mock, context) ->
+                                when(mock.call(any(ImageSynthesisParam.class)))
+                                        .thenThrow(TEST_ERROR));
 
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeTextToImage(
@@ -322,7 +336,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", TEST_ERROR.getMessage()),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -370,7 +384,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     TEST_MULTI_MODAL_CONTENT,
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -421,7 +435,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     TEST_MULTI_MODAL_CONTENT,
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -429,6 +443,54 @@ class DashScopeMultiModalToolTest {
                 .verifyComplete();
 
         mockMediaUtils.close();
+        mockedConv.close();
+    }
+
+    @Test
+    @DisplayName("Image to text with base64 data url")
+    void testImageToTextWithBase64DataUrl() {
+        MockedConstruction<MultiModalConversation> mockedConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            MultiModalConversationOutput.Choice choice =
+                                    new MultiModalConversationOutput.Choice();
+                            choice.setMessage(
+                                    MultiModalMessage.builder()
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    TEST_MULTI_MODAL_CONTENT)))
+                                            .build());
+                            choice.setFinishReason("stop");
+                            when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToText(
+                        List.of(TEST_IMAGE_BASE64_DATA_URL), IMAGE_TO_TEXT_PROMPT, "qwen3-vl-plus");
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    TEST_MULTI_MODAL_CONTENT,
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
         mockedConv.close();
     }
 
@@ -475,7 +537,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                         })
                 .verifyComplete();
 
@@ -515,7 +577,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate text."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -552,7 +614,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate text."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -568,10 +630,9 @@ class DashScopeMultiModalToolTest {
         MockedConstruction<MultiModalConversation> mockConv =
                 mockConstruction(
                         MultiModalConversation.class,
-                        (mock, context) -> {
-                            when(mock.call(any(MultiModalConversationParam.class)))
-                                    .thenThrow(TEST_ERROR);
-                        });
+                        (mock, context) ->
+                                when(mock.call(any(MultiModalConversationParam.class)))
+                                        .thenThrow(TEST_ERROR));
 
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeImageToText(
@@ -582,7 +643,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", TEST_ERROR.getMessage()),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -612,9 +673,9 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof AudioBlock);
+                            assertInstanceOf(AudioBlock.class, toolResultBlock.getOutput().get(0));
                             AudioBlock audioBlock = (AudioBlock) toolResultBlock.getOutput().get(0);
-                            assertTrue(audioBlock.getSource() instanceof Base64Source);
+                            assertInstanceOf(Base64Source.class, audioBlock.getSource());
                             assertEquals(
                                     TEST_BASE64_DATA,
                                     ((Base64Source) audioBlock.getSource()).getData());
@@ -643,15 +704,17 @@ class DashScopeMultiModalToolTest {
         @DisplayName("Parse Qwen TTS response with URL")
         void testParseQwenTTSResponseWithUrl() throws Exception {
             String responseJson =
-                    "{\"output\":{\"audio\":{\"url\":\"https://example.com/audio.wav\"}},\"request_id\":\"test-request-id\"}";
+                    """
+                    {"output":{"audio":{"url":"https://example.com/audio.wav"}},"request_id":"test-request-id"}
+                    """;
 
             ToolResultBlock result = invokeParseQwenTTSResponse(responseJson);
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof AudioBlock);
+            assertInstanceOf(AudioBlock.class, result.getOutput().get(0));
             AudioBlock audioBlock = (AudioBlock) result.getOutput().get(0);
-            assertTrue(audioBlock.getSource() instanceof URLSource);
+            assertInstanceOf(URLSource.class, audioBlock.getSource());
             assertEquals(
                     "https://example.com/audio.wav", ((URLSource) audioBlock.getSource()).getUrl());
         }
@@ -669,9 +732,9 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof AudioBlock);
+            assertInstanceOf(AudioBlock.class, result.getOutput().get(0));
             AudioBlock audioBlock = (AudioBlock) result.getOutput().get(0);
-            assertTrue(audioBlock.getSource() instanceof Base64Source);
+            assertInstanceOf(Base64Source.class, audioBlock.getSource());
             assertEquals(testBase64, ((Base64Source) audioBlock.getSource()).getData());
             assertEquals("audio/wav", ((Base64Source) audioBlock.getSource()).getMediaType());
         }
@@ -685,7 +748,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(
                     ((TextBlock) result.getOutput().get(0)).getText().contains("Invalid request"));
         }
@@ -699,7 +762,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(
                     ((TextBlock) result.getOutput().get(0))
                             .getText()
@@ -715,7 +778,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(
                     ((TextBlock) result.getOutput().get(0))
                             .getText()
@@ -731,7 +794,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(
                     ((TextBlock) result.getOutput().get(0))
                             .getText()
@@ -747,7 +810,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(
                     ((TextBlock) result.getOutput().get(0))
                             .getText()
@@ -763,7 +826,7 @@ class DashScopeMultiModalToolTest {
 
             assertNotNull(result);
             assertEquals(1, result.getOutput().size());
-            assertTrue(result.getOutput().get(0) instanceof TextBlock);
+            assertInstanceOf(TextBlock.class, result.getOutput().get(0));
             assertTrue(((TextBlock) result.getOutput().get(0)).getText().contains("Unknown error"));
         }
     }
@@ -796,10 +859,9 @@ class DashScopeMultiModalToolTest {
         MockedConstruction<SpeechSynthesizer> mockCtor =
                 Mockito.mockConstruction(
                         SpeechSynthesizer.class,
-                        (mock, context) -> {
-                            when(mock.call(any(SpeechSynthesisParam.class)))
-                                    .thenReturn(ByteBuffer.allocate(0));
-                        });
+                        (mock, context) ->
+                                when(mock.call(any(SpeechSynthesisParam.class)))
+                                        .thenReturn(ByteBuffer.allocate(0)));
 
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeTextToAudio(
@@ -810,7 +872,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate audio."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -826,9 +888,8 @@ class DashScopeMultiModalToolTest {
         MockedConstruction<SpeechSynthesizer> mockCtor =
                 Mockito.mockConstruction(
                         SpeechSynthesizer.class,
-                        (mock, context) -> {
-                            when(mock.call(any(SpeechSynthesisParam.class))).thenReturn(null);
-                        });
+                        (mock, context) ->
+                                when(mock.call(any(SpeechSynthesisParam.class))).thenReturn(null));
 
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeTextToAudio(
@@ -839,7 +900,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", "Failed to generate audio."),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -855,9 +916,9 @@ class DashScopeMultiModalToolTest {
         MockedConstruction<SpeechSynthesizer> mockCtor =
                 Mockito.mockConstruction(
                         SpeechSynthesizer.class,
-                        (mock, context) -> {
-                            when(mock.call(any(SpeechSynthesisParam.class))).thenThrow(TEST_ERROR);
-                        });
+                        (mock, context) ->
+                                when(mock.call(any(SpeechSynthesisParam.class)))
+                                        .thenThrow(TEST_ERROR));
 
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeTextToAudio(
@@ -868,7 +929,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", TEST_ERROR.getMessage()),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -920,7 +981,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     TEST_AUDIO_TEXT,
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -972,7 +1033,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     TEST_AUDIO_TEXT,
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -1010,7 +1071,7 @@ class DashScopeMultiModalToolTest {
                         toolResultBlock -> {
                             assertNotNull(toolResultBlock);
                             assertEquals(1, toolResultBlock.getOutput().size());
-                            assertTrue(toolResultBlock.getOutput().get(0) instanceof TextBlock);
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
                             assertEquals(
                                     String.format("Error: %s", TEST_ERROR.getMessage()),
                                     ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
@@ -1054,5 +1115,832 @@ class DashScopeMultiModalToolTest {
         verify(mockRecognition, times(2)).sendAudioFrame(any(ByteBuffer.class));
 
         Files.deleteIfExists(tempAudioFile);
+    }
+
+    @Test
+    @DisplayName("Should return a video url when text to video invoked success")
+    void testTextToVideoUrl() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeTextToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-t2v",
+                        "low quality",
+                        TEST_AUDIO_URL,
+                        "1920*1080",
+                        5,
+                        "single",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call text to video response null")
+    void testTextToVideoResponseNull() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(null);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeTextToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-t2v",
+                        "low quality",
+                        TEST_AUDIO_URL,
+                        "1920*1080",
+                        5,
+                        "single",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", "Failed to generate video."),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call text to video occurs error")
+    void testTextToVideoError() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) ->
+                                when(mock.call(any(VideoSynthesisParam.class)))
+                                        .thenThrow(TEST_ERROR));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeTextToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-t2v",
+                        "low quality",
+                        TEST_AUDIO_URL,
+                        "1920*1080",
+                        5,
+                        "single",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", TEST_ERROR.getMessage()),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Image to video with image url")
+    void testImageToVideoWithUrl() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-i2v-flash",
+                        TEST_IMAGE0_URL,
+                        TEST_AUDIO_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        10,
+                        "single",
+                        true,
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Image to video with local image file")
+    void testImageToVideoWithFile() throws IOException {
+        MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
+        when(MediaUtils.urlToProtocolUrl(TEST_IMAGE_PATH)).thenReturn("file://" + TEST_IMAGE_PATH);
+
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-i2v-flash",
+                        TEST_IMAGE_PATH,
+                        TEST_AUDIO_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        10,
+                        "single",
+                        true,
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockMediaUtils.close();
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Image to video with base64 data url")
+    void testImageToVideoWithBase64DataUrl() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-i2v-flash",
+                        TEST_IMAGE_BASE64_DATA_URL,
+                        TEST_AUDIO_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        10,
+                        "single",
+                        true,
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call image to video response" + " null")
+    void testImageToVideoResponseNull() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(null);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-i2v-flash",
+                        TEST_IMAGE0_URL,
+                        TEST_AUDIO_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        10,
+                        "single",
+                        true,
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", "Failed to generate video."),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call image to video occurs" + " error")
+    void testImageToVideoError() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) ->
+                                when(mock.call(any(VideoSynthesisParam.class)))
+                                        .thenThrow(TEST_ERROR));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.6-i2v-flash",
+                        TEST_IMAGE0_URL,
+                        TEST_AUDIO_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        10,
+                        "single",
+                        true,
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", TEST_ERROR.getMessage()),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("First and last frame image to video with image url")
+    void testFirstAndLastFrameImageToVideoWithUrl() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeFirstAndLastFrameImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.2-kf2v-flash",
+                        TEST_IMAGE0_URL,
+                        TEST_IMAGE1_URL,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("First and last frame image to video with local image file")
+    void testFirstAndLastFrameImageToVideoWithFile() throws IOException {
+        MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
+        when(MediaUtils.urlToProtocolUrl(TEST_IMAGE_PATH)).thenReturn("file://" + TEST_IMAGE_PATH);
+
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeFirstAndLastFrameImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.2-kf2v-flash",
+                        TEST_IMAGE_PATH,
+                        null,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockMediaUtils.close();
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("First and last frame image to video with base64 data url")
+    void testFirstAndLastFrameImageToVideoWithBase64DataUrl() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(TEST_VIDEO_URL);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeFirstAndLastFrameImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.2-kf2v-flash",
+                        TEST_IMAGE_BASE64_DATA_URL,
+                        null,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(VideoBlock.class, toolResultBlock.getOutput().get(0));
+                            VideoBlock vb = (VideoBlock) toolResultBlock.getOutput().get(0);
+                            assertInstanceOf(URLSource.class, vb.getSource());
+                            assertEquals(TEST_VIDEO_URL, ((URLSource) vb.getSource()).getUrl());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName(
+            "Should return error TextBlock when call first and last frame image to video response"
+                    + " null")
+    void testFirstAndLastFrameImageToVideoResponseNull() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) -> {
+                            VideoSynthesisResult mockResult = mock(VideoSynthesisResult.class);
+                            VideoSynthesisOutput mockOutput = mock(VideoSynthesisOutput.class);
+
+                            when(mock.call(any(VideoSynthesisParam.class))).thenReturn(mockResult);
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getVideoUrl()).thenReturn(null);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeFirstAndLastFrameImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.2-kf2v-flash",
+                        TEST_IMAGE_BASE64_DATA_URL,
+                        null,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", "Failed to generate video."),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName(
+            "Should return error TextBlock when call first and last frame image to video occurs"
+                    + " error")
+    void testFirstAndLastFrameImageToVideoError() {
+        MockedConstruction<VideoSynthesis> mockCtor =
+                mockConstruction(
+                        VideoSynthesis.class,
+                        (mock, context) ->
+                                when(mock.call(any(VideoSynthesisParam.class)))
+                                        .thenThrow(TEST_ERROR));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeFirstAndLastFrameImageToVideo(
+                        TEXT_TO_VIDEO_PROMPT,
+                        "wan2.2-kf2v-flash",
+                        TEST_IMAGE_BASE64_DATA_URL,
+                        null,
+                        "",
+                        "hanfu-1",
+                        "480P",
+                        true,
+                        false,
+                        0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", TEST_ERROR.getMessage()),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockCtor.close();
+    }
+
+    @Test
+    @DisplayName("Video to text with video url")
+    void testVideoToTextWithUrl() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            MultiModalConversationOutput.Choice choice =
+                                    new MultiModalConversationOutput.Choice();
+                            choice.setMessage(
+                                    MultiModalMessage.builder()
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    TEST_MULTI_MODAL_CONTENT)))
+                                            .build());
+                            choice.setFinishReason("stop");
+                            when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_URL, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    TEST_MULTI_MODAL_CONTENT,
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Video to text with local video file")
+    void testVideoToTextWithFile() throws IOException {
+        MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
+        when(MediaUtils.urlToProtocolUrl(TEST_VIDEO_PATH)).thenReturn("file://" + TEST_VIDEO_PATH);
+
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            MultiModalConversationOutput.Choice choice =
+                                    new MultiModalConversationOutput.Choice();
+                            choice.setMessage(
+                                    MultiModalMessage.builder()
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    TEST_MULTI_MODAL_CONTENT)))
+                                            .build());
+                            choice.setFinishReason("stop");
+                            when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_PATH, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    TEST_MULTI_MODAL_CONTENT,
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockMediaUtils.close();
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Video to text with base64 data url")
+    void testVideoToTextWithBase64DataUrl() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            MultiModalConversationOutput.Choice choice =
+                                    new MultiModalConversationOutput.Choice();
+                            choice.setMessage(
+                                    MultiModalMessage.builder()
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    TEST_MULTI_MODAL_CONTENT)))
+                                            .build());
+                            choice.setFinishReason("stop");
+                            when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_BASE64_DATA_URL, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    TEST_MULTI_MODAL_CONTENT,
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call video to text response empty")
+    void testVideoToTextResponseEmpty() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            MultiModalConversationOutput.Choice choice =
+                                    new MultiModalConversationOutput.Choice();
+                            choice.setMessage(
+                                    MultiModalMessage.builder().content(List.of()).build());
+                            choice.setFinishReason("stop");
+                            when(mockOutput.getChoices()).thenReturn(List.of(choice));
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_URL, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", "Failed to analyze video."),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call video to text response null")
+    void testVideoToTextResponseNull() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) -> {
+                            MultiModalConversationResult mockResult =
+                                    mock(MultiModalConversationResult.class);
+                            MultiModalConversationOutput mockOutput =
+                                    mock(MultiModalConversationOutput.class);
+
+                            when(mockResult.getOutput()).thenReturn(mockOutput);
+                            when(mockOutput.getChoices()).thenReturn(null);
+                            when(mock.call(any(MultiModalConversationParam.class)))
+                                    .thenReturn(mockResult);
+                        });
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_URL, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", "Failed to analyze video."),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
+    }
+
+    @Test
+    @DisplayName("Should return error TextBlock when call video to text occurs error")
+    void testVideoToTextError() {
+        MockedConstruction<MultiModalConversation> mockConv =
+                mockConstruction(
+                        MultiModalConversation.class,
+                        (mock, context) ->
+                                when(mock.call(any(MultiModalConversationParam.class)))
+                                        .thenThrow(TEST_ERROR));
+
+        Mono<ToolResultBlock> result =
+                multiModalTool.dashscopeVideoToText(
+                        TEST_VIDEO_URL, VIDEO_TO_TEXT_PROMPT, "qwen3.5-plus", 2.0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        toolResultBlock -> {
+                            assertNotNull(toolResultBlock);
+                            assertEquals(1, toolResultBlock.getOutput().size());
+                            assertInstanceOf(TextBlock.class, toolResultBlock.getOutput().get(0));
+                            assertEquals(
+                                    String.format("Error: %s", TEST_ERROR.getMessage()),
+                                    ((TextBlock) toolResultBlock.getOutput().get(0)).getText());
+                        })
+                .verifyComplete();
+
+        mockConv.close();
     }
 }
