@@ -124,4 +124,23 @@ public class InMemoryMemory implements Memory {
     public void clear() {
         messages.clear();
     }
+
+    /**
+     * Creates a fork (copy) of this memory.
+     *
+     * <p>The fork contains a copy of all messages at the time of invocation. Changes to the fork
+     * do not affect the original memory, and vice versa.
+     *
+     * @return A new InMemoryMemory instance containing copies of all messages
+     */
+    @Override
+    public Memory fork() {
+        InMemoryMemory forked = new InMemoryMemory();
+        for (Msg msg : messages) {
+            if (msg != null) {
+                forked.messages.add(msg);
+            }
+        }
+        return forked;
+    }
 }

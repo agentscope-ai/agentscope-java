@@ -91,6 +91,8 @@ public class SkillUtil {
 
         String name = metadata.get("name");
         String description = metadata.get("description");
+        String model = metadata.get("model");
+        String context = metadata.get("context");
         String skillContent = parsed.getContent();
 
         if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
@@ -103,7 +105,7 @@ public class SkillUtil {
                     "The SKILL.md must have content except for the YAML Front Matter.");
         }
 
-        return new AgentSkill(name, description, skillContent, resources, source);
+        return new AgentSkill(name, description, skillContent, resources, source, model, context);
     }
 
     /**

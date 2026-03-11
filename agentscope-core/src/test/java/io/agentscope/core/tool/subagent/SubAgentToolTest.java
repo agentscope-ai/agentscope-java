@@ -18,24 +18,33 @@ package io.agentscope.core.tool.subagent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -57,7 +66,7 @@ class SubAgentToolTest {
         // Create a mock agent
         Agent mockAgent = createMockAgent("TestAgent", "Test description");
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, null);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, null);
 
         assertEquals("call_testagent", tool.getName());
         assertEquals("Test description", tool.getDescription());
@@ -69,7 +78,7 @@ class SubAgentToolTest {
     void testToolNameGeneration() {
         Agent mockAgent = createMockAgent("Research Agent", "Research tasks");
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, null);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, null);
 
         assertEquals("call_research_agent", tool.getName());
     }
@@ -85,7 +94,7 @@ class SubAgentToolTest {
                         .description("Custom description")
                         .build();
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, config);
 
         assertEquals("custom_tool", tool.getName());
         assertEquals("Custom description", tool.getDescription());
@@ -96,7 +105,7 @@ class SubAgentToolTest {
     void testConversationSchema() {
         Agent mockAgent = createMockAgent("TestAgent", "Test");
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, SubAgentConfig.defaults());
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, SubAgentConfig.defaults());
 
         Map<String, Object> schema = tool.getParameters();
         assertEquals("object", schema.get("type"));
@@ -118,7 +127,7 @@ class SubAgentToolTest {
         AtomicInteger creationCount = new AtomicInteger(0);
 
         SubAgentProvider<Agent> provider =
-                () -> {
+                context -> {
                     creationCount.incrementAndGet();
                     Agent agent = mock(Agent.class);
                     when(agent.getName()).thenReturn("TestAgent");
@@ -184,7 +193,8 @@ class SubAgentToolTest {
 
         SubAgentTool tool =
                 new SubAgentTool(
-                        () -> mockAgent, SubAgentConfig.builder().forwardEvents(false).build());
+                        context -> mockAgent,
+                        SubAgentConfig.builder().forwardEvents(false).build());
 
         Map<String, Object> input = new HashMap<>();
         input.put("message", "Hello");
@@ -202,12 +212,184 @@ class SubAgentToolTest {
     }
 
     @Test
+    @DisplayName("Should handle explicit null session_id and create new session")
+    void testNullSessionIdHandling() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("TestAgent");
+        when(mockAgent.getDescription()).thenReturn("Test agent");
+        when(mockAgent.call(any(List.class)))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("Response with null session")
+                                                        .build())
+                                        .build()));
+
+        SubAgentTool tool =
+                new SubAgentTool(
+                        context -> mockAgent,
+                        SubAgentConfig.builder().forwardEvents(false).build());
+
+        // Explicitly pass null for session_id (simulating LLM behavior)
+        Map<String, Object> input = new HashMap<>();
+        input.put("session_id", null);
+        input.put("message", "Hello");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_testagent").input(input).build();
+
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().toolUseBlock(toolUse).input(input).build())
+                        .block();
+
+        assertNotNull(result);
+        String text = extractText(result);
+        assertTrue(text.contains("session_id:"));
+        assertTrue(text.contains("Response with null session"));
+        // Should generate a new session_id when null is provided
+        String sessionId = extractSessionId(result);
+        assertNotNull(sessionId);
+        assertFalse(sessionId.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should inherit session ID from parent in SHARED mode")
+    void testSessionIdInheritanceInSharedMode() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("TestAgent");
+        when(mockAgent.getDescription()).thenReturn("Test agent");
+        when(mockAgent.call(any(List.class)))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(TextBlock.builder().text("Response").build())
+                                        .build()));
+
+        SubAgentTool tool =
+                new SubAgentTool(
+                        context -> mockAgent,
+                        SubAgentConfig.builder()
+                                .forwardEvents(false)
+                                .contextSharingMode(ContextSharingMode.SHARED)
+                                .build());
+
+        // Create context with parent session ID
+        String parentSessionId = "parent_session_123";
+        ToolExecutionContext toolContext =
+                ToolExecutionContext.builder()
+                        .register(SubAgentTool.CONTEXT_KEY_PARENT_SESSION_ID, parentSessionId)
+                        .build();
+
+        // Don't pass session_id - should inherit from parent
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Hello");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_testagent").input(input).build();
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .input(input)
+                                        .context(toolContext)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        String sessionId = extractSessionId(result);
+        assertNotNull(sessionId);
+        // Session ID should be derived from parent session
+        assertTrue(
+                sessionId.startsWith(parentSessionId + "_"),
+                "Session ID should be derived from parent: " + sessionId);
+    }
+
+    @Test
+    @DisplayName("Should forward images from parent memory in SHARED mode")
+    void testImageForwardingInSharedMode() {
+        // Capture the message passed to the sub-agent
+        final List<Msg> capturedMessages = new ArrayList<>();
+
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("ImageAnalyzer");
+        when(mockAgent.getDescription()).thenReturn("Image analysis agent");
+        when(mockAgent.call(any(List.class)))
+                .thenAnswer(
+                        invocation -> {
+                            List<Msg> msgs = invocation.getArgument(0);
+                            capturedMessages.addAll(msgs);
+                            return Mono.just(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(
+                                                    TextBlock.builder()
+                                                            .text("Image analyzed")
+                                                            .build())
+                                            .build());
+                        });
+
+        SubAgentTool tool =
+                new SubAgentTool(
+                        context -> mockAgent,
+                        SubAgentConfig.builder()
+                                .forwardEvents(false)
+                                .contextSharingMode(ContextSharingMode.SHARED)
+                                .build());
+
+        // Create parent agent with memory containing an image
+        InMemoryMemory parentMemory = new InMemoryMemory();
+        ImageBlock imageBlock =
+                ImageBlock.builder()
+                        .source(
+                                new io.agentscope.core.message.Base64Source(
+                                        "image/png", "base64imagedata"))
+                        .build();
+        Msg userMsgWithImage =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Analyze this image").build())
+                        .content(imageBlock)
+                        .build();
+        parentMemory.addMessage(userMsgWithImage);
+
+        // Use ReActAgent mock since getMemory() is defined there
+        io.agentscope.core.ReActAgent parentAgent = mock(io.agentscope.core.ReActAgent.class);
+        when(parentAgent.getMemory()).thenReturn(parentMemory);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Please analyze");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_imageanalyzer").input(input).build();
+
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .input(input)
+                                        .agent(parentAgent)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        assertFalse(capturedMessages.isEmpty());
+
+        // Verify the message sent to sub-agent contains the image
+        Msg sentMsg = capturedMessages.get(0);
+        List<ImageBlock> sentImages = sentMsg.getContentBlocks(ImageBlock.class);
+        assertFalse(sentImages.isEmpty(), "Image should be forwarded to sub-agent");
+        assertEquals(1, sentImages.size());
+    }
+
+    @Test
     @DisplayName("Should register sub-agent via Toolkit")
     void testToolkitRegistration() {
         Agent mockAgent = createMockAgent("HelperAgent", "A helpful agent");
 
         Toolkit toolkit = new Toolkit();
-        toolkit.registration().subAgent(() -> mockAgent).apply();
+        toolkit.registration().subAgent(context -> mockAgent).apply();
 
         assertNotNull(toolkit.getTool("call_helperagent"));
         assertEquals("A helpful agent", toolkit.getTool("call_helperagent").getDescription());
@@ -225,7 +407,7 @@ class SubAgentToolTest {
                         .build();
 
         Toolkit toolkit = new Toolkit();
-        toolkit.registration().subAgent(() -> mockAgent, config).apply();
+        toolkit.registration().subAgent(context -> mockAgent, config).apply();
 
         assertNotNull(toolkit.getTool("ask_expert"));
         assertEquals("Ask the expert a question", toolkit.getTool("ask_expert").getDescription());
@@ -238,7 +420,7 @@ class SubAgentToolTest {
 
         Toolkit toolkit = new Toolkit();
         toolkit.createToolGroup("workers", "Worker agents group", true);
-        toolkit.registration().subAgent(() -> mockAgent).group("workers").apply();
+        toolkit.registration().subAgent(context -> mockAgent).group("workers").apply();
 
         assertNotNull(toolkit.getTool("call_worker"));
         assertTrue(toolkit.getToolGroup("workers").getTools().contains("call_worker"));
@@ -266,7 +448,7 @@ class SubAgentToolTest {
         // Configure with forwardEvents=true (default)
         SubAgentConfig config = SubAgentConfig.builder().forwardEvents(true).build();
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, config);
 
         // Track emitted chunks
         List<ToolResultBlock> emittedChunks = new ArrayList<>();
@@ -311,7 +493,7 @@ class SubAgentToolTest {
         // Configure with forwardEvents=false
         SubAgentConfig config = SubAgentConfig.builder().forwardEvents(false).build();
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, config);
 
         List<ToolResultBlock> emittedChunks = new ArrayList<>();
         ToolEmitter testEmitter = emittedChunks::add;
@@ -355,7 +537,7 @@ class SubAgentToolTest {
                 .thenReturn(Flux.just(event));
 
         // forwardEvents=true by default, but no emitter provided
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, SubAgentConfig.defaults());
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, SubAgentConfig.defaults());
 
         Map<String, Object> input = new HashMap<>();
         input.put("message", "Hello");
@@ -406,7 +588,7 @@ class SubAgentToolTest {
 
         assertEquals(customOptions, config.getStreamOptions());
 
-        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+        SubAgentTool tool = new SubAgentTool(context -> mockAgent, config);
 
         List<ToolResultBlock> emittedChunks = new ArrayList<>();
         ToolEmitter testEmitter = emittedChunks::add;
@@ -426,6 +608,353 @@ class SubAgentToolTest {
 
         // Verify stream was called with custom options
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
+    }
+
+    // Context Sharing Mode Tests
+
+    @Test
+    @DisplayName("SubAgentConfig should have SHARED context mode by default")
+    void testDefaultContextSharingMode() {
+        SubAgentConfig config = SubAgentConfig.defaults();
+        assertEquals(ContextSharingMode.SHARED, config.getContextSharingMode());
+    }
+
+    @Test
+    @DisplayName("Should share memory in SHARED mode")
+    void testSharedMemoryMode() {
+        // Create parent agent with memory
+        Memory parentMemory = new InMemoryMemory();
+        parentMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Parent message").build())
+                        .build());
+
+        ReActAgent parentAgent = mock(ReActAgent.class);
+        when(parentAgent.getName()).thenReturn("ParentAgent");
+        when(parentAgent.getMemory()).thenReturn(parentMemory);
+
+        // Create sub-agent
+        ReActAgent mockSubAgent = mock(ReActAgent.class);
+        when(mockSubAgent.getName()).thenReturn("SubAgent");
+        when(mockSubAgent.getDescription()).thenReturn("Sub agent");
+        when(mockSubAgent.getMemory()).thenReturn(parentMemory); // Returns shared memory
+        when(mockSubAgent.call(anyList()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.just(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(TextBlock.builder().text("Done").build())
+                                                .build()));
+
+        // Create a context-aware provider that captures the memory passed in context
+        final Memory[] capturedMemory = new Memory[1];
+        SubAgentProvider<ReActAgent> provider =
+                new SubAgentProvider<>() {
+                    @Override
+                    public ReActAgent provide() {
+                        // Called by constructor to derive name/description
+                        return mockSubAgent;
+                    }
+
+                    @Override
+                    public ReActAgent provideWithContext(SubAgentContext context) {
+                        capturedMemory[0] = context.getMemoryToUse();
+                        return mockSubAgent;
+                    }
+                };
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .contextSharingMode(ContextSharingMode.SHARED)
+                        .forwardEvents(false)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(provider, config);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Test");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_subagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .agent(parentAgent)
+                                .build())
+                .block();
+
+        // Verify the provider received a forked copy with same content (SHARED mode)
+        // Note: SHARED mode now forks the memory to remove pending tool calls,
+        // so it's a different instance but with the same message content
+        assertNotNull(capturedMemory[0]);
+        assertEquals(parentMemory.getMessages().size(), capturedMemory[0].getMessages().size());
+    }
+
+    @Test
+    @DisplayName("Should fork memory in FORK mode")
+    void testForkMemoryMode() {
+        // Create parent agent with memory
+        Memory parentMemory = new InMemoryMemory();
+        parentMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Parent message").build())
+                        .build());
+
+        ReActAgent parentAgent = mock(ReActAgent.class);
+        when(parentAgent.getName()).thenReturn("ParentAgent");
+        when(parentAgent.getMemory()).thenReturn(parentMemory);
+
+        // Create sub-agent
+        ReActAgent mockSubAgent = mock(ReActAgent.class);
+        when(mockSubAgent.getName()).thenReturn("SubAgent");
+        when(mockSubAgent.getDescription()).thenReturn("Sub agent");
+        when(mockSubAgent.call(anyList()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.just(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(TextBlock.builder().text("Done").build())
+                                                .build()));
+
+        // Create a context-aware provider that captures the memory passed in context
+        final Memory[] capturedMemory = new Memory[1];
+        SubAgentProvider<ReActAgent> provider =
+                new SubAgentProvider<>() {
+                    @Override
+                    public ReActAgent provide() {
+                        // Called by constructor to derive name/description
+                        return mockSubAgent;
+                    }
+
+                    @Override
+                    public ReActAgent provideWithContext(SubAgentContext context) {
+                        capturedMemory[0] = context.getMemoryToUse();
+                        return mockSubAgent;
+                    }
+                };
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .contextSharingMode(ContextSharingMode.FORK)
+                        .forwardEvents(false)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(provider, config);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Test");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_subagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .agent(parentAgent)
+                                .build())
+                .block();
+
+        // Verify the provider received a forked memory (not the same instance, but a copy)
+        assertNotNull(capturedMemory[0]);
+        assertNotSame(parentMemory, capturedMemory[0]);
+        assertEquals(1, capturedMemory[0].getMessages().size());
+
+        // Parent memory should not be modified
+        assertEquals(1, parentMemory.getMessages().size());
+    }
+
+    @Test
+    @DisplayName("Should use independent memory in NEW mode")
+    void testNewMemoryMode() {
+        // Create parent agent with memory
+        Memory parentMemory = new InMemoryMemory();
+        parentMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Parent message").build())
+                        .build());
+
+        ReActAgent parentAgent = mock(ReActAgent.class);
+        when(parentAgent.getName()).thenReturn("ParentAgent");
+        when(parentAgent.getMemory()).thenReturn(parentMemory);
+
+        // Create sub-agent
+        ReActAgent mockSubAgent = mock(ReActAgent.class);
+        when(mockSubAgent.getName()).thenReturn("SubAgent");
+        when(mockSubAgent.getDescription()).thenReturn("Sub agent");
+        when(mockSubAgent.call(anyList()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.just(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(TextBlock.builder().text("Done").build())
+                                                .build()));
+
+        // Create a context-aware provider that captures the memory passed in context
+        final Memory[] capturedMemory = new Memory[1];
+        SubAgentProvider<ReActAgent> provider =
+                new SubAgentProvider<>() {
+                    @Override
+                    public ReActAgent provide() {
+                        // Called by constructor to derive name/description
+                        return mockSubAgent;
+                    }
+
+                    @Override
+                    public ReActAgent provideWithContext(SubAgentContext context) {
+                        capturedMemory[0] = context.getMemoryToUse();
+                        return mockSubAgent;
+                    }
+                };
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .contextSharingMode(ContextSharingMode.NEW)
+                        .forwardEvents(false)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(provider, config);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Test");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_subagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .agent(parentAgent)
+                                .build())
+                .block();
+
+        // In NEW mode, the provider should receive null memory (indicating independent memory)
+        assertNull(capturedMemory[0]);
+    }
+
+    @Test
+    @DisplayName("SHARED mode should share images in memory")
+    void testSharedMemoryWithImages() {
+        // Create parent agent with memory containing images
+        Memory parentMemory = new InMemoryMemory();
+        Msg msgWithImage =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/photo.jpg")
+                                                                .build())
+                                                .build()))
+                        .build();
+        parentMemory.addMessage(msgWithImage);
+
+        ReActAgent parentAgent = mock(ReActAgent.class);
+        when(parentAgent.getName()).thenReturn("ParentAgent");
+        when(parentAgent.getMemory()).thenReturn(parentMemory);
+
+        // Create sub-agent
+        ReActAgent mockSubAgent = mock(ReActAgent.class);
+        when(mockSubAgent.getName()).thenReturn("SubAgent");
+        when(mockSubAgent.getDescription()).thenReturn("Sub agent");
+        when(mockSubAgent.getMemory()).thenReturn(parentMemory); // Shared memory
+        when(mockSubAgent.call(anyList()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.just(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(
+                                                        TextBlock.builder()
+                                                                .text("Analyzed")
+                                                                .build())
+                                                .build()));
+
+        // Create a context-aware provider that captures the memory passed in context
+        final Memory[] capturedMemory = new Memory[1];
+        SubAgentProvider<ReActAgent> provider =
+                new SubAgentProvider<>() {
+                    @Override
+                    public ReActAgent provide() {
+                        // Called by constructor to derive name/description
+                        return mockSubAgent;
+                    }
+
+                    @Override
+                    public ReActAgent provideWithContext(SubAgentContext context) {
+                        capturedMemory[0] = context.getMemoryToUse();
+                        return mockSubAgent;
+                    }
+                };
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .contextSharingMode(ContextSharingMode.SHARED)
+                        .forwardEvents(false)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(provider, config);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Analyze the image");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_subagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .agent(parentAgent)
+                                .build())
+                .block();
+
+        // Verify provider received a forked copy with the image content
+        // Note: SHARED mode now forks the memory to remove pending tool calls
+        assertNotNull(capturedMemory[0]);
+        assertEquals(parentMemory.getMessages().size(), capturedMemory[0].getMessages().size());
+    }
+
+    @Test
+    @DisplayName("Memory.fork() should create independent copy")
+    void testMemoryFork() {
+        Memory original = new InMemoryMemory();
+        original.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Message 1").build())
+                        .build());
+        original.addMessage(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Response 1").build())
+                        .build());
+
+        // Fork the memory
+        Memory forked = original.fork();
+
+        // Verify fork has same messages
+        assertEquals(2, forked.getMessages().size());
+        assertEquals("Message 1", forked.getMessages().get(0).getTextContent());
+
+        // Add to fork should not affect original
+        forked.addMessage(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Message 2").build())
+                        .build());
+
+        assertEquals(3, forked.getMessages().size());
+        assertEquals(2, original.getMessages().size());
     }
 
     // Helper methods

@@ -59,4 +59,17 @@ public interface Memory extends StateModule {
      * is typically irreversible unless state has been persisted.
      */
     void clear();
+
+    /**
+     * Creates a fork (copy) of this memory.
+     *
+     * <p>The fork contains a copy of all messages at the time of invocation. Changes to the fork
+     * do not affect the original memory, and vice versa.
+     *
+     * <p>This is useful when you want to provide context to a sub-agent without allowing it to
+     * modify the parent's memory.
+     *
+     * @return A new Memory instance containing copies of all messages
+     */
+    Memory fork();
 }
