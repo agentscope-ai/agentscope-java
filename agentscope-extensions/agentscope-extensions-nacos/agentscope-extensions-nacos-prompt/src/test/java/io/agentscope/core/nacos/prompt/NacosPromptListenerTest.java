@@ -17,16 +17,19 @@
 package io.agentscope.core.nacos.prompt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.alibaba.nacos.api.config.ConfigService;
-import com.alibaba.nacos.api.config.listener.Listener;
+import com.alibaba.nacos.api.ai.AiService;
+import com.alibaba.nacos.api.ai.listener.AbstractNacosPromptListener;
+import com.alibaba.nacos.api.ai.listener.NacosPromptEvent;
+import com.alibaba.nacos.api.ai.model.prompt.Prompt;
 import com.alibaba.nacos.api.exception.NacosException;
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -45,19 +48,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class NacosPromptListenerTest {
 
-    private static final String VALID_CONFIG =
-            "{\"promptKey\":\"test-agent\",\"template\":\"You are {{role}} in {{department}}\"}";
-    private static final String VALID_CONFIG_NO_VARS =
-            "{\"promptKey\":\"simple\",\"template\":\"You are a helpful assistant\"}";
-    private static final String DEFAULT_GROUP = "nacos-ai-prompt";
-
-    @Mock private ConfigService configService;
+    @Mock private AiService aiService;
 
     private NacosPromptListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new NacosPromptListener(configService);
+        listener = new NacosPromptListener(aiService);
     }
 
     @Nested
@@ -67,9 +64,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should load prompt from Nacos and return rendered template")
         void shouldLoadAndRenderPrompt() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("test-agent.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(VALID_CONFIG);
+            Prompt prompt = new Prompt("test-agent", "1.0.0", "You are {{role}} in {{department}}");
+            when(aiService.subscribePrompt(eq("test-agent"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             Map<String, String> args = Map.of("role", "AI Assistant", "department", "Engineering");
             String result = listener.getPrompt("test-agent", args);
@@ -80,9 +77,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should load prompt without variable rendering when args is null")
         void shouldLoadPromptWithoutArgs() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("simple.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(VALID_CONFIG_NO_VARS);
+            Prompt prompt = new Prompt("simple", "1.0.0", "You are a helpful assistant");
+            when(aiService.subscribePrompt(eq("simple"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             String result = listener.getPrompt("simple");
 
@@ -92,9 +89,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should load prompt without variable rendering when args is empty")
         void shouldLoadPromptWithEmptyArgs() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("simple.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(VALID_CONFIG_NO_VARS);
+            Prompt prompt = new Prompt("simple", "1.0.0", "You are a helpful assistant");
+            when(aiService.subscribePrompt(eq("simple"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             String result = listener.getPrompt("simple", Map.of());
 
@@ -102,51 +99,79 @@ class NacosPromptListenerTest {
         }
 
         @Test
-        @DisplayName("should return empty string when prompt config is invalid JSON")
-        void shouldReturnEmptyForInvalidJson() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("bad.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("not valid json");
+        @DisplayName("should return empty string when prompt is not found in Nacos")
+        void shouldReturnEmptyForMissingPrompt() throws NacosException {
+            when(aiService.subscribePrompt(eq("missing"), isNull(), isNull(), any()))
+                    .thenReturn(null);
 
-            String result = listener.getPrompt("bad");
-
-            assertTrue(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("should return empty string when config missing promptKey field")
-        void shouldReturnEmptyForMissingPromptKey() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("no-key.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"template\":\"some text\"}");
-
-            String result = listener.getPrompt("no-key");
+            String result = listener.getPrompt("missing");
 
             assertTrue(result.isEmpty());
         }
 
         @Test
-        @DisplayName("should return empty string when config missing template field")
-        void shouldReturnEmptyForMissingTemplate() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("no-tpl.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"no-tpl\"}");
-
-            String result = listener.getPrompt("no-tpl");
-
-            assertTrue(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("should return empty string when template field is null")
+        @DisplayName("should return empty string when prompt template is null")
         void shouldReturnEmptyForNullTemplate() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("null-tpl.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"null-tpl\",\"template\":null}");
+            Prompt prompt = new Prompt("null-tpl", "1.0.0", null);
+            when(aiService.subscribePrompt(eq("null-tpl"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             String result = listener.getPrompt("null-tpl");
 
             assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("should return empty string when prompt template is empty string")
+        void shouldReturnEmptyForEmptyTemplate() throws NacosException {
+            Prompt prompt = new Prompt("empty-tpl", "1.0.0", "");
+            when(aiService.subscribePrompt(eq("empty-tpl"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
+
+            String result = listener.getPrompt("empty-tpl");
+
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("should fallback to default when prompt template is empty string")
+        void shouldFallbackWhenEmptyTemplate() throws NacosException {
+            Prompt prompt = new Prompt("empty-tpl", "1.0.0", "");
+            when(aiService.subscribePrompt(eq("empty-tpl"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
+
+            String result = listener.getPrompt("empty-tpl", null, "Default for empty");
+
+            assertEquals("Default for empty", result);
+        }
+    }
+
+    @Nested
+    @DisplayName("getPrompt - version and label")
+    class VersionAndLabelTests {
+
+        @Test
+        @DisplayName("should load prompt with specific version")
+        void shouldLoadPromptByVersion() throws NacosException {
+            Prompt prompt = new Prompt("versioned", "2.0.0", "Version 2 template");
+            when(aiService.subscribePrompt(eq("versioned"), eq("2.0.0"), isNull(), any()))
+                    .thenReturn(prompt);
+
+            String result = listener.getPrompt("versioned", "2.0.0", null, null, null);
+
+            assertEquals("Version 2 template", result);
+        }
+
+        @Test
+        @DisplayName("should load prompt with specific label")
+        void shouldLoadPromptByLabel() throws NacosException {
+            Prompt prompt = new Prompt("labeled", "1.0.0", "Production template");
+            when(aiService.subscribePrompt(eq("labeled"), isNull(), eq("prod"), any()))
+                    .thenReturn(prompt);
+
+            String result = listener.getPrompt("labeled", null, "prod", null, null);
+
+            assertEquals("Production template", result);
         }
     }
 
@@ -155,11 +180,10 @@ class NacosPromptListenerTest {
     class DefaultValueTests {
 
         @Test
-        @DisplayName("should use default value when Nacos returns empty config")
+        @DisplayName("should use default value when Nacos returns null prompt")
         void shouldFallbackToDefaultValue() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("missing.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"missing\"}");
+            when(aiService.subscribePrompt(eq("missing"), isNull(), isNull(), any()))
+                    .thenReturn(null);
 
             String result = listener.getPrompt("missing", null, "I am a fallback assistant");
 
@@ -169,9 +193,8 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should render default value with args")
         void shouldRenderDefaultValueWithArgs() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("missing.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"missing\"}");
+            when(aiService.subscribePrompt(eq("missing"), isNull(), isNull(), any()))
+                    .thenReturn(null);
 
             Map<String, String> args = Map.of("name", "Bob");
             String result = listener.getPrompt("missing", args, "Hello {{name}}");
@@ -182,9 +205,8 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should return empty string when no default value and Nacos empty")
         void shouldReturnEmptyWhenNoDefaultAndNacosEmpty() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("missing.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"missing\"}");
+            when(aiService.subscribePrompt(eq("missing"), isNull(), isNull(), any()))
+                    .thenReturn(null);
 
             String result = listener.getPrompt("missing", null, null);
 
@@ -194,9 +216,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should use Nacos value over default value when both available")
         void shouldPreferNacosOverDefault() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("test-agent.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(VALID_CONFIG);
+            Prompt prompt = new Prompt("test-agent", "1.0.0", "You are {{role}} in {{department}}");
+            when(aiService.subscribePrompt(eq("test-agent"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             String result =
                     listener.getPrompt(
@@ -210,13 +232,21 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should use default value when NacosException occurs during loading")
         void shouldFallbackOnNacosException() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("error.json"), eq(DEFAULT_GROUP), anyLong(), any()))
+            when(aiService.subscribePrompt(eq("error"), isNull(), isNull(), any()))
                     .thenThrow(new NacosException(500, "Nacos server error"));
 
             String result = listener.getPrompt("error", null, "Fallback on error");
 
             assertEquals("Fallback on error", result);
+        }
+
+        @Test
+        @DisplayName("should throw NacosException when no default value provided")
+        void shouldThrowWhenNoDefaultAndNacosException() throws NacosException {
+            when(aiService.subscribePrompt(eq("error"), isNull(), isNull(), any()))
+                    .thenThrow(new NacosException(500, "Nacos server error"));
+
+            assertThrows(NacosException.class, () -> listener.getPrompt("error"));
         }
     }
 
@@ -227,12 +257,11 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should replace multiple variables in template")
         void shouldReplaceMultipleVariables() throws NacosException {
-            String config =
-                    "{\"promptKey\":\"multi\",\"template\":\"{{greeting}} I am {{name}}, working at"
-                            + " {{company}}\"}";
-            when(configService.getConfigAndSignListener(
-                            eq("multi.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(config);
+            Prompt prompt =
+                    new Prompt(
+                            "multi", "1.0.0", "{{greeting}} I am {{name}}, working at {{company}}");
+            when(aiService.subscribePrompt(eq("multi"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             Map<String, String> args = new HashMap<>();
             args.put("greeting", "Hello!");
@@ -247,12 +276,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should leave unmatched placeholders as-is")
         void shouldLeaveUnmatchedPlaceholders() throws NacosException {
-            String config =
-                    "{\"promptKey\":\"partial\","
-                            + "\"template\":\"Hello {{name}}, your role is {{role}}\"}";
-            when(configService.getConfigAndSignListener(
-                            eq("partial.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(config);
+            Prompt prompt = new Prompt("partial", "1.0.0", "Hello {{name}}, your role is {{role}}");
+            when(aiService.subscribePrompt(eq("partial"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             Map<String, String> args = Map.of("name", "Alice");
             String result = listener.getPrompt("partial", args);
@@ -263,10 +289,9 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should handle null value in args by replacing with empty string")
         void shouldHandleNullArgValue() throws NacosException {
-            String config = "{\"promptKey\":\"nullval\"," + "\"template\":\"Hello {{name}}\"}";
-            when(configService.getConfigAndSignListener(
-                            eq("nullval.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(config);
+            Prompt prompt = new Prompt("nullval", "1.0.0", "Hello {{name}}");
+            when(aiService.subscribePrompt(eq("nullval"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             Map<String, String> args = new HashMap<>();
             args.put("name", null);
@@ -283,38 +308,32 @@ class NacosPromptListenerTest {
         @Test
         @DisplayName("should only call Nacos once for the same key (cache hit)")
         void shouldCachePromptAfterFirstLoad() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("cached.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(VALID_CONFIG_NO_VARS);
+            Prompt prompt = new Prompt("cached", "1.0.0", "You are a helpful assistant");
+            when(aiService.subscribePrompt(eq("cached"), isNull(), isNull(), any()))
+                    .thenReturn(prompt);
 
             listener.getPrompt("cached");
             listener.getPrompt("cached");
             listener.getPrompt("cached");
 
-            verify(configService, times(1))
-                    .getConfigAndSignListener(
-                            eq("cached.json"), eq(DEFAULT_GROUP), anyLong(), any());
+            verify(aiService, times(1)).subscribePrompt(eq("cached"), isNull(), isNull(), any());
         }
 
         @Test
         @DisplayName("should call Nacos separately for different keys")
         void shouldLoadDifferentKeysIndependently() throws NacosException {
-            when(configService.getConfigAndSignListener(
-                            eq("key-a.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"key-a\",\"template\":\"Template A\"}");
-            when(configService.getConfigAndSignListener(
-                            eq("key-b.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"key-b\",\"template\":\"Template B\"}");
+            Prompt promptA = new Prompt("key-a", "1.0.0", "Template A");
+            Prompt promptB = new Prompt("key-b", "1.0.0", "Template B");
+            when(aiService.subscribePrompt(eq("key-a"), isNull(), isNull(), any()))
+                    .thenReturn(promptA);
+            when(aiService.subscribePrompt(eq("key-b"), isNull(), isNull(), any()))
+                    .thenReturn(promptB);
 
             assertEquals("Template A", listener.getPrompt("key-a"));
             assertEquals("Template B", listener.getPrompt("key-b"));
 
-            verify(configService, times(1))
-                    .getConfigAndSignListener(
-                            eq("key-a.json"), eq(DEFAULT_GROUP), anyLong(), any());
-            verify(configService, times(1))
-                    .getConfigAndSignListener(
-                            eq("key-b.json"), eq(DEFAULT_GROUP), anyLong(), any());
+            verify(aiService, times(1)).subscribePrompt(eq("key-a"), isNull(), isNull(), any());
+            verify(aiService, times(1)).subscribePrompt(eq("key-b"), isNull(), isNull(), any());
         }
     }
 
@@ -323,81 +342,106 @@ class NacosPromptListenerTest {
     class ListenerCallbackTests {
 
         @Test
-        @DisplayName("should update cached prompt when listener receives new config")
+        @DisplayName("should update cached prompt when listener receives new prompt")
         void shouldUpdateCacheOnListenerCallback() throws Exception {
-            when(configService.getConfigAndSignListener(
-                            eq("updatable.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn(
-                            "{\"promptKey\":\"updatable\","
-                                    + "\"template\":\"Original template\"}");
+            Prompt original = new Prompt("updatable", "1.0.0", "Original template");
+            when(aiService.subscribePrompt(eq("updatable"), isNull(), isNull(), any()))
+                    .thenReturn(original);
 
-            // First load
             assertEquals("Original template", listener.getPrompt("updatable"));
 
-            // Simulate listener callback with updated config
-            Listener nacosListener = getPromptListener();
-            nacosListener.receiveConfigInfo(
-                    "{\"promptKey\":\"updatable\"," + "\"template\":\"Updated template\"}");
+            // Capture the listener registered with aiService
+            AbstractNacosPromptListener nacosListener = getInternalListener();
 
-            // Should return updated template
+            // Simulate prompt update event
+            Prompt updated = new Prompt("updatable", "2.0.0", "Updated template");
+            nacosListener.onEvent(new NacosPromptEvent("updatable", updated));
+
             assertEquals("Updated template", listener.getPrompt("updatable"));
         }
 
         @Test
-        @DisplayName("should not crash when listener receives invalid JSON")
-        void shouldHandleInvalidJsonInCallback() throws Exception {
-            when(configService.getConfigAndSignListener(
-                            eq("stable.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"stable\"," + "\"template\":\"Stable template\"}");
+        @DisplayName("should not crash when listener receives event with null prompt")
+        void shouldHandleNullPromptInCallback() throws Exception {
+            Prompt original = new Prompt("stable", "1.0.0", "Stable template");
+            when(aiService.subscribePrompt(eq("stable"), isNull(), isNull(), any()))
+                    .thenReturn(original);
 
-            // First load
             assertEquals("Stable template", listener.getPrompt("stable"));
 
-            // Simulate listener callback with invalid JSON - should not throw
-            Listener nacosListener = getPromptListener();
-            nacosListener.receiveConfigInfo("not valid json");
+            AbstractNacosPromptListener nacosListener = getInternalListener();
+            nacosListener.onEvent(new NacosPromptEvent("stable", null));
 
-            // Should still return original template
             assertEquals("Stable template", listener.getPrompt("stable"));
         }
 
         @Test
-        @DisplayName("should ignore callback when missing promptKey field")
-        void shouldIgnoreCallbackMissingPromptKey() throws Exception {
-            when(configService.getConfigAndSignListener(
-                            eq("safe.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"safe\"," + "\"template\":\"Safe template\"}");
+        @DisplayName("should ignore callback with null event")
+        void shouldIgnoreNullEvent() throws Exception {
+            Prompt original = new Prompt("safe", "1.0.0", "Safe template");
+            when(aiService.subscribePrompt(eq("safe"), isNull(), isNull(), any()))
+                    .thenReturn(original);
 
             assertEquals("Safe template", listener.getPrompt("safe"));
 
-            Listener nacosListener = getPromptListener();
-            nacosListener.receiveConfigInfo("{\"template\":\"No key here\"}");
+            AbstractNacosPromptListener nacosListener = getInternalListener();
+            nacosListener.onEvent(null);
 
             assertEquals("Safe template", listener.getPrompt("safe"));
         }
 
         @Test
-        @DisplayName("should ignore callback when template field is missing")
-        void shouldIgnoreCallbackMissingTemplate() throws Exception {
-            when(configService.getConfigAndSignListener(
-                            eq("keep.json"), eq(DEFAULT_GROUP), anyLong(), any()))
-                    .thenReturn("{\"promptKey\":\"keep\"," + "\"template\":\"Keep this\"}");
+        @DisplayName("should ignore callback when promptKey is empty")
+        void shouldIgnoreCallbackEmptyPromptKey() throws Exception {
+            Prompt original = new Prompt("keep", "1.0.0", "Keep this");
+            when(aiService.subscribePrompt(eq("keep"), isNull(), isNull(), any()))
+                    .thenReturn(original);
 
             assertEquals("Keep this", listener.getPrompt("keep"));
 
-            Listener nacosListener = getPromptListener();
-            nacosListener.receiveConfigInfo("{\"promptKey\":\"keep\"}");
+            AbstractNacosPromptListener nacosListener = getInternalListener();
+            Prompt rogue = new Prompt("", "1.0.0", "Should not be stored");
+            nacosListener.onEvent(new NacosPromptEvent("", rogue));
 
             assertEquals("Keep this", listener.getPrompt("keep"));
         }
 
-        /**
-         * Access the private promptListener field via reflection.
-         */
-        private Listener getPromptListener() throws Exception {
-            Field field = NacosPromptListener.class.getDeclaredField("promptListener");
+        @Test
+        @DisplayName("should ignore callback when promptKey is null")
+        void shouldIgnoreCallbackNullPromptKey() throws Exception {
+            Prompt original = new Prompt("keep2", "1.0.0", "Keep this too");
+            when(aiService.subscribePrompt(eq("keep2"), isNull(), isNull(), any()))
+                    .thenReturn(original);
+
+            assertEquals("Keep this too", listener.getPrompt("keep2"));
+
+            AbstractNacosPromptListener nacosListener = getInternalListener();
+            Prompt rogue = new Prompt(null, "1.0.0", "Should not be stored");
+            nacosListener.onEvent(new NacosPromptEvent(null, rogue));
+
+            assertEquals("Keep this too", listener.getPrompt("keep2"));
+        }
+
+        @Test
+        @DisplayName("should ignore callback when prompt has null template")
+        void shouldIgnoreCallbackNullTemplate() throws Exception {
+            Prompt original = new Prompt("keep3", "1.0.0", "Original");
+            when(aiService.subscribePrompt(eq("keep3"), isNull(), isNull(), any()))
+                    .thenReturn(original);
+
+            assertEquals("Original", listener.getPrompt("keep3"));
+
+            AbstractNacosPromptListener nacosListener = getInternalListener();
+            Prompt bad = new Prompt("keep3", "2.0.0", null);
+            nacosListener.onEvent(new NacosPromptEvent("keep3", bad));
+
+            assertEquals("Original", listener.getPrompt("keep3"));
+        }
+
+        private AbstractNacosPromptListener getInternalListener() throws Exception {
+            Field field = NacosPromptListener.class.getDeclaredField("internalListener");
             field.setAccessible(true);
-            return (Listener) field.get(listener);
+            return (AbstractNacosPromptListener) field.get(listener);
         }
     }
 }

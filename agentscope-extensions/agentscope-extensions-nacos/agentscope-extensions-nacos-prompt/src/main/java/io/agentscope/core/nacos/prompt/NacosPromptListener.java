@@ -16,16 +16,13 @@
 
 package io.agentscope.core.nacos.prompt;
 
-import com.alibaba.nacos.api.config.ConfigService;
-import com.alibaba.nacos.api.config.listener.Listener;
+import com.alibaba.nacos.api.ai.AiService;
+import com.alibaba.nacos.api.ai.listener.AbstractNacosPromptListener;
+import com.alibaba.nacos.api.ai.listener.NacosPromptEvent;
+import com.alibaba.nacos.api.ai.model.prompt.Prompt;
 import com.alibaba.nacos.api.exception.NacosException;
-import com.alibaba.nacos.common.utils.JacksonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,18 +30,41 @@ public class NacosPromptListener {
 
     private static final Logger log = LoggerFactory.getLogger(NacosPromptListener.class);
 
-    private static final String PROMPT_KEY_SUFFIX = ".json";
-    private static final String FIELD_TEMPLATE = "template";
-    private static final String FIELD_PROMPT_KEY = "promptKey";
-    private static final String DEFAULT_GROUP = "nacos-ai-prompt";
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(.+?)\\}\\}");
+    private static final Prompt EMPTY_SENTINEL = new Prompt("", "", "");
 
-    private final ConfigService configService;
+    private final AiService aiService;
 
-    private final Map<String, String> prompts;
+    private final Map<String, Prompt> prompts;
 
-    public NacosPromptListener(ConfigService configService) {
-        this.configService = configService;
+    private final AbstractNacosPromptListener internalListener =
+            new AbstractNacosPromptListener() {
+                @Override
+                public void onEvent(NacosPromptEvent event) {
+                    if (event == null) {
+                        return;
+                    }
+                    String key = event.getPromptKey();
+                    Prompt prompt = event.getPrompt();
+                    if (key == null || key.isEmpty()) {
+                        log.warn("Received prompt event with null or empty promptKey");
+                        return;
+                    }
+                    if (prompt != null && prompt.getTemplate() != null) {
+                        prompts.put(key, prompt);
+                        log.info(
+                                "Prompt updated for key: {}, version: {}",
+                                key,
+                                prompt.getVersion());
+                    } else {
+                        log.warn(
+                                "Received prompt event with null prompt or template for key: {}",
+                                key);
+                    }
+                }
+            };
+
+    public NacosPromptListener(AiService aiService) {
+        this.aiService = aiService;
         this.prompts = new ConcurrentHashMap<>(10);
     }
 
@@ -57,7 +77,8 @@ public class NacosPromptListener {
     }
 
     /**
-     * Get prompt template with optional default value
+     * Get prompt template with optional default value.
+     *
      * @param promptKey the prompt key
      * @param args the template variables for rendering
      * @param defaultValue the default value to use if prompt not found in Nacos
@@ -66,142 +87,73 @@ public class NacosPromptListener {
      */
     public String getPrompt(String promptKey, Map<String, String> args, String defaultValue)
             throws NacosException {
-        // Use computeIfAbsent to ensure atomic check-and-load operation
-        String template =
-                prompts.computeIfAbsent(
-                        promptKey,
-                        key -> {
-                            try {
-                                return getPromptFromNacosAndListener(key);
-                            } catch (NacosException e) {
-                                log.error("Failed to load prompt from Nacos for key: {}", key, e);
-                                return "";
-                            }
-                        });
-
-        // Use default value if template is empty
-        if (template == null || template.isEmpty()) {
-            if (defaultValue != null) {
-                log.info("Using default value for prompt key: {}", promptKey);
-                template = defaultValue;
-            } else {
-                return "";
-            }
-        }
-
-        // Render template with args if provided
-        if (args != null && !args.isEmpty()) {
-            return renderTemplate(template, args);
-        }
-        return template;
-    }
-
-    private String getPromptFromNacosAndListener(String promptKey) throws NacosException {
-        String promptDataId = promptKey + PROMPT_KEY_SUFFIX;
-        String promptStr =
-                configService.getConfigAndSignListener(
-                        promptDataId, DEFAULT_GROUP, 5000, this.promptListener);
-
-        JsonNode node;
-        try {
-            node = JacksonUtils.toObj(promptStr, JsonNode.class);
-        } catch (Exception e) {
-            log.warn("Failed to parse prompt config JSON for key: {}", promptKey, e);
-            return "";
-        }
-
-        if (node == null || !node.has(FIELD_PROMPT_KEY) || !node.has(FIELD_TEMPLATE)) {
-            log.warn("Invalid prompt config for key: {}, missing required fields", promptKey);
-            return "";
-        }
-
-        JsonNode templateNode = node.get(FIELD_TEMPLATE);
-        if (templateNode == null || templateNode.isNull()) {
-            log.warn("Template field is null for prompt key: {}", promptKey);
-            return "";
-        }
-
-        String promptTemplate = templateNode.asText();
-        log.info("Loaded prompt template for key: {}", promptKey);
-        return promptTemplate;
+        return getPrompt(promptKey, null, null, args, defaultValue);
     }
 
     /**
-     * Render template by replacing {{variableName}} with values from args.
-     * Uses single-pass regex replacement for better performance.
-     * Unmatched placeholders are preserved as-is.
+     * Get prompt template with version/label targeting and optional default value.
      *
-     * @param template the template string with {{}} placeholders
-     * @param args the variable map for replacement
-     * @return rendered string
+     * @param promptKey the prompt key
+     * @param version target prompt version (e.g. "1.0.0"), mutually exclusive with label
+     * @param label target prompt label (e.g. "prod"), mutually exclusive with version
+     * @param args the template variables for rendering
+     * @param defaultValue the default value to use if prompt not found in Nacos
+     * @return rendered prompt string or default value
+     * @throws NacosException if Nacos service error occurs
      */
-    private String renderTemplate(String template, Map<String, String> args) {
-        if (template == null || template.isEmpty()) {
-            return template;
+    public String getPrompt(
+            String promptKey,
+            String version,
+            String label,
+            Map<String, String> args,
+            String defaultValue)
+            throws NacosException {
+
+        Prompt prompt = prompts.get(promptKey);
+        if (prompt == null) {
+            try {
+                prompt = subscribeAndLoad(promptKey, version, label);
+            } catch (NacosException e) {
+                log.error("Failed to load prompt from Nacos for key: {}", promptKey, e);
+                if (defaultValue != null) {
+                    log.info("Using default value for prompt key: {}", promptKey);
+                    return renderDefault(defaultValue, args);
+                }
+                throw e;
+            }
+            prompts.putIfAbsent(promptKey, prompt);
+            prompt = prompts.get(promptKey);
         }
 
-        Matcher matcher = PLACEHOLDER_PATTERN.matcher(template);
-        StringBuilder sb = new StringBuilder();
-        while (matcher.find()) {
-            String key = matcher.group(1);
-            if (args.containsKey(key)) {
-                String value = args.get(key) != null ? args.get(key) : "";
-                matcher.appendReplacement(sb, Matcher.quoteReplacement(value));
+        if (prompt == EMPTY_SENTINEL
+                || prompt.getTemplate() == null
+                || prompt.getTemplate().isEmpty()) {
+            if (defaultValue != null) {
+                log.info("Using default value for prompt key: {}", promptKey);
+                return renderDefault(defaultValue, args);
             }
+            return "";
         }
-        matcher.appendTail(sb);
-        return sb.toString();
+
+        return prompt.render(args);
     }
 
-    private final Listener promptListener =
-            new Listener() {
-                @Override
-                public Executor getExecutor() {
-                    return null;
-                }
+    private Prompt subscribeAndLoad(String promptKey, String version, String label)
+            throws NacosException {
+        Prompt prompt = aiService.subscribePrompt(promptKey, version, label, internalListener);
+        if (prompt != null) {
+            log.info("Loaded prompt for key: {}, version: {}", promptKey, prompt.getVersion());
+            return prompt;
+        }
+        log.warn("Prompt not found in Nacos for key: {}", promptKey);
+        return EMPTY_SENTINEL;
+    }
 
-                @Override
-                public void receiveConfigInfo(String configInfo) {
-                    try {
-                        JsonNode node = JacksonUtils.toObj(configInfo, JsonNode.class);
-                        if (node == null || !node.has(FIELD_PROMPT_KEY)) {
-                            log.warn("Received invalid prompt config, missing promptKey field");
-                            return;
-                        }
-
-                        JsonNode promptKeyNode = node.get(FIELD_PROMPT_KEY);
-                        if (promptKeyNode == null || promptKeyNode.isNull()) {
-                            log.warn("PromptKey field is null in configuration");
-                            return;
-                        }
-
-                        String promptKey = promptKeyNode.asText();
-
-                        if (!node.has(FIELD_TEMPLATE)) {
-                            log.warn(
-                                    "No template field found in configuration for key: {}",
-                                    promptKey);
-                            return;
-                        }
-
-                        JsonNode templateNode = node.get(FIELD_TEMPLATE);
-                        if (templateNode == null || templateNode.isNull()) {
-                            log.warn(
-                                    "Template field is null in configuration for key: {}",
-                                    promptKey);
-                            return;
-                        }
-
-                        String newTemplate = templateNode.asText();
-                        prompts.put(promptKey, newTemplate);
-                        log.info("Prompt template updated for key: {}", promptKey);
-
-                    } catch (Exception e) {
-                        log.error(
-                                "Failed to parse prompt configuration from config: {}",
-                                configInfo,
-                                e);
-                    }
-                }
-            };
+    private String renderDefault(String defaultValue, Map<String, String> args) {
+        if (args == null || args.isEmpty()) {
+            return defaultValue;
+        }
+        Prompt fallback = new Prompt(null, null, defaultValue);
+        return fallback.render(args);
+    }
 }
