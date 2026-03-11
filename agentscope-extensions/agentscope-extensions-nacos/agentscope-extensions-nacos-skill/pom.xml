@@ -16,25 +16,32 @@
   -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-nacos</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-nacos</artifactId>
-    <name>AgentScope Java - Nacos</name>
-    <description>Nacos integration for AgentScope Java</description>
-    <packaging>pom</packaging>
+    <artifactId>agentscope-extensions-nacos-skill</artifactId>
+    <name>AgentScope Java - Nacos Skill Repository</name>
+    <description>agentscope-extensions-nacos-skill</description>
 
-    <modules>
-        <module>agentscope-extensions-nacos-a2a</module>
-        <module>agentscope-extensions-nacos-prompt</module>
-        <module>agentscope-extensions-nacos-skill</module>
-    </modules>
+    <dependencies>
+        <!-- Core library is needed at runtime for AgentSkillRepository, AgentSkill, etc. -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+        </dependency>
+
+    </dependencies>
 
 </project>
