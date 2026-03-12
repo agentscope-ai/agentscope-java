@@ -129,7 +129,7 @@ public class JacksonJsonCodec implements JsonCodec {
     public <T> T convertValue(Object from, Class<T> toType) {
         try {
             return this.jsonMapper.convertValue(from, toType);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value to " + toType.getName(), e);
         }
     }
@@ -138,7 +138,7 @@ public class JacksonJsonCodec implements JsonCodec {
     public <T> T convertValue(Object from, TypeReference<T> toTypeRef) {
         try {
             return this.jsonMapper.convertValue(from, toTypeRef);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value", e);
         }
     }
@@ -148,7 +148,7 @@ public class JacksonJsonCodec implements JsonCodec {
         try {
             JavaType javaType = this.jsonMapper.getTypeFactory().constructType(toType);
             return this.jsonMapper.convertValue(from, javaType);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value to " + toType.getTypeName(), e);
         }
     }
