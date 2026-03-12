@@ -38,7 +38,7 @@ import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
- * ToolCallingExample - Demonstrates how to equip an Agent with tools.
+ * MultiModalToolExample - Demonstrates how to equip an Agent with multimodal tools.
  */
 public class MultiModalToolExample {
 
@@ -74,7 +74,7 @@ public class MultiModalToolExample {
                                         .enableThinking(false)
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
-                        .hook(new ToolCallHook())
+                        .hook(new ToolCallLoggingHook())
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
                         .build();
@@ -127,7 +127,7 @@ public class MultiModalToolExample {
         System.out.println("\n");
     }
 
-    static class ToolCallHook implements Hook {
+    static class ToolCallLoggingHook implements Hook {
 
         @Override
         public <T extends HookEvent> Mono<T> onEvent(T event) {
