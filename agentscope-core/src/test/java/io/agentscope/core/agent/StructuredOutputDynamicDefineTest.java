@@ -35,6 +35,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -113,6 +114,7 @@ public class StructuredOutputDynamicDefineTest {
     }
 
     @Test
+    @DisplayName("Stream execution events with JSON scheme structured support")
     void testDynamicComplexNestedStructureStreamingMode() {
         Memory memory = new InMemoryMemory();
         MockModel mockModel = getMockModel();
