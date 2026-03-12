@@ -21,24 +21,23 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 @DisplayName("StatusResponse Unit Tests")
 class StatusResponseTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.shared();
 
     @Test
     @DisplayName("Should deserialize from JSON")
-    void shouldDeserializeFromJson() throws JsonProcessingException {
+    void shouldDeserializeFromJson() {
         // Arrange
         String json = "{\"status\": \"success\", \"message\": \"OK\"}";
 
         // Act
-        StatusResponse response = objectMapper.readValue(json, StatusResponse.class);
+        StatusResponse response = jsonMapper.readValue(json, StatusResponse.class);
 
         // Assert
         assertNotNull(response);
@@ -49,12 +48,12 @@ class StatusResponseTest {
 
     @Test
     @DisplayName("Should deserialize error response")
-    void shouldDeserializeErrorResponse() throws JsonProcessingException {
+    void shouldDeserializeErrorResponse() {
         // Arrange
         String json = "{\"status\": \"error\", \"message\": \"Internal Server Error\"}";
 
         // Act
-        StatusResponse response = objectMapper.readValue(json, StatusResponse.class);
+        StatusResponse response = jsonMapper.readValue(json, StatusResponse.class);
 
         // Assert
         assertNotNull(response);

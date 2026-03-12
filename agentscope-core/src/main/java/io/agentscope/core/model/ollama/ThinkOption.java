@@ -16,17 +16,16 @@
 
 package io.agentscope.core.model.ollama;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializerProvider;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import java.io.IOException;
 import java.util.List;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueDeserializer;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonSerialize;
 
 /**
  * Defines the configuration contract for the "thinking" capability (Chain of Thought) in AgentScope's Ollama integration.
@@ -56,15 +55,15 @@ public sealed interface ThinkOption {
      * Custom serializer implementation for {@link ThinkOption}.
      * Responsible for converting the option object into the appropriate JSON primitive (boolean or string).
      */
-    class ThinkOptionSerializer extends JsonSerializer<ThinkOption> {
+    class ThinkOptionSerializer extends ValueSerializer<ThinkOption> {
 
         @Override
-        public void serialize(ThinkOption value, JsonGenerator gen, SerializerProvider serializers)
-                throws IOException {
+        public void serialize(ThinkOption value, JsonGenerator gen, SerializationContext ctxt)
+                throws JacksonException {
             if (value == null) {
                 gen.writeNull();
             } else {
-                gen.writeObject(value.toJsonValue());
+                gen.writePOJO(value.toJsonValue());
             }
         }
     }
@@ -73,11 +72,11 @@ public sealed interface ThinkOption {
      * Custom deserializer implementation for {@link ThinkOption}.
      * Detects the JSON token type (boolean or string) and instantiates the corresponding {@link ThinkOption} implementation.
      */
-    class ThinkOptionDeserializer extends JsonDeserializer<ThinkOption> {
+    class ThinkOptionDeserializer extends ValueDeserializer<ThinkOption> {
 
         @Override
-        public ThinkOption deserialize(JsonParser p, DeserializationContext ctxt)
-                throws IOException {
+        public ThinkOption deserialize(tools.jackson.core.JsonParser p, DeserializationContext ctxt)
+                throws JacksonException {
             JsonToken token = p.currentToken();
             if (token == JsonToken.VALUE_TRUE) {
                 return ThinkBoolean.ENABLED;
@@ -88,7 +87,7 @@ public sealed interface ThinkOption {
             } else if (token == JsonToken.VALUE_NULL) {
                 return null;
             }
-            throw new IOException(
+            throw new IllegalStateException(
                     "Unable to deserialize ThinkOption. Encountered unexpected token type: "
                             + token);
         }

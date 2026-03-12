@@ -20,16 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.training.util.TrainingTestConstants;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 @DisplayName("CommitRequest Unit Tests")
 class CommitRequestTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.shared();
 
     @Test
     @DisplayName("Should build commit request with all fields")
@@ -50,13 +49,13 @@ class CommitRequestTest {
 
     @Test
     @DisplayName("Should serialize to JSON with snake_case field names")
-    void shouldSerializeToJsonWithSnakeCaseFieldNames() throws JsonProcessingException {
+    void shouldSerializeToJsonWithSnakeCaseFieldNames() {
         // Arrange
         CommitRequest request =
                 CommitRequest.builder().taskId("task-123").runId("0").timeThreshold(60000L).build();
 
         // Act
-        String json = objectMapper.writeValueAsString(request);
+        String json = jsonMapper.writeValueAsString(request);
 
         // Assert
         assertTrue(json.contains("\"task_id\":\"task-123\""));

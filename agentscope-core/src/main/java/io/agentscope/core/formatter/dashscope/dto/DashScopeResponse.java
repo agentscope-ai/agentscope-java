@@ -17,13 +17,13 @@ package io.agentscope.core.formatter.dashscope.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import java.io.IOException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ValueDeserializer;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
  * DashScope API response DTO.
@@ -128,11 +128,11 @@ public class DashScopeResponse {
      * have been decrypted by decryptResponse() before deserialization. If it's still a string at
      * this point, it means decryption failed or wasn't performed, so we skip it.
      */
-    static class DashScopeOutputDeserializer extends JsonDeserializer<DashScopeOutput> {
+    static class DashScopeOutputDeserializer extends ValueDeserializer<DashScopeOutput> {
 
         @Override
         public DashScopeOutput deserialize(JsonParser p, DeserializationContext ctxt)
-                throws IOException {
+                throws JacksonException {
             JsonToken token = p.currentToken();
             if (token == JsonToken.VALUE_NULL) {
                 return null;
@@ -147,14 +147,15 @@ public class DashScopeResponse {
                 // Object value - normal deserialization
                 // Use readTree and treeToValue for standard deserialization
                 // This handles the case where output is a decrypted JSON object
-                JsonNode node = p.getCodec().readTree(p);
+                JsonNode node = ctxt.readTree(p);
                 if (node == null || node.isNull() || !node.isObject()) {
                     return null;
                 }
-                return p.getCodec().treeToValue(node, DashScopeOutput.class);
+                return ctxt.readTreeAsValue(node, DashScopeOutput.class);
             }
+
             // Unexpected token type
-            throw new IOException(
+            throw new IllegalStateException(
                     "Cannot deserialize DashScopeOutput from token: "
                             + token
                             + ". Expected object or string.");

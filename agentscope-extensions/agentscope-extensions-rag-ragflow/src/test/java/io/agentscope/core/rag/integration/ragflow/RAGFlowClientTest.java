@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowApiException;
 import io.agentscope.core.rag.integration.ragflow.exception.RAGFlowAuthException;
 import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
@@ -34,6 +33,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Unit tests for RAGFlowClient.

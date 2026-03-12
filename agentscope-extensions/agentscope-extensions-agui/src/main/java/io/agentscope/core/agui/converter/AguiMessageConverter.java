@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agui.converter;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiToolCall;
@@ -31,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Converter between AG-UI messages and AgentScope messages.

@@ -16,26 +16,28 @@
 
 package io.agentscope.core.util;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.lang.reflect.Type;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JacksonModule;
+import tools.jackson.databind.JavaType;
+import tools.jackson.databind.cfg.MapperBuilder;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Jackson-based implementation of {@link JsonCodec}.
  *
  * <p>This is the default implementation used by {@link JsonUtils}. It uses
- * Jackson's ObjectMapper with the following configuration:
+ * Jackson's JsonMapper with the following configuration:
  * <ul>
  *   <li>{@code FAIL_ON_UNKNOWN_PROPERTIES = false} - allows unknown fields in JSON</li>
  * </ul>
  *
- * <p>Users can access the underlying ObjectMapper via {@link #getObjectMapper()}
+ * <p>Users can access the underlying JsonMapper via {@link #getJsonMapper()}
  * for advanced operations not covered by the JsonCodec interface.
  *
  * @see JsonCodec
@@ -45,50 +47,51 @@ public class JacksonJsonCodec implements JsonCodec {
 
     private static final Logger log = LoggerFactory.getLogger(JacksonJsonCodec.class);
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     /**
-     * Creates a new JacksonJsonCodec with default ObjectMapper configuration.
+     * Creates a new JacksonJsonCodec with default JsonMapper configuration.
      */
     public JacksonJsonCodec() {
-        this.objectMapper = createDefaultObjectMapper();
+        this.jsonMapper = createDefaultJsonMapper();
     }
 
     /**
-     * Creates a new JacksonJsonCodec with a custom ObjectMapper.
+     * Creates a new JacksonJsonCodec with a custom JsonMapper.
      *
-     * @param objectMapper the ObjectMapper to use
+     * @param jsonMapper the JsonMapper to use
      */
-    public JacksonJsonCodec(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public JacksonJsonCodec(JsonMapper jsonMapper) {
+        this.jsonMapper = jsonMapper;
     }
 
     /**
-     * Creates the default ObjectMapper with standard configuration.
+     * Creates the default JsonMapper with standard configuration.
      *
-     * @return configured ObjectMapper
+     * @return configured JsonMapper
      */
-    private static ObjectMapper createDefaultObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
+    private static JsonMapper createDefaultJsonMapper() {
+        List<JacksonModule> modules = MapperBuilder.findModules();
+        return JsonMapper.builder()
+                .addModules(modules)
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                .build();
     }
 
     /**
-     * Get the underlying ObjectMapper for advanced operations.
+     * Get the underlying JsonMapper for advanced operations.
      *
-     * @return the ObjectMapper instance
+     * @return the JsonMapper instance
      */
-    public ObjectMapper getObjectMapper() {
-        return objectMapper;
+    public JsonMapper getJsonMapper() {
+        return this.jsonMapper;
     }
 
     @Override
     public String toJson(Object obj) {
         try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (JsonProcessingException e) {
+            return this.jsonMapper.writeValueAsString(obj);
+        } catch (JacksonException e) {
             log.error("Failed to serialize object to JSON: {}", e.getMessage(), e);
             throw new JsonException("Failed to serialize object to JSON", e);
         }
@@ -97,8 +100,8 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public String toPrettyJson(Object obj) {
         try {
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
-        } catch (JsonProcessingException e) {
+            return this.jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
+        } catch (JacksonException e) {
             log.error("Failed to serialize object to pretty JSON: {}", e.getMessage(), e);
             throw new JsonException("Failed to serialize object to pretty JSON", e);
         }
@@ -107,8 +110,8 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, Class<T> type) {
         try {
-            return objectMapper.readValue(json, type);
-        } catch (JsonProcessingException e) {
+            return this.jsonMapper.readValue(json, type);
+        } catch (JacksonException e) {
             throw new JsonException("Failed to deserialize JSON to " + type.getName(), e);
         }
     }
@@ -116,8 +119,8 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, TypeReference<T> typeRef) {
         try {
-            return objectMapper.readValue(json, typeRef);
-        } catch (JsonProcessingException e) {
+            return this.jsonMapper.readValue(json, typeRef);
+        } catch (JacksonException e) {
             throw new JsonException("Failed to deserialize JSON", e);
         }
     }
@@ -125,8 +128,8 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T convertValue(Object from, Class<T> toType) {
         try {
-            return objectMapper.convertValue(from, toType);
-        } catch (IllegalArgumentException e) {
+            return this.jsonMapper.convertValue(from, toType);
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value to " + toType.getName(), e);
         }
     }
@@ -134,8 +137,8 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T convertValue(Object from, TypeReference<T> toTypeRef) {
         try {
-            return objectMapper.convertValue(from, toTypeRef);
-        } catch (IllegalArgumentException e) {
+            return this.jsonMapper.convertValue(from, toTypeRef);
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value", e);
         }
     }
@@ -143,9 +146,9 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public Object convertValue(Object from, Type toType) {
         try {
-            JavaType javaType = objectMapper.getTypeFactory().constructType(toType);
-            return objectMapper.convertValue(from, javaType);
-        } catch (IllegalArgumentException e) {
+            JavaType javaType = this.jsonMapper.getTypeFactory().constructType(toType);
+            return this.jsonMapper.convertValue(from, javaType);
+        } catch (IllegalArgumentException | JacksonException e) {
             throw new JsonException("Failed to convert value to " + toType.getTypeName(), e);
         }
     }

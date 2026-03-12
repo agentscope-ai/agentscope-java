@@ -15,10 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
@@ -34,6 +30,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Unified validator for tool-related operations.
@@ -48,7 +48,7 @@ public final class ToolValidator {
 
     private static final SchemaRegistry SCHEMA_REGISTRY =
             SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     private ToolValidator() {
         // Utility class
@@ -115,10 +115,10 @@ public final class ToolValidator {
             return input;
         }
 
-        JsonNode root = OBJECT_MAPPER.readTree(input);
-        JsonNode schemaRoot = OBJECT_MAPPER.readTree(schemaJson);
+        JsonNode root = JSON_MAPPER.readTree(input);
+        JsonNode schemaRoot = JSON_MAPPER.readTree(schemaJson);
         pruneOptionalNullObjectFields(root, schemaRoot, schemaRoot);
-        return OBJECT_MAPPER.writeValueAsString(root);
+        return JSON_MAPPER.writeValueAsString(root);
     }
 
     private static void pruneOptionalNullObjectFields(
@@ -139,8 +139,8 @@ public final class ToolValidator {
             JsonNode additionalPropertiesNode = resolvedSchema.get("additionalProperties");
             List<String> nullFieldNames = new ArrayList<>();
             objectNode
-                    .fields()
-                    .forEachRemaining(
+                    .properties()
+                    .forEach(
                             entry -> {
                                 JsonNode propertySchema =
                                         propertiesNode != null

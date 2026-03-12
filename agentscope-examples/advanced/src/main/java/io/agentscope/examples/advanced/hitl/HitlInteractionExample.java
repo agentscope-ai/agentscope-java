@@ -15,8 +15,6 @@
  */
 package io.agentscope.examples.advanced.hitl;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
@@ -52,6 +50,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * HITL (Human-in-the-Loop) Interactive UI Example.
@@ -81,7 +81,7 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/api")
 public class HitlInteractionExample {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     private static final Set<String> TOOLS_REQUIRING_CONFIRMATION =
             Set.of(AddCalendarEventTool.TOOL_NAME);
@@ -212,7 +212,7 @@ public class HitlInteractionExample {
             responseText = s;
         } else {
             try {
-                responseText = OBJECT_MAPPER.writeValueAsString(response);
+                responseText = JSON_MAPPER.writeValueAsString(response);
             } catch (Exception e) {
                 responseText = String.valueOf(response);
             }
@@ -504,7 +504,7 @@ public class HitlInteractionExample {
             return (Map<String, Object>) input;
         }
         try {
-            return OBJECT_MAPPER.convertValue(input, new TypeReference<Map<String, Object>>() {});
+            return JSON_MAPPER.convertValue(input, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return Map.of("value", input.toString());
         }

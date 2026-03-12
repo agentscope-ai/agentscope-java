@@ -16,8 +16,6 @@
 
 package io.agentscope.core.util;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
@@ -29,6 +27,8 @@ import com.github.victools.jsonschema.module.jackson.JacksonOption;
 import io.agentscope.core.tool.ToolSchemaModule;
 import java.lang.reflect.Type;
 import java.util.Map;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Utility class for JSON Schema operations.
@@ -104,11 +104,11 @@ public class JsonSchemaUtils {
     }
 
     /**
-     * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
+     * Generate JSON Schema from a JsonNode instance.
      * This method is suitable for structured output scenarios where complex nested
      * objects need to be converted to JSON Schema format.
      *
-     * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
+     * @param schema The JsonNode instance to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
      *                          configuration issues, or other processing errors
