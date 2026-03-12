@@ -70,7 +70,7 @@
         <opentelemetry.version>1.60.1</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.2</reactor-bom.version>
-        <jackson.version>2.21.1</jackson.version>
+        <jackson.version>3.1.0</jackson.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
@@ -105,7 +105,7 @@
         <spring-boot.version>4.0.3</spring-boot.version>
         <nacos-client.version>3.2.0-BETA</nacos-client.version>
         <json-schema-validator.version>3.0.1</json-schema-validator.version>
-        <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
+        <jsonschema-generator.version>5.0.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
@@ -152,7 +152,7 @@
 
             <!-- Jackson -->
             <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
+                <groupId>tools.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
                 <version>${jackson.version}</version>
                 <type>pom</type>
@@ -434,7 +434,7 @@
                 <version>${jsonschema-generator.version}</version>
                 <exclusions>
                     <exclusion>
-                        <groupId>com.fasterxml.jackson.core</groupId>
+                        <groupId>tools.jackson.core</groupId>
                         <artifactId>jackson-core</artifactId>
                     </exclusion>
                 </exclusions>

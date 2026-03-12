@@ -327,7 +327,6 @@ rm -rf ~/.agentscope/sessions/*.json
 If you need to preserve historical conversation data, write a migration script:
 
 ```java
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.JsonSession;
@@ -335,14 +334,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.databind.json.JsonMapper;
 
 public class SessionMigration {
     public static void migrate(Path oldSessionFile, Path newSessionDir) throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
+        JsonMapper jsonMapper = JsonMapper.shared();
 
         // 1. Read old format data
         String json = Files.readString(oldSessionFile);
-        Map<String, Object> oldData = mapper.readValue(json, Map.class);
+        Map<String, Object> oldData = jsonMapper.readValue(json, Map.class);
 
         // 2. Extract message history
         Map<String, Object> memoryData = (Map<String, Object>) oldData.get("memory");

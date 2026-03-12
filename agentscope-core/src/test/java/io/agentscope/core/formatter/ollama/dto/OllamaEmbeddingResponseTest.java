@@ -22,13 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import io.agentscope.core.util.JacksonJsonCodec;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Unit tests for OllamaEmbeddingResponse.
@@ -41,12 +42,11 @@ class OllamaEmbeddingResponseTest {
     @BeforeEach
     void setUp() {
         // Create a JacksonJsonCodec instance with snake_case naming strategy for testing
-        JacksonJsonCodec defaultCodec = new JacksonJsonCodec();
         jsonCodec =
                 new JacksonJsonCodec(
-                        defaultCodec
-                                .getObjectMapper()
-                                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE));
+                        JsonMapper.builder()
+                                .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                                .build());
     }
 
     @Test
