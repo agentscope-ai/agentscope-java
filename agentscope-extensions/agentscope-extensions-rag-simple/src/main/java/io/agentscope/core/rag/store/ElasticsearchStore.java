@@ -30,11 +30,10 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
-import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.json.jackson.Jackson3JsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
 import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
@@ -57,6 +56,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Elasticsearch vector database store implementation.
@@ -85,7 +85,7 @@ import reactor.core.scheduler.Schedulers;
  */
 public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchStore.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     // Field names for Elasticsearch mapping
     private static final String FIELD_ID = "id";
@@ -153,7 +153,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
 
             // 2. Create Transport and Client
             this.transport =
-                    new Rest5ClientTransport(restClient, new JacksonJsonpMapper(OBJECT_MAPPER));
+                    new Rest5ClientTransport(restClient, new Jackson3JsonpMapper(JSON_MAPPER));
             this.client = new ElasticsearchClient(transport);
 
             // 3. Ensure Index Exists
@@ -407,7 +407,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
 
         // Serialize ContentBlock to JSON string to ensure safe storage/retrieval
         try {
-            String contentJson = OBJECT_MAPPER.writeValueAsString(meta.getContent());
+            String contentJson = JSON_MAPPER.writeValueAsString(meta.getContent());
             map.put(FIELD_CONTENT, contentJson);
         } catch (Exception e) {
             log.warn("Failed to serialize content, using text representation", e);
@@ -430,7 +430,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
             // Reconstruct ContentBlock
             ContentBlock content;
             try {
-                content = OBJECT_MAPPER.readValue(contentJson, ContentBlock.class);
+                content = JSON_MAPPER.readValue(contentJson, ContentBlock.class);
             } catch (Exception e) {
                 log.debug("Failed to deserialize ContentBlock, creating TextBlock", e);
                 content = TextBlock.builder().text(contentJson).build();

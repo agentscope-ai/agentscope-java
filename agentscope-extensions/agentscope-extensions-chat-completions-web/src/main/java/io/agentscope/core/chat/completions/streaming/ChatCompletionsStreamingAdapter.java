@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.chat.completions.streaming;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -34,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import reactor.core.publisher.Flux;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Framework-agnostic adapter for handling streaming chat completion responses.
@@ -67,7 +67,7 @@ import reactor.core.publisher.Flux;
  */
 public class ChatCompletionsStreamingAdapter {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     /** Constructs a new {@code ChatCompletionsStreamingAdapter}. */
     public ChatCompletionsStreamingAdapter() {}
@@ -325,8 +325,8 @@ public class ChatCompletionsStreamingAdapter {
             return "{}";
         }
         try {
-            return OBJECT_MAPPER.writeValueAsString(map);
-        } catch (JsonProcessingException e) {
+            return JSON_MAPPER.writeValueAsString(map);
+        } catch (JacksonException e) {
             return "{}";
         }
     }

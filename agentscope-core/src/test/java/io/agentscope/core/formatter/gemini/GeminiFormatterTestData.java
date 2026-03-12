@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -28,6 +27,7 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Test data for Gemini formatter tests.

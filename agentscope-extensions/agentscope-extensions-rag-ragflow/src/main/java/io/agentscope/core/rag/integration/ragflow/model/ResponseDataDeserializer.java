@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.rag.integration.ragflow.model;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonNode;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ValueDeserializer;
 
 /**
  * Custom deserializer for RAGFlow ResponseData.
@@ -43,13 +43,13 @@ import java.util.List;
  *
  * @author RAGFlow Integration Team
  */
-public class ResponseDataDeserializer extends JsonDeserializer<RAGFlowResponse.ResponseData> {
+public class ResponseDataDeserializer extends ValueDeserializer<RAGFlowResponse.ResponseData> {
 
     @Override
     public RAGFlowResponse.ResponseData deserialize(JsonParser p, DeserializationContext ctxt)
-            throws IOException {
+            throws JacksonException {
 
-        JsonNode node = p.getCodec().readTree(p);
+        JsonNode node = p.readValueAsTree();
 
         // Handle cases where data is false, null, or not an object
         if (node == null || node.isNull() || !node.isObject()) {
@@ -63,7 +63,7 @@ public class ResponseDataDeserializer extends JsonDeserializer<RAGFlowResponse.R
         if (node.has("chunks") && node.get("chunks").isArray()) {
             List<RAGFlowChunk> chunks = new ArrayList<>();
             for (JsonNode chunkNode : node.get("chunks")) {
-                RAGFlowChunk chunk = p.getCodec().treeToValue(chunkNode, RAGFlowChunk.class);
+                RAGFlowChunk chunk = ctxt.readTreeAsValue(chunkNode, RAGFlowChunk.class);
                 if (chunk != null) {
                     chunks.add(chunk);
                 }
@@ -81,7 +81,7 @@ public class ResponseDataDeserializer extends JsonDeserializer<RAGFlowResponse.R
             List<RAGFlowResponse.DocAgg> docAggs = new ArrayList<>();
             for (JsonNode aggNode : node.get("doc_aggs")) {
                 RAGFlowResponse.DocAgg docAgg =
-                        p.getCodec().treeToValue(aggNode, RAGFlowResponse.DocAgg.class);
+                        ctxt.readTreeAsValue(aggNode, RAGFlowResponse.DocAgg.class);
                 if (docAgg != null) {
                     docAggs.add(docAgg);
                 }
