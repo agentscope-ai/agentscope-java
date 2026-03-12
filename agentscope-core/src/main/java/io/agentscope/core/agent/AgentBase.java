@@ -675,6 +675,11 @@ public abstract class AgentBase implements StateModule, Agent {
         return createEventStream(options, () -> call(msgs, structuredModel));
     }
 
+    @Override
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+        return createEventStream(options, () -> call(msgs, schema));
+    }
+
     /**
      * Helper method to create an event stream with proper hook lifecycle management.
      *
