@@ -1390,9 +1390,7 @@ class ShellCommandToolTest {
                             createDefaultValidator(),
                             StandardCharsets.ISO_8859_1);
             assertEquals(
-                    StandardCharsets.ISO_8859_1,
-                    tool.getCharset(),
-                    "Charset should be ISO-8859-1");
+                    StandardCharsets.ISO_8859_1, tool.getCharset(), "Charset should be ISO-8859-1");
         }
 
         @Test
@@ -1400,12 +1398,7 @@ class ShellCommandToolTest {
         void testGBKCharset() {
             Charset gbk = Charset.forName("GBK");
             ShellCommandTool tool =
-                    new ShellCommandTool(
-                            null,
-                            null,
-                            null,
-                            createDefaultValidator(),
-                            gbk);
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), gbk);
             assertEquals(gbk, tool.getCharset(), "Charset should be GBK");
         }
 
@@ -1413,12 +1406,7 @@ class ShellCommandToolTest {
         @DisplayName("Should fall back to UTF-8 when null charset is provided")
         void testNullCharsetFallback() {
             ShellCommandTool tool =
-                    new ShellCommandTool(
-                            null,
-                            null,
-                            null,
-                            createDefaultValidator(),
-                            null);
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), null);
             assertEquals(
                     StandardCharsets.UTF_8,
                     tool.getCharset(),
@@ -1437,9 +1425,7 @@ class ShellCommandToolTest {
             assertTrue(properties.containsKey("charset"), "Parameters should include charset");
             @SuppressWarnings("unchecked")
             Map<String, Object> charsetProp = (Map<String, Object>) properties.get("charset");
-            assertTrue(
-                    charsetProp.containsKey("description"),
-                    "charset should have description");
+            assertTrue(charsetProp.containsKey("description"), "charset should have description");
             assertTrue(
                     ((String) charsetProp.get("description")).contains("UTF-8"),
                     "charset description should mention UTF-8");
@@ -1507,8 +1493,7 @@ class ShellCommandToolTest {
 
             // Execute with GBK charset override
             Charset gbk = Charset.forName("GBK");
-            Mono<ToolResultBlock> result =
-                    tool.executeShellCommand("echo '测试中文'", 10, gbk);
+            Mono<ToolResultBlock> result = tool.executeShellCommand("echo '测试中文'", 10, gbk);
 
             StepVerifier.create(result)
                     .assertNext(

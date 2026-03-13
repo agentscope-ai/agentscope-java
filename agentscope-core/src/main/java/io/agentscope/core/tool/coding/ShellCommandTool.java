@@ -124,7 +124,12 @@ public class ShellCommandTool implements AgentTool {
      */
     public ShellCommandTool(
             Set<String> allowedCommands, Function<String, Boolean> approvalCallback) {
-        this(null, allowedCommands, approvalCallback, createDefaultValidator(), StandardCharsets.UTF_8);
+        this(
+                null,
+                allowedCommands,
+                approvalCallback,
+                createDefaultValidator(),
+                StandardCharsets.UTF_8);
     }
 
     /**
@@ -138,7 +143,12 @@ public class ShellCommandTool implements AgentTool {
             String baseDir,
             Set<String> allowedCommands,
             Function<String, Boolean> approvalCallback) {
-        this(baseDir, allowedCommands, approvalCallback, createDefaultValidator(), StandardCharsets.UTF_8);
+        this(
+                baseDir,
+                allowedCommands,
+                approvalCallback,
+                createDefaultValidator(),
+                StandardCharsets.UTF_8);
     }
 
     /**
