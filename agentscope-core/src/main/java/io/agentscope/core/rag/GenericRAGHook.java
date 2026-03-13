@@ -82,7 +82,7 @@ public class GenericRAGHook implements Hook {
      * @throws IllegalArgumentException if knowledgeBase is null
      */
     public GenericRAGHook(Knowledge knowledge) {
-        this(knowledge, RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build());
+        this(knowledge, RetrieveConfig.builder().build());
     }
 
     /**
@@ -198,8 +198,8 @@ public class GenericRAGHook implements Hook {
         String knowledgeContent = buildKnowledgeContent(retrievedDocs);
 
         return Msg.builder()
-                .name("system")
-                .role(MsgRole.SYSTEM)
+                .name("user")
+                .role(MsgRole.USER)
                 .content(TextBlock.builder().text(knowledgeContent).build())
                 .build();
     }
