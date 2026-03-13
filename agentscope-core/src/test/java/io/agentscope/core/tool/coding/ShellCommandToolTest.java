@@ -1384,7 +1384,11 @@ class ShellCommandToolTest {
         void testCustomCharsetInConstructor() {
             ShellCommandTool tool =
                     new ShellCommandTool(
-                            null, null, null, createDefaultValidator(), StandardCharsets.ISO_8859_1);
+                            null,
+                            null,
+                            null,
+                            createDefaultValidator(),
+                            StandardCharsets.ISO_8859_1);
             assertEquals(
                     StandardCharsets.ISO_8859_1,
                     tool.getCharset(),
@@ -1397,7 +1401,11 @@ class ShellCommandToolTest {
             Charset gbk = Charset.forName("GBK");
             ShellCommandTool tool =
                     new ShellCommandTool(
-                            null, null, null, createDefaultValidator(), gbk);
+                            null,
+                            null,
+                            null,
+                            createDefaultValidator(),
+                            gbk);
             assertEquals(gbk, tool.getCharset(), "Charset should be GBK");
         }
 
@@ -1405,7 +1413,12 @@ class ShellCommandToolTest {
         @DisplayName("Should fall back to UTF-8 when null charset is provided")
         void testNullCharsetFallback() {
             ShellCommandTool tool =
-                    new ShellCommandTool(null, null, null, createDefaultValidator(), null);
+                    new ShellCommandTool(
+                            null,
+                            null,
+                            null,
+                            createDefaultValidator(),
+                            null);
             assertEquals(
                     StandardCharsets.UTF_8,
                     tool.getCharset(),
