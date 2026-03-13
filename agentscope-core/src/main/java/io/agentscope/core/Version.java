@@ -44,4 +44,13 @@ public final class Version {
                 "agentscope-java/%s; java/%s; platform/%s",
                 VERSION, System.getProperty("java.version"), System.getProperty("os.name"));
     }
+
+    /**
+     * Returns the AgentScope Java version.
+     *
+     * @return version string (e.g., "1.0.10-SNAPSHOT")
+     */
+    public static String getVersion() {
+        return VERSION;
+    }
 }
