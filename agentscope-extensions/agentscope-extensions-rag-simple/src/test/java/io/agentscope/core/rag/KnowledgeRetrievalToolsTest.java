@@ -81,6 +81,17 @@ class KnowledgeRetrievalToolsTest {
     }
 
     @Test
+    @DisplayName("Should create KnowledgeRetrievalTools with default config")
+    void testCreateWithDefaultConfig() {
+        KnowledgeRetrievalTools newTools = new KnowledgeRetrievalTools(knowledge);
+        assertNotNull(newTools);
+        assertEquals(knowledge, newTools.getKnowledgeBase());
+        assertNotNull(newTools.getDefaultConfig());
+        assertEquals(5, newTools.getDefaultConfig().getLimit());
+        assertEquals(0.5, newTools.getDefaultConfig().getScoreThreshold());
+    }
+
+    @Test
     @DisplayName("Should throw exception for null knowledge base")
     void testCreateNullKnowledgeBase() {
         assertThrows(IllegalArgumentException.class, () -> new KnowledgeRetrievalTools(null));
@@ -88,21 +99,24 @@ class KnowledgeRetrievalToolsTest {
 
     @Test
     @DisplayName("Should throw exception for null retrieve config")
-    void testCreateNullRetrieveConfig() {
-        assertThrows(IllegalArgumentException.class, () -> new KnowledgeRetrievalTools(knowledge, null));
+    void testCreateNullConfig() {
+        assertThrows(
+                IllegalArgumentException.class, () -> new KnowledgeRetrievalTools(knowledge, null));
     }
 
     @Test
     @DisplayName("Should create KnowledgeRetrievalTools with custom retrieve config")
     void testCreateCustomRetrieveConfig() {
         List<Msg> conversationHistory = List.of(Msg.builder().textContent("Hello").build());
-        RetrieveConfig customRetrieveConfig = RetrieveConfig.builder()
-                .limit(3)
-                .scoreThreshold(0.9)
-                .vectorName("test_vector")
-                .conversationHistory(conversationHistory)
-                .build();
-        KnowledgeRetrievalTools newTools = new KnowledgeRetrievalTools(knowledge, customRetrieveConfig);
+        RetrieveConfig customRetrieveConfig =
+                RetrieveConfig.builder()
+                        .limit(3)
+                        .scoreThreshold(0.9)
+                        .vectorName("test_vector")
+                        .conversationHistory(conversationHistory)
+                        .build();
+        KnowledgeRetrievalTools newTools =
+                new KnowledgeRetrievalTools(knowledge, customRetrieveConfig);
         assertNotNull(newTools);
         assertEquals(knowledge, newTools.getKnowledgeBase());
         assertEquals(customRetrieveConfig, newTools.getDefaultConfig());
