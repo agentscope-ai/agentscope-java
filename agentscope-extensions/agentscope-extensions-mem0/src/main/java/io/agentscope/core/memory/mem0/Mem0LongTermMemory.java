@@ -17,6 +17,8 @@ package io.agentscope.core.memory.mem0;
 
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -226,30 +228,60 @@ public class Mem0LongTermMemory implements LongTermMemory {
     /**
      * Builds a search request with the given query.
      *
-     * <p>The search request includes:
-     * <ul>
-     *   <li>Standard filters: userId, agentId, runId (added by builder convenience methods)</li>
-     *   <li>Custom metadata filters: merged into filters via builder.getFilters()</li>
-     * </ul>
+     * <p>Mem0 v2 filter syntax only allows logical operators (AND/OR/NOT) and a fixed set of
+     * top-level fields. Custom metadata must be nested under the "metadata" field, and multiple
+     * entity identifiers (user/agent/run) should be treated as OR conditions rather than implicit
+     * AND.
      *
      * @param query The search query string
      * @return A configured Mem0SearchRequest for v2 API
      */
     private Mem0SearchRequest buildSearchRequest(String query) {
-        Mem0SearchRequest.Builder builder =
-                Mem0SearchRequest.builder()
-                        .query(query)
-                        .userId(userId)
-                        .agentId(agentId)
-                        .runId(runId)
-                        .topK(5);
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder().query(query).userId(userId).topK(5).build();
+        request.setFilters(buildSearchFilters());
+        return request;
+    }
 
-        // Merge custom metadata into filters if present
-        if (metadata != null && !metadata.isEmpty()) {
-            builder.getFilters().putAll(metadata);
+    private Map<String, Object> buildSearchFilters() {
+        List<Map<String, Object>> entityFilters = new ArrayList<>();
+        addEntityFilter(entityFilters, "user_id", userId);
+        addEntityFilter(entityFilters, "agent_id", agentId);
+        addEntityFilter(entityFilters, "run_id", runId);
+
+        Map<String, Object> entityExpression = null;
+        if (entityFilters.size() == 1) {
+            entityExpression = entityFilters.get(0);
+        } else if (!entityFilters.isEmpty()) {
+            entityExpression = Map.of("OR", entityFilters);
         }
 
-        return builder.build();
+        Map<String, Object> metadataExpression =
+                (metadata == null || metadata.isEmpty()) ? null : Map.of("metadata", metadata);
+
+        if (entityExpression != null && metadataExpression != null) {
+            List<Map<String, Object>> andExpressions = new ArrayList<>();
+            andExpressions.add(entityExpression);
+            andExpressions.add(metadataExpression);
+            return Map.of("AND", andExpressions);
+        }
+
+        if (entityExpression != null) {
+            return entityExpression;
+        }
+
+        if (metadataExpression != null) {
+            return metadataExpression;
+        }
+
+        return new HashMap<>();
+    }
+
+    private void addEntityFilter(
+            List<Map<String, Object>> entityFilters, String key, String value) {
+        if (value != null) {
+            entityFilters.add(Map.of(key, value));
+        }
     }
 
     /**

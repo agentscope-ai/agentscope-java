@@ -16,17 +16,23 @@
 package io.agentscope.core.memory.mem0;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -291,6 +297,92 @@ class Mem0LongTermMemoryTest {
         StepVerifier.create(memory.retrieve(query))
                 .assertNext(result -> assertEquals("", result))
                 .verifyComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testRetrieveUsesOrForMultipleEntityFilters() throws Exception {
+        mockServer.enqueue(new MockResponse().setBody("[]").setResponseCode(200));
+
+        Mem0LongTermMemory memory =
+                Mem0LongTermMemory.builder()
+                        .userId("user123")
+                        .agentName("agent123")
+                        .apiBaseUrl(baseUrl)
+                        .build();
+
+        Msg query =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("query").build())
+                        .build();
+
+        StepVerifier.create(memory.retrieve(query))
+                .assertNext(result -> assertEquals("", result))
+                .verifyComplete();
+
+        RecordedRequest request = mockServer.takeRequest();
+        Map<String, Object> payload =
+                JsonUtils.getJsonCodec()
+                        .fromJson(
+                                request.getBody().readUtf8(),
+                                new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> filters = (Map<String, Object>) payload.get("filters");
+
+        assertNotNull(filters);
+        assertTrue(filters.containsKey("OR"));
+        assertFalse(filters.containsKey("user_id"));
+        assertFalse(filters.containsKey("agent_id"));
+
+        List<Map<String, Object>> orFilters = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(2, orFilters.size());
+        assertEquals("user123", orFilters.get(0).get("user_id"));
+        assertEquals("agent123", orFilters.get(1).get("agent_id"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testRetrieveNestsMetadataUnderMetadataFilterField() throws Exception {
+        mockServer.enqueue(new MockResponse().setBody("[]").setResponseCode(200));
+
+        Mem0LongTermMemory memory =
+                Mem0LongTermMemory.builder()
+                        .userId("user123")
+                        .agentName("agent123")
+                        .metadata(Map.of("system", "bifrost-agent", "type", "diagnosis"))
+                        .apiBaseUrl(baseUrl)
+                        .build();
+
+        Msg query =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("query").build())
+                        .build();
+
+        StepVerifier.create(memory.retrieve(query))
+                .assertNext(result -> assertEquals("", result))
+                .verifyComplete();
+
+        RecordedRequest request = mockServer.takeRequest();
+        Map<String, Object> payload =
+                JsonUtils.getJsonCodec()
+                        .fromJson(
+                                request.getBody().readUtf8(),
+                                new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> filters = (Map<String, Object>) payload.get("filters");
+
+        assertNotNull(filters);
+        assertTrue(filters.containsKey("AND"));
+        assertFalse(filters.containsKey("system"));
+
+        List<Map<String, Object>> andFilters = (List<Map<String, Object>>) filters.get("AND");
+        assertEquals(2, andFilters.size());
+        Map<String, Object> metadataFilter = andFilters.get(1);
+        assertTrue(metadataFilter.containsKey("metadata"));
+
+        Map<String, Object> metadata = (Map<String, Object>) metadataFilter.get("metadata");
+        assertEquals("bifrost-agent", metadata.get("system"));
+        assertEquals("diagnosis", metadata.get("type"));
     }
 
     @Test
