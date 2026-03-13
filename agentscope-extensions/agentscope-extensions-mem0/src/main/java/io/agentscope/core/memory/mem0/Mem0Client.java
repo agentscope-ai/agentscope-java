@@ -227,14 +227,17 @@ public class Mem0Client {
      * memories relevant to the query string. Results are ordered by relevance score
      * (highest first).
      *
-     * <p>The v2 API returns a direct array of results, which this method wraps
-     * into a Mem0SearchResponse object for consistency with the existing API.
+     * <p>Automatically compatible with two Mem0 API response formats:
+     * <ul>
+     *   <li><b>format v1.1</b> — response is a JSON object with a {@code results} field
+     *       (e.g. {@code {"results": [...]}}), deserialized directly into
+     *       {@link Mem0SearchResponse}.</li>
+     *   <li><b>format v1.0</b> — response is a direct JSON array (e.g. {@code [...]}),
+     *       parsed as a list of results and wrapped into a {@link Mem0SearchResponse}.</li>
+     * </ul>
      *
      * <p>The metadata filters (agent_id, user_id, run_id) in the request ensure
      * that only memories from the specified context are returned.
-     *
-     * <p>The operation is performed asynchronously on the bounded elastic scheduler
-     * to avoid blocking the caller thread.
      *
      * @param request The search request containing query and filters
      * @return A Mono emitting the search response with relevant memories
@@ -243,25 +246,20 @@ public class Mem0Client {
         return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
-                            // Platform Mem0 uses /v2/memories/search/ endpoint and returns
-                            // direct array
-                            // Self-hosted Mem0 uses /search endpoint and returns wrapped format
-                            if (searchEndpoint.contains("/v2/")) {
-                                // Platform Mem0 returns direct array
+                            // Support both response formats: direct array or object with results
+                            String trimmed = responseBody != null ? responseBody.trim() : "";
+                            if (trimmed.startsWith("[")) {
+                                // Response is a JSON array: parse as list and wrap in results
                                 List<Mem0SearchResult> results =
                                         jsonCodec.fromJson(
                                                 responseBody,
                                                 new TypeReference<List<Mem0SearchResult>>() {});
-
-                                // Wrap in Mem0SearchResponse for consistency
                                 Mem0SearchResponse searchResponse = new Mem0SearchResponse();
                                 searchResponse.setResults(results);
                                 return searchResponse;
-                            } else {
-                                // Self-hosted Mem0 returns response wrapped in {"results":
-                                // [...]}
-                                return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                             }
+                            // Response is an object (e.g. {"results": [...]})
+                            return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                         });
     }
 
