@@ -15,11 +15,14 @@
  */
 package io.agentscope.examples.werewolf.model;
 
-/**
- * Structured output model for seer's identity check.
- */
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/** Structured output model for seer's identity check. */
 public class SeerCheckModel {
+    @JsonProperty("查验的目标")
     public String targetPlayer;
+
+    @JsonProperty("查验目标的原因")
     public String reason;
 
     public SeerCheckModel() {}
