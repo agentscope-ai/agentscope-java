@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.model;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopePublicKeyResponse;
@@ -36,6 +35,7 @@ import java.util.StringJoiner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * HTTP client for DashScope API.

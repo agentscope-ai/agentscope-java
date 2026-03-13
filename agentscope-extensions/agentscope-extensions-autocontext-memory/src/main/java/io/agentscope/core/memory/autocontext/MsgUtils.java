@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.memory.autocontext;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -30,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Utility class for message serialization and deserialization operations.

@@ -151,7 +151,10 @@ class HigressMcpClientWrapperTest {
 
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));
@@ -170,7 +173,7 @@ class HigressMcpClientWrapperTest {
     @Test
     void testListTools_WithToolSearch_Error() {
         McpSchema.CallToolResult errorResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), true, null);
+                McpSchema.CallToolResult.builder().isError(true).build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(errorResult));
@@ -183,9 +186,9 @@ class HigressMcpClientWrapperTest {
     @Test
     void testCallTool_Success() {
         Map<String, Object> args = Map.of("param1", "value1");
-        McpSchema.TextContent content = new McpSchema.TextContent(null, null, "result");
+        McpSchema.TextContent content = new McpSchema.TextContent("result");
         McpSchema.CallToolResult expectedResult =
-                new McpSchema.CallToolResult(List.of(content), false, null);
+                McpSchema.CallToolResult.builder().isError(false).build();
 
         when(mockDelegateClient.callTool(eq("my_tool"), eq(args)))
                 .thenReturn(Mono.just(expectedResult));
@@ -202,7 +205,7 @@ class HigressMcpClientWrapperTest {
     void testCallTool_Error() {
         Map<String, Object> args = Map.of("param1", "value1");
         McpSchema.CallToolResult errorResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), true, null);
+                McpSchema.CallToolResult.builder().isError(true).build();
 
         when(mockDelegateClient.callTool(eq("my_tool"), eq(args)))
                 .thenReturn(Mono.just(errorResult));
@@ -231,7 +234,10 @@ class HigressMcpClientWrapperTest {
         Map<String, Object> tool = Map.of("name", "tool1", "description", "Desc", "title", "Title");
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));
@@ -249,7 +255,10 @@ class HigressMcpClientWrapperTest {
         Map<String, Object> tool = Map.of("name", "tool1", "description", "Desc", "title", "Title");
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenAnswer(
@@ -307,7 +316,10 @@ class HigressMcpClientWrapperTest {
                         "inputSchema", Map.of("type", "object"));
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));
@@ -356,7 +368,10 @@ class HigressMcpClientWrapperTest {
 
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));
@@ -386,7 +401,10 @@ class HigressMcpClientWrapperTest {
 
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));
@@ -415,7 +433,10 @@ class HigressMcpClientWrapperTest {
 
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                McpSchema.CallToolResult.builder()
+                        .isError(false)
+                        .structuredContent(structuredContent)
+                        .build();
 
         when(mockDelegateClient.callTool(eq("x_higress_tool_search"), any()))
                 .thenReturn(Mono.just(callToolResult));

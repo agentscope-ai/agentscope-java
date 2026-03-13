@@ -25,7 +25,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeInput;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
@@ -53,6 +52,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Tests for DashScopeHttpClient.
