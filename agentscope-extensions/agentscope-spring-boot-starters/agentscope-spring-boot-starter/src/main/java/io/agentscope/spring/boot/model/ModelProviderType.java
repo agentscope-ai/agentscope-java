@@ -98,26 +98,17 @@ public enum ModelProviderType {
                 throw new IllegalStateException(
                         "Gemini model auto-configuration is disabled but selected as provider");
             }
-            if ((gemini.getApiKey() == null || gemini.getApiKey().isEmpty())
-                    && (gemini.getProject() == null || gemini.getProject().isEmpty())) {
+            if (gemini.getApiKey() == null || gemini.getApiKey().isEmpty()) {
                 throw new IllegalStateException(
-                        "Either agentscope.gemini.api-key or agentscope.gemini.project must be"
-                                + " configured when Gemini provider is selected");
+                        "agentscope.gemini.api-key must be configured when Gemini provider is"
+                                + " selected");
             }
 
-            GeminiChatModel.Builder builder =
-                    GeminiChatModel.builder()
-                            .apiKey(gemini.getApiKey())
-                            .modelName(gemini.getModelName())
-                            .streamEnabled(gemini.isStream())
-                            .project(gemini.getProject())
-                            .location(gemini.getLocation());
-
-            if (gemini.getVertexAI() != null) {
-                builder.vertexAI(gemini.getVertexAI());
-            }
-
-            return builder.build();
+            return GeminiChatModel.builder()
+                    .apiKey(gemini.getApiKey())
+                    .modelName(gemini.getModelName())
+                    .streamEnabled(gemini.isStream())
+                    .build();
         }
     },
     ANTHROPIC("anthropic") {

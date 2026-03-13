@@ -19,6 +19,7 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.model.transport.ProxyType;
 import io.agentscope.core.model.transport.WebSocketTransport;
 import java.io.IOException;
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
@@ -156,7 +157,7 @@ public class JdkWebSocketTransport implements WebSocketTransport {
                 final String username = proxyConfig.getUsername();
                 final String password = proxyConfig.getPassword();
                 builder.authenticator(
-                        new java.net.Authenticator() {
+                        new Authenticator() {
                             @Override
                             protected PasswordAuthentication getPasswordAuthentication() {
                                 if (getRequestorType() == RequestorType.PROXY) {

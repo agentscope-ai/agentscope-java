@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.FunctionResponse;
-import com.google.genai.types.Part;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -45,21 +45,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converter for transforming AgentScope Msg objects to Gemini API Content format.
+ * Converter for transforming AgentScope Msg objects to Gemini API Content
+ * format.
  *
- * <p>This converter handles the core message transformation logic, including:
+ * <p>
+ * This converter handles the core message transformation logic, including:
  * <ul>
- *   <li>Text blocks</li>
- *   <li>Tool use blocks (function_call)</li>
- *   <li>Tool result blocks (function_response as independent Content)</li>
- *   <li>Multimodal content (image, audio, video)</li>
+ * <li>Text blocks</li>
+ * <li>Tool use blocks (function_call)</li>
+ * <li>Tool result blocks (function_response as independent Content)</li>
+ * <li>Multimodal content (image, audio, video)</li>
  * </ul>
  *
- * <p><b>Important Conversion Behaviors:</b>
+ * <p>
+ * <b>Important Conversion Behaviors:</b>
  * <ul>
- *   <li>Tool result blocks are converted to independent "user" role Content</li>
- *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
- *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
+ * <li>Tool result blocks are converted to independent "user" role Content</li>
+ * <li>Multiple tool outputs are formatted with "- " prefix per line</li>
+ * <li>System messages are treated as "user" role (Gemini API requirement)</li>
  * </ul>
  */
 public class GeminiMessageConverter {
@@ -81,17 +84,45 @@ public class GeminiMessageConverter {
      * @param msgs List of AgentScope messages
      * @return List of Gemini Content objects
      */
-    public List<Content> convertMessages(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
+    public List<GeminiContent> convertMessages(List<Msg> msgs) {
+        List<GeminiContent> result = new ArrayList<>();
 
         for (Msg msg : msgs) {
-            List<Part> parts = new ArrayList<>();
+            List<GeminiPart> parts = new ArrayList<>();
+            String currentThinkingSignature = null;
 
             for (ContentBlock block : msg.getContent()) {
-                if (block instanceof TextBlock tb) {
-                    parts.add(Part.builder().text(tb.getText()).build());
+                if (block instanceof ThinkingBlock tb) {
+                    if (tb.getSignature() != null) {
+                        currentThinkingSignature = tb.getSignature();
+                    }
+                    // We only capture signature. We DO NOT add explicit thought part to history
+                    // to avoid potential API validation issues. The signature on the function call
+                    // is what matters.
+                    continue;
+
+                } else if (block instanceof TextBlock tb) {
+                    GeminiPart part = new GeminiPart();
+                    part.setText(tb.getText());
+                    parts.add(part);
 
                 } else if (block instanceof ToolUseBlock tub) {
+                    // Skip synthetic tool calls - convert to text instead to avoid Gemini
+                    // validation
+                    if (tub.getMetadata() != null
+                            && Boolean.TRUE.equals(tub.getMetadata().get("synthetic"))) {
+                        // Convert synthetic tool call to text description
+                        String syntheticText =
+                                String.format("[Synthetic tool call: %s]", tub.getName());
+                        GeminiPart textPart = new GeminiPart();
+                        textPart.setText(syntheticText);
+                        parts.add(textPart);
+                        log.debug(
+                                "Converted synthetic ToolUseBlock to TextBlock for Gemini"
+                                        + " compatibility");
+                        continue;
+                    }
+
                     // Prioritize using content field (raw arguments string), fallback to input map
                     Map<String, Object> args;
                     if (tub.getContent() != null && !tub.getContent().isEmpty()) {
@@ -112,51 +143,52 @@ public class GeminiMessageConverter {
                     }
 
                     // Create FunctionCall
-                    FunctionCall functionCall =
-                            FunctionCall.builder()
-                                    .id(tub.getId())
-                                    .name(tub.getName())
-                                    .args(args)
-                                    .build();
+                    GeminiFunctionCall functionCall =
+                            new GeminiFunctionCall(tub.getId(), tub.getName(), args);
 
-                    // Build Part with FunctionCall and optional thought signature
-                    Part.Builder partBuilder = Part.builder().functionCall(functionCall);
+                    // Build Part
+                    GeminiPart part = new GeminiPart();
+                    part.setFunctionCall(functionCall);
 
-                    // Check for thought signature in metadata
-                    Map<String, Object> metadata = tub.getMetadata();
-                    if (metadata != null
-                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                        Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
+                    // Restore thoughtSignature from metadata OR preceding ThinkingBlock
+                    String signatureToUse = currentThinkingSignature;
+
+                    if (tub.getMetadata() != null
+                            && tub.getMetadata()
+                                    .containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                        Object thoughtSig =
+                                tub.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                        if (thoughtSig instanceof String) {
+                            signatureToUse = (String) thoughtSig;
+                        } else if (thoughtSig instanceof byte[]) {
+                            // Backward compatibility: older metadata stored raw bytes
+                            signatureToUse =
+                                    Base64.getEncoder().encodeToString((byte[]) thoughtSig);
                         }
                     }
 
-                    parts.add(partBuilder.build());
+                    if (signatureToUse != null) {
+                        part.setThoughtSignature(signatureToUse);
+                    }
+
+                    parts.add(part);
 
                 } else if (block instanceof ToolResultBlock trb) {
                     // IMPORTANT: Tool result as independent Content with "user" role
                     String textOutput = convertToolResultToString(trb.getOutput());
 
-                    // Create response map with "output" key
+                    // Create response map with "output" key (or whatever standard Gemini expects)
                     Map<String, Object> responseMap = new HashMap<>();
                     responseMap.put("output", textOutput);
 
-                    FunctionResponse functionResponse =
-                            FunctionResponse.builder()
-                                    .id(trb.getId())
-                                    .name(trb.getName())
-                                    .response(responseMap)
-                                    .build();
+                    GeminiFunctionResponse functionResponse =
+                            new GeminiFunctionResponse(trb.getId(), trb.getName(), responseMap);
 
-                    Part functionResponsePart =
-                            Part.builder().functionResponse(functionResponse).build();
+                    GeminiPart functionResponsePart = new GeminiPart();
+                    functionResponsePart.setFunctionResponse(functionResponse);
 
-                    Content toolResultContent =
-                            Content.builder()
-                                    .role("user")
-                                    .parts(List.of(functionResponsePart))
-                                    .build();
+                    GeminiContent toolResultContent =
+                            new GeminiContent("user", List.of(functionResponsePart));
 
                     result.add(toolResultContent);
                     // Skip adding to current message parts
@@ -171,11 +203,6 @@ public class GeminiMessageConverter {
                 } else if (block instanceof VideoBlock vb) {
                     parts.add(mediaConverter.convertToInlineDataPart(vb));
 
-                } else if (block instanceof ThinkingBlock) {
-                    // Skip ThinkingBlock - not sent to LLM
-                    log.debug("Skipping ThinkingBlock when formatting message for Gemini API");
-                    continue;
-
                 } else {
                     log.warn(
                             "Unsupported block type: {} in the message, skipped.",
@@ -186,12 +213,71 @@ public class GeminiMessageConverter {
             // Add message if there are parts
             if (!parts.isEmpty()) {
                 String role = convertRole(msg.getRole());
-                Content content = Content.builder().role(role).parts(parts).build();
+                GeminiContent content = new GeminiContent(role, parts);
                 result.add(content);
             }
         }
 
-        return result;
+        // Merge adjacent messages with the same role (Gemini API requirement)
+        return mergeAdjacentSameRoleContents(result);
+    }
+
+    /**
+     * Merge adjacent Content objects with the same role.
+     *
+     * <p>Gemini API requires alternating user/model roles. This method merges
+     * consecutive messages with the same role into a single Content object.
+     *
+     * <p>Note: Contents containing function_call or function_response are NOT merged
+     * to preserve tool call/result semantics.
+     *
+     * @param contents List of Content objects to merge
+     * @return List with adjacent same-role contents merged
+     */
+    private List<GeminiContent> mergeAdjacentSameRoleContents(List<GeminiContent> contents) {
+        if (contents == null || contents.size() <= 1) {
+            return contents;
+        }
+
+        List<GeminiContent> merged = new ArrayList<>();
+        GeminiContent current = contents.get(0);
+
+        for (int i = 1; i < contents.size(); i++) {
+            GeminiContent next = contents.get(i);
+
+            // Don't merge if either content contains function_call or function_response
+            boolean currentHasFunction = hasFunction(current);
+            boolean nextHasFunction = hasFunction(next);
+
+            if (current.getRole().equals(next.getRole())
+                    && !currentHasFunction
+                    && !nextHasFunction) {
+                // Merge: combine parts from both contents
+                List<GeminiPart> combinedParts = new ArrayList<>(current.getParts());
+                combinedParts.addAll(next.getParts());
+                current = new GeminiContent(current.getRole(), combinedParts);
+            } else {
+                merged.add(current);
+                current = next;
+            }
+        }
+        merged.add(current);
+
+        return merged;
+    }
+
+    /**
+     * Check if a Content contains function_call or function_response.
+     */
+    private boolean hasFunction(GeminiContent content) {
+        if (content == null || content.getParts() == null) {
+            return false;
+        }
+        return content.getParts().stream()
+                .anyMatch(
+                        part ->
+                                part.getFunctionCall() != null
+                                        || part.getFunctionResponse() != null);
     }
 
     /**
@@ -213,7 +299,7 @@ public class GeminiMessageConverter {
      * @param output List of content blocks from tool result
      * @return String representation of the output
      */
-    private String convertToolResultToString(List<ContentBlock> output) {
+    String convertToolResultToString(List<ContentBlock> output) {
         if (output == null || output.isEmpty()) {
             return "";
         }
@@ -253,10 +339,13 @@ public class GeminiMessageConverter {
 
     /**
      * Convert a media block to textual reference for tool results.
-     * Returns a formatted string: "The returned {mediaType} can be found at: {path}"
+     * Returns a formatted string: "The returned {mediaType} can be found at:
+     * {path}"
      *
-     * <p>For URL sources, returns the URL directly.
-     * For Base64 sources, saves the data to a temporary file and returns the file path.
+     * <p>
+     * For URL sources, returns the URL directly.
+     * For Base64 sources, saves the data to a temporary file and returns the file
+     * path.
      *
      * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
      * @param mediaType Media type string ("image", "audio", or "video")
@@ -307,8 +396,11 @@ public class GeminiMessageConverter {
     /**
      * Save base64 data to a temporary file.
      *
-     * <p>The file extension is extracted from the MIME type (e.g., "audio/wav" → ".wav").
-     * The file is created with prefix "agentscope_" and will not be automatically deleted.
+     * <p>
+     * The file extension is extracted from the MIME type (e.g., "audio/wav" →
+     * ".wav").
+     * The file is created with prefix "agentscope_" and will not be automatically
+     * deleted.
      *
      * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
      * @param base64Data The base64-encoded data (without prefix)

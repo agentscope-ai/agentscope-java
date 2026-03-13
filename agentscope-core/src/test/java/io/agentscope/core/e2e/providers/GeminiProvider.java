@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.e2e.providers;
 
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
@@ -23,13 +22,16 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
-import java.util.HashSet;
-import java.util.Set;
 
 /**
- * Provider for Google Gemini API.
+ * Native provider for Google Gemini API.
  *
- * <p>Supports Gemini 2.5 Flash and other Gemini models with multimodal capabilities.
+ * <p>
+ * This provider directly implements ModelProvider interface similar to
+ * OpenAINativeProvider,
+ * supporting various Gemini models including Gemini 2.5 Flash and Gemini 3
+ * series with thinking
+ * capabilities.
  */
 @ModelCapabilities({
     ModelCapability.BASIC,
@@ -42,15 +44,30 @@ import java.util.Set;
 public class GeminiProvider extends BaseModelProvider {
 
     private static final String API_KEY_ENV = "GOOGLE_API_KEY";
-    private static final String BASE_URL_ENV = "GOOGLE_API_BASE_URL";
+
+    private final boolean supportsThinking;
+
+    public GeminiProvider(String modelName, boolean multiAgentFormatter, boolean supportsThinking) {
+        super(API_KEY_ENV, modelName, multiAgentFormatter);
+        this.supportsThinking = supportsThinking;
+    }
 
     public GeminiProvider(String modelName, boolean multiAgentFormatter) {
-        super(API_KEY_ENV, modelName, multiAgentFormatter);
+        this(modelName, multiAgentFormatter, false);
+    }
+
+    @Override
+    public ReActAgent createAgent(String name, Toolkit toolkit, String sysPrompt) {
+        ReActAgent.Builder builder = createAgentBuilder(name, toolkit);
+        if (sysPrompt != null && !sysPrompt.isEmpty()) {
+            builder.sysPrompt(sysPrompt);
+        }
+        return builder.build();
     }
 
     @Override
     protected ReActAgent.Builder doCreateAgentBuilder(String name, Toolkit toolkit, String apiKey) {
-        String baseUrl = System.getenv(BASE_URL_ENV);
+        String baseUrl = System.getenv("GOOGLE_API_BASE_URL"); // Optional custom endpoint
 
         GeminiChatModel.Builder builder =
                 GeminiChatModel.builder()
@@ -63,28 +80,25 @@ public class GeminiProvider extends BaseModelProvider {
                         .defaultOptions(GenerateOptions.builder().build());
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
-            builder.httpOptions(HttpOptions.builder().baseUrl(baseUrl).build());
+            builder.baseUrl(baseUrl);
         }
 
         return ReActAgent.builder()
                 .name(name)
                 .model(builder.build())
                 .toolkit(toolkit)
-                .memory(new InMemoryMemory());
+                .memory(new InMemoryMemory())
+                .maxIters(3); // Prevent infinite loops in multi-agent scenarios
     }
 
     @Override
     public String getProviderName() {
-        return "Gemini";
+        return "Gemini-Native";
     }
 
     @Override
-    public Set<ModelCapability> getCapabilities() {
-        Set<ModelCapability> caps = new HashSet<>(super.getCapabilities());
-        if (isMultiAgentFormatter()) {
-            caps.add(ModelCapability.MULTI_AGENT_FORMATTER);
-        }
-        return caps;
+    public boolean supportsThinking() {
+        return supportsThinking;
     }
 
     // ==========================================================================
@@ -92,43 +106,122 @@ public class GeminiProvider extends BaseModelProvider {
     // ==========================================================================
 
     /** Gemini 2.5 Flash - Fast multimodal model. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.AUDIO,
-        ModelCapability.VIDEO,
-        ModelCapability.THINKING
-    })
-    public static class Gemini25FlashGemini extends GeminiProvider {
-        public Gemini25FlashGemini() {
-            super("gemini-2.5-flash", false);
+    public static class Gemini25Flash extends GeminiProvider {
+        public Gemini25Flash() {
+            super("gemini-2.5-flash", false, true);
         }
 
         @Override
         public String getProviderName() {
-            return "Google";
+            return "Gemini";
         }
     }
 
     /** Gemini 2.5 Flash with multi-agent formatter. */
-    @ModelCapabilities({
-        ModelCapability.BASIC,
-        ModelCapability.TOOL_CALLING,
-        ModelCapability.IMAGE,
-        ModelCapability.AUDIO,
-        ModelCapability.VIDEO,
-        ModelCapability.THINKING,
-        ModelCapability.MULTI_AGENT_FORMATTER
-    })
-    public static class Gemini25FlashMultiAgentGemini extends GeminiProvider {
-        public Gemini25FlashMultiAgentGemini() {
-            super("gemini-2.5-flash", true);
+    public static class Gemini25FlashMultiAgent extends GeminiProvider {
+        public Gemini25FlashMultiAgent() {
+            super("gemini-2.5-flash", true, true);
         }
 
         @Override
         public String getProviderName() {
-            return "Google (Multi-Agent)";
+            return "Gemini (Multi-Agent)";
+        }
+    }
+
+    /** Gemini 3 Pro Preview - Advanced thinking model. */
+    public static class Gemini3Pro extends GeminiProvider {
+        public Gemini3Pro() {
+            super("gemini-3-pro-preview", false, true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini";
+        }
+    }
+
+    /** Gemini 3 Pro Preview with multi-agent formatter. */
+    public static class Gemini3ProMultiAgent extends GeminiProvider {
+        public Gemini3ProMultiAgent() {
+            super("gemini-3-pro-preview", true, true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini (Multi-Agent)";
+        }
+    }
+
+    /** Gemini 3 Flash Preview - Fast thinking model. */
+    public static class Gemini3Flash extends GeminiProvider {
+        public Gemini3Flash() {
+            super("gemini-3-flash-preview", false, true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini";
+        }
+    }
+
+    /** Gemini 3 Flash Preview with multi-agent formatter. */
+    public static class Gemini3FlashMultiAgent extends GeminiProvider {
+        public Gemini3FlashMultiAgent() {
+            super("gemini-3-flash-preview", true, true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini (Multi-Agent)";
+        }
+    }
+
+    /** Gemini 1.5 Pro - Stable production model. */
+    public static class Gemini15Pro extends GeminiProvider {
+        public Gemini15Pro() {
+            super("gemini-1.5-pro", false, false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini";
+        }
+    }
+
+    /** Gemini 1.5 Pro with multi-agent formatter. */
+    public static class Gemini15ProMultiAgent extends GeminiProvider {
+        public Gemini15ProMultiAgent() {
+            super("gemini-1.5-pro", true, false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini (Multi-Agent)";
+        }
+    }
+
+    /** Gemini 1.5 Flash - Fast production model. */
+    public static class Gemini15Flash extends GeminiProvider {
+        public Gemini15Flash() {
+            super("gemini-1.5-flash", false, false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini";
+        }
+    }
+
+    /** Gemini 1.5 Flash with multi-agent formatter. */
+    public static class Gemini15FlashMultiAgent extends GeminiProvider {
+        public Gemini15FlashMultiAgent() {
+            super("gemini-1.5-flash", true, false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Gemini (Multi-Agent)";
         }
     }
 }

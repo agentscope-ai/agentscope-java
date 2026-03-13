@@ -129,9 +129,7 @@ class OpenAIChatModelTest {
                             assertNotNull(response.getContent());
                             assertEquals(
                                     "Hello! How can I help you?",
-                                    ((io.agentscope.core.message.TextBlock)
-                                                    response.getContent().get(0))
-                                            .getText());
+                                    ((TextBlock) response.getContent().get(0)).getText());
                             assertNotNull(response.getUsage());
                             assertEquals(10, response.getUsage().getInputTokens());
                             assertEquals(20, response.getUsage().getOutputTokens());

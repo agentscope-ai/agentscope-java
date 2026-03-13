@@ -17,6 +17,7 @@ package io.agentscope.core.rag.store;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
@@ -34,6 +35,7 @@ import io.qdrant.client.WithVectorsSelectorFactory;
 import io.qdrant.client.grpc.Collections.Distance;
 import io.qdrant.client.grpc.Collections.VectorParams;
 import io.qdrant.client.grpc.Common.PointId;
+import io.qdrant.client.grpc.JsonWithInt.ListValue;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import io.qdrant.client.grpc.Points;
@@ -716,7 +718,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             log.error("Failed to deserialize ContentBlock from payload, using fallback", e);
             // Fallback: create a TextBlock from string representation
             String textContent = contentValue.toString();
-            content = io.agentscope.core.message.TextBlock.builder().text(textContent).build();
+            content = TextBlock.builder().text(textContent).build();
         }
 
         // Extract doc_id
@@ -778,7 +780,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             }
             return map;
         } else if (value.hasListValue()) {
-            io.qdrant.client.grpc.JsonWithInt.ListValue listValue = value.getListValue();
+            ListValue listValue = value.getListValue();
             List<Object> list = new ArrayList<>();
             for (Value item : listValue.getValuesList()) {
                 list.add(convertValueToObject(item));

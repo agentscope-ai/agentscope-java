@@ -21,6 +21,7 @@ import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -106,9 +107,7 @@ class GLMApiDebugTest {
 
         GenerateOptions options =
                 GenerateOptions.builder()
-                        .toolChoice(
-                                new io.agentscope.core.model.ToolChoice.Specific(
-                                        "generate_response"))
+                        .toolChoice(new ToolChoice.Specific("generate_response"))
                         .build();
 
         try {
@@ -122,10 +121,9 @@ class GLMApiDebugTest {
                             block -> {
                                 System.out.println(
                                         "  Block type: " + block.getClass().getSimpleName());
-                                if (block instanceof io.agentscope.core.message.TextBlock t) {
+                                if (block instanceof TextBlock t) {
                                     System.out.println("  Text: " + t.getText());
-                                } else if (block
-                                        instanceof io.agentscope.core.message.ToolUseBlock t) {
+                                } else if (block instanceof ToolUseBlock t) {
                                     System.out.println("  Tool name: " + t.getName());
                                     System.out.println("  Tool input: " + t.getInput());
                                 }

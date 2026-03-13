@@ -15,20 +15,24 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.ThinkingConfig;
-import com.google.genai.types.Tool;
-import com.google.genai.types.ToolConfig;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
+import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig.GeminiThinkingConfig;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
+import io.agentscope.core.formatter.gemini.dto.GeminiTool;
+import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Formatter for Gemini Content Generation API.
@@ -48,8 +52,7 @@ import java.util.List;
  * </ul>
  */
 public class GeminiChatFormatter
-        extends AbstractBaseFormatter<
-                Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+        extends AbstractBaseFormatter<GeminiContent, GeminiResponse, GeminiRequest> {
 
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
@@ -65,121 +68,179 @@ public class GeminiChatFormatter
     }
 
     @Override
-    protected List<Content> doFormat(List<Msg> msgs) {
-        return messageConverter.convertMessages(msgs);
+    protected List<GeminiContent> doFormat(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return List.of();
+        }
+
+        int startIndex = computeStartIndex(msgs);
+        return messageConverter.convertMessages(msgs.subList(startIndex, msgs.size()));
+    }
+
+    /**
+     * Apply system instruction to the request if present.
+     *
+     * @param request The Gemini request to configure
+     * @param originalMessages The original message list (used to extract system prompt)
+     */
+    public void applySystemInstruction(GeminiRequest request, List<Msg> originalMessages) {
+        GeminiContent systemInstruction = buildSystemInstruction(originalMessages);
+        if (systemInstruction != null) {
+            request.setSystemInstruction(systemInstruction);
+        } else {
+            request.setSystemInstruction(null);
+        }
     }
 
     @Override
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+    public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerateContentConfig.Builder configBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            GeminiRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+
+        // Only create generation config if there are actual options to apply
+        // This avoids sending empty {} generationConfig which can cause issues with some models
+        boolean hasOptions = hasAnyOption(options, defaultOptions);
+
+        if (!hasOptions) {
+            // No options to apply, remove generationConfig if it's empty
+            return;
+        }
+
+        // Ensure generation config exists
+        if (request.getGenerationConfig() == null) {
+            request.setGenerationConfig(new GeminiGenerationConfig());
+        }
+        GeminiGenerationConfig config = request.getGenerationConfig();
 
         // Apply each option with fallback to defaultOptions
-        applyFloatOption(
-                GenerateOptions::getTemperature,
-                options,
-                defaultOptions,
-                configBuilder::temperature);
+        applyDoubleOption(
+                GenerateOptions::getTemperature, options, defaultOptions, config::setTemperature);
 
-        applyFloatOption(GenerateOptions::getTopP, options, defaultOptions, configBuilder::topP);
+        applyDoubleOption(GenerateOptions::getTopP, options, defaultOptions, config::setTopP);
 
-        // Apply topK (Gemini uses Float for topK)
-        applyIntegerAsFloatOption(
-                GenerateOptions::getTopK, options, defaultOptions, configBuilder::topK);
+        // topK: Integer in GenerateOptions -> Double in GeminiGenerationConfig
+        applyIntegerAsDoubleOption(
+                GenerateOptions::getTopK, options, defaultOptions, config::setTopK);
 
-        // Apply seed
-        applyLongAsIntOption(
-                GenerateOptions::getSeed, options, defaultOptions, configBuilder::seed);
+        // seed: Long in GenerateOptions -> Integer in GeminiGenerationConfig
+        applyLongAsIntegerOption(
+                GenerateOptions::getSeed, options, defaultOptions, config::setSeed);
 
         applyIntegerOption(
-                GenerateOptions::getMaxTokens,
-                options,
-                defaultOptions,
-                configBuilder::maxOutputTokens);
+                GenerateOptions::getMaxTokens, options, defaultOptions, config::setMaxOutputTokens);
 
-        applyFloatOption(
+        applyDoubleOption(
                 GenerateOptions::getFrequencyPenalty,
                 options,
                 defaultOptions,
-                configBuilder::frequencyPenalty);
+                config::setFrequencyPenalty);
 
-        applyFloatOption(
+        applyDoubleOption(
                 GenerateOptions::getPresencePenalty,
                 options,
                 defaultOptions,
-                configBuilder::presencePenalty);
+                config::setPresencePenalty);
 
         // Apply ThinkingConfig if either includeThoughts or thinkingBudget is set
         Integer thinkingBudget =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
 
         if (thinkingBudget != null) {
-            ThinkingConfig.Builder thinkingConfigBuilder = ThinkingConfig.builder();
-            thinkingConfigBuilder.includeThoughts(true);
-            thinkingConfigBuilder.thinkingBudget(thinkingBudget);
-            configBuilder.thinkingConfig(thinkingConfigBuilder.build());
+            GeminiThinkingConfig thinkingConfig = new GeminiThinkingConfig();
+            thinkingConfig.setIncludeThoughts(true);
+            thinkingConfig.setThinkingBudget(thinkingBudget);
+            config.setThinkingConfig(thinkingConfig);
         }
     }
 
     /**
-     * Apply Float option with fallback logic.
+     * Check if any options are set that need to be applied.
      */
-    private void applyFloatOption(
-            java.util.function.Function<GenerateOptions, Double> accessor,
+    private boolean hasAnyOption(GenerateOptions options, GenerateOptions defaultOptions) {
+        if (options != null && defaultOptions != null) {
+            // Check if any option is explicitly set in either options or defaultOptions
+            return options.getTemperature() != null
+                    || options.getTopP() != null
+                    || options.getTopK() != null
+                    || options.getSeed() != null
+                    || options.getMaxTokens() != null
+                    || options.getFrequencyPenalty() != null
+                    || options.getPresencePenalty() != null
+                    || options.getThinkingBudget() != null
+                    || defaultOptions.getTemperature() != null
+                    || defaultOptions.getTopP() != null
+                    || defaultOptions.getTopK() != null
+                    || defaultOptions.getSeed() != null
+                    || defaultOptions.getMaxTokens() != null
+                    || defaultOptions.getFrequencyPenalty() != null
+                    || defaultOptions.getPresencePenalty() != null
+                    || defaultOptions.getThinkingBudget() != null;
+        }
+        if (options != null) {
+            return options.getTemperature() != null
+                    || options.getTopP() != null
+                    || options.getTopK() != null
+                    || options.getSeed() != null
+                    || options.getMaxTokens() != null
+                    || options.getFrequencyPenalty() != null
+                    || options.getPresencePenalty() != null
+                    || options.getThinkingBudget() != null;
+        }
+        if (defaultOptions != null) {
+            return defaultOptions.getTemperature() != null
+                    || defaultOptions.getTopP() != null
+                    || defaultOptions.getTopK() != null
+                    || defaultOptions.getSeed() != null
+                    || defaultOptions.getMaxTokens() != null
+                    || defaultOptions.getFrequencyPenalty() != null
+                    || defaultOptions.getPresencePenalty() != null
+                    || defaultOptions.getThinkingBudget() != null;
+        }
+        return false;
+    }
+
+    /**
+     * Apply Double option with fallback logic.
+     */
+    private void applyDoubleOption(
+            Function<GenerateOptions, Double> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Float> setter) {
+            Consumer<Double> setter) {
 
         Double value = getOptionOrDefault(options, defaultOptions, accessor);
-        if (value != null) {
-            setter.accept(value.floatValue());
-        }
-    }
-
-    /**
-     * Apply Integer option with fallback logic.
-     */
-    private void applyIntegerOption(
-            java.util.function.Function<GenerateOptions, Integer> accessor,
-            GenerateOptions options,
-            GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
-
-        Integer value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
             setter.accept(value);
         }
     }
 
     /**
-     * Apply Integer option as Float with fallback logic (for Gemini topK which requires Float).
+     * Apply Integer option as Double with fallback logic.
      */
-    private void applyIntegerAsFloatOption(
-            java.util.function.Function<GenerateOptions, Integer> accessor,
+    private void applyIntegerAsDoubleOption(
+            Function<GenerateOptions, Integer> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Float> setter) {
+            Consumer<Double> setter) {
 
         Integer value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
-            setter.accept(value.floatValue());
+            setter.accept(value.doubleValue());
         }
     }
 
     /**
-     * Apply Long option as Integer with fallback logic (for Gemini seed which requires Integer).
+     * Apply Long option as Integer with fallback logic.
      */
-    private void applyLongAsIntOption(
-            java.util.function.Function<GenerateOptions, Long> accessor,
+    private void applyLongAsIntegerOption(
+            Function<GenerateOptions, Long> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
+            Consumer<Integer> setter) {
 
         Long value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
@@ -187,20 +248,57 @@ public class GeminiChatFormatter
         }
     }
 
-    @Override
-    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
-        Tool tool = toolsHelper.convertToGeminiTool(tools);
-        if (tool != null) {
-            configBuilder.tools(List.of(tool));
+    /**
+     * Apply Integer option with fallback logic.
+     */
+    private void applyIntegerOption(
+            Function<GenerateOptions, Integer> accessor,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            Consumer<Integer> setter) {
+
+        Integer value = getOptionOrDefault(options, defaultOptions, accessor);
+        if (value != null) {
+            setter.accept(value);
         }
     }
 
     @Override
-    public void applyToolChoice(
-            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
-        ToolConfig toolConfig = toolsHelper.convertToolChoice(toolChoice);
-        if (toolConfig != null) {
-            configBuilder.toolConfig(toolConfig);
+    public void applyTools(GeminiRequest request, List<ToolSchema> tools) {
+        GeminiTool tool = toolsHelper.convertToGeminiTool(tools);
+        if (tool != null) {
+            // Gemini API expects a list of tools, typically one tool object containing
+            // function declarations
+            request.setTools(List.of(tool));
         }
+    }
+
+    @Override
+    public void applyToolChoice(GeminiRequest request, ToolChoice toolChoice) {
+        GeminiToolConfig toolConfig = toolsHelper.convertToolChoice(toolChoice);
+        if (toolConfig != null) {
+            request.setToolConfig(toolConfig);
+        }
+    }
+
+    private int computeStartIndex(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return 0;
+        }
+        return msgs.get(0).getRole() == MsgRole.SYSTEM ? 1 : 0;
+    }
+
+    private GeminiContent buildSystemInstruction(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return null;
+        }
+
+        Msg first = msgs.get(0);
+        if (first.getRole() != MsgRole.SYSTEM) {
+            return null;
+        }
+
+        List<GeminiContent> converted = messageConverter.convertMessages(List.of(first));
+        return converted.isEmpty() ? null : converted.get(0);
     }
 }

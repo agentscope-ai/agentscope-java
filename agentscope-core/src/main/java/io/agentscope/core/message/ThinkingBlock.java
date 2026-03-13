@@ -33,11 +33,39 @@ import java.util.Map;
  * <p>The optional metadata field can store additional reasoning information such as OpenRouter's
  * reasoning_details (reasoning.text, reasoning.encrypted, reasoning.summary) that need to be
  * preserved and restored when formatting messages back to the API.
+ * <p>
+ * <b>Model-Specific Metadata:</b> Different models may attach additional
+ * metadata to thinking
+ * blocks:
+ *
+ * <ul>
+ * <li>Gemini: Uses {@link #METADATA_THOUGHT_SIGNATURE} to store thought
+ * signatures for
+ * multi-turn context preservation
+ * <li>Other models may define their own metadata keys as needed
+ * </ul>
  */
 public final class ThinkingBlock extends ContentBlock {
 
     /** Metadata key for storing OpenRouter/Gemini reasoning details list. */
     public static final String METADATA_REASONING_DETAILS = "reasoningDetails";
+
+    /**
+     * Metadata key for Gemini thought signature.
+     *
+     * <p>
+     * Gemini thinking models return encrypted thought signatures that must be
+     * passed back in
+     * subsequent requests to maintain reasoning context across turns. This is
+     * particularly
+     * important for function calling scenarios.
+     *
+     * @see <a href=
+     *      "https://ai.google.dev/gemini-api/docs/thought-signatures">Gemini
+     *      Thought
+     *      Signatures</a>
+     */
+    public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
 
     private final String thinking;
     private final Map<String, Object> metadata;
@@ -82,6 +110,19 @@ public final class ThinkingBlock extends ContentBlock {
     }
 
     /**
+     * Convenience method to get the Gemini thought signature from metadata.
+     *
+     * @return The thought signature if present, null otherwise
+     */
+    public String getSignature() {
+        if (metadata == null) {
+            return null;
+        }
+        Object sig = metadata.get(METADATA_THOUGHT_SIGNATURE);
+        return sig instanceof String ? (String) sig : null;
+    }
+
+    /**
      * Creates a new builder for constructing ThinkingBlock instances.
      *
      * @return A new builder instance
@@ -108,9 +149,11 @@ public final class ThinkingBlock extends ContentBlock {
         }
 
         /**
-         * Sets the metadata for the block.
+         * Sets the metadata map for model-specific data.
          *
-         * <p>Metadata can store additional reasoning information that needs to be preserved, such
+         * <p>
+         * Metadata can store additional reasoning information that needs to be
+         * preserved, such
          * as OpenRouter's reasoning_details.
          *
          * @param metadata The metadata map
@@ -122,9 +165,29 @@ public final class ThinkingBlock extends ContentBlock {
         }
 
         /**
+         * Convenience method to set the Gemini thought signature.
+         *
+         * <p>
+         * This creates or updates the metadata map with the signature.
+         *
+         * @param signature The thought signature
+         * @return This builder for chaining
+         */
+        public Builder signature(String signature) {
+            if (signature != null) {
+                if (this.metadata == null) {
+                    this.metadata = new HashMap<>();
+                }
+                this.metadata.put(METADATA_THOUGHT_SIGNATURE, signature);
+            }
+            return this;
+        }
+
+        /**
          * Builds a new ThinkingBlock with the configured thinking content and metadata.
          *
-         * @return A new ThinkingBlock instance (null thinking will be converted to empty string)
+         * @return A new ThinkingBlock instance (null thinking will be converted to
+         *         empty string)
          */
         public ThinkingBlock build() {
             return new ThinkingBlock(thinking != null ? thinking : "", metadata);
