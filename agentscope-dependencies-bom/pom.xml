@@ -92,6 +92,7 @@
         <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
+        <dameng.version>8.1.3.140</dameng.version>
         <opentelemetry-reactor.version>2.24.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.40.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
@@ -326,6 +327,13 @@
                 <groupId>com.mysql</groupId>
                 <artifactId>mysql-connector-j</artifactId>
                 <version>${mysql.version}</version>
+            </dependency>
+
+            <!-- DaMeng JDBC Driver -->
+            <dependency>
+                <groupId>com.dameng</groupId>
+                <artifactId>DmJdbcDriver18</artifactId>
+                <version>${dameng.version}</version>
             </dependency>
 
             <!-- OpenTelemetry -->
