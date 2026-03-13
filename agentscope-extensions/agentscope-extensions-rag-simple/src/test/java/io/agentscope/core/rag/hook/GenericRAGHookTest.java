@@ -155,10 +155,11 @@ class GenericRAGHookTest {
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
-                            // First message should be system message with knowledge
-                            Msg firstMsg = enhancedMessages.get(1);
-                            assertEquals(MsgRole.SYSTEM, firstMsg.getRole());
-                            assertTrue(firstMsg.getTextContent().contains("knowledge base"));
+                            // First message should be user message with question
+                            assertEquals(MsgRole.USER, enhancedMessages.get(0).getRole());
+                            // Second message should be user message with knowledge retrieval
+                            assertEquals(MsgRole.USER, enhancedMessages.get(1).getRole());
+                            assertTrue(enhancedMessages.get(1).getTextContent().contains("knowledge base"));
                         })
                 .verifyComplete();
     }
