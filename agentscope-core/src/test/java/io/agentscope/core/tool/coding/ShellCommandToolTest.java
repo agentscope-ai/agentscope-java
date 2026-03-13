@@ -1375,7 +1375,8 @@ class ShellCommandToolTest {
         @DisplayName("Should use UTF-8 as default charset")
         void testDefaultCharset() {
             ShellCommandTool tool = new ShellCommandTool();
-            assertEquals(StandardCharsets.UTF_8, tool.getCharset(), "Default charset should be UTF-8");
+            assertEquals(
+                    StandardCharsets.UTF_8, tool.getCharset(), "Default charset should be UTF-8");
         }
 
         @Test
@@ -1423,7 +1424,9 @@ class ShellCommandToolTest {
             assertTrue(properties.containsKey("charset"), "Parameters should include charset");
             @SuppressWarnings("unchecked")
             Map<String, Object> charsetProp = (Map<String, Object>) properties.get("charset");
-            assertTrue(charsetProp.containsKey("description"), "charset should have description");
+            assertTrue(
+                    charsetProp.containsKey("description"),
+                    "charset should have description");
             assertTrue(
                     ((String) charsetProp.get("description")).contains("UTF-8"),
                     "charset description should mention UTF-8");
