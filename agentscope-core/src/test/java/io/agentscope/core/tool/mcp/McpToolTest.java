@@ -428,7 +428,10 @@ class McpToolTest {
 
         McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
         McpSchema.CallToolResult mcpResult =
-                new McpSchema.CallToolResult(List.of(resultContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
