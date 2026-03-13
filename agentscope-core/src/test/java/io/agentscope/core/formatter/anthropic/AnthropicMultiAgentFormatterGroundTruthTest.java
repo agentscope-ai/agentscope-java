@@ -16,10 +16,13 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.anthropic.core.ObjectMappers;
-import com.anthropic.models.messages.MessageParam;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicContent;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,7 +39,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Ground truth tests for AnthropicMultiAgentFormatter - compares with Python implementation.
+ * Ground truth tests for AnthropicMultiAgentFormatter - compares with expected
+ * JSON structure.
  */
 class AnthropicMultiAgentFormatterGroundTruthTest {
 
@@ -48,12 +52,18 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
     private List<Msg> msgsTools;
     private List<Msg> msgsConversation2;
     private List<Msg> msgsTools2;
+    private AnthropicMediaConverter mediaConverter;
 
     @BeforeEach
-    void setUp() {
-        formatter = new AnthropicMultiAgentFormatter();
+    void setUp() throws Exception {
+        mediaConverter = mock(AnthropicMediaConverter.class);
+        formatter = new AnthropicMultiAgentFormatter(mediaConverter);
         jsonCodec = JsonUtils.getJsonCodec();
         imageUrl = "https://www.example.com/image.png";
+
+        // Mock media converter
+        when(mediaConverter.convertImageBlock(any(ImageBlock.class)))
+                .thenReturn(new AnthropicContent.ImageSource("image/png", "base64data"));
 
         // System message
         msgsSystem =
@@ -213,11 +223,11 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
         allMsgs.addAll(msgsConversation2);
         allMsgs.addAll(msgsTools2);
 
-        List<MessageParam> result = formatter.format(allMsgs);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
-        // Ground truth from Python implementation
+        // Ground truth updated to match DTO structure and Mock behavior
         String groundTruthJson =
                 """
                 [
@@ -240,8 +250,9 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "base64data"
                         }
                       },
                       {
@@ -341,8 +352,8 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
         allMsgs.add(msgsTools.get(0)); // assistant with tool_use
         allMsgs.add(msgsTools.get(1)); // system with tool_result
 
-        List<MessageParam> result = formatter.format(allMsgs);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(allMsgs);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
@@ -358,8 +369,9 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "base64data"
                         }
                       },
                       {
@@ -405,8 +417,8 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
 
     @Test
     void testMultiAgentFormatterOnlySystemMessage() throws Exception {
-        List<MessageParam> result = formatter.format(msgsSystem);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(msgsSystem);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
@@ -430,8 +442,8 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
 
     @Test
     void testMultiAgentFormatterOnlyConversation() throws Exception {
-        List<MessageParam> result = formatter.format(msgsConversation);
-        String resultJson = ObjectMappers.jsonMapper().writeValueAsString(result);
+        List<AnthropicMessage> result = formatter.format(msgsConversation);
+        String resultJson = jsonCodec.toJson(result);
         JsonNode resultNode = jsonCodec.fromJson(resultJson, JsonNode.class);
 
         String groundTruthJson =
@@ -447,8 +459,9 @@ class AnthropicMultiAgentFormatterGroundTruthTest {
                       {
                         "type": "image",
                         "source": {
-                          "type": "url",
-                          "url": "https://www.example.com/image.png"
+                          "type": "base64",
+                          "media_type": "image/png",
+                          "data": "base64data"
                         }
                       },
                       {

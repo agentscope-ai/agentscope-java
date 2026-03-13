@@ -15,16 +15,14 @@
  */
 package io.agentscope.core.model;
 
-import com.anthropic.client.AnthropicClient;
-import com.anthropic.client.okhttp.AnthropicOkHttpClient;
-import com.anthropic.core.http.StreamResponse;
-import com.anthropic.models.messages.MessageCreateParams;
-import com.anthropic.models.messages.MessageParam;
-import com.anthropic.models.messages.RawMessageStreamEvent;
 import io.agentscope.core.formatter.anthropic.AnthropicBaseFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicResponseParser;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicMessage;
+import io.agentscope.core.formatter.anthropic.dto.AnthropicRequest;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -34,7 +32,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Anthropic Chat Model implementation using the official Anthropic Java SDK.
+ * Anthropic Chat Model implementation using native HTTP client via OkHttp.
  *
  * <p>
  * This implementation provides complete integration with Anthropic's Messages
@@ -74,6 +72,7 @@ public class AnthropicChatModel extends ChatModelBase {
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use (null for default
      *                       Anthropic formatter)
+     * @param httpTransport  the HTTP transport to use (null for default)
      */
     public AnthropicChatModel(
             String baseUrl,
@@ -81,7 +80,8 @@ public class AnthropicChatModel extends ChatModelBase {
             String modelName,
             boolean streamEnabled,
             GenerateOptions defaultOptions,
-            AnthropicBaseFormatter formatter) {
+            AnthropicBaseFormatter formatter,
+            HttpTransport httpTransport) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -91,17 +91,9 @@ public class AnthropicChatModel extends ChatModelBase {
         this.formatter = formatter != null ? formatter : new AnthropicChatFormatter();
 
         // Initialize Anthropic client
-        AnthropicOkHttpClient.Builder clientBuilder = AnthropicOkHttpClient.builder();
-
-        if (apiKey != null) {
-            clientBuilder.apiKey(apiKey);
-        }
-
-        if (baseUrl != null) {
-            clientBuilder.baseUrl(baseUrl);
-        }
-
-        this.client = clientBuilder.build();
+        HttpTransport transport =
+                httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+        this.client = new AnthropicClient(transport);
     }
 
     /**
@@ -125,6 +117,7 @@ public class AnthropicChatModel extends ChatModelBase {
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
         log.debug(
                 "Anthropic stream: model={}, messages={}, tools_present={}",
                 modelName,
@@ -135,64 +128,52 @@ public class AnthropicChatModel extends ChatModelBase {
                 Flux.defer(
                         () -> {
                             try {
-                                // Build message create params
-                                MessageCreateParams.Builder paramsBuilder =
-                                        MessageCreateParams.builder()
-                                                .model(modelName)
-                                                .maxTokens(4096);
+                                // Build Anthropic request
+                                AnthropicRequest request = new AnthropicRequest();
+                                request.setModel(modelName);
+                                request.setMaxTokens(4096);
 
-                                // Extract and apply system message
-                                // (Anthropic-specific requirement)
-                                formatter.applySystemMessage(paramsBuilder, messages);
+                                // Extract and apply system message (Anthropic-specific requirement)
+                                formatter.applySystemMessage(request, messages);
 
-                                // Use formatter to convert Msg to Anthropic
-                                // MessageParam
-                                List<MessageParam> formattedMessages = formatter.format(messages);
-                                for (MessageParam param : formattedMessages) {
-                                    paramsBuilder.addMessage(param);
-                                }
+                                // Use formatter to convert Msg to Anthropic messages
+                                List<AnthropicMessage> formattedMessages =
+                                        formatter.format(messages);
+                                request.setMessages(formattedMessages);
 
                                 // Apply generation options via formatter
-                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
+                                formatter.applyOptions(request, effectiveOptions, null);
 
                                 // Add tools if provided
                                 if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
+                                    formatter.applyTools(request, tools);
+                                    if (effectiveOptions != null
+                                            && effectiveOptions.getToolChoice() != null) {
+                                        formatter.applyToolChoice(
+                                                request, effectiveOptions.getToolChoice());
+                                    }
                                 }
-
-                                // Create the request
-                                MessageCreateParams params = paramsBuilder.build();
 
                                 if (streamEnabled) {
                                     // Make streaming API call
-                                    StreamResponse<RawMessageStreamEvent> streamResponse =
-                                            client.messages().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
                                     return AnthropicResponseParser.parseStreamEvents(
-                                                    Flux.fromStream(streamResponse.stream())
-                                                            .subscribeOn(
-                                                                    Schedulers.boundedElastic()),
-                                                    startTime)
-                                            .doFinally(
-                                                    signalType -> {
-                                                        try {
-                                                            streamResponse.close();
-                                                        } catch (Exception e) {
-                                                            log.debug(
-                                                                    "Error closing stream"
-                                                                            + " response",
-                                                                    e);
-                                                        }
-                                                    });
+                                            client.stream(
+                                                    apiKey, baseUrl, request, effectiveOptions),
+                                            startTime);
                                 } else {
                                     // For non-streaming, make a single call
-                                    // via CompletableFuture
-                                    return Mono.fromFuture(client.async().messages().create(params))
+                                    return Mono.fromCallable(
+                                                    () ->
+                                                            client.call(
+                                                                    apiKey,
+                                                                    baseUrl,
+                                                                    request,
+                                                                    effectiveOptions))
+                                            .subscribeOn(Schedulers.boundedElastic())
                                             .map(
-                                                    message ->
+                                                    response ->
                                                             formatter.parseResponse(
-                                                                    message, startTime))
+                                                                    response, startTime))
                                             .flux();
                                 }
                             } catch (Exception e) {
@@ -207,7 +188,7 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                responseFlux, effectiveOptions, null, modelName, "anthropic");
     }
 
     /**
@@ -237,6 +218,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;
+        private HttpTransport httpTransport;
 
         /**
          * Sets the base URL for the Anthropic API.
@@ -305,13 +287,30 @@ public class AnthropicChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the HTTP transport to use.
+         *
+         * @param httpTransport the HTTP transport
+         * @return this builder
+         */
+        public Builder httpTransport(HttpTransport httpTransport) {
+            this.httpTransport = httpTransport;
+            return this;
+        }
+
+        /**
          * Builds the AnthropicChatModel instance.
          *
          * @return a new AnthropicChatModel
          */
         public AnthropicChatModel build() {
             return new AnthropicChatModel(
-                    baseUrl, apiKey, modelName, streamEnabled, defaultOptions, formatter);
+                    baseUrl,
+                    apiKey,
+                    modelName,
+                    streamEnabled,
+                    defaultOptions,
+                    formatter,
+                    httpTransport);
         }
     }
 }
