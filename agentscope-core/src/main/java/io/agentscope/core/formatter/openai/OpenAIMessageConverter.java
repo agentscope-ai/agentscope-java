@@ -84,6 +84,9 @@ public class OpenAIMessageConverter {
             case USER -> convertUserMessage(msg, hasMediaContent);
             case ASSISTANT -> convertAssistantMessage(msg);
             case TOOL -> convertToolMessage(msg);
+            case CONTROL ->
+                    throw new IllegalArgumentException(
+                            "Control messages are not supported in OpenAI formatter");
         };
     }
 
