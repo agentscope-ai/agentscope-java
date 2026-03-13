@@ -45,7 +45,7 @@ import org.springframework.context.annotation.Scope;
  * <p>This configuration is responsible only for wiring the Agent from existing building blocks
  * (model, memory, toolkit, Nacos prompt infrastructure). It is separated from
  * {@code AgentscopeNacosPromptAutoConfiguration}, which focuses on Nacos prompt-related
- * components such as {@code ConfigService} and {@code NacosPromptListener}.
+ * components such as {@code AiService} and {@code NacosPromptListener}.
  */
 @AutoConfiguration
 @AutoConfigureBefore(AgentscopeAutoConfiguration.class)
@@ -82,7 +82,11 @@ public class AgentscopeNacosReActAgentAutoConfiguration {
             try {
                 sysPrompt =
                         nacosPromptListener.getPrompt(
-                                promptKey, nacosPromptProperties.getVariables(), defaultSysPrompt);
+                                promptKey,
+                                nacosPromptProperties.getVersion(),
+                                nacosPromptProperties.getLabel(),
+                                nacosPromptProperties.getVariables(),
+                                defaultSysPrompt);
             } catch (NacosException e) {
                 log.warn(
                         "Failed to load sys prompt from Nacos for key: {}, fallback to default"

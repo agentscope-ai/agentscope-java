@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.10-SNAPSHOT</revision>
+        <revision>1.0.11-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -69,7 +69,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <spotless.version>3.2.1</spotless.version>
+        <spotless.version>3.3.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -279,6 +279,12 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-nacos-prompt</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-nacos-skill</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
