@@ -40,6 +40,7 @@ public class GenerateOptions {
     private final Double temperature;
     private final Double topP;
     private final Integer maxTokens;
+    private final Integer maxCompletionTokens;
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
@@ -66,6 +67,7 @@ public class GenerateOptions {
         this.temperature = builder.temperature;
         this.topP = builder.topP;
         this.maxTokens = builder.maxTokens;
+        this.maxCompletionTokens = builder.maxCompletionTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
@@ -183,6 +185,20 @@ public class GenerateOptions {
      */
     public Integer getMaxTokens() {
         return maxTokens;
+    }
+
+    /**
+     * Gets the maximum number of completion tokens to generate.
+     *
+     * <p>This is an alternative to {@link #getMaxTokens()} for OpenAI-compatible APIs that support
+     * {@code max_completion_tokens}. Some providers/models treat {@code max_tokens} and
+     * {@code max_completion_tokens} as mutually exclusive; this SDK does not enforce exclusivity
+     * and will forward exactly what the caller sets.
+     *
+     * @return the maximum completion tokens limit, or null if not set
+     */
+    public Integer getMaxCompletionTokens() {
+        return maxCompletionTokens;
     }
 
     /**
@@ -389,6 +405,10 @@ public class GenerateOptions {
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
         builder.maxTokens(primary.maxTokens != null ? primary.maxTokens : fallback.maxTokens);
+        builder.maxCompletionTokens(
+                primary.maxCompletionTokens != null
+                        ? primary.maxCompletionTokens
+                        : fallback.maxCompletionTokens);
         builder.frequencyPenalty(
                 primary.frequencyPenalty != null
                         ? primary.frequencyPenalty
@@ -449,6 +469,7 @@ public class GenerateOptions {
         private Double temperature;
         private Double topP;
         private Integer maxTokens;
+        private Integer maxCompletionTokens;
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
@@ -556,6 +577,22 @@ public class GenerateOptions {
          */
         public Builder maxTokens(Integer maxTokens) {
             this.maxTokens = maxTokens;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of completion tokens to generate.
+         *
+         * <p>This is an alternative to {@link #maxTokens(Integer)} for OpenAI-compatible APIs that
+         * support {@code max_completion_tokens}. This builder does not enforce exclusivity with
+         * {@code maxTokens}; both may be set and will be forwarded as-is by formatters that support
+         * both fields.
+         *
+         * @param maxCompletionTokens the maximum completion tokens limit
+         * @return this builder instance
+         */
+        public Builder maxCompletionTokens(Integer maxCompletionTokens) {
+            this.maxCompletionTokens = maxCompletionTokens;
             return this;
         }
 
