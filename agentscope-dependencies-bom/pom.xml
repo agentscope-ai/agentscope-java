@@ -70,7 +70,8 @@
         <opentelemetry.version>1.60.1</opentelemetry.version>
         <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.2</reactor-bom.version>
-        <jackson.version>3.1.0</jackson.version>
+        <jackson.version>2.21.1</jackson.version>
+        <jackson3.version>3.1.0</jackson3.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
@@ -150,11 +151,20 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Jackson -->
+            <!-- Jackson2. Keep for those dependencies that rely on -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Jackson3 -->
             <dependency>
                 <groupId>tools.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
-                <version>${jackson.version}</version>
+                <version>${jackson3.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -432,12 +442,6 @@
                 <groupId>com.github.victools</groupId>
                 <artifactId>jsonschema-generator</artifactId>
                 <version>${jsonschema-generator.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>tools.jackson.core</groupId>
-                        <artifactId>jackson-core</artifactId>
-                    </exclusion>
-                </exclusions>
             </dependency>
 
             <!-- Victools JSON Schema Module for Jackson annotations support -->
