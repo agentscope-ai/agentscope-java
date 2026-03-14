@@ -52,7 +52,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.test.StepVerifier;
 
 /**
  * Comprehensive tests for the Hook Stop Agent feature.
@@ -345,10 +344,15 @@ class HookStopAgentTest {
         }
 
         @Test
-        @DisplayName("New message with pending tool calls throws error")
+        @DisplayName("New message with pending tool calls auto-recovers")
         void testNewMsgWithPendingToolUseContinuesActing() {
             Msg toolUseMsg = createToolUseMsg("tool1", "test_tool", Map.of());
-            setupModelToReturnToolUse(toolUseMsg);
+            Msg textResponse =
+                    createAssistantTextMsg("Recovered after auto-generated error results");
+
+            when(mockModel.stream(anyList(), anyList(), any()))
+                    .thenReturn(createFluxFromMsg(toolUseMsg))
+                    .thenReturn(createFluxFromMsg(textResponse));
 
             Hook stopHook = createPostReasoningStopHook();
 
@@ -368,15 +372,11 @@ class HookStopAgentTest {
                     result1.hasContentBlocks(ToolUseBlock.class),
                     "First call should return ToolUse message");
 
-            // Send a new regular message - should throw error due to pending tool calls
+            // Send a new regular message - should auto-recover by generating error results
             Msg newMsg = createUserMsg("new message");
+            Msg result2 = agent.call(newMsg).block(TEST_TIMEOUT);
 
-            StepVerifier.create(agent.call(newMsg))
-                    .expectErrorMatches(
-                            e ->
-                                    e instanceof IllegalStateException
-                                            && e.getMessage().contains("pending tool calls"))
-                    .verify();
+            assertNotNull(result2, "Agent should auto-recover and return a result");
         }
     }
 
@@ -642,10 +642,14 @@ class HookStopAgentTest {
         }
 
         @Test
-        @DisplayName("Agent throws error when adding regular message with pending tool calls")
+        @DisplayName("Agent auto-recovers when adding regular message with pending tool calls")
         void testAgentHandlesPendingToolCallsGracefully() {
             Msg toolUseMsg = createToolUseMsg("tool1", "test_tool", Map.of());
-            setupModelToReturnToolUse(toolUseMsg);
+            Msg textResponse = createAssistantTextMsg("Recovered");
+
+            when(mockModel.stream(anyList(), anyList(), any()))
+                    .thenReturn(createFluxFromMsg(toolUseMsg))
+                    .thenReturn(createFluxFromMsg(textResponse));
 
             Hook stopHook = createPostReasoningStopHook();
 
@@ -661,14 +665,10 @@ class HookStopAgentTest {
 
             agent.call(createUserMsg("test")).block(TEST_TIMEOUT);
 
-            // With new design, agent will throw error when adding regular message
-            // with pending tool calls
-            StepVerifier.create(agent.call(createUserMsg("new")))
-                    .expectErrorMatches(
-                            e ->
-                                    e instanceof IllegalStateException
-                                            && e.getMessage().contains("pending tool calls"))
-                    .verify();
+            // With new design, agent will auto-recover by generating error results
+            // for pending tool calls and continue processing
+            Msg result = agent.call(createUserMsg("new")).block(TEST_TIMEOUT);
+            assertNotNull(result, "Agent should auto-recover and return a result");
         }
     }
 
