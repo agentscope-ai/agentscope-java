@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -49,6 +50,7 @@ class SubAgentConfigTest {
             assertNull(config.getStreamOptions());
             assertNotNull(config.getSession());
             assertInstanceOf(InMemorySession.class, config.getSession());
+            assertFalse(config.isEnableHITL());
         }
 
         @Test
@@ -63,6 +65,13 @@ class SubAgentConfigTest {
         void testDefaultSession() {
             SubAgentConfig config = SubAgentConfig.defaults();
             assertInstanceOf(InMemorySession.class, config.getSession());
+        }
+
+        @Test
+        @DisplayName("Should have hitlEnabled false by default")
+        void testHitlEnabledDefaultFalse() {
+            SubAgentConfig config = SubAgentConfig.defaults();
+            assertFalse(config.isEnableHITL());
         }
     }
 
@@ -122,6 +131,22 @@ class SubAgentConfigTest {
         }
 
         @Test
+        @DisplayName("Should build config with hitlEnabled enabled")
+        void testHitlEnabled() {
+            SubAgentConfig config = SubAgentConfig.builder().enableHITL(true).build();
+
+            assertTrue(config.isEnableHITL());
+        }
+
+        @Test
+        @DisplayName("Should build config with hitlEnabled disabled")
+        void testHitlDisabled() {
+            SubAgentConfig config = SubAgentConfig.builder().enableHITL(false).build();
+
+            assertFalse(config.isEnableHITL());
+        }
+
+        @Test
         @DisplayName("Should build config with all custom values")
         void testAllCustomValues() {
             StreamOptions streamOptions = StreamOptions.builder().incremental(false).build();
@@ -134,6 +159,7 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(streamOptions)
                             .session(customSession)
+                            .enableHITL(true)
                             .build();
 
             assertEquals("expert_agent", config.getToolName());
@@ -141,6 +167,7 @@ class SubAgentConfigTest {
             assertTrue(config.isForwardEvents());
             assertEquals(streamOptions, config.getStreamOptions());
             assertEquals(customSession, config.getSession());
+            assertTrue(config.isEnableHITL());
         }
 
         @Test
@@ -168,6 +195,7 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(null)
                             .session(new InMemorySession())
+                            .enableHITL(true)
                             .build();
 
             assertNotNull(config);
@@ -207,6 +235,13 @@ class SubAgentConfigTest {
 
             SubAgentConfig configWithNullSession = SubAgentConfig.builder().session(null).build();
             assertNotNull(configWithNullSession.getSession());
+        }
+
+        @Test
+        @DisplayName("isHitlEnabled() should return false by default")
+        void testIsHitlEnabledDefault() {
+            SubAgentConfig config = SubAgentConfig.builder().build();
+            assertFalse(config.isEnableHITL());
         }
     }
 
