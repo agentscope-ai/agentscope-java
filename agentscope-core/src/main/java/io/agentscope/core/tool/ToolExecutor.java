@@ -62,7 +62,8 @@ class ToolExecutor {
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
     private final ExecutorService executorService;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> userChunkCallback;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback;
 
     /**
      * Create a tool executor with Reactor Schedulers (recommended).
@@ -92,10 +93,41 @@ class ToolExecutor {
     }
 
     /**
-     * Set chunk callback for streaming tool responses.
+     * Set the user-defined chunk callback for streaming tool responses.
      */
     void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
+        this.userChunkCallback = callback;
+    }
+
+    /**
+     * Set the framework-internal chunk callback used by ReActAgent hooks.
+     */
+    void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        this.internalChunkCallback = callback;
+    }
+
+    /**
+     * Get the user-defined chunk callback.
+     * Used by Toolkit.copy() to preserve user callbacks during deep copy.
+     */
+    BiConsumer<ToolUseBlock, ToolResultBlock> getChunkCallback() {
+        return this.userChunkCallback;
+    }
+
+    /**
+     * Combine the user-defined and internal chunk callbacks.
+     */
+    private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback() {
+        if (internalChunkCallback == null) {
+            return userChunkCallback;
+        }
+        if (userChunkCallback == null) {
+            return internalChunkCallback;
+        }
+        return (toolUse, chunk) -> {
+            internalChunkCallback.accept(toolUse, chunk);
+            userChunkCallback.accept(toolUse, chunk);
+        };
     }
 
     // ==================== Single Tool Execution ====================
@@ -160,7 +192,7 @@ class ToolExecutor {
                 ToolExecutionContext.merge(param.getContext(), toolkitContext);
 
         // Create emitter for streaming
-        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
+        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
 
         // Merge preset parameters with input
         Map<String, Object> mergedInput = new HashMap<>();
