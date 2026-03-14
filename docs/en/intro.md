@@ -102,7 +102,6 @@ Once you're familiar with the basics, explore these features:
 
 ### Multi-Agent Systems
 - **[Pipeline](multi-agent/pipeline.md)** - Build multi-agent workflows with sequential and parallel execution
-- **[MsgHub](multi-agent/msghub.md)** - Message hub for multi-agent communication
 - **[A2A Protocol](task/a2a.md)** - Agent2Agent protocol support
 - **[State Management](task/state.md)** - Persist and restore agent state across sessions
 
