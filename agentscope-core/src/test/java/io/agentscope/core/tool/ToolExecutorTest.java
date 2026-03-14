@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -357,6 +358,39 @@ class ToolExecutorTest {
                             || errorText.contains("provided"),
                     "Error " + i + " should contain meaningful message: " + errorText);
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Should run tool when input is empty but content has JSON with newlines (executor"
+                    + " fallback)")
+    void shouldRunToolWhenInputEmptyButContentHasNewlines() {
+        // Simulate issue #768: ToolUseBlock has empty input (e.g. parse failed in accumulator)
+        // but content contains JSON with literal newlines in string values (e.g. HTML)
+        String contentWithLiteralNewlines =
+                "{\"str1\":\"<html>\n  <body>\",\"str2\":\"</body>\n</html>\"}";
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-concat")
+                        .name("concat")
+                        .input(new HashMap<>())
+                        .content(contentWithLiteralNewlines)
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Tool should be invoked via content fallback");
+        assertTrue(ToolTestUtils.isValidToolResultBlock(result), "Tool should return valid result");
+        String text = extractFirstText(result);
+        assertFalse(text.startsWith("Error:"), "Tool should succeed, not error: " + text);
+        assertNotNull(text);
+        // concat(str1, str2) -> str1 + str2 with newlines preserved
+        assertTrue(
+                text.contains("<html>") && text.contains("</html>"),
+                "Result should contain concatenated strings: " + text);
     }
 
     private String extractFirstText(ToolResultBlock response) {

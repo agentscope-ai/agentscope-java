@@ -21,6 +21,8 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
+import io.agentscope.core.util.JsonParseHelper;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -141,9 +143,33 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Validate input against schema
-        String validationError =
-                ToolValidator.validateInput(toolCall.getContent(), tool.getParameters());
+        // Merge preset parameters with input (before validation so we validate the same
+        // structure we will pass to the tool; supports content fallback for newlines in strings)
+        Map<String, Object> mergedInput = new HashMap<>();
+        if (registered != null) {
+            mergedInput.putAll(registered.getPresetParameters());
+        }
+        if (param.getInput() != null && !param.getInput().isEmpty()) {
+            mergedInput.putAll(param.getInput());
+        } else if (toolCall.getInput() != null && !toolCall.getInput().isEmpty()) {
+            mergedInput.putAll(toolCall.getInput());
+        } else {
+            // Fallback: parse raw content when input map is empty (e.g. streaming with
+            // newlines in string values caused parse failure in accumulator)
+            String content = toolCall.getContent();
+            if (content != null && !content.isEmpty()) {
+                Map<String, Object> fromContent =
+                        JsonParseHelper.parseMapWithNewlineFallback(content);
+                if (fromContent != null && !fromContent.isEmpty()) {
+                    mergedInput.putAll(fromContent);
+                }
+            }
+        }
+
+        // Validate merged input against schema (validates the actual input we will use)
+        String inputJson =
+                mergedInput.isEmpty() ? "{}" : JsonUtils.getJsonCodec().toJson(mergedInput);
+        String validationError = ToolValidator.validateInput(inputJson, tool.getParameters());
         if (validationError != null) {
             String errorMsg =
                     String.format(
@@ -161,17 +187,6 @@ class ToolExecutor {
 
         // Create emitter for streaming
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
-
-        // Merge preset parameters with input
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
-        if (param.getInput() != null && !param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (toolCall.getInput() != null) {
-            mergedInput.putAll(toolCall.getInput());
-        }
 
         // Build final execution param
         ToolCallParam executionParam =
