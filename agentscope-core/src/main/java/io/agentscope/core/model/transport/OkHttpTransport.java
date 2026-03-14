@@ -56,6 +56,8 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Server-Sent Events (SSE) streaming</li>
  *   <li>Connection pooling</li>
  *   <li>Configurable timeouts</li>
+ *   <li>Configurable SSL ignore</li>
+ *   <li>Configurable proxy</li>
  * </ul>
  */
 public class OkHttpTransport implements HttpTransport {
