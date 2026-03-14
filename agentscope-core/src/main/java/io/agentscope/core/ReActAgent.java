@@ -29,6 +29,7 @@ import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
@@ -55,6 +56,9 @@ import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.shutdown.AgentShuttingDownException;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.state.AgentMetaState;
@@ -129,6 +133,8 @@ import reactor.core.publisher.Mono;
 public class ReActAgent extends StructuredOutputCapableAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
+    private static final GracefulShutdownManager shutdownManager =
+            GracefulShutdownManager.getInstance();
 
     // ==================== Core Dependencies ====================
 
@@ -221,6 +227,12 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @param session the session to load state from
      * @param sessionKey the session identifier
      */
+    @Override
+    public boolean loadIfExists(Session session, SessionKey sessionKey) {
+        shutdownManager.bindSession(this, session, sessionKey);
+        return super.loadIfExists(session, sessionKey);
+    }
+
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
         // Load memory if managed
@@ -437,10 +449,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .onErrorResume(
                         InterruptedException.class,
                         error -> {
-                            // Save accumulated message before propagating interrupt
                             Msg msg = context.buildFinalMessage();
                             if (msg != null) {
-                                memory.addMessage(msg);
+                                boolean discard =
+                                        getInterruptSource() == InterruptSource.SYSTEM
+                                                && shutdownManager
+                                                                .getConfig()
+                                                                .partialReasoningPolicy()
+                                                        == PartialReasoningPolicy.DISCARD;
+                                // Manually interruption will save the msg, while system
+                                // interruption will discard on specific config
+                                if (!discard) {
+                                    memory.addMessage(msg);
+                                }
                             }
                             return Mono.error(error);
                         })
@@ -912,6 +933,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        if (context.getSource() == InterruptSource.SYSTEM) {
+            shutdownManager.saveOnInterruptObserved(this);
+            return Mono.error(new AgentShuttingDownException());
+        }
+
         String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
 
         Msg recoveryMsg =

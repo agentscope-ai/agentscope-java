@@ -46,6 +46,7 @@
         <module>hitl-chat</module>
         <module>a2a</module>
         <module>chat-tts</module>
+        <module>graceful-shutdown</module>
     </modules>
 
     <properties>
