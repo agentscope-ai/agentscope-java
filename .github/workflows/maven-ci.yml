@@ -99,6 +99,12 @@ jobs:
           mkdir -Path "~\.mvnd" -Force
           Expand-Archive -Path "mvnd.zip" -DestinationPath "mvnd" -FORCE
           Copy-Item -Path "mvnd\maven-mvnd-${{ env.MVND_VERSION }}-windows-amd64\*" -Destination "~\.mvnd\" -Recurse
+          Set-Content -Path "~\.mvnd\conf\mvnd.properties" -Value @"
+          # mvnd client timeout settings
+          mvnd.connectTimeout=120000
+          mvnd.socketConnectTimeout=30000
+          mvnd.cancelConnectTimeout=30000
+          "@ -Encoding Utf8 -Force
           Remove-Item -Path "mvnd", "mvnd.zip" -Recurse -Force
 
       - name: Build and Test with Coverage [Linux]
