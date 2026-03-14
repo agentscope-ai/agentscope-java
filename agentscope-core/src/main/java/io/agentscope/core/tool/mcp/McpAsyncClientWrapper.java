@@ -17,6 +17,7 @@ package io.agentscope.core.tool.mcp;
 
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -167,7 +168,7 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                 client.closeGracefully()
                         .doOnSuccess(v -> logger.debug("MCP client '{}' closed", name))
                         .doOnError(e -> logger.error("Error closing MCP client '{}'", name, e))
-                        .block();
+                        .block(Duration.ofSeconds(10));
             } catch (Exception e) {
                 logger.error("Exception during MCP client close", e);
                 client.close();

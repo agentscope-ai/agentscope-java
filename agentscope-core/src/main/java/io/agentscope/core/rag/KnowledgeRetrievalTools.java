@@ -22,7 +22,9 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Knowledge retrieval tools for Agentic RAG mode.
@@ -51,19 +53,19 @@ import java.util.List;
  */
 public class KnowledgeRetrievalTools {
 
+    private static final int DEFAULT_RETRIEVE_LIMIT = 5;
+    private static final Duration RETRIEVE_TIMEOUT = Duration.ofSeconds(60);
+
     private final Knowledge knowledge;
 
     /**
      * Creates a new KnowledgeRetrievalTools instance.
      *
      * @param knowledge the knowledge base to retrieve from
-     * @throws IllegalArgumentException if knowledgeBase is null
+     * @throws NullPointerException if knowledge is null
      */
     public KnowledgeRetrievalTools(Knowledge knowledge) {
-        if (knowledge == null) {
-            throw new IllegalArgumentException("Knowledge base cannot be null");
-        }
-        this.knowledge = knowledge;
+        this.knowledge = Objects.requireNonNull(knowledge, "knowledge");
     }
 
     /**
@@ -108,10 +110,7 @@ public class KnowledgeRetrievalTools {
                     Integer limit,
             Agent agent) {
 
-        // Set default value
-        if (limit == null) {
-            limit = 5;
-        }
+        int effectiveLimit = Objects.requireNonNullElse(limit, DEFAULT_RETRIEVE_LIMIT);
 
         // Extract conversation history from agent if available
         List<Msg> conversationHistory = null;
@@ -122,7 +121,7 @@ public class KnowledgeRetrievalTools {
         // Build retrieval config with conversation history
         RetrieveConfig config =
                 RetrieveConfig.builder()
-                        .limit(limit)
+                        .limit(effectiveLimit)
                         .scoreThreshold(0.5)
                         .conversationHistory(conversationHistory)
                         .build();
@@ -131,7 +130,7 @@ public class KnowledgeRetrievalTools {
                 .retrieve(query, config)
                 .map(this::formatDocumentsForTool)
                 .onErrorReturn("Failed to retrieve knowledge for query: " + query)
-                .block(); // Convert to synchronous call to match Tool interface
+                .block(RETRIEVE_TIMEOUT);
     }
 
     /**
