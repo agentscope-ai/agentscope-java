@@ -18,11 +18,16 @@ package io.agentscope.core.nacos.a2a.registry;
 
 import com.alibaba.nacos.api.ai.A2aService;
 import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.constant.AiConstants;
+import com.alibaba.nacos.api.ai.model.a2a.AgentCardDetailInfo;
+import com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import io.a2a.spec.AgentCard;
 import io.agentscope.core.nacos.a2a.utils.AgentCardConverterUtil;
 import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,13 +68,82 @@ public class NacosA2aRegistry {
     public void registerAgent(AgentCard agentCard, NacosA2aRegistryProperties a2aProperties) {
         var nacosAgentCard = AgentCardConverterUtil.convertToNacosAgentCard(agentCard);
         try {
-            NacosAgentRegistrationHelper.tryReleaseAgentCard(
-                    a2aService, nacosAgentCard, a2aProperties);
-            NacosAgentRegistrationHelper.registerEndpoint(
-                    a2aService, nacosAgentCard, a2aProperties);
+            tryReleaseAgentCard(nacosAgentCard, a2aProperties);
+            registerEndpoint(nacosAgentCard, a2aProperties);
         } catch (NacosException e) {
             log.error("Register agent card {} to Nacos failed.", agentCard.name(), e);
             throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
         }
+    }
+
+    private void tryReleaseAgentCard(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard,
+            NacosA2aRegistryProperties a2aProperties)
+            throws NacosException {
+        if (null != tryGetAgentCardFromNacos(agentCard)) {
+            log.warn(
+                    "Agent card {} already exists, agentCard release might be ignored.",
+                    agentCard.getName());
+        }
+        log.info("Register agent card {} to Nacos.", agentCard.getName());
+        a2aService.releaseAgentCard(
+                agentCard,
+                AiConstants.A2a.A2A_ENDPOINT_TYPE_SERVICE,
+                a2aProperties.isSetAsLatest());
+        log.info("Register agent card {} to Nacos successfully.", agentCard.getName());
+    }
+
+    private AgentCardDetailInfo tryGetAgentCardFromNacos(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard) throws NacosException {
+        try {
+            return a2aService.getAgentCard(agentCard.getName(), agentCard.getVersion());
+        } catch (NacosException ignored) {
+            return null;
+        }
+    }
+
+    private void registerEndpoint(
+            com.alibaba.nacos.api.ai.model.a2a.AgentCard agentCard,
+            NacosA2aRegistryProperties a2aProperties)
+            throws NacosException {
+        if (!a2aProperties.enabledRegisterEndpoint()) {
+            log.info("Disabled register endpoint(s) to Agent, skip endpoint(s) register step.");
+            return;
+        }
+        if (a2aProperties.transportProperties().isEmpty()) {
+            log.warn("No endpoint(s) found, skip endpoint(s) register step.");
+            return;
+        }
+        log.info("Register {} endpoint(s) to Nacos", a2aProperties.transportProperties().size());
+        if (a2aProperties.transportProperties().size() == 1) {
+            AgentEndpoint endpoint =
+                    buildAgentEndpoint(
+                            a2aProperties.transportProperties().values().iterator().next(),
+                            agentCard.getVersion());
+            a2aService.registerAgentEndpoint(agentCard.getName(), endpoint);
+        } else {
+            Set<AgentEndpoint> endpoints =
+                    a2aProperties.transportProperties().values().stream()
+                            .map(
+                                    transportProperties ->
+                                            buildAgentEndpoint(
+                                                    transportProperties, agentCard.getVersion()))
+                            .collect(Collectors.toSet());
+            a2aService.registerAgentEndpoint(agentCard.getName(), endpoints);
+        }
+    }
+
+    private AgentEndpoint buildAgentEndpoint(
+            NacosA2aRegistryTransportProperties transportProperties, String version) {
+        AgentEndpoint result = new AgentEndpoint();
+        result.setTransport(transportProperties.transport());
+        result.setAddress(transportProperties.host());
+        result.setPort(transportProperties.port());
+        result.setPath(transportProperties.path());
+        result.setSupportTls(transportProperties.supportTls());
+        result.setVersion(version);
+        result.setProtocol(transportProperties.protocol());
+        result.setQuery(transportProperties.query());
+        return result;
     }
 }

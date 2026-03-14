@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import static io.agentscope.core.formatter.anthropic.AnthropicTestMocks.mockTextBlock;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -50,6 +49,10 @@ import org.junit.jupiter.api.Test;
 class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     private AnthropicChatFormatter formatter;
+
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
 
     @BeforeEach
     void setUp() {

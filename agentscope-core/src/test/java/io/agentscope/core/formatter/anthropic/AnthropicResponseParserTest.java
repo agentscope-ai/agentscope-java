@@ -15,9 +15,6 @@
  */
 package io.agentscope.core.formatter.anthropic;
 
-import static io.agentscope.core.formatter.anthropic.AnthropicTestMocks.mockTextBlock;
-import static io.agentscope.core.formatter.anthropic.AnthropicTestMocks.mockThinkingBlock;
-import static io.agentscope.core.formatter.anthropic.AnthropicTestMocks.mockToolUseBlock;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -47,6 +44,18 @@ import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
 class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
+
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ThinkingBlock mockThinkingBlock() {
+        return mock(com.anthropic.models.messages.ThinkingBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ToolUseBlock mockToolUseBlock() {
+        return mock(com.anthropic.models.messages.ToolUseBlock.class);
+    }
 
     /**
      * Use reflection to call private parseStreamEvent method for unit testing individual event
