@@ -38,6 +38,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -122,13 +123,13 @@ class SkillHookTest {
                                                 .id("test-call")
                                                 .name("load_skill_through_path")
                                                 .input(
-                                                        java.util.Map.of(
+                                                        Map.of(
                                                                 "skillId",
                                                                 skillId,
                                                                 "path",
                                                                 "SKILL.md"))
                                                 .build())
-                                .input(java.util.Map.of("skillId", skillId, "path", "SKILL.md"))
+                                .input(Map.of("skillId", skillId, "path", "SKILL.md"))
                                 .build())
                 .block();
     }
@@ -374,7 +375,7 @@ class SkillHookTest {
     private <T extends HookEvent> Mono<T> notifyHooks(T event, List<Hook> hooks) {
         Mono<T> result = Mono.just(event);
         List<Hook> sortedHooks =
-                hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+                hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
         for (Hook hook : sortedHooks) {
             result = result.flatMap(hook::onEvent);
         }
