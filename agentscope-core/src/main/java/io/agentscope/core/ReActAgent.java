@@ -1438,7 +1438,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case AGENTIC -> {
                     // Register knowledge retrieval tools
                     KnowledgeRetrievalTools tools =
-                            new KnowledgeRetrievalTools(aggregatedKnowledge);
+                            new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig);
                     agentToolkit.registerTool(tools);
                 }
                 case NONE -> {
