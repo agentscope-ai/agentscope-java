@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.Authenticator;
 import java.net.InetSocketAddress;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
@@ -28,7 +29,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -152,7 +152,7 @@ public class JdkHttpTransport implements HttpTransport {
                 final String username = proxyConfig.getUsername();
                 final String password = proxyConfig.getPassword();
                 builder.authenticator(
-                        new java.net.Authenticator() {
+                        new Authenticator() {
                             @Override
                             protected PasswordAuthentication getPasswordAuthentication() {
                                 if (getRequestorType() == RequestorType.PROXY) {
@@ -177,7 +177,8 @@ public class JdkHttpTransport implements HttpTransport {
         var jdkRequest = buildJdkRequest(request);
 
         try {
-            var response = client.send(jdkRequest, BodyHandlers.ofString());
+            var response =
+                    client.send(jdkRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
             return buildHttpResponse(response);
         } catch (IOException e) {
             throw new HttpTransportException("HTTP request failed: " + e.getMessage(), e);
@@ -198,7 +199,8 @@ public class JdkHttpTransport implements HttpTransport {
         // Check status code and read error body immediately when CompletableFuture completes
         // to avoid stream being closed before we can read it
         CompletableFuture<java.net.http.HttpResponse<InputStream>> future =
-                client.sendAsync(jdkRequest, BodyHandlers.ofInputStream())
+                client.sendAsync(
+                                jdkRequest, java.net.http.HttpResponse.BodyHandlers.ofInputStream())
                         .thenApply(
                                 response -> {
                                     int statusCode = response.statusCode();
