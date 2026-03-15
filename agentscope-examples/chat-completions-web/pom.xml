@@ -59,6 +59,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Spring Boot WebClient -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webclient</artifactId>
+        </dependency>
+
         <!-- AgentScope Spring Boot auto-configuration (Model / ReActAgent / Toolkit) -->
         <dependency>
             <groupId>io.agentscope</groupId>

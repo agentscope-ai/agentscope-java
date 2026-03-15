@@ -615,8 +615,7 @@ class WebClientTransportTest {
                         .body("{\"input\": \"test\"}")
                         .build();
 
-        StepVerifier.create(transport.stream(request))
-                .verifyError(HttpTransportException.class);
+        StepVerifier.create(transport.stream(request)).verifyError(HttpTransportException.class);
     }
 
     @Test

@@ -38,6 +38,18 @@ agentscope:
       Answer in Chinese when the user speaks Chinese, otherwise answer in English.
     max-iters: 8
 
+  transport:
+    http:
+      type: webclient
+      connect-timeout: 10s
+      read-timeout: 5m
+      max-connections: 100
+      ignore-ssl: true
+    websocket:
+      type: okhttp
+      connect-timeout: 10s
+      ignore-ssl: true
+
   chat-completions:
     enabled: true
     base-path: /v1/chat/completions
