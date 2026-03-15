@@ -252,7 +252,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return executeIteration(0);
         }
 
-        // Has pending tools -> validate and add tool results
+        // Check if user provided tool results
+        List<ToolResultBlock> providedResults =
+                msgs == null
+                        ? List.of()
+                        : msgs.stream()
+                                .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                                .toList();
+
+        if (providedResults.isEmpty()) {
+            // Auto-generate error results for orphaned pending calls
+            log.warn(
+                    "Pending tool calls detected without results, auto-generating error results."
+                            + " Pending IDs: {}",
+                    pendingIds);
+            generateAndAddErrorToolResults(pendingIds);
+            addToMemory(msgs);
+            return executeIteration(0);
+        }
+
+        // Has pending tools and user provided results -> validate and add
         validateAndAddToolResults(msgs, pendingIds);
         return hasPendingToolUse() ? acting(0) : executeIteration(0);
     }
@@ -374,6 +393,50 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         msgs.forEach(memory::addMessage);
+    }
+
+    /**
+     * Generate error tool results for pending tool calls and add them to memory.
+     *
+     * <p>This method is used to recover from situations where tool execution failed without
+     * properly writing results to memory. It ensures that the model receives feedback about
+     * the failure and can continue processing.
+     *
+     * @param pendingIds The set of pending tool use IDs that need error results
+     */
+    private void generateAndAddErrorToolResults(Set<String> pendingIds) {
+        Msg lastAssistant = findLastAssistantMsg();
+        if (lastAssistant == null) {
+            return;
+        }
+
+        List<ToolUseBlock> pendingToolCalls =
+                lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
+                        .filter(toolUse -> pendingIds.contains(toolUse.getId()))
+                        .toList();
+
+        for (ToolUseBlock toolCall : pendingToolCalls) {
+            ToolResultBlock errorResult =
+                    ToolResultBlock.builder()
+                            .id(toolCall.getId())
+                            .name(toolCall.getName())
+                            .output(
+                                    List.of(
+                                            TextBlock.builder()
+                                                    .text(
+                                                            "[ERROR] Previous tool execution failed"
+                                                                    + " or was interrupted. Tool: "
+                                                                    + toolCall.getName())
+                                                    .build()))
+                            .build();
+            Msg toolResultMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(errorResult, toolCall, getName());
+            memory.addMessage(toolResultMsg);
+            log.info(
+                    "Auto-generated error result for pending tool call: {} ({})",
+                    toolCall.getName(),
+                    toolCall.getId());
+        }
     }
 
     /**
@@ -592,6 +655,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     /**
      * Execute tool calls and return paired results.
      *
+     * <p>This method includes error recovery: if tool execution fails (e.g., timeout, network error),
+     * it generates error results instead of propagating the exception. This ensures that tool results
+     * are always written to memory, preventing orphaned pending tool call states.
+     *
      * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
      * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
      */
@@ -602,7 +669,41 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         results ->
                                 IntStream.range(0, toolCalls.size())
                                         .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
-                                        .toList());
+                                        .toList())
+                .onErrorResume(
+                        error -> {
+                            log.error(
+                                    "Tool execution failed, generating error results for {} tool"
+                                            + " calls: {}",
+                                    toolCalls.size(),
+                                    error.getMessage());
+                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> errorResults =
+                                    toolCalls.stream()
+                                            .map(
+                                                    toolCall -> {
+                                                        ToolResultBlock errorResult =
+                                                                ToolResultBlock.builder()
+                                                                        .id(toolCall.getId())
+                                                                        .name(toolCall.getName())
+                                                                        .output(
+                                                                                List.of(
+                                                                                        TextBlock
+                                                                                                .builder()
+                                                                                                .text(
+                                                                                                        "[ERROR]"
+                                                                                                            + " Tool"
+                                                                                                            + " execution"
+                                                                                                            + " failed:"
+                                                                                                            + " "
+                                                                                                                + error
+                                                                                                                        .getMessage())
+                                                                                                .build()))
+                                                                        .build();
+                                                        return Map.entry(toolCall, errorResult);
+                                                    })
+                                            .toList();
+                            return Mono.just(errorResults);
+                        });
     }
 
     /**
