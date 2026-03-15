@@ -36,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -99,6 +100,34 @@ class ReActAgentTest {
 
         // Verify memory is initially empty
         assertTrue(agent.getMemory().getMessages().isEmpty(), "Memory should be empty initially");
+    }
+
+    @Test
+    @DisplayName("Should pass generateOptions (temperature, topP, maxTokens) to model for tracing")
+    void testGenerateOptionsPassedToModel() {
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.7).topP(0.9).maxTokens(1000).build();
+
+        ReActAgent agentWithOptions =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .generateOptions(options)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
+        agentWithOptions
+                .call(userMsg)
+                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        GenerateOptions lastOptions = mockModel.getLastOptions();
+        assertNotNull(lastOptions, "Model should receive GenerateOptions");
+        assertEquals(0.7, lastOptions.getTemperature(), "Temperature should be passed to model");
+        assertEquals(0.9, lastOptions.getTopP(), "TopP should be passed to model");
+        assertEquals(1000, lastOptions.getMaxTokens(), "MaxTokens should be passed to model");
     }
 
     @Test
@@ -192,7 +221,7 @@ class ReActAgentTest {
                                                             TextBlock.builder()
                                                                     .text(
                                                                             "Tool executed"
-                                                                                + " successfully")
+                                                                                    + " successfully")
                                                                     .build()))
                                             .usage(new ChatUsage(10, 20, 30))
                                             .build());
@@ -543,7 +572,7 @@ class ReActAgentTest {
             assertTrue(
                     e.getMessage().contains(errorMessage)
                             || (e.getCause() != null
-                                    && e.getCause().getMessage().contains(errorMessage)),
+                            && e.getCause().getMessage().contains(errorMessage)),
                     "Exception should contain error message");
         }
     }
@@ -706,7 +735,7 @@ class ReActAgentTest {
                 new io.agentscope.core.hook.Hook() {
                     @Override
                     public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
+                    reactor.core.publisher.Mono<T> onEvent(T event) {
                         if (event
                                 instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
                             Msg chunk = chunkEvent.getIncrementalChunk();
@@ -812,7 +841,7 @@ class ReActAgentTest {
                 new io.agentscope.core.hook.Hook() {
                     @Override
                     public <T extends io.agentscope.core.hook.HookEvent>
-                            reactor.core.publisher.Mono<T> onEvent(T event) {
+                    reactor.core.publisher.Mono<T> onEvent(T event) {
                         if (event
                                 instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
                             Msg accumulated = chunkEvent.getAccumulated();
