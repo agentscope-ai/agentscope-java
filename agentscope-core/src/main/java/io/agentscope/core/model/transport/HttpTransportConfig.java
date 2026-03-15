@@ -39,6 +39,9 @@ public class HttpTransportConfig {
     private final Duration writeTimeout;
     private final int maxIdleConnections;
     private final Duration keepAliveDuration;
+    private final int maxConnections;
+    private final Duration maxIdleTime;
+    private final Duration evictInBackground;
     private final boolean ignoreSsl;
     private final ProxyConfig proxyConfig;
 
@@ -48,6 +51,9 @@ public class HttpTransportConfig {
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
         this.keepAliveDuration = builder.keepAliveDuration;
+        this.maxConnections = builder.maxConnections;
+        this.maxIdleTime = builder.maxIdleTime;
+        this.evictInBackground = builder.evictInBackground;
         this.ignoreSsl = builder.ignoreSsl;
         this.proxyConfig = builder.proxyConfig;
     }
@@ -95,6 +101,33 @@ public class HttpTransportConfig {
      */
     public Duration getKeepAliveDuration() {
         return keepAliveDuration;
+    }
+
+    /**
+     * Get the maximum number of connections in the pool.
+     *
+     * @return the max connections
+     */
+    public int getMaxConnections() {
+        return maxConnections;
+    }
+
+    /**
+     * Get the maximum idle time for connections in the pool.
+     *
+     * @return the max idle time
+     */
+    public Duration getMaxIdleTime() {
+        return maxIdleTime;
+    }
+
+    /**
+     * Get the eviction interval for idle connections.
+     *
+     * @return the eviction interval
+     */
+    public Duration getEvictInBackground() {
+        return evictInBackground;
     }
 
     /**
@@ -146,6 +179,9 @@ public class HttpTransportConfig {
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
+        private int maxConnections = 500;
+        private Duration maxIdleTime = Duration.ofSeconds(45);
+        private Duration evictInBackground = Duration.ofSeconds(30);
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
 
@@ -201,6 +237,39 @@ public class HttpTransportConfig {
          */
         public Builder keepAliveDuration(Duration keepAliveDuration) {
             this.keepAliveDuration = keepAliveDuration;
+            return this;
+        }
+
+        /**
+         * Set the maximum number of connections in the pool.
+         *
+         * @param maxConnections the max connections
+         * @return this builder
+         */
+        public Builder maxConnections(int maxConnections) {
+            this.maxConnections = maxConnections;
+            return this;
+        }
+
+        /**
+         * Set the maximum idle time for connections in the pool.
+         *
+         * @param maxIdleTime the maximum idle time
+         * @return this builder
+         */
+        public Builder maxIdleTime(Duration maxIdleTime) {
+            this.maxIdleTime = maxIdleTime;
+            return this;
+        }
+
+        /**
+         * Set the eviction interval for idle connections.
+         *
+         * @param evictInBackground the eviction interval
+         * @return this builder
+         */
+        public Builder evictInBackground(Duration evictInBackground) {
+            this.evictInBackground = evictInBackground;
             return this;
         }
 

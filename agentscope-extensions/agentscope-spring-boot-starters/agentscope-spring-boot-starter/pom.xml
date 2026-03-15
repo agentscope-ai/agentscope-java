@@ -64,10 +64,24 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Test dependencies -->
+        <!-- Spring Boot WebClient -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webclient</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring Boot Test dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mock Web Server -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
