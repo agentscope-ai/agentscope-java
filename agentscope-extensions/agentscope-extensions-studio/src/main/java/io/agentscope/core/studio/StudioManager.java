@@ -198,6 +198,45 @@ public class StudioManager {
         }
 
         /**
+         * Adds a single OTLP header for authentication.
+         *
+         * <p>This header will be included in OTLP HTTP requests to the tracing endpoint.
+         * Useful for systems like Langfuse that require authentication headers.
+         *
+         * <p>Example for Langfuse:
+         * <pre>{@code
+         * StudioManager.init()
+         *     .studioUrl("https://cloud.langfuse.com")
+         *     .tracingUrl("https://cloud.langfuse.com/api/public/otel/v1/traces")
+         *     .addOtlpHeader("Authorization", "Basic " + base64Credentials)
+         *     .initialize()
+         *     .block();
+         * }</pre>
+         *
+         * @param key   The header name (e.g., "Authorization")
+         * @param value The header value (e.g., "Basic dXNlcjpwYXNz")
+         * @return This builder
+         */
+        public Builder addOtlpHeader(String key, String value) {
+            configBuilder.addOtlpHeader(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all OTLP headers for authentication.
+         *
+         * <p>These headers will be included in OTLP HTTP requests to the tracing endpoint.
+         * This method replaces any previously added headers.
+         *
+         * @param headers Map of header names to values
+         * @return This builder
+         */
+        public Builder otlpHeaders(java.util.Map<String, String> headers) {
+            configBuilder.otlpHeaders(headers);
+            return this;
+        }
+
+        /**
          * Initializes Studio integration.
          *
          * <p>This method:
@@ -255,7 +294,10 @@ public class StudioManager {
                                     traceEndpoint = config.getTracingUrl();
                                 }
                                 TracerRegistry.register(
-                                        TelemetryTracer.builder().endpoint(traceEndpoint).build());
+                                        TelemetryTracer.builder()
+                                                .endpoint(traceEndpoint)
+                                                .headers(config.getOtlpHeaders())
+                                                .build());
                             })
                     .doOnError(e -> logger.error("Failed to initialize Studio", e))
                     .onErrorResume(
