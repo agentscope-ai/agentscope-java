@@ -230,20 +230,20 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
                         : normalized;
 
         if (trimmed.isEmpty()) {
-            return "classpath:unknown";
+            return "classpath-unknown";
         }
 
         int lastSlash = trimmed.lastIndexOf('/');
         if (lastSlash < 0) {
-            return "classpath:" + trimmed;
+            return "classpath-" + trimmed;
         }
 
         int secondLastSlash = trimmed.lastIndexOf('/', lastSlash - 1);
         if (secondLastSlash < 0) {
-            return "classpath:" + trimmed.substring(lastSlash + 1);
+            return "classpath-" + trimmed.substring(lastSlash + 1);
         }
 
-        return "classpath:" + trimmed.substring(secondLastSlash + 1);
+        return "classpath-" + trimmed.substring(secondLastSlash + 1);
     }
 
     @Override

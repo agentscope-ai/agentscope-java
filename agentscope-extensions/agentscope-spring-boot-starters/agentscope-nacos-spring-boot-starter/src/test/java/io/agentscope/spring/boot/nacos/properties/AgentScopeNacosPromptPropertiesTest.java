@@ -59,6 +59,20 @@ class AgentScopeNacosPromptPropertiesTest {
             assertNotNull(props.getVariables());
             assertTrue(props.getVariables().isEmpty());
         }
+
+        @Test
+        @DisplayName("should have null version by default")
+        void shouldHaveNullVersionByDefault() {
+            AgentScopeNacosPromptProperties props = new AgentScopeNacosPromptProperties();
+            assertNull(props.getVersion());
+        }
+
+        @Test
+        @DisplayName("should have null label by default")
+        void shouldHaveNullLabelByDefault() {
+            AgentScopeNacosPromptProperties props = new AgentScopeNacosPromptProperties();
+            assertNull(props.getLabel());
+        }
     }
 
     @Nested
@@ -93,6 +107,22 @@ class AgentScopeNacosPromptPropertiesTest {
             AgentScopeNacosPromptProperties props = new AgentScopeNacosPromptProperties();
             props.setEnabled(false);
             assertEquals(false, props.isEnabled());
+        }
+
+        @Test
+        @DisplayName("should set and get version")
+        void shouldSetAndGetVersion() {
+            AgentScopeNacosPromptProperties props = new AgentScopeNacosPromptProperties();
+            props.setVersion("2.0.0");
+            assertEquals("2.0.0", props.getVersion());
+        }
+
+        @Test
+        @DisplayName("should set and get label")
+        void shouldSetAndGetLabel() {
+            AgentScopeNacosPromptProperties props = new AgentScopeNacosPromptProperties();
+            props.setLabel("prod");
+            assertEquals("prod", props.getLabel());
         }
     }
 
