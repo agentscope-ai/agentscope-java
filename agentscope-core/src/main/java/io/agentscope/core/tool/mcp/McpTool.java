@@ -240,6 +240,15 @@ public class McpTool implements AgentTool {
             parameters.put("additionalProperties", inputSchema.additionalProperties());
         }
 
+        // Preserve $defs and definitions for $ref resolution
+        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
+            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
+        }
+
+        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
+            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
+        }
+
         return parameters;
     }
 }
