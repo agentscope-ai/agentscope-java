@@ -276,6 +276,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Tool Parser Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-tool-parser</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-nacos-prompt</artifactId>
