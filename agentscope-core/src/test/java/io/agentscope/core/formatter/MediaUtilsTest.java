@@ -329,4 +329,33 @@ class MediaUtilsTest {
         assertNotNull(is);
         is.close();
     }
+
+    @Test
+    @DisplayName("Should get extension with query string")
+    void testGetExtensionWithQueryString() {
+        String extension = MediaUtils.getExtension("https://example.com/img.png?id=1&type=png");
+        assertEquals("png", extension);
+    }
+
+    @Test
+    @DisplayName("Should get extension with no mask query string")
+    void testGetExtensionWithNoMaskQueryString() {
+        String extension = MediaUtils.getExtension("https://example.com/img.png&id=1&type=png");
+        assertEquals("png", extension);
+    }
+
+    @Test
+    @DisplayName("Should get extension with fragment")
+    void testGetExtensionWithFragment() {
+        String extension = MediaUtils.getExtension("https://example.com/img.png#section1");
+        assertEquals("png", extension);
+    }
+
+    @Test
+    @DisplayName("Should get extension with query string and fragment")
+    void testGetExtensionWithQueryStringAndFragment() {
+        String extension =
+                MediaUtils.getExtension("https://example.com/img.png?id=1&type=png#section1");
+        assertEquals("png", extension);
+    }
 }
