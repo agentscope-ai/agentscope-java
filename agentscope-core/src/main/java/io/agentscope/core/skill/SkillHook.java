@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -38,20 +39,50 @@ public class SkillHook implements Hook {
         if (event instanceof PreReasoningEvent preReasoningEvent) {
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages =
-                        new ArrayList<>(preReasoningEvent.getInputMessages().size() + 1);
-                inputMessages.add(
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text(skillPrompt).build())
-                                .build());
-                inputMessages.addAll(preReasoningEvent.getInputMessages());
-                preReasoningEvent.setInputMessages(inputMessages);
+                List<Msg> inputMessages = preReasoningEvent.getInputMessages();
+                int systemIndex = findFirstSystemMessageIndex(inputMessages);
+                if (systemIndex >= 0) {
+                    // Merge skill prompt into existing system message in-place (structural)
+                    Msg existingSystem = inputMessages.get(systemIndex);
+                    List<ContentBlock> mergedContent = new ArrayList<>(existingSystem.getContent());
+                    mergedContent.add(TextBlock.builder().text(skillPrompt).build());
+                    Msg mergedMsg =
+                            Msg.builder()
+                                    .id(existingSystem.getId())
+                                    .role(MsgRole.SYSTEM)
+                                    .name(existingSystem.getName())
+                                    .content(mergedContent)
+                                    .metadata(existingSystem.getMetadata())
+                                    .timestamp(existingSystem.getTimestamp())
+                                    .build();
+                    List<Msg> newMessages = new ArrayList<>(inputMessages);
+                    newMessages.set(systemIndex, mergedMsg);
+                    preReasoningEvent.setInputMessages(newMessages);
+                } else {
+                    // No existing system message, add one at the beginning
+                    List<Msg> newMessages = new ArrayList<>(inputMessages.size() + 1);
+                    newMessages.add(
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .content(TextBlock.builder().text(skillPrompt).build())
+                                    .build());
+                    newMessages.addAll(inputMessages);
+                    preReasoningEvent.setInputMessages(newMessages);
+                }
             }
             return Mono.just(event);
         }
 
         return Mono.just(event);
+    }
+
+    private int findFirstSystemMessageIndex(List<Msg> messages) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Override
