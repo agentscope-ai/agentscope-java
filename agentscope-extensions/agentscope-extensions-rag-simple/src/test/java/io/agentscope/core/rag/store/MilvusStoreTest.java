@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
@@ -33,6 +34,8 @@ import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.database.request.CreateDatabaseReq;
+import io.milvus.v2.service.database.response.ListDatabasesResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
 import io.milvus.v2.service.vector.request.SearchReq;
@@ -65,6 +68,7 @@ class MilvusStoreTest {
 
     private static final String TEST_URI = "http://localhost:19530";
     private static final String TEST_COLLECTION = "test_collection";
+    private static final String TEST_DATABASE = "test_database";
     private static final int TEST_DIMENSIONS = 3;
 
     private MilvusStore store;
@@ -280,6 +284,73 @@ class MilvusStoreTest {
         assertNotNull(builder);
     }
 
+    @Test
+    @DisplayName("Should allow null database name")
+    void testBuilderNullDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(null);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should allow empty database name")
+    void testBuilderEmptyDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName("");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should allow blank database name")
+    void testBuilderBlankDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName("  ");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should create store with database properties")
+    void testBuilderDataBaseProperties() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(TEST_DATABASE)
+                        .databaseProperties(Map.of("database.replica.number", "1"));
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should create store with empty properties")
+    void testBuilderEmptyDataBaseProperties() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(TEST_DATABASE)
+                        .databaseProperties(Map.of());
+
+        assertNotNull(builder);
+    }
+
     // ==================== Mock-based Functional Tests ====================
 
     private MilvusStore createMockStore() throws VectorStoreException {
@@ -293,6 +364,33 @@ class MilvusStoreTest {
                     .uri(TEST_URI)
                     .collectionName(TEST_COLLECTION)
                     .dimensions(TEST_DIMENSIONS)
+                    .build();
+        }
+    }
+
+    private MilvusStore createMockStoreWithDatabase(
+            String databaseName, Map<String, String> databaseProperties)
+            throws VectorStoreException {
+        try (MockedConstruction<MilvusClientV2> ignored =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            return MilvusStore.builder()
+                    .uri(TEST_URI)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .databaseName(databaseName)
+                    .databaseProperties(databaseProperties)
                     .build();
         }
     }
@@ -327,6 +425,38 @@ class MilvusStoreTest {
             assertNotNull(store);
             store.close();
         }
+    }
+
+    @Test
+    @DisplayName("Should create new database when not exists")
+    void testBuildWithNewDatabase() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, null);
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with existing database")
+    void testBuildWithExistingDatabase() throws VectorStoreException {
+        store = createMockStoreWithDatabase("default", null);
+        assertNotNull(store);
+        assertEquals("default", store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with database properties")
+    void testBuildWithDatabaseProperties() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, Map.of("database.replica.number", "1"));
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with empty database properties")
+    void testBuildWithEmptyDatabaseProperties() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, Map.of());
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
     }
 
     @Test
