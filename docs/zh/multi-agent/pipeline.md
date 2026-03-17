@@ -1,286 +1,374 @@
 # Pipeline（管道）
 
-Pipeline 为 AgentScope 中的多智能体工作流提供组合模式，是用于串联智能体的语法糖，可简化复杂的编排逻辑。
+本示例使用 **Spring AI Alibaba** 的流式智能体（**SequentialAgent**、**ParallelAgent**、**LoopAgent**）与 **AgentScopeAgent** 子智能体及 AgentScope 的 **DashScopeChatModel**（`Model`）。各管道由基于 ReActAgent 的 AgentScopeAgent 构建，并通过 `PipelineService` 调用。
 
-## 概述
+## 前置条件
 
-AgentScope 提供两种主要的管道类型：
+- JDK 17+
+- Maven 3.6+
+- **DashScope API Key**：`export AI_DASHSCOPE_API_KEY=your-key` 或在 `application.yml` 中设置 `spring.ai.dashscope.api-key`
 
-- **SequentialPipeline**：智能体按顺序执行，每个智能体接收上一个智能体的输出
-- **FanoutPipeline**：多个智能体处理相同的输入（并行或顺序执行）
+## 模型配置
 
-此外，`Pipelines` 工具类提供静态工厂方法，用于快速创建管道。
-
-## SequentialPipeline（顺序管道）
-
-SequentialPipeline 按顺序执行智能体，前一个智能体的输出成为下一个智能体的输入。
-
-```
-输入 → Agent1 → Agent2 → Agent3 → 输出
-```
-
-### 基本用法
-
-使用 `Pipelines.sequential()` 静态方法快速执行：
+示例使用一个共用的 `Model` Bean（DashScopeChatModel），供所有管道子智能体使用：
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
+package com.alibaba.cloud.ai.examples.multiagents.pipeline;
+
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.pipeline.Pipelines;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class PipelineModelConfig {
+
+	@Bean
+	public Model dashScopeChatModel() {
+		String key = System.getenv("AI_DASHSCOPE_API_KEY");
+		return DashScopeChatModel.builder()
+				.apiKey(key)
+				.modelName("qwen-plus")
+				.build();
+	}
+}
+```
+
+## 1. SequentialAgent：自然语言 → SQL → 得分
+
+**场景**：用户用自然语言描述查询。管道（1）**SQL 生成器**将其转为 MySQL SQL，（2）**SQL 评分器**评估 SQL 与用户意图的匹配度（0–1）。子智能体按顺序执行，前一环节输出作为下一环节输入。
+
+**示例输入**：「列出过去 30 天总金额大于 500 的所有订单。」
+
+### 实现
+
+```java
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.sequential;
+
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.SequentialAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
-// 创建模型
-DashScopeChatModel model = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen3-max")
-        .build();
+@Configuration
+public class SequentialPipelineConfig {
 
-// 创建不同阶段的智能体
-ReActAgent researcher = ReActAgent.builder()
-        .name("Researcher")
-        .sysPrompt("你是一名研究员。分析主题并提供关键发现。")
-        .model(model)
-        .build();
+	private static final String SQL_GENERATOR_PROMPT = """
+			You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.
+			Only output valid MySQL SQL. Do not include explanations.
+			""";
 
-ReActAgent writer = ReActAgent.builder()
-        .name("Writer")
-        .sysPrompt("你是一名作家。根据研究发现撰写简洁的摘要。")
-        .model(model)
-        .build();
+	private static final String SQL_RATER_PROMPT = """
+			You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,
+			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.
+			Output ONLY the number, no other text. Example: 0.85
+			""";
 
-ReActAgent editor = ReActAgent.builder()
-        .name("Editor")
-        .sysPrompt("你是一名编辑。润色并定稿摘要。")
-        .model(model)
-        .build();
+	@Bean("sequentialSqlAgent")
+	public SequentialAgent sequentialSqlAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder sqlGenBuilder = ReActAgent.builder()
+				.name("sql_generator")
+				.model(dashScopeChatModel)
+				.description("Converts natural language to MySQL SQL")
+				.sysPrompt(SQL_GENERATOR_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlGenerateAgent = AgentScopeAgent.fromBuilder(sqlGenBuilder)
+				.name("sql_generator")
+				.description("Converts natural language to MySQL SQL")
+				.instruction("{input}")
+				.includeContents(false)
+				.outputKey("sql")
+				.build();
 
-// 创建输入消息
-Msg input = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("人工智能在医疗领域的应用").build())
-        .build();
+		ReActAgent.Builder sqlRaterBuilder = ReActAgent.builder()
+				.name("sql_rater")
+				.model(dashScopeChatModel)
+				.description("Scores SQL against user intent")
+				.sysPrompt(SQL_RATER_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlRatingAgent = AgentScopeAgent.fromBuilder(sqlRaterBuilder)
+				.name("sql_rater")
+				.description("Scores SQL against user intent")
+				.instruction("Here's the generated SQL:\n {sql}.\n\n Here's the original user request:\n {input}.")
+				.includeContents(false)
+				.outputKey("score")
+				.build();
 
-// 执行顺序管道
-// Researcher → Writer → Editor
-Msg result = Pipelines.sequential(List.of(researcher, writer, editor), input).block();
-
-System.out.println("最终结果: " + result.getTextContent());
-```
-
-### 使用 Builder 模式
-
-对于可复用的管道，使用 `SequentialPipeline.builder()`：
-
-```java
-import io.agentscope.core.pipeline.SequentialPipeline;
-
-// 创建可复用的管道
-SequentialPipeline pipeline = SequentialPipeline.builder()
-        .addAgent(researcher)
-        .addAgent(writer)
-        .addAgent(editor)
-        .build();
-
-// 执行管道
-Msg result1 = pipeline.execute(input).block();
-
-// 使用不同的输入复用管道
-Msg anotherInput = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("气候变化解决方案").build())
-        .build();
-
-Msg result2 = pipeline.execute(anotherInput).block();
-```
-
-### 结构化输出支持
-
-管道中的最后一个智能体可以产生结构化输出：
-
-```java
-// 定义输出结构
-public class ArticleSummary {
-    public String title;
-    public String summary;
-    public List<String> keyPoints;
-}
-
-// 使用结构化输出执行（仅应用于最后一个智能体）
-Msg result = pipeline.execute(input, ArticleSummary.class).block();
-
-// 提取结构化数据
-ArticleSummary article = result.getStructuredData(ArticleSummary.class);
-System.out.println("标题: " + article.title);
-System.out.println("摘要: " + article.summary);
-```
-
-## FanoutPipeline（扇出管道）
-
-FanoutPipeline 将相同的输入分发给多个智能体，并收集所有响应。当您想要获取同一主题的不同视角或专业意见时，这非常有用。
-
-```
-         ┌→ Agent1 → Output1
-输入 →──┼→ Agent2 → Output2
-         └→ Agent3 → Output3
-```
-
-### 基本用法
-
-使用 `Pipelines.fanout()` 静态方法进行并发执行：
-
-```java
-import io.agentscope.core.pipeline.Pipelines;
-
-// 创建具有不同视角的智能体
-ReActAgent optimist = ReActAgent.builder()
-        .name("Optimist")
-        .sysPrompt("你是一个乐观主义者。分析主题的积极方面。")
-        .model(model)
-        .build();
-
-ReActAgent pessimist = ReActAgent.builder()
-        .name("Pessimist")
-        .sysPrompt("你是一个悲观主义者。分析潜在的风险和挑战。")
-        .model(model)
-        .build();
-
-ReActAgent realist = ReActAgent.builder()
-        .name("Realist")
-        .sysPrompt("你是一个现实主义者。提供平衡的分析。")
-        .model(model)
-        .build();
-
-// 执行扇出管道（默认并发）
-List<Msg> results = Pipelines.fanout(
-        List.of(optimist, pessimist, realist),
-        input
-).block();
-
-// 处理所有结果
-for (Msg result : results) {
-    System.out.println(result.getName() + ": " + result.getTextContent());
+		return SequentialAgent.builder()
+				.name("sequential_sql_agent")
+				.description("Natural language to SQL pipeline: generates SQL and scores its quality")
+				.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+				.build();
+	}
 }
 ```
 
-### 并发 vs 顺序执行
+- **SQL 生成器**：`instruction("{input}")`、`outputKey("sql")` — 接收用户输入，将生成的 SQL 写入状态键 `sql`。
+- **SQL 评分器**：`instruction("... {sql} ... {input} ...")`、`outputKey("score")` — 接收上一步的 `sql` 与原始 `input`，将得分写入状态键 `score`。
 
-FanoutPipeline 支持两种执行模式：
+## 2. ParallelAgent：多角度调研
 
-| 模式 | 方法 | 行为 | 使用场景 |
-|------|------|------|----------|
-| **并发** | `fanout()` | 所有智能体使用 `boundedElastic()` 调度器并行运行 | I/O 密集型操作性能更好 |
-| **顺序** | `fanoutSequential()` | 智能体逐个运行 | 可预测的顺序，资源控制 |
+**场景**：用户给出一个主题，管道从技术、金融/商业、市场/行业三个角度**并行**调研，结果合并为一份报告（`research_report`）。
 
-```java
-// 并发执行（默认）- 更适合 API 调用
-List<Msg> concurrent = Pipelines.fanout(agents, input).block();
+**示例输入**：「调研大语言模型的当前发展状况。」（演示中使用「AI agents in enterprise software」。）
 
-// 顺序执行 - 可预测的顺序
-List<Msg> sequential = Pipelines.fanoutSequential(agents, input).block();
-```
-
-### 使用 Builder 模式
+### 实现
 
 ```java
-import io.agentscope.core.pipeline.FanoutPipeline;
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.parallel;
 
-// 创建并发扇出管道
-FanoutPipeline concurrentPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .concurrent()  // 默认模式
-        .build();
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.ParallelAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-// 创建顺序扇出管道
-FanoutPipeline sequentialPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .sequential()
-        .build();
+import java.util.List;
 
-// 执行
-List<Msg> results = concurrentPipeline.execute(input).block();
-```
+@Configuration
+public class ParallelPipelineConfig {
 
-## Pipelines 工具类
+	private static final String TECH_RESEARCH_PROMPT = """
+			You are a technology analyst. Research the given topic from a technology perspective.
+			Provide a concise 2-3 paragraph analysis covering: key technologies, trends, and innovations.
+			Focus on technical aspects only.
+			""";
 
-`Pipelines` 类提供静态工厂方法用于快速管道操作：
+	private static final String FINANCE_RESEARCH_PROMPT = """
+			You are a financial analyst. Research the given topic from a finance and business perspective.
+			Provide a concise 2-3 paragraph analysis covering: market size, investment trends, business models.
+			Focus on financial and business aspects only.
+			""";
 
-### 方法参考
+	private static final String MARKET_RESEARCH_PROMPT = """
+			You are a market analyst. Research the given topic from an industry and market perspective.
+			Provide a concise 2-3 paragraph analysis covering: competitive landscape, growth drivers, challenges.
+			Focus on market and industry aspects only.
+			""";
 
-| 方法 | 返回类型 | 描述 |
-|------|----------|------|
-| `sequential(agents, input)` | `Mono<Msg>` | 带输入顺序执行智能体 |
-| `sequential(agents)` | `Mono<Msg>` | 无输入顺序执行智能体 |
-| `sequential(agents, input, outputClass)` | `Mono<Msg>` | 带结构化输出的顺序执行 |
-| `fanout(agents, input)` | `Mono<List<Msg>>` | 并发执行智能体 |
-| `fanout(agents)` | `Mono<List<Msg>>` | 无输入并发执行智能体 |
-| `fanoutSequential(agents, input)` | `Mono<List<Msg>>` | 顺序执行智能体（相同输入） |
-| `createSequential(agents)` | `SequentialPipeline` | 创建可复用的顺序管道 |
-| `createFanout(agents)` | `FanoutPipeline` | 创建可复用的并发扇出管道 |
-| `createFanoutSequential(agents)` | `FanoutPipeline` | 创建可复用的顺序扇出管道 |
+	@Bean("parallelResearchAgent")
+	public ParallelAgent parallelResearchAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder techBuilder = ReActAgent.builder()
+				.name("tech_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from technology perspective")
+				.sysPrompt(TECH_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent techResearcher = AgentScopeAgent.fromBuilder(techBuilder)
+				.name("tech_researcher")
+				.description("Researches from technology perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("tech_analysis")
+				.build();
 
-### 管道组合
+		ReActAgent.Builder financeBuilder = ReActAgent.builder()
+				.name("finance_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from finance perspective")
+				.sysPrompt(FINANCE_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent financeResearcher = AgentScopeAgent.fromBuilder(financeBuilder)
+				.name("finance_researcher")
+				.description("Researches from finance perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("finance_analysis")
+				.build();
 
-您可以组合多个管道：
+		ReActAgent.Builder marketBuilder = ReActAgent.builder()
+				.name("market_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from market perspective")
+				.sysPrompt(MARKET_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent marketResearcher = AgentScopeAgent.fromBuilder(marketBuilder)
+				.name("market_researcher")
+				.description("Researches from market perspective")
+				.instruction("Research the following topic: {input}.")
+				.outputKey("market_analysis")
+				.build();
 
-```java
-// 创建两个顺序管道
-SequentialPipeline research = Pipelines.createSequential(List.of(researcher, analyst));
-SequentialPipeline writing = Pipelines.createSequential(List.of(writer, editor));
-
-// 将它们组合成一个更大的管道
-Pipeline<Msg> combined = Pipelines.compose(research, writing);
-
-// 执行组合管道
-Msg result = combined.execute(input).block();
-```
-
-## 结合 Pipeline 与 MsgHub
-
-对于复杂的工作流，可以将 Pipeline 与 MsgHub 结合使用：
-
-```java
-import io.agentscope.core.pipeline.MsgHub;
-
-// 阶段 1：使用 FanoutPipeline 进行并行分析
-List<Msg> analyses = Pipelines.fanout(List.of(optimist, pessimist, realist), input).block();
-
-// 阶段 2：使用 MsgHub 进行群组讨论
-try (MsgHub hub = MsgHub.builder()
-        .participants(optimist, pessimist, realist)
-        .build()) {
-
-    hub.enter().block();
-
-    // 广播所有分析结果
-    hub.broadcast(analyses).block();
-
-    // 每个智能体回应其他人的分析
-    optimist.call().block();
-    pessimist.call().block();
-    realist.call().block();
+		return ParallelAgent.builder()
+				.name("parallel_research_agent")
+				.description("Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel")
+				.subAgents(List.of(techResearcher, financeResearcher, marketResearcher))
+				.mergeStrategy(new ParallelAgent.DefaultMergeStrategy())
+				.mergeOutputKey("research_report")
+				.maxConcurrency(3)
+				.build();
+	}
 }
+```
 
-// 阶段 3：使用 SequentialPipeline 进行最终综合
-ReActAgent synthesizer = ReActAgent.builder()
-        .name("Synthesizer")
-        .sysPrompt("综合所有观点得出最终结论。")
-        .model(model)
-        .build();
+- 每个子智能体使用 `instruction("Research the following topic: {input}.")` 及各自的 `outputKey`（`tech_analysis`、`finance_analysis`、`market_analysis`）。
+- **DefaultMergeStrategy** 将子智能体输出合并为一份结果，写入 **mergeOutputKey** `research_report`。
 
-Msg conclusion = synthesizer.call(input).block();
+## 3. LoopAgent：SQL 迭代优化直到质量阈值
+
+**场景**：从自然语言生成 SQL，并**迭代优化**直到质量得分超过 0.5。每次迭代执行内层 **SequentialAgent**：SQL 生成器 → SQL 评分器。循环直到得分 > 0.5 或达到最大迭代次数。
+
+**示例输入**：「找出 2024 年下单超过 3 次的客户。」
+
+### 实现
+
+`LoopPipelineConfig` 中构建的 SQL 生成器与 SQL 评分器 AgentScopeAgent 与 `SequentialPipelineConfig` 相同（相同 prompt、`instruction`、`outputKey`）。然后将它们包在一个 **SequentialAgent** 中，再包在带条件循环策略的 **LoopAgent** 中：
+
+```java
+SequentialAgent sqlAgent = SequentialAgent.builder()
+		.name("sql_agent")
+		.description("Generates SQL and scores its quality")
+		.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+		.build();
+
+return LoopAgent.builder()
+		.name("loop_sql_refinement_agent")
+		.description("Iteratively refines SQL until quality score exceeds " + QUALITY_THRESHOLD)
+		.subAgent(sqlAgent)
+		.loopStrategy(LoopMode.condition(messages -> {
+			if (messages == null || messages.isEmpty()) return false;
+			String text = messages.get(messages.size() - 1).getText();
+			if (text == null || text.isBlank()) return false;
+			try {
+				double score = Double.parseDouble(text.trim());
+				return score > QUALITY_THRESHOLD;
+			} catch (NumberFormatException e) {
+				return false;
+			}
+		}))
+		.build();
+```
+
+- **LoopAgent** 包装一个 **SequentialAgent**（`sql_agent`），每次迭代执行 SQL 生成器再执行 SQL 评分器。
+- **loopStrategy**：`LoopMode.condition(...)` — 接收上一轮消息，读取最后一条（评分器输出），解析为数字；当 score > 0.5 时返回 `true` 结束循环。
+
+## 调用管道：PipelineService
+
+`PipelineService` 注入三个管道智能体，对外提供 `runSequential`、`runParallel`、`runLoop`。每个方法传入字符串输入并返回对应的结果记录。
+
+```java
+// 在业务代码中注入
+@Autowired
+PipelineService pipelineService;
+
+// 顺序：自然语言 → SQL → 得分
+PipelineService.SequentialResult seq = pipelineService.runSequential(
+		"List all orders from the last 30 days with total amount greater than 500");
+// seq.input(), seq.sql(), seq.score()
+
+// 并行：一个主题 → 合并后的调研报告
+PipelineService.ParallelResult par = pipelineService.runParallel(
+		"AI agents in enterprise software");
+// par.input(), par.researchReport()
+
+// 循环：SQL 优化直到得分 > 0.5
+PipelineService.LoopResult loop = pipelineService.runLoop(
+		"Find customers who placed more than 3 orders in 2024");
+// loop.input(), loop.sql(), loop.score()
+```
+
+**返回类型：**
+
+| 方法 | 返回类型 | 使用的状态键 |
+|------|----------|--------------|
+| `runSequential(input)` | `SequentialResult(input, sql, score)` | 从 `OverAllState` 读取 `sql`、`score` |
+| `runParallel(input)` | `ParallelResult(input, researchReport)` | 从 `OverAllState` 读取 `research_report` |
+| `runLoop(input)` | `LoopResult(input, sql, score)` | 从 `OverAllState` 读取 `sql`、`score` |
+
+服务实现片段（如何从状态中读取结果）：
+
+```java
+public SequentialResult runSequential(String userInput) throws GraphRunnerException {
+	Optional<OverAllState> resultOpt = sequentialSqlAgent.invoke(userInput);
+	if (resultOpt.isEmpty()) {
+		return new SequentialResult(userInput, null, null);
+	}
+	OverAllState state = resultOpt.get();
+	String sql = extractText(state.value(SQL_KEY));
+	String score = extractText(state.value(SCORE_KEY));
+	return new SequentialResult(userInput, sql, score);
+}
+```
+
+## 可选演示运行器
+
+当 `pipeline.runner.enabled=true` 时，`PipelineCommandRunner` 在启动时为每个管道运行一次演示（固定示例输入并输出日志）：
+
+```java
+@Component
+@ConditionalOnProperty(name = "pipeline.runner.enabled", havingValue = "true")
+public class PipelineCommandRunner implements ApplicationRunner {
+
+	private final PipelineService pipelineService;
+
+	@Override
+	public void run(ApplicationArguments args) throws Exception {
+		runSequentialDemo();  // "List all orders from the last 30 days..."
+		runParallelDemo();    // "AI agents in enterprise software"
+		runLoopDemo();        // "Find customers who placed more than 3 orders in 2024"
+	}
+	// ...
+}
+```
+
+## 构建与运行
+
+在仓库根目录执行：
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+**启用演示运行器：**
+
+```bash
+export pipeline.runner.enabled=true
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+或在 `application.yml` 中设置：`pipeline.runner.enabled: true`。
+
+## 配置
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `spring.ai.dashscope.api-key` | 环境变量 `AI_DASHSCOPE_API_KEY` | 模型使用的 DashScope API Key |
+| `pipeline.runner.enabled` | `false` | 为 `true` 时，启动时运行顺序、并行、循环三个演示 |
+
+## 项目结构
+
+```
+agentscope-examples/multiagent-patterns/pipeline/
+├── README.md
+├── pom.xml
+└── src/main/
+    ├── java/.../pipeline/
+    │   ├── PipelineApplication.java
+    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) Bean
+    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
+    │   ├── PipelineCommandRunner.java      # 可选演示（pipeline.runner.enabled）
+    │   ├── PipelineRunnerConfig.java       # PipelineService Bean
+    │   ├── sequential/
+    │   │   └── SequentialPipelineConfig.java
+    │   ├── parallel/
+    │   │   └── ParallelPipelineConfig.java
+    │   └── loop/
+    │       └── LoopPipelineConfig.java
+    └── resources/
+        └── application.yml
 ```
 
 ## 相关文档
 
-- [MsgHub](./msghub.md) - 多智能体对话的消息广播
+- [Routing](./routing.md) - 分类并路由到专家智能体
+- [MsgHub](../task/msghub.md) - 多智能体对话的消息广播
+- [Handoffs](./handoffs.md) - 状态驱动路由与智能体间交接
 - [多智能体辩论](./multiagent-debate.md) - 辩论工作流模式

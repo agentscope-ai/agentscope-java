@@ -111,12 +111,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export PATH="$HOME/.mvnd/bin:$PATH"
-          mvnd -B clean verify
+          # -T1: single-threaded build so reactor order is respected and agentscope-core
+          # is installed before modules (e.g. subagent) that resolve it from the reactor.
+          mvnd -B -T1 clean verify
 
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
         run: |
-          & "~\.mvnd\bin\mvnd.cmd" -B clean verify
+          # -T1: single-threaded build so reactor order is respected (see Linux step).
+          & "~\.mvnd\bin\mvnd.cmd" -B -T1 clean verify
 
       - name: Upload coverage reports to Codecov
         if: runner.os == 'Linux'

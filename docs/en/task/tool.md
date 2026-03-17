@@ -235,7 +235,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](../multi-agent/agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
 
 ## AgentTool Interface
 
