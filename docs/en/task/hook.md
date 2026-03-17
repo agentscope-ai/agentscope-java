@@ -130,6 +130,30 @@ ReActAgent agent = ReActAgent.builder()
 
 Hooks are immutable after agent construction.
 
+## Built-in JSONL Trace Exporter
+
+For local debugging and offline troubleshooting, AgentScope Java provides a built-in JSONL exporter:
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import java.nio.file.Path;
+import java.util.List;
+
+try (JsonlTraceExporter exporter =
+        JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                .includeReasoningChunks(true) // optional
+                .includeActingChunks(true)    // optional
+                .build()) {
+    ReActAgent agent = ReActAgent.builder()
+            .name("Assistant")
+            .model(model)
+            .toolkit(toolkit)
+            .hooks(List.of(exporter))
+            .build();
+}
+```
+
 ## Hook Examples
 
 ### Monitoring Tool Execution

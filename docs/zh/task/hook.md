@@ -206,3 +206,20 @@ public class ErrorHandlingHook implements Hook {
 cd agentscope-examples/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
+
+## Built-in JSONL Trace Exporter
+
+AgentScope Java provides a built-in JSONL exporter for local debugging:
+
+```java
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import java.nio.file.Path;
+
+try (JsonlTraceExporter exporter =
+        JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                .includeReasoningChunks(true) // optional
+                .includeActingChunks(true)    // optional
+                .build()) {
+    // Add exporter into hooks list when building agent
+}
+```
