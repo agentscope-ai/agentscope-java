@@ -305,5 +305,5 @@ hub.enter()
 
 ## 相关文档
 
-- [Pipeline](./pipeline.md) - 顺序和并行智能体执行
-- [多智能体辩论](./multiagent-debate.md) - 辩论工作流模式
+- [Pipeline](../multi-agent/pipeline.md) - 顺序和并行智能体执行
+- [多智能体辩论](../multi-agent/multiagent-debate.md) - 辩论工作流模式
