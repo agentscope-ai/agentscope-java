@@ -318,6 +318,76 @@ class ToolEmitterIntegrationTest {
         assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), hookChunks);
     }
 
+    @Test
+    @DisplayName("Internal chunk callback failure should not block user callback")
+    void testInternalChunkCallbackFailureDoesNotBlockUserCallback() {
+        toolkit.registerTool(new StreamingTool());
+
+        List<String> userChunks = new CopyOnWriteArrayList<>();
+        toolkit.setChunkCallback((toolUse, chunk) -> userChunks.add(extractText(chunk)));
+        toolkit.setInternalChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("boom");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+        assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), userChunks);
+    }
+
+    @Test
+    @DisplayName("User chunk callback failure should not interrupt tool execution")
+    void testUserChunkCallbackFailureDoesNotInterruptToolExecution() {
+        toolkit.registerTool(new StreamingTool());
+        toolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("user callback failure");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+    }
+
+    @Test
+    @DisplayName("Internal chunk callback failure should not interrupt tool execution")
+    void testInternalChunkCallbackFailureDoesNotInterruptToolExecution() {
+        toolkit.registerTool(new StreamingTool());
+        toolkit.setInternalChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("internal callback failure");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+    }
+
     /**
      * Helper method to extract text from ToolResultBlock.
      */

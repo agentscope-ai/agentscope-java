@@ -119,15 +119,39 @@ class ToolExecutor {
      */
     private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback() {
         if (internalChunkCallback == null) {
-            return userChunkCallback;
+            return userChunkCallback != null
+                    ? (toolUse, chunk) ->
+                            invokeChunkCallback("user", userChunkCallback, toolUse, chunk)
+                    : null;
         }
         if (userChunkCallback == null) {
-            return internalChunkCallback;
+            return (toolUse, chunk) ->
+                    invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
         }
         return (toolUse, chunk) -> {
-            internalChunkCallback.accept(toolUse, chunk);
-            userChunkCallback.accept(toolUse, chunk);
+            invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+            invokeChunkCallback("user", userChunkCallback, toolUse, chunk);
         };
+    }
+
+    /**
+     * Invoke a chunk callback without allowing it to block other callbacks.
+     */
+    private void invokeChunkCallback(
+            String callbackType,
+            BiConsumer<ToolUseBlock, ToolResultBlock> callback,
+            ToolUseBlock toolUse,
+            ToolResultBlock chunk) {
+        try {
+            callback.accept(toolUse, chunk);
+        } catch (Exception e) {
+            logger.warn(
+                    "Chunk callback '{}' failed for tool '{}': {}",
+                    callbackType,
+                    toolUse.getName(),
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                    e);
+        }
     }
 
     // ==================== Single Tool Execution ====================
