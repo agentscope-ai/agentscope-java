@@ -32,6 +32,8 @@ parts:
     title: Tool System
   - file: en/task/mcp
     title: Model Context Protocol
+  - file: en/task/agent-as-tool
+    title: Agent as Tool
   - file: en/task/agent-skill
     title: Agent Skill
   - file: en/task/rag
@@ -58,17 +60,29 @@ parts:
     title: AG-UI Protocol
   - file: en/task/a2a
     title: A2A Protocol
+  - file: en/task/msghub
+    title: MsgHub
   - file: en/task/ai-coding
     title: Coding with AI
 
 - caption: Multi Agent
   chapters:
+  - file: en/multi-agent/overview
+    title: Overview
   - file: en/multi-agent/pipeline
     title: Pipeline
-  - file: en/multi-agent/msghub
-    title: MsgHub
-  - file: en/multi-agent/agent-as-tool
-    title: Agent as Tool
+  - file: en/multi-agent/workflow
+    title: Custom Workflow
+  - file: en/multi-agent/routing
+    title: Routing
+  - file: en/multi-agent/skills
+    title: Skills
+  - file: en/multi-agent/subagent
+    title: Subagents
+  - file: en/multi-agent/supervisor
+    title: Supervisor
+  - file: en/multi-agent/handoffs
+    title: Handoffs
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
 
@@ -91,6 +105,8 @@ parts:
     title: 工具系统
   - file: zh/task/mcp
     title: MCP
+  - file: zh/task/agent-as-tool
+    title: Agent as Tool
   - file: zh/task/agent-skill
     title: 智能体技能
   - file: zh/task/rag
@@ -117,16 +133,28 @@ parts:
     title: AG-UI 协议
   - file: zh/task/a2a
     title: A2A 协议
+  - file: zh/task/msghub
+    title: MsgHub
   - file: zh/task/ai-coding
     title: 使用 AI 编程
 
 - caption: 多智能体
   chapters:
+  - file: zh/multi-agent/overview
+    title: 概览
   - file: zh/multi-agent/pipeline
     title: 管道
-  - file: zh/multi-agent/msghub
-    title: MsgHub
-  - file: zh/multi-agent/agent-as-tool
-    title: Agent as Tool
+  - file: zh/multi-agent/workflow
+    title: 自定义工作流
+  - file: zh/multi-agent/routing
+    title: Routing
+  - file: zh/multi-agent/skills
+    title: Skills
+  - file: zh/multi-agent/subagent
+    title: Subagents
+  - file: zh/multi-agent/supervisor
+    title: Supervisor
+  - file: zh/multi-agent/handoffs
+    title: Handoffs
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
