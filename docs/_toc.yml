@@ -60,7 +60,7 @@ parts:
     title: AG-UI Protocol
   - file: en/task/a2a
     title: A2A Protocol
-  - file: zh/task/msghub
+  - file: en/task/msghub
     title: MsgHub
   - file: en/task/ai-coding
     title: Coding with AI
