@@ -303,8 +303,9 @@ public class GenerateOptions {
     /**
      * Gets whether cache control is enabled for prompt caching.
      *
-     * <p>When true, the formatter will automatically add {@code cache_control: {"type":
-     * "ephemeral"}} to system messages and the last message in the request. This enables prompt
+     * <p>When true, the formatter will automatically add <code>cache_control:
+     * {"type": "ephemeral"}</code> to system messages and the last message in the request. This
+     * enables prompt
      * caching on supported providers (e.g., Anthropic, DashScope, OpenAI-compatible APIs) to reduce
      * latency and cost.
      *
@@ -743,8 +744,8 @@ public class GenerateOptions {
         /**
          * Sets whether cache control is enabled for prompt caching.
          *
-         * <p>When true, the formatter will automatically add {@code cache_control: {"type":
-         * "ephemeral"}} to system messages and the last message in the request.
+         * <p>When true, the formatter will automatically add <code>cache_control:
+         * {"type": "ephemeral"}</code> to system messages and the last message in the request.
          *
          * @param cacheControl true to enable cache control, false to disable
          * @return this builder instance

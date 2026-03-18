@@ -175,7 +175,7 @@ public class DashScopeChatFormatter
     /**
      * Apply cache control to DashScope messages.
      *
-     * <p>Adds {@code cache_control: {"type": "ephemeral"}} to all system messages and the last
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
      * message in the list. Messages that already have cache_control set (e.g., via manual metadata
      * marking) will not be overwritten.
      *
