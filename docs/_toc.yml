@@ -32,7 +32,7 @@ parts:
     title: Tool System
   - file: en/task/mcp
     title: Model Context Protocol
-  - file: zh/task/agent-as-tool
+  - file: en/task/agent-as-tool
     title: Agent as Tool
   - file: en/task/agent-skill
     title: Agent Skill
