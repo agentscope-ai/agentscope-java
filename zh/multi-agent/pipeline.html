@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MsgHub（消息中心）" href="msghub.html"><link rel="prev" title="使用 AI 编程" href="../task/ai-coding.html">
+    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="自定义工作流（Custom Workflow）" href="workflow.html"><link rel="prev" title="多智能体概览" href="overview.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/multi-agent/pipeline.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -329,6 +329,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-as-tool.html">Agent as Tool</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-skill.html">Agent Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
@@ -342,13 +343,19 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/msghub.html">MsgHub</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/ai-coding.html">Coding with AI</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/overview.html">Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/msghub.html">MsgHub</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/workflow.html">Custom Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/handoffs.html">Handoffs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
@@ -363,6 +370,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/model.html">模型集成</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/tool.html">工具系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agent-as-tool.html">Agent as Tool</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/agent-skill.html">智能体技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/hook.html">钩子系统</a></li>
@@ -376,13 +384,19 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/msghub.html">MsgHub</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/ai-coding.html">使用 AI 编程</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">概览</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="msghub.html">MsgHub</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="handoffs.html">Handoffs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multiagent-debate.html">多智能体辩论</a></li>
 </ul>
 
@@ -422,335 +436,402 @@
         <article role="main" id="furo-main-content">
           <section id="pipeline">
 <h1>Pipeline（管道）<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h1>
-<p>Pipeline 为 AgentScope 中的多智能体工作流提供组合模式，是用于串联智能体的语法糖，可简化复杂的编排逻辑。</p>
+<p>本示例使用 <strong>Spring AI Alibaba</strong> 的流式智能体（<strong>SequentialAgent</strong>、<strong>ParallelAgent</strong>、<strong>LoopAgent</strong>）与 <strong>AgentScopeAgent</strong> 子智能体及 AgentScope 的 <strong>DashScopeChatModel</strong>（<code class="docutils literal notranslate"><span class="pre">Model</span></code>）。各管道由基于 ReActAgent 的 AgentScopeAgent 构建，并通过 <code class="docutils literal notranslate"><span class="pre">PipelineService</span></code> 调用。</p>
 <section id="id1">
-<h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>AgentScope 提供两种主要的管道类型：</p>
+<h2>前置条件<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>SequentialPipeline</strong>：智能体按顺序执行，每个智能体接收上一个智能体的输出</p></li>
-<li><p><strong>FanoutPipeline</strong>：多个智能体处理相同的输入（并行或顺序执行）</p></li>
+<li><p>JDK 17+</p></li>
+<li><p>Maven 3.6+</p></li>
+<li><p><strong>DashScope API Key</strong>：<code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">AI_DASHSCOPE_API_KEY=your-key</span></code> 或在 <code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 中设置 <code class="docutils literal notranslate"><span class="pre">spring.ai.dashscope.api-key</span></code></p></li>
 </ul>
-<p>此外，<code class="docutils literal notranslate"><span class="pre">Pipelines</span></code> 工具类提供静态工厂方法，用于快速创建管道。</p>
 </section>
-<section id="sequentialpipeline">
-<h2>SequentialPipeline（顺序管道）<a class="headerlink" href="#sequentialpipeline" title="Link to this heading">¶</a></h2>
-<p>SequentialPipeline 按顺序执行智能体，前一个智能体的输出成为下一个智能体的输入。</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>输入 → Agent1 → Agent2 → Agent3 → 输出
+<section id="id2">
+<h2>模型配置<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>示例使用一个共用的 <code class="docutils literal notranslate"><span class="pre">Model</span></code> Bean（DashScopeChatModel），供所有管道子智能体使用：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.examples.multiagents.pipeline</span><span class="p">;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Bean</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Configuration</span><span class="p">;</span>
+
+<span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">PipelineModelConfig</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">	</span><span class="nd">@Bean</span>
+<span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">Model</span><span class="w"> </span><span class="nf">dashScopeChatModel</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">		</span><span class="n">String</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;AI_DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
+<span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="p">}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
-<section id="id2">
-<h3>基本用法<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<p>使用 <code class="docutils literal notranslate"><span class="pre">Pipelines.sequential()</span></code> 静态方法快速执行：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipelines</span><span class="p">;</span>
+</section>
+<section id="sequentialagent-sql">
+<h2>1. SequentialAgent：自然语言 → SQL → 得分<a class="headerlink" href="#sequentialagent-sql" title="Link to this heading">¶</a></h2>
+<p><strong>场景</strong>：用户用自然语言描述查询。管道（1）<strong>SQL 生成器</strong>将其转为 MySQL SQL，（2）<strong>SQL 评分器</strong>评估 SQL 与用户意图的匹配度（0–1）。子智能体按顺序执行，前一环节输出作为下一环节输入。</p>
+<p><strong>示例输入</strong>：「列出过去 30 天总金额大于 500 的所有订单。」</p>
+<section id="id3">
+<h3>实现<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.examples.multiagents.pipeline.sequential</span><span class="p">;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.graph.agent.flow.agent.SequentialAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Bean</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Configuration</span><span class="p">;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
-<span class="c1">// 创建模型</span>
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SequentialPipelineConfig</span><span class="w"> </span><span class="p">{</span>
 
-<span class="c1">// 创建不同阶段的智能体</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">researcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Researcher&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一名研究员。分析主题并提供关键发现。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_GENERATOR_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">			You are a MySQL database expert. Given the user&#39;s natural language request, output the corresponding SQL statement.</span>
+<span class="s">			Only output valid MySQL SQL. Do not include explanations.</span>
+<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">writer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Writer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一名作家。根据研究发现撰写简洁的摘要。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">SQL_RATER_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">			You are a SQL quality reviewer. Given the user&#39;s natural language request and the generated SQL,</span>
+<span class="s">			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.</span>
+<span class="s">			Output ONLY the number, no other text. Example: 0.85</span>
+<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">editor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Editor&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一名编辑。润色并定稿摘要。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">&quot;sequentialSqlAgent&quot;</span><span class="p">)</span>
+<span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="w"> </span><span class="nf">sequentialSqlAgent</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">dashScopeChatModel</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">sqlGenBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_generator&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Converts natural language to MySQL SQL&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">SQL_GENERATOR_PROMPT</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
+<span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">sqlGenerateAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">sqlGenBuilder</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_generator&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Converts natural language to MySQL SQL&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;{input}&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;sql&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 创建输入消息</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;人工智能在医疗领域的应用&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">sqlRaterBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_rater&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Scores SQL against user intent&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">SQL_RATER_PROMPT</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
+<span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">sqlRaterBuilder</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_rater&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Scores SQL against user intent&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Here&#39;s the generated SQL:\n {sql}.\n\n Here&#39;s the original user request:\n {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;score&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 执行顺序管道</span>
-<span class="c1">// Researcher → Writer → Editor</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">researcher</span><span class="p">,</span><span class="w"> </span><span class="n">writer</span><span class="p">,</span><span class="w"> </span><span class="n">editor</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;最终结果: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-</pre></div>
-</div>
-</section>
-<section id="builder">
-<h3>使用 Builder 模式<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h3>
-<p>对于可复用的管道，使用 <code class="docutils literal notranslate"><span class="pre">SequentialPipeline.builder()</span></code>：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.SequentialPipeline</span><span class="p">;</span>
-
-<span class="c1">// 创建可复用的管道</span>
-<span class="n">SequentialPipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SequentialPipeline</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">researcher</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">writer</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">editor</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 执行管道</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">execute</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 使用不同的输入复用管道</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">anotherInput</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;气候变化解决方案&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">result2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">execute</span><span class="p">(</span><span class="n">anotherInput</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id3">
-<h3>结构化输出支持<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>管道中的最后一个智能体可以产生结构化输出：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 定义输出结构</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ArticleSummary</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">title</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">summary</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">keyPoints</span><span class="p">;</span>
+<span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sequential_sql_agent&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Natural language to SQL pipeline: generates SQL and scores its quality&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">sqlGenerateAgent</span><span class="p">,</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="p">))</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="p">}</span>
 <span class="p">}</span>
-
-<span class="c1">// 使用结构化输出执行（仅应用于最后一个智能体）</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">execute</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">ArticleSummary</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 提取结构化数据</span>
-<span class="n">ArticleSummary</span><span class="w"> </span><span class="n">article</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ArticleSummary</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;标题: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">article</span><span class="p">.</span><span class="na">title</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;摘要: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">article</span><span class="p">.</span><span class="na">summary</span><span class="p">);</span>
 </pre></div>
 </div>
+<ul class="simple">
+<li><p><strong>SQL 生成器</strong>：<code class="docutils literal notranslate"><span class="pre">instruction(&quot;{input}&quot;)</span></code>、<code class="docutils literal notranslate"><span class="pre">outputKey(&quot;sql&quot;)</span></code> — 接收用户输入，将生成的 SQL 写入状态键 <code class="docutils literal notranslate"><span class="pre">sql</span></code>。</p></li>
+<li><p><strong>SQL 评分器</strong>：<code class="docutils literal notranslate"><span class="pre">instruction(&quot;...</span> <span class="pre">{sql}</span> <span class="pre">...</span> <span class="pre">{input}</span> <span class="pre">...&quot;)</span></code>、<code class="docutils literal notranslate"><span class="pre">outputKey(&quot;score&quot;)</span></code> — 接收上一步的 <code class="docutils literal notranslate"><span class="pre">sql</span></code> 与原始 <code class="docutils literal notranslate"><span class="pre">input</span></code>，将得分写入状态键 <code class="docutils literal notranslate"><span class="pre">score</span></code>。</p></li>
+</ul>
 </section>
 </section>
-<section id="fanoutpipeline">
-<h2>FanoutPipeline（扇出管道）<a class="headerlink" href="#fanoutpipeline" title="Link to this heading">¶</a></h2>
-<p>FanoutPipeline 将相同的输入分发给多个智能体，并收集所有响应。当您想要获取同一主题的不同视角或专业意见时，这非常有用。</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>         ┌→ Agent1 → Output1
-输入 →──┼→ Agent2 → Output2
-         └→ Agent3 → Output3
-</pre></div>
-</div>
+<section id="parallelagent">
+<h2>2. ParallelAgent：多角度调研<a class="headerlink" href="#parallelagent" title="Link to this heading">¶</a></h2>
+<p><strong>场景</strong>：用户给出一个主题，管道从技术、金融/商业、市场/行业三个角度<strong>并行</strong>调研，结果合并为一份报告（<code class="docutils literal notranslate"><span class="pre">research_report</span></code>）。</p>
+<p><strong>示例输入</strong>：「调研大语言模型的当前发展状况。」（演示中使用「AI agents in enterprise software」。）</p>
 <section id="id4">
-<h3>基本用法<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<p>使用 <code class="docutils literal notranslate"><span class="pre">Pipelines.fanout()</span></code> 静态方法进行并发执行：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipelines</span><span class="p">;</span>
+<h3>实现<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.examples.multiagents.pipeline.parallel</span><span class="p">;</span>
 
-<span class="c1">// 创建具有不同视角的智能体</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">optimist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Optimist&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个乐观主义者。分析主题的积极方面。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.graph.agent.flow.agent.ParallelAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Bean</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.springframework.context.annotation.Configuration</span><span class="p">;</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">pessimist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Pessimist&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个悲观主义者。分析潜在的风险和挑战。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">realist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Realist&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个现实主义者。提供平衡的分析。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ParallelPipelineConfig</span><span class="w"> </span><span class="p">{</span>
 
-<span class="c1">// 执行扇出管道（默认并发）</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanout</span><span class="p">(</span>
-<span class="w">        </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">optimist</span><span class="p">,</span><span class="w"> </span><span class="n">pessimist</span><span class="p">,</span><span class="w"> </span><span class="n">realist</span><span class="p">),</span>
-<span class="w">        </span><span class="n">input</span>
-<span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">TECH_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">			You are a technology analyst. Research the given topic from a technology perspective.</span>
+<span class="s">			Provide a concise 2-3 paragraph analysis covering: key technologies, trends, and innovations.</span>
+<span class="s">			Focus on technical aspects only.</span>
+<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
 
-<span class="c1">// 处理所有结果</span>
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="na">getName</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">FINANCE_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">			You are a financial analyst. Research the given topic from a finance and business perspective.</span>
+<span class="s">			Provide a concise 2-3 paragraph analysis covering: market size, investment trends, business models.</span>
+<span class="s">			Focus on financial and business aspects only.</span>
+<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">MARKET_RESEARCH_PROMPT</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">			You are a market analyst. Research the given topic from an industry and market perspective.</span>
+<span class="s">			Provide a concise 2-3 paragraph analysis covering: competitive landscape, growth drivers, challenges.</span>
+<span class="s">			Focus on market and industry aspects only.</span>
+<span class="s">			&quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="w">	</span><span class="nd">@Bean</span><span class="p">(</span><span class="s">&quot;parallelResearchAgent&quot;</span><span class="p">)</span>
+<span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="w"> </span><span class="nf">parallelResearchAgent</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">dashScopeChatModel</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">techBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;tech_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from technology perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">TECH_RESEARCH_PROMPT</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
+<span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">techResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">techBuilder</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;tech_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from technology perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;tech_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">financeBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;finance_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from finance perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">FINANCE_RESEARCH_PROMPT</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
+<span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">financeResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">financeBuilder</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;finance_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from finance perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;finance_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">		</span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">Builder</span><span class="w"> </span><span class="n">marketBuilder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;market_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">dashScopeChatModel</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from market perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="n">MARKET_RESEARCH_PROMPT</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">());</span>
+<span class="w">		</span><span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">marketResearcher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">marketBuilder</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;market_researcher&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Researches from market perspective&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;Research the following topic: {input}.&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">outputKey</span><span class="p">(</span><span class="s">&quot;market_analysis&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">				</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;parallel_research_agent&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">techResearcher</span><span class="p">,</span><span class="w"> </span><span class="n">financeResearcher</span><span class="p">,</span><span class="w"> </span><span class="n">marketResearcher</span><span class="p">))</span>
+<span class="w">				</span><span class="p">.</span><span class="na">mergeStrategy</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ParallelAgent</span><span class="p">.</span><span class="na">DefaultMergeStrategy</span><span class="p">())</span>
+<span class="w">				</span><span class="p">.</span><span class="na">mergeOutputKey</span><span class="p">(</span><span class="s">&quot;research_report&quot;</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">maxConcurrency</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">				</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">	</span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
+<ul class="simple">
+<li><p>每个子智能体使用 <code class="docutils literal notranslate"><span class="pre">instruction(&quot;Research</span> <span class="pre">the</span> <span class="pre">following</span> <span class="pre">topic:</span> <span class="pre">{input}.&quot;)</span></code> 及各自的 <code class="docutils literal notranslate"><span class="pre">outputKey</span></code>（<code class="docutils literal notranslate"><span class="pre">tech_analysis</span></code>、<code class="docutils literal notranslate"><span class="pre">finance_analysis</span></code>、<code class="docutils literal notranslate"><span class="pre">market_analysis</span></code>）。</p></li>
+<li><p><strong>DefaultMergeStrategy</strong> 将子智能体输出合并为一份结果，写入 <strong>mergeOutputKey</strong> <code class="docutils literal notranslate"><span class="pre">research_report</span></code>。</p></li>
+</ul>
 </section>
-<section id="vs">
-<h3>并发 vs 顺序执行<a class="headerlink" href="#vs" title="Link to this heading">¶</a></h3>
-<p>FanoutPipeline 支持两种执行模式：</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>模式</p></th>
-<th class="head"><p>方法</p></th>
-<th class="head"><p>行为</p></th>
-<th class="head"><p>使用场景</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>并发</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">fanout()</span></code></p></td>
-<td><p>所有智能体使用 <code class="docutils literal notranslate"><span class="pre">boundedElastic()</span></code> 调度器并行运行</p></td>
-<td><p>I/O 密集型操作性能更好</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>顺序</strong></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">fanoutSequential()</span></code></p></td>
-<td><p>智能体逐个运行</p></td>
-<td><p>可预测的顺序，资源控制</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 并发执行（默认）- 更适合 API 调用</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">concurrent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanout</span><span class="p">(</span><span class="n">agents</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 顺序执行 - 可预测的顺序</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sequential</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanoutSequential</span><span class="p">(</span><span class="n">agents</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
 </section>
+<section id="loopagent-sql">
+<h2>3. LoopAgent：SQL 迭代优化直到质量阈值<a class="headerlink" href="#loopagent-sql" title="Link to this heading">¶</a></h2>
+<p><strong>场景</strong>：从自然语言生成 SQL，并<strong>迭代优化</strong>直到质量得分超过 0.5。每次迭代执行内层 <strong>SequentialAgent</strong>：SQL 生成器 → SQL 评分器。循环直到得分 &gt; 0.5 或达到最大迭代次数。</p>
+<p><strong>示例输入</strong>：「找出 2024 年下单超过 3 次的客户。」</p>
 <section id="id5">
-<h3>使用 Builder 模式<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.FanoutPipeline</span><span class="p">;</span>
+<h3>实现<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">LoopPipelineConfig</span></code> 中构建的 SQL 生成器与 SQL 评分器 AgentScopeAgent 与 <code class="docutils literal notranslate"><span class="pre">SequentialPipelineConfig</span></code> 相同（相同 prompt、<code class="docutils literal notranslate"><span class="pre">instruction</span></code>、<code class="docutils literal notranslate"><span class="pre">outputKey</span></code>）。然后将它们包在一个 <strong>SequentialAgent</strong> 中，再包在带条件循环策略的 <strong>LoopAgent</strong> 中：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SequentialAgent</span><span class="w"> </span><span class="n">sqlAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SequentialAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;sql_agent&quot;</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Generates SQL and scores its quality&quot;</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">subAgents</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">sqlGenerateAgent</span><span class="p">,</span><span class="w"> </span><span class="n">sqlRatingAgent</span><span class="p">))</span>
+<span class="w">		</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 创建并发扇出管道</span>
-<span class="n">FanoutPipeline</span><span class="w"> </span><span class="n">concurrentPipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FanoutPipeline</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">optimist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">pessimist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">realist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">concurrent</span><span class="p">()</span><span class="w">  </span><span class="c1">// 默认模式</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 创建顺序扇出管道</span>
-<span class="n">FanoutPipeline</span><span class="w"> </span><span class="n">sequentialPipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FanoutPipeline</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">optimist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">pessimist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addAgent</span><span class="p">(</span><span class="n">realist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sequential</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 执行</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">concurrentPipeline</span><span class="p">.</span><span class="na">execute</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="k">return</span><span class="w"> </span><span class="n">LoopAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">		</span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;loop_sql_refinement_agent&quot;</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Iteratively refines SQL until quality score exceeds &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">QUALITY_THRESHOLD</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">subAgent</span><span class="p">(</span><span class="n">sqlAgent</span><span class="p">)</span>
+<span class="w">		</span><span class="p">.</span><span class="na">loopStrategy</span><span class="p">(</span><span class="n">LoopMode</span><span class="p">.</span><span class="na">condition</span><span class="p">(</span><span class="n">messages</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">messages</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">messages</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">			</span><span class="n">String</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">messages</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">messages</span><span class="p">.</span><span class="na">size</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">).</span><span class="na">getText</span><span class="p">();</span>
+<span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">text</span><span class="p">.</span><span class="na">isBlank</span><span class="p">())</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">			</span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">				</span><span class="kt">double</span><span class="w"> </span><span class="n">score</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Double</span><span class="p">.</span><span class="na">parseDouble</span><span class="p">(</span><span class="n">text</span><span class="p">.</span><span class="na">trim</span><span class="p">());</span>
+<span class="w">				</span><span class="k">return</span><span class="w"> </span><span class="n">score</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">QUALITY_THRESHOLD</span><span class="p">;</span>
+<span class="w">			</span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">NumberFormatException</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">				</span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<span class="w">			</span><span class="p">}</span>
+<span class="w">		</span><span class="p">}))</span>
+<span class="w">		</span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<ul class="simple">
+<li><p><strong>LoopAgent</strong> 包装一个 <strong>SequentialAgent</strong>（<code class="docutils literal notranslate"><span class="pre">sql_agent</span></code>），每次迭代执行 SQL 生成器再执行 SQL 评分器。</p></li>
+<li><p><strong>loopStrategy</strong>：<code class="docutils literal notranslate"><span class="pre">LoopMode.condition(...)</span></code> — 接收上一轮消息，读取最后一条（评分器输出），解析为数字；当 score &gt; 0.5 时返回 <code class="docutils literal notranslate"><span class="pre">true</span></code> 结束循环。</p></li>
+</ul>
 </section>
 </section>
-<section id="pipelines">
-<h2>Pipelines 工具类<a class="headerlink" href="#pipelines" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Pipelines</span></code> 类提供静态工厂方法用于快速管道操作：</p>
-<section id="id6">
-<h3>方法参考<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="pipelineservice">
+<h2>调用管道：PipelineService<a class="headerlink" href="#pipelineservice" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">PipelineService</span></code> 注入三个管道智能体，对外提供 <code class="docutils literal notranslate"><span class="pre">runSequential</span></code>、<code class="docutils literal notranslate"><span class="pre">runParallel</span></code>、<code class="docutils literal notranslate"><span class="pre">runLoop</span></code>。每个方法传入字符串输入并返回对应的结果记录。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 在业务代码中注入</span>
+<span class="nd">@Autowired</span>
+<span class="n">PipelineService</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">;</span>
+
+<span class="c1">// 顺序：自然语言 → SQL → 得分</span>
+<span class="n">PipelineService</span><span class="p">.</span><span class="na">SequentialResult</span><span class="w"> </span><span class="n">seq</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runSequential</span><span class="p">(</span>
+<span class="w">		</span><span class="s">&quot;List all orders from the last 30 days with total amount greater than 500&quot;</span><span class="p">);</span>
+<span class="c1">// seq.input(), seq.sql(), seq.score()</span>
+
+<span class="c1">// 并行：一个主题 → 合并后的调研报告</span>
+<span class="n">PipelineService</span><span class="p">.</span><span class="na">ParallelResult</span><span class="w"> </span><span class="n">par</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runParallel</span><span class="p">(</span>
+<span class="w">		</span><span class="s">&quot;AI agents in enterprise software&quot;</span><span class="p">);</span>
+<span class="c1">// par.input(), par.researchReport()</span>
+
+<span class="c1">// 循环：SQL 优化直到得分 &gt; 0.5</span>
+<span class="n">PipelineService</span><span class="p">.</span><span class="na">LoopResult</span><span class="w"> </span><span class="n">loop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">.</span><span class="na">runLoop</span><span class="p">(</span>
+<span class="w">		</span><span class="s">&quot;Find customers who placed more than 3 orders in 2024&quot;</span><span class="p">);</span>
+<span class="c1">// loop.input(), loop.sql(), loop.score()</span>
+</pre></div>
+</div>
+<p><strong>返回类型：</strong></p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>方法</p></th>
 <th class="head"><p>返回类型</p></th>
-<th class="head"><p>描述</p></th>
+<th class="head"><p>使用的状态键</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sequential(agents,</span> <span class="pre">input)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code></p></td>
-<td><p>带输入顺序执行智能体</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">runSequential(input)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SequentialResult(input,</span> <span class="pre">sql,</span> <span class="pre">score)</span></code></p></td>
+<td><p>从 <code class="docutils literal notranslate"><span class="pre">OverAllState</span></code> 读取 <code class="docutils literal notranslate"><span class="pre">sql</span></code>、<code class="docutils literal notranslate"><span class="pre">score</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sequential(agents)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code></p></td>
-<td><p>无输入顺序执行智能体</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">runParallel(input)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ParallelResult(input,</span> <span class="pre">researchReport)</span></code></p></td>
+<td><p>从 <code class="docutils literal notranslate"><span class="pre">OverAllState</span></code> 读取 <code class="docutils literal notranslate"><span class="pre">research_report</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sequential(agents,</span> <span class="pre">input,</span> <span class="pre">outputClass)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;Msg&gt;</span></code></p></td>
-<td><p>带结构化输出的顺序执行</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">runLoop(input)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LoopResult(input,</span> <span class="pre">sql,</span> <span class="pre">score)</span></code></p></td>
+<td><p>从 <code class="docutils literal notranslate"><span class="pre">OverAllState</span></code> 读取 <code class="docutils literal notranslate"><span class="pre">sql</span></code>、<code class="docutils literal notranslate"><span class="pre">score</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fanout(agents,</span> <span class="pre">input)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;List&lt;Msg&gt;&gt;</span></code></p></td>
-<td><p>并发执行智能体</p></td>
+</tbody>
+</table>
+</div>
+<p>服务实现片段（如何从状态中读取结果）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="n">SequentialResult</span><span class="w"> </span><span class="nf">runSequential</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userInput</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">GraphRunnerException</span><span class="w"> </span><span class="p">{</span>
+<span class="w">	</span><span class="n">Optional</span><span class="o">&lt;</span><span class="n">OverAllState</span><span class="o">&gt;</span><span class="w"> </span><span class="n">resultOpt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sequentialSqlAgent</span><span class="p">.</span><span class="na">invoke</span><span class="p">(</span><span class="n">userInput</span><span class="p">);</span>
+<span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">resultOpt</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SequentialResult</span><span class="p">(</span><span class="n">userInput</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">);</span>
+<span class="w">	</span><span class="p">}</span>
+<span class="w">	</span><span class="n">OverAllState</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">resultOpt</span><span class="p">.</span><span class="na">get</span><span class="p">();</span>
+<span class="w">	</span><span class="n">String</span><span class="w"> </span><span class="n">sql</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">extractText</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="n">SQL_KEY</span><span class="p">));</span>
+<span class="w">	</span><span class="n">String</span><span class="w"> </span><span class="n">score</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">extractText</span><span class="p">(</span><span class="n">state</span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="n">SCORE_KEY</span><span class="p">));</span>
+<span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SequentialResult</span><span class="p">(</span><span class="n">userInput</span><span class="p">,</span><span class="w"> </span><span class="n">sql</span><span class="p">,</span><span class="w"> </span><span class="n">score</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="id6">
+<h2>可选演示运行器<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<p>当 <code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled=true</span></code> 时，<code class="docutils literal notranslate"><span class="pre">PipelineCommandRunner</span></code> 在启动时为每个管道运行一次演示（固定示例输入并输出日志）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Component</span>
+<span class="nd">@ConditionalOnProperty</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;pipeline.runner.enabled&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">havingValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">PipelineCommandRunner</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">ApplicationRunner</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">	</span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">PipelineService</span><span class="w"> </span><span class="n">pipelineService</span><span class="p">;</span>
+
+<span class="w">	</span><span class="nd">@Override</span>
+<span class="w">	</span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">ApplicationArguments</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
+<span class="w">		</span><span class="n">runSequentialDemo</span><span class="p">();</span><span class="w">  </span><span class="c1">// &quot;List all orders from the last 30 days...&quot;</span>
+<span class="w">		</span><span class="n">runParallelDemo</span><span class="p">();</span><span class="w">    </span><span class="c1">// &quot;AI agents in enterprise software&quot;</span>
+<span class="w">		</span><span class="n">runLoopDemo</span><span class="p">();</span><span class="w">        </span><span class="c1">// &quot;Find customers who placed more than 3 orders in 2024&quot;</span>
+<span class="w">	</span><span class="p">}</span>
+<span class="w">	</span><span class="c1">// ...</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="id7">
+<h2>构建与运行<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<p>在仓库根目录执行：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>-am<span class="w"> </span>-B<span class="w"> </span>package<span class="w"> </span>-DskipTests
+./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
+</pre></div>
+</div>
+<p><strong>启用演示运行器：</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span>pipeline.runner.enabled<span class="o">=</span><span class="nb">true</span>
+./mvnw<span class="w"> </span>-pl<span class="w"> </span>agentscope-examples/multiagent-patterns/pipeline<span class="w"> </span>spring-boot:run
+</pre></div>
+</div>
+<p>或在 <code class="docutils literal notranslate"><span class="pre">application.yml</span></code> 中设置：<code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled:</span> <span class="pre">true</span></code>。</p>
+</section>
+<section id="id8">
+<h2>配置<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>默认值</p></th>
+<th class="head"><p>说明</p></th>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fanout(agents)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;List&lt;Msg&gt;&gt;</span></code></p></td>
-<td><p>无输入并发执行智能体</p></td>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">spring.ai.dashscope.api-key</span></code></p></td>
+<td><p>环境变量 <code class="docutils literal notranslate"><span class="pre">AI_DASHSCOPE_API_KEY</span></code></p></td>
+<td><p>模型使用的 DashScope API Key</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fanoutSequential(agents,</span> <span class="pre">input)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;List&lt;Msg&gt;&gt;</span></code></p></td>
-<td><p>顺序执行智能体（相同输入）</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">createSequential(agents)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">SequentialPipeline</span></code></p></td>
-<td><p>创建可复用的顺序管道</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">createFanout(agents)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">FanoutPipeline</span></code></p></td>
-<td><p>创建可复用的并发扇出管道</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">createFanoutSequential(agents)</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">FanoutPipeline</span></code></p></td>
-<td><p>创建可复用的顺序扇出管道</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">pipeline.runner.enabled</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>为 <code class="docutils literal notranslate"><span class="pre">true</span></code> 时，启动时运行顺序、并行、循环三个演示</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="id7">
-<h3>管道组合<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
-<p>您可以组合多个管道：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建两个顺序管道</span>
-<span class="n">SequentialPipeline</span><span class="w"> </span><span class="n">research</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">createSequential</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">researcher</span><span class="p">,</span><span class="w"> </span><span class="n">analyst</span><span class="p">));</span>
-<span class="n">SequentialPipeline</span><span class="w"> </span><span class="n">writing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">createSequential</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">writer</span><span class="p">,</span><span class="w"> </span><span class="n">editor</span><span class="p">));</span>
-
-<span class="c1">// 将它们组合成一个更大的管道</span>
-<span class="n">Pipeline</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">combined</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">compose</span><span class="p">(</span><span class="n">research</span><span class="p">,</span><span class="w"> </span><span class="n">writing</span><span class="p">);</span>
-
-<span class="c1">// 执行组合管道</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">combined</span><span class="p">.</span><span class="na">execute</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<section id="id9">
+<h2>项目结构<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>agentscope-examples/multiagent-patterns/pipeline/
+├── README.md
+├── pom.xml
+└── src/main/
+    ├── java/.../pipeline/
+    │   ├── PipelineApplication.java
+    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) Bean
+    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
+    │   ├── PipelineCommandRunner.java      # 可选演示（pipeline.runner.enabled）
+    │   ├── PipelineRunnerConfig.java       # PipelineService Bean
+    │   ├── sequential/
+    │   │   └── SequentialPipelineConfig.java
+    │   ├── parallel/
+    │   │   └── ParallelPipelineConfig.java
+    │   └── loop/
+    │       └── LoopPipelineConfig.java
+    └── resources/
+        └── application.yml
 </pre></div>
 </div>
 </section>
-</section>
-<section id="pipeline-msghub">
-<h2>结合 Pipeline 与 MsgHub<a class="headerlink" href="#pipeline-msghub" title="Link to this heading">¶</a></h2>
-<p>对于复杂的工作流，可以将 Pipeline 与 MsgHub 结合使用：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.MsgHub</span><span class="p">;</span>
-
-<span class="c1">// 阶段 1：使用 FanoutPipeline 进行并行分析</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">analyses</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanout</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">optimist</span><span class="p">,</span><span class="w"> </span><span class="n">pessimist</span><span class="p">,</span><span class="w"> </span><span class="n">realist</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 阶段 2：使用 MsgHub 进行群组讨论</span>
-<span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">MsgHub</span><span class="w"> </span><span class="n">hub</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MsgHub</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">participants</span><span class="p">(</span><span class="n">optimist</span><span class="p">,</span><span class="w"> </span><span class="n">pessimist</span><span class="p">,</span><span class="w"> </span><span class="n">realist</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="n">hub</span><span class="p">.</span><span class="na">enter</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
-
-<span class="w">    </span><span class="c1">// 广播所有分析结果</span>
-<span class="w">    </span><span class="n">hub</span><span class="p">.</span><span class="na">broadcast</span><span class="p">(</span><span class="n">analyses</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="w">    </span><span class="c1">// 每个智能体回应其他人的分析</span>
-<span class="w">    </span><span class="n">optimist</span><span class="p">.</span><span class="na">call</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
-<span class="w">    </span><span class="n">pessimist</span><span class="p">.</span><span class="na">call</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
-<span class="w">    </span><span class="n">realist</span><span class="p">.</span><span class="na">call</span><span class="p">().</span><span class="na">block</span><span class="p">();</span>
-<span class="p">}</span>
-
-<span class="c1">// 阶段 3：使用 SequentialPipeline 进行最终综合</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">synthesizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Synthesizer&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;综合所有观点得出最终结论。&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">conclusion</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">synthesizer</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id8">
-<h2>相关文档<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id10">
+<h2>相关文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="msghub.html"><span class="std std-doc">MsgHub</span></a> - 多智能体对话的消息广播</p></li>
+<li><p><a class="reference internal" href="routing.html"><span class="std std-doc">Routing</span></a> - 分类并路由到专家智能体</p></li>
+<li><p><a class="reference internal" href="../task/msghub.html"><span class="std std-doc">MsgHub</span></a> - 多智能体对话的消息广播</p></li>
+<li><p><a class="reference internal" href="handoffs.html"><span class="std std-doc">Handoffs</span></a> - 状态驱动路由与智能体间交接</p></li>
 <li><p><a class="reference internal" href="multiagent-debate.html"><span class="std std-doc">多智能体辩论</span></a> - 辩论工作流模式</p></li>
 </ul>
 </section>
@@ -780,23 +861,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="msghub.html">
+          <a class="next-page" href="workflow.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">MsgHub（消息中心）</div>
+                <div class="title">自定义工作流（Custom Workflow）</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="../task/ai-coding.html">
+          <a class="prev-page" href="overview.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">使用 AI 编程</div>
+                <div class="title">多智能体概览</div>
                 
               </div>
             </a>
@@ -809,7 +890,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-03-17</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -845,26 +926,26 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Pipeline（管道）</a><ul>
-<li><a class="reference internal" href="#id1">概述</a></li>
-<li><a class="reference internal" href="#sequentialpipeline">SequentialPipeline（顺序管道）</a><ul>
-<li><a class="reference internal" href="#id2">基本用法</a></li>
-<li><a class="reference internal" href="#builder">使用 Builder 模式</a></li>
-<li><a class="reference internal" href="#id3">结构化输出支持</a></li>
+<li><a class="reference internal" href="#id1">前置条件</a></li>
+<li><a class="reference internal" href="#id2">模型配置</a></li>
+<li><a class="reference internal" href="#sequentialagent-sql">1. SequentialAgent：自然语言 → SQL → 得分</a><ul>
+<li><a class="reference internal" href="#id3">实现</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#fanoutpipeline">FanoutPipeline（扇出管道）</a><ul>
-<li><a class="reference internal" href="#id4">基本用法</a></li>
-<li><a class="reference internal" href="#vs">并发 vs 顺序执行</a></li>
-<li><a class="reference internal" href="#id5">使用 Builder 模式</a></li>
+<li><a class="reference internal" href="#parallelagent">2. ParallelAgent：多角度调研</a><ul>
+<li><a class="reference internal" href="#id4">实现</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#pipelines">Pipelines 工具类</a><ul>
-<li><a class="reference internal" href="#id6">方法参考</a></li>
-<li><a class="reference internal" href="#id7">管道组合</a></li>
+<li><a class="reference internal" href="#loopagent-sql">3. LoopAgent：SQL 迭代优化直到质量阈值</a><ul>
+<li><a class="reference internal" href="#id5">实现</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#pipeline-msghub">结合 Pipeline 与 MsgHub</a></li>
-<li><a class="reference internal" href="#id8">相关文档</a></li>
+<li><a class="reference internal" href="#pipelineservice">调用管道：PipelineService</a></li>
+<li><a class="reference internal" href="#id6">可选演示运行器</a></li>
+<li><a class="reference internal" href="#id7">构建与运行</a></li>
+<li><a class="reference internal" href="#id8">配置</a></li>
+<li><a class="reference internal" href="#id9">项目结构</a></li>
+<li><a class="reference internal" href="#id10">相关文档</a></li>
 </ul>
 </li>
 </ul>

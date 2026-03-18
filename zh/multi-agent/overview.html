@@ -1,0 +1,713 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Pipeline（管道）" href="pipeline.html"><link rel="prev" title="使用 AI 编程" href="../task/ai-coding.html">
+        <link rel="canonical" href="https://java.agentscope.io/zh/multi-agent/overview.html">
+        <link rel="prefetch" href="../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
+        <title>多智能体概览 - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=acb90eab" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../../en/intro.html">
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+  
+</a><!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" onclick="toggleLanguageMenu()">
+            <span id="current-lang">English</span>
+            <span class="dropdown-arrow"></span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleLanguageMenu() {
+        const menu = document.getElementById('language-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function switchLanguage(lang, skipRedirect = false) {
+        // Save language preference
+        localStorage.setItem('preferred-language', lang);
+
+        // Update displayed language const
+        currentLang = document.getElementById('current-lang');
+        currentLang.textContent = lang === 'zh' ? '中文' : 'English';
+        document.body.setAttribute('data-current-lang', lang);
+        if (!skipRedirect) {
+            const currentPath = window.location.pathname;
+            let newPath = null;
+
+            if (lang === 'zh' && currentPath.includes('/en/')) {
+                newPath = currentPath.replace('/en/', '/zh/');
+            } else if (lang === 'en' && currentPath.includes('/zh/')) {
+                newPath = currentPath.replace('/zh/', '/en/');
+            }
+            if (newPath && newPath !== currentPath) {
+                window.location.href = newPath + window.location.search + window.location.hash;
+                return;
+            }
+        }
+
+        // Apply language filtering
+        filterContentByLanguage(lang);
+
+        // Close dropdown menu
+        document.getElementById('language-menu').style.display = 'none';
+    }
+
+    function filterContentByLanguage(lang) {
+        const captions = document.querySelectorAll('.caption');
+        const toctreeItems = document.querySelectorAll('.toctree-l1');
+
+        // Define which captions should be displayed based on the selected language
+        const languageMapping = {
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
+        };
+
+        const visibleCaptions = languageMapping[lang] || [];
+
+        // Filter captions based on the selected language
+        captions.forEach(caption => {
+            const text = caption.textContent.trim();
+            caption.style.display = visibleCaptions.includes(text) ? 'block' : 'none';
+        });
+
+        // Filter toctree items based on the selected language
+        toctreeItems.forEach(item => {
+            const link = item.querySelector('a');
+            if (link) {
+                const href = link.getAttribute('href') || '';
+                if (lang === 'zh') {
+                    const hasZh = href.includes('/zh/');
+                    const hasEn = href.includes('/en/');
+                    const isRelative = !href.startsWith('http') && !href.startsWith('/') && !hasEn;
+
+                    item.style.display = (hasZh || isRelative) ? 'block' : 'none';
+                } else {
+                    const hasZh = href.includes('/zh/');
+                    item.style.display = hasZh ? 'none' : 'block';
+                }
+            } else {
+                item.style.display = 'block';
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.language-selector')) {
+            document.getElementById('language-menu').style.display = 'none';
+        }
+    });
+</script><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/session.html">Session Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/ai-coding.html">Coding with AI</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/overview.html">Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/workflow.html">Custom Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agent-as-tool.html">Agent as Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agent-skill.html">智能体技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hitl.html">Human-in-the-Loop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">记忆管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/studio.html">Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/ai-coding.html">使用 AI 编程</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
+<ul class="current">
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">概览</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="workflow.html">自定义工作流</a></li>
+<li class="toctree-l1"><a class="reference internal" href="routing.html">Routing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="skills.html">Skills</a></li>
+<li class="toctree-l1"><a class="reference internal" href="subagent.html">Subagents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="supervisor.html">Supervisor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="handoffs.html">Handoffs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="multiagent-debate.html">多智能体辩论</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/multi-agent/overview.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="id1">
+<h1>多智能体概览<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<p>多智能体系统通过协调多个专职智能体或组件来完成复杂流程。并非所有复杂任务都需要多智能体——单个智能体配合合适的工具与提示往往就够用。本文概览何时采用多智能体模式更有价值，以及 AgentScope 支持哪些模式。</p>
+<section id="id2">
+<h2>为何使用多智能体？<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>在以下一种或多种需求出现时，多智能体模式会很有用：</p>
+<ul class="simple">
+<li><p><strong>上下文管理</strong>：在不压垮模型上下文的前提下暴露专项知识。当上下文与延迟都有限时，需要按步骤或按智能体只呈现相关内容。</p></li>
+<li><p><strong>分工开发</strong>：让不同团队负责不同能力（如技能、子智能体、专家），并在清晰边界下组合使用。</p></li>
+<li><p><strong>并行化</strong>：对子任务并行运行专职工作者，以降低延迟。</p></li>
+<li><p><strong>结构化流程</strong>：强制顺序（如先分类再路由，或循环直到满足条件）或按角色交接（如销售 vs 支持），单智能体难以自然保证这些约束。</p></li>
+</ul>
+<p>当单智能体工具过多且选择不佳、任务需要深领域上下文（长提示与领域工具）、或需要顺序/状态驱动路由（如先收集信息再升级、或切换“负责”对话的智能体）时，多智能体模式尤其有价值。</p>
+</section>
+<section id="id3">
+<h2>支持的模式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p>AgentScope 支持以下多智能体模式，每种都有独立页面说明实现与示例。</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模式</p></th>
+<th class="head"><p>作用</p></th>
+<th class="head"><p>适用场景</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong><a class="reference internal" href="pipeline.html"><span class="std std-doc">Pipeline</span></a></strong></p></td>
+<td><p>按固定流程运行智能体：<strong>顺序</strong>（A → B → C）、<strong>并行</strong>（同一输入给多个智能体再合并）、<strong>循环</strong>（子流程重复直到条件满足）。基于 Spring AI Alibaba flow 与 AgentScopeAgent 构建。</p></td>
+<td><p>流程明确（如 NL → SQL → 打分，或一主题 → 多研究角度 → 合并报告）。</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong><a class="reference internal" href="routing.html"><span class="std std-doc">Routing</span></a></strong></p></td>
+<td><p><strong>路由器</strong>对输入分类并转发给一个或多个专家智能体（如 GitHub、Notion、Slack）；结果合并为单一回答。</p></td>
+<td><p>有明确垂直领域，希望一次完成「分类 → 专家 → 综合」，或用图实现。</p></td>
+</tr>
+<tr class="row-even"><td><p><strong><a class="reference internal" href="skills.html"><span class="std std-doc">Skills</span></a></strong></p></td>
+<td><p><strong>按需披露</strong>：一个智能体只看到技能名/描述，通过工具（<code class="docutils literal notranslate"><span class="pre">read_skill</span></code>）按需加载完整技能内容（如 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>）。无独立子智能体进程。</p></td>
+<td><p>希望一个智能体具备多种专长，但不想一次性把所有领域文本塞进上下文。</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagents</span></a></strong></p></td>
+<td><p>中心<strong>编排智能体</strong>通过工具（如 Task / TaskOutput）将工作委托给<strong>子智能体</strong>。子智能体可用 Markdown 或代码定义；编排智能体持有对话，子智能体每次调用无状态。</p></td>
+<td><p>多领域（如代码库、网络、依赖），希望一个协调者，且子智能体无需直接对用户说话。</p></td>
+</tr>
+<tr class="row-even"><td><p><strong><a class="reference internal" href="supervisor.html"><span class="std std-doc">Supervisor</span></a></strong></p></td>
+<td><p>中心<strong>监督者</strong>智能体将专家智能体当作<strong>工具</strong>调用（每个专家一个工具，如 <code class="docutils literal notranslate"><span class="pre">schedule_event</span></code>、<code class="docutils literal notranslate"><span class="pre">manage_email</span></code>）。专家无状态；仅监督者的回复呈现给用户。</p></td>
+<td><p>领域清晰（如日历、邮件），希望单一入口完成路由与结果合并。</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong><a class="reference internal" href="handoffs.html"><span class="std std-doc">Handoffs</span></a></strong></p></td>
+<td><p><strong>状态驱动路由</strong>：工具更新状态变量（如 <code class="docutils literal notranslate"><span class="pre">active_agent</span></code>），图根据该变量路由到不同智能体节点。每个智能体可通过工具调用「交接」给另一智能体。</p></td>
+<td><p>需要按角色或按顺序交接（如销售 ↔ 支持），对话过程中「当前负责」的智能体会变化。</p></td>
+</tr>
+<tr class="row-even"><td><p><strong><a class="reference internal" href="multiagent-debate.html"><span class="std std-doc">Multi-Agent Debate</span></a></strong></p></td>
+<td><p><strong>辩手</strong>通过 MsgHub 交换论点；<strong>主持人</strong>用结构化输出评估并决定辩论何时结束。</p></td>
+<td><p>需要多视角（如推理任务）以及明确的结束条件与最终答案。</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong><a class="reference internal" href="workflow.html"><span class="std std-doc">Custom Workflow</span></a></strong></p></td>
+<td><p>使用 <strong>StateGraph</strong> 自定图结构：顺序、条件或<strong>确定性 + 智能体</strong>混合步骤（如 rewrite → retrieve → agent，或 list_tables → get_schema → generate_query）。节点可为函数或 AgentScopeAgent。</p></td>
+<td><p>标准模式不适用；需要多阶段、显式控制或非 LLM 与 LLM/智能体步骤混合时。</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id4">
+<h2>如何选型<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="workflow-vs-conversational">
+<h3>工作流（workflow）vs 对话（conversational）<a class="headerlink" href="#workflow-vs-conversational" title="Link to this heading">¶</a></h3>
+<p>从整体上，多智能体模式可分为 <strong>工作流（workflow）</strong> 与 <strong>对话（conversational）</strong> 两类：</p>
+<ul class="simple">
+<li><p><strong>工作流模式</strong>：包含 <a class="reference internal" href="pipeline.html"><span class="std std-doc">Pipeline</span></a>、<a class="reference internal" href="routing.html"><span class="std std-doc">Routing</span></a>、<a class="reference internal" href="workflow.html"><span class="std std-doc">Custom Workflow</span></a>。流程在智能体或节点之间流转，每个节点都可能与用户交互。</p></li>
+<li><p><strong>对话模式</strong>：包含 <a class="reference internal" href="supervisor.html"><span class="std std-doc">Supervisor</span></a>、<a class="reference internal" href="subagent.html"><span class="std std-doc">Subagents</span></a>、<a class="reference internal" href="skills.html"><span class="std std-doc">Skills</span></a>。智能体的决策在连续的对话上下文中进行，通常只有主智能体与用户交互并将结果输出给用户。</p></li>
+</ul>
+<p>其余模式（如 <a class="reference internal" href="../task/msghub.html"><span class="std std-doc">MsgHub</span></a>、<a class="reference internal" href="../task/agent-as-tool.html"><span class="std std-doc">Agent as Tool</span></a>、<a class="reference internal" href="handoffs.html"><span class="std std-doc">Handoffs</span></a>、<a class="reference internal" href="multiagent-debate.html"><span class="std std-doc">Multi-Agent Debate</span></a>）可按需与上述两类组合使用。</p>
+</section>
+<section id="routing-supervisor">
+<h3>Routing 与 Supervisor 的区别<a class="headerlink" href="#routing-supervisor" title="Link to this heading">¶</a></h3>
+<p>两种模式都能把工作分发给多个智能体，但<strong>路由决策的方式</strong>不同：</p>
+<ul class="simple">
+<li><p><strong>Routing（路由）</strong>：有一个独立的<strong>路由步骤</strong>（通常是一次 LLM 分类或规则逻辑），对当前输入做分类后分发给一个或多个专家；路由器本身<strong>不维护对话历史</strong>，也不做多轮编排，本质是<strong>预处理</strong>。适合输入类别清晰、希望用轻量或确定性分类、一次请求完成「分类 → 专家 → 合并」的场景。</p></li>
+<li><p><strong>Supervisor（监督者）</strong>：由<strong>主监督者智能体</strong>在持续对话中<strong>动态决定</strong>下一步调用哪个专家（以工具形式）；主智能体维护上下文，可在多轮中多次调用不同专家，编排复杂多步流程。适合需要灵活、对话感知的编排、由 LLM 根据演进中的上下文决定下一步的场景。</p></li>
+</ul>
+<p><strong>选型建议</strong>：输入类别清晰、希望一次完成分类与合并时用 <strong>Routing</strong>；需要多轮对话、由主智能体根据上下文灵活调度专家时用 <strong>Supervisor</strong>。</p>
+</section>
+<section id="skills-subagents-supervisor">
+<h3>Skills 与 Subagents / Supervisor 的区别<a class="headerlink" href="#skills-subagents-supervisor" title="Link to this heading">¶</a></h3>
+<p>主要区别在于<strong>上下文是否隔离</strong>：</p>
+<ul class="simple">
+<li><p><strong>Skills（技能）</strong>：技能内容（如 <code class="docutils literal notranslate"><span class="pre">SKILL.md</span></code>）通过工具（如 <code class="docutils literal notranslate"><span class="pre">read_skill</span></code>）<strong>按需加载到主智能体的上下文中</strong>，与主智能体<strong>共享同一段对话上下文</strong>，无法隔离。主智能体只有一个进程、一段上下文，只是按需把大段领域文本拉进来。适合「一个智能体多种专长、按需加载」、且不需要独立执行或隔离上下文的场景。</p></li>
+<li><p><strong>Subagents / Supervisor（子智能体 / 监督者）</strong>：子智能体或专家在<strong>独立调用或独立会话</strong>中执行，与主智能体（编排者或监督者）的对话上下文<strong>隔离</strong>；每次调用可带独立的系统提示与工具集，结果汇总回主智能体。适合需要隔离执行、避免上下文污染、或对专家做工具/权限限制的场景。</p></li>
+</ul>
+<p><strong>选型建议</strong>：若希望在一个对话里按需加载多领域知识且不介意上下文共享，用 <strong>Skills</strong>；若需要专职子智能体/专家在隔离上下文中执行再汇总，用 <strong>Subagents</strong> 或 <strong>Supervisor</strong>。</p>
+</section>
+<section id="id5">
+<h3>选型快速参考<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>若你需要…</p></th>
+<th class="head"><p>可考虑</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>固定流水线（顺序、并行或循环）</p></td>
+<td><p><a class="reference internal" href="pipeline.html"><span class="std std-doc">Pipeline</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>一次分类后交给专家并合并结果</p></td>
+<td><p><a class="reference internal" href="routing.html"><span class="std std-doc">Routing</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>通过工具在智能体间切换（如销售 ↔ 支持）</p></td>
+<td><p><a class="reference internal" href="handoffs.html"><span class="std std-doc">Handoffs</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>一个智能体多种专长、按需加载上下文</p></td>
+<td><p><a class="reference internal" href="skills.html"><span class="std std-doc">Skills</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>一个编排智能体通过 Task 工具分发给多个子智能体</p></td>
+<td><p><a class="reference internal" href="subagent.html"><span class="std std-doc">Subagents</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>一个监督者，每个专家一个工具（如日历、邮件）</p></td>
+<td><p><a class="reference internal" href="supervisor.html"><span class="std std-doc">Supervisor</span></a></p></td>
+</tr>
+<tr class="row-even"><td><p>多个辩手 + 主持人 + 明确结束规则</p></td>
+<td><p><a class="reference internal" href="multiagent-debate.html"><span class="std std-doc">Multi-Agent Debate</span></a></p></td>
+</tr>
+<tr class="row-odd"><td><p>自定义图（确定性 + 智能体步骤、多阶段）</p></td>
+<td><p><a class="reference internal" href="workflow.html"><span class="std std-doc">自定义工作流</span></a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>组合使用</strong>：可以混用。例如监督者用 Agent as Tool 调用专家；子智能体编排智能体用 Skills 做按需上下文；图中某段用 Handoffs、另一段用 Routing。按流程各部分需求选择最合适的模式即可。</p>
+</section>
+</section>
+<section id="id6">
+<h2>小结<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Pipeline</strong>：预定义流程（顺序、并行、循环）。</p></li>
+<li><p><strong>Routing</strong>：分类 → 专家 → 综合。</p></li>
+<li><p><strong>Skills</strong>：单智能体按需加载专项提示/内容。</p></li>
+<li><p><strong>Subagents</strong>：一个编排智能体委托给多个任务式子智能体。</p></li>
+<li><p><strong>Supervisor</strong>：一个智能体将专家以「一专家一工具」方式路由与合并。</p></li>
+<li><p><strong>Handoffs</strong>：图中通过工具驱动状态切换「当前」智能体。</p></li>
+<li><p><strong>Multi-Agent Debate</strong>：辩手 + 主持人 + 明确结束条件。</p></li>
+<li><p><strong>Custom Workflow</strong>：自定图结构，混合确定性步骤与智能体步骤。</p></li>
+</ul>
+<p>实现细节、代码示例与示例项目见各模式对应链接页面。</p>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./zh/multi-agent"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="pipeline.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Pipeline（管道）</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="../task/ai-coding.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">使用 AI 编程</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2026-03-17</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">多智能体概览</a><ul>
+<li><a class="reference internal" href="#id2">为何使用多智能体？</a></li>
+<li><a class="reference internal" href="#id3">支持的模式</a></li>
+<li><a class="reference internal" href="#id4">如何选型</a><ul>
+<li><a class="reference internal" href="#workflow-vs-conversational">工作流（workflow）vs 对话（conversational）</a></li>
+<li><a class="reference internal" href="#routing-supervisor">Routing 与 Supervisor 的区别</a></li>
+<li><a class="reference internal" href="#skills-subagents-supervisor">Skills 与 Subagents / Supervisor 的区别</a></li>
+<li><a class="reference internal" href="#id5">选型快速参考</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id6">小结</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=1ae7504c"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../_static/language.js?v=26e4e812"></script>
+    </body>
+</html>

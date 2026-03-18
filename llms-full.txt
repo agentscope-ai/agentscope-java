@@ -102,7 +102,6 @@ Once you're familiar with the basics, explore these features:
 
 ### Multi-Agent Systems
 - **[Pipeline](multi-agent/pipeline.md)** - Build multi-agent workflows with sequential and parallel execution
-- **[MsgHub](multi-agent/msghub.md)** - Message hub for multi-agent communication
 - **[A2A Protocol](task/a2a.md)** - Agent2Agent protocol support
 - **[State Management](task/state.md)** - Persist and restore agent state across sessions
 
@@ -1586,7 +1585,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](../multi-agent/agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
 
 ## AgentTool Interface
 
@@ -2046,6 +2045,161 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample
 ```
 
 
+# Agent as Tool
+
+```{admonition} Experimental Feature
+:class: warning
+
+This feature is currently experimental and the API may change. If you encounter any issues, please provide feedback via [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues).
+```
+
+## Overview
+
+Agent as Tool allows registering an agent as a tool that can be called by other agents. This pattern is useful for building hierarchical or collaborative multi-agent systems:
+
+- **Expert Specialization**: Main agent calls different expert agents based on task type
+- **Task Delegation**: Delegate complex subtasks to specialized agents
+- **Multi-turn Conversation**: Sub-agents can maintain conversation state for continuous interaction
+
+## How It Works
+
+When a parent agent calls a sub-agent tool, the system:
+
+1. **Creates Sub-agent Instance**: Creates a new agent instance via the Provider factory
+2. **Restores Conversation State**: If `session_id` is provided, restores previous state from Session
+3. **Executes Conversation**: Sub-agent processes the message and generates a response
+4. **Saves State**: Saves sub-agent state to Session for future calls
+5. **Returns Result**: Returns the response and `session_id` to the parent agent
+
+```
+Parent Agent ──call──→ SubAgentTool ──create──→ Sub-agent
+                           │                       │
+                           │←──── return result ───┘
+                           │
+                        Session (state persistence)
+```
+
+## Quick Start
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.model.DashScopeChatModel;
+
+// Create model
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .build();
+
+// Create sub-agent Provider (factory)
+// Note: Must use lambda to ensure new instance is created for each call
+Toolkit toolkit = new Toolkit();
+toolkit.registration()
+        .subAgent(() -> ReActAgent.builder()
+                .name("Expert")
+                .sysPrompt("You are a domain expert responsible for answering professional questions.")
+                .model(model)
+                .build())
+        .apply();
+
+// Create main agent with toolkit
+ReActAgent mainAgent = ReActAgent.builder()
+        .name("Coordinator")
+        .sysPrompt("You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert.")
+        .model(model)
+        .toolkit(toolkit)
+        .build();
+
+// Main agent will automatically call expert agent when needed
+Msg response = mainAgent.call(userMsg).block();
+```
+
+## Configuration Options
+
+Customize sub-agent tool behavior with `SubAgentConfig`:
+
+```java
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.session.JsonSession;
+import java.nio.file.Path;
+
+SubAgentConfig config = SubAgentConfig.builder()
+        .toolName("ask_expert")                    // Custom tool name
+        .description("Consult the expert")         // Custom description
+        .forwardEvents(true)                       // Forward sub-agent events
+        .session(new JsonSession(Path.of("sessions")))  // Persistent session
+        .build();
+
+toolkit.registration()
+        .subAgent(() -> createExpertAgent(), config)
+        .apply();
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `toolName` | Tool name | Generated from agent name, e.g., `call_expert` |
+| `description` | Tool description | Uses agent's description |
+| `forwardEvents` | Whether to forward sub-agent streaming events | `true` |
+| `session` | Session storage implementation | `InMemorySession` (in-memory) |
+
+## Multi-turn Conversation
+
+Sub-agents support multi-turn conversations, maintaining state via the `session_id` parameter:
+
+```java
+// First call: omit session_id to start a new session
+// Tool returns:
+// session_id: abc-123-def
+//
+// Expert response content...
+
+// Subsequent calls: provide session_id to continue the conversation
+// Parent agent automatically extracts session_id from previous response
+```
+
+The sub-agent tool exposes two parameters:
+- `message` (required): Message to send to the sub-agent
+- `session_id` (optional): Session ID. Omit to start new session, provide to continue existing one
+
+## Persistent Sessions
+
+By default, `InMemorySession` is used and state is lost on process restart. Use `JsonSession` to persist state to files:
+
+```java
+import io.agentscope.core.session.JsonSession;
+import java.nio.file.Path;
+
+SubAgentConfig config = SubAgentConfig.builder()
+        .session(new JsonSession(Path.of("./agent-sessions")))
+        .build();
+
+toolkit.registration()
+        .subAgent(() -> createAgent(), config)
+        .apply();
+
+// State will be saved to ./agent-sessions/{session_id}.json
+```
+
+## Tool Group Support
+
+Sub-agent tools can be added to tool groups like regular tools:
+
+```java
+toolkit.createToolGroup("experts", "Expert Agents", true);
+
+toolkit.registration()
+        .subAgent(() -> createLegalExpert())
+        .group("experts")
+        .apply();
+
+toolkit.registration()
+        .subAgent(() -> createTechExpert())
+        .group("experts")
+        .apply();
+```
+
+
 # Agent Skills
 
 ## Overview
@@ -2308,7 +2462,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL Database Storage (not yet implemented)
+#### MySQL Database Storage
+
+```java
+// Using simple constructor with default database/table names
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// Using Builder for custom configuration
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git Repository (Read-Only)
 
@@ -5362,402 +5534,6 @@ agent.interrupt(Msg.builder()
 - **Nacos Java SDK Additional Configuration Parameters**: https://nacos.io/docs/latest/manual/user/java-sdk/properties
 - **Nacos Community**: https://github.com/alibaba/nacos
 
-# Coding with AI
-
-AgentScope Java documentation supports the [`llms.txt` standard](https://llmstxt.org/), providing a machine-readable index optimized for Large Language Models. This allows you to use the documentation as context in your AI-powered development environment.
-
-## What is llms.txt?
-
-`llms.txt` is a standardized text file that acts as a map for LLMs, listing the most important documentation pages and their descriptions. This helps AI tools understand the structure of the documentation and retrieve relevant information.
-
-AgentScope provides the following files:
-
-| File | Best For | URL |
-|------|----------|-----|
-| `llms.txt` | Tools that can fetch links dynamically | `https://java.agentscope.io/llms.txt` |
-| `llms-full.txt` | Tools that need a single, static text dump | `https://java.agentscope.io/llms-full.txt` |
-
-## Development Tools
-
-### Claude Code
-
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) can be configured to query the AgentScope documentation by adding an MCP server.
-
-**Installation:**
-
-```bash
-claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/llms.txt
-```
-
-**Usage:**
-
-Once installed, you can ask questions about AgentScope directly in Claude Code:
-
-> How do I create a tool with AgentScope Java?
-
-### Cursor
-
-[Cursor](https://cursor.com/) IDE can be configured to access the AgentScope documentation in two ways.
-
-**Method 1: Docs Feature (Recommended)**
-
-1. Open **Cursor Settings** -> **Features** -> **Docs**
-2. Click **+ Add new Doc**
-3. Add URL: `https://java.agentscope.io/llms-full.txt`
-
-**Method 2: MCP Server**
-
-1. Open **Cursor Settings** -> **Tools & MCP**
-2. Click **New MCP Server** to edit `mcp.json`
-3. Add the following configuration:
-
-```json
-{
-  "mcpServers": {
-    "agentscope-docs": {
-      "command": "uvx",
-      "args": [
-        "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
-      ]
-    }
-  }
-}
-```
-
-**Usage:**
-
-Once configured, you can prompt the coding agent:
-
-> Use the AgentScope docs to build a ReActAgent with a weather tool.
-
-### Windsurf
-
-[Windsurf](https://codeium.com/windsurf) supports MCP servers for documentation access.
-
-**Configuration:**
-
-1. Open Windsurf Settings
-2. Navigate to MCP configuration
-3. Add the following server:
-
-```json
-{
-  "mcpServers": {
-    "agentscope-docs": {
-      "command": "uvx",
-      "args": [
-        "--from", "mcpdoc", "mcpdoc",
-        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
-      ]
-    }
-  }
-}
-```
-
-### Other Tools
-
-Any tool that supports the `llms.txt` standard or can ingest documentation from a URL can benefit from these files.
-
-**For tools with Docs/Knowledge Base feature:**
-- Add URL: `https://java.agentscope.io/llms-full.txt`
-
-**For tools with MCP support:**
-- Use the MCP configuration template above with `mcpdoc`
-
-**Prerequisites:**
-
-MCP configurations require [`uv`](https://docs.astral.sh/uv/) to be installed, as they use `uvx` to run the documentation server.
-
-
-# Pipeline
-
-Pipelines provide composition patterns for multi-agent workflows in AgentScope. They serve as syntax sugar for chaining agents together, simplifying complex orchestration logic.
-
-## Overview
-
-AgentScope provides two main pipeline types:
-
-- **SequentialPipeline**: Agents execute in order, each receiving the previous agent's output
-- **FanoutPipeline**: Multiple agents process the same input (in parallel or sequentially)
-
-Additionally, the `Pipelines` utility class provides static factory methods for quick pipeline creation.
-
-## SequentialPipeline
-
-SequentialPipeline executes agents one by one, where the output of the previous agent becomes the input of the next agent.
-
-```
-Input → Agent1 → Agent2 → Agent3 → Output
-```
-
-### Basic Usage
-
-Use the `Pipelines.sequential()` static method for quick execution:
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.pipeline.Pipelines;
-
-import java.util.List;
-
-// Create model
-DashScopeChatModel model = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen3-max")
-        .build();
-
-// Create agents for different stages
-ReActAgent researcher = ReActAgent.builder()
-        .name("Researcher")
-        .sysPrompt("You are a researcher. Analyze the topic and provide key findings.")
-        .model(model)
-        .build();
-
-ReActAgent writer = ReActAgent.builder()
-        .name("Writer")
-        .sysPrompt("You are a writer. Based on the research findings, write a concise summary.")
-        .model(model)
-        .build();
-
-ReActAgent editor = ReActAgent.builder()
-        .name("Editor")
-        .sysPrompt("You are an editor. Polish and finalize the summary.")
-        .model(model)
-        .build();
-
-// Create input message
-Msg input = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("Artificial Intelligence in Healthcare").build())
-        .build();
-
-// Execute sequential pipeline
-// Researcher → Writer → Editor
-Msg result = Pipelines.sequential(List.of(researcher, writer, editor), input).block();
-
-System.out.println("Final result: " + result.getTextContent());
-```
-
-### Using Builder Pattern
-
-For reusable pipelines, use `SequentialPipeline.builder()`:
-
-```java
-import io.agentscope.core.pipeline.SequentialPipeline;
-
-// Create a reusable pipeline
-SequentialPipeline pipeline = SequentialPipeline.builder()
-        .addAgent(researcher)
-        .addAgent(writer)
-        .addAgent(editor)
-        .build();
-
-// Execute the pipeline
-Msg result1 = pipeline.execute(input).block();
-
-// Reuse with different input
-Msg anotherInput = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("Climate Change Solutions").build())
-        .build();
-
-Msg result2 = pipeline.execute(anotherInput).block();
-```
-
-### Structured Output Support
-
-The last agent in the pipeline can produce structured output:
-
-```java
-// Define output structure
-public class ArticleSummary {
-    public String title;
-    public String summary;
-    public List<String> keyPoints;
-}
-
-// Execute with structured output (only applies to the last agent)
-Msg result = pipeline.execute(input, ArticleSummary.class).block();
-
-// Extract structured data
-ArticleSummary article = result.getStructuredData(ArticleSummary.class);
-System.out.println("Title: " + article.title);
-System.out.println("Summary: " + article.summary);
-```
-
-## FanoutPipeline
-
-FanoutPipeline distributes the same input to multiple agents and collects all their responses. This is useful when you want to gather different perspectives or expertise on the same topic.
-
-```
-         ┌→ Agent1 → Output1
-Input →──┼→ Agent2 → Output2
-         └→ Agent3 → Output3
-```
-
-### Basic Usage
-
-Use the `Pipelines.fanout()` static method for concurrent execution:
-
-```java
-import io.agentscope.core.pipeline.Pipelines;
-
-// Create agents with different perspectives
-ReActAgent optimist = ReActAgent.builder()
-        .name("Optimist")
-        .sysPrompt("You are an optimist. Analyze the positive aspects of the topic.")
-        .model(model)
-        .build();
-
-ReActAgent pessimist = ReActAgent.builder()
-        .name("Pessimist")
-        .sysPrompt("You are a pessimist. Analyze the potential risks and challenges.")
-        .model(model)
-        .build();
-
-ReActAgent realist = ReActAgent.builder()
-        .name("Realist")
-        .sysPrompt("You are a realist. Provide a balanced analysis.")
-        .model(model)
-        .build();
-
-// Execute fanout pipeline (concurrent by default)
-List<Msg> results = Pipelines.fanout(
-        List.of(optimist, pessimist, realist),
-        input
-).block();
-
-// Process all results
-for (Msg result : results) {
-    System.out.println(result.getName() + ": " + result.getTextContent());
-}
-```
-
-### Concurrent vs Sequential Execution
-
-FanoutPipeline supports two execution modes:
-
-| Mode | Method | Behavior | Use Case |
-|------|--------|----------|----------|
-| **Concurrent** | `fanout()` | All agents run in parallel using `boundedElastic()` scheduler | Better performance for I/O-bound operations |
-| **Sequential** | `fanoutSequential()` | Agents run one by one | Predictable ordering, resource control |
-
-```java
-// Concurrent execution (default) - better for API calls
-List<Msg> concurrent = Pipelines.fanout(agents, input).block();
-
-// Sequential execution - predictable order
-List<Msg> sequential = Pipelines.fanoutSequential(agents, input).block();
-```
-
-### Using Builder Pattern
-
-```java
-import io.agentscope.core.pipeline.FanoutPipeline;
-
-// Create concurrent fanout pipeline
-FanoutPipeline concurrentPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .concurrent()  // Default mode
-        .build();
-
-// Create sequential fanout pipeline
-FanoutPipeline sequentialPipeline = FanoutPipeline.builder()
-        .addAgent(optimist)
-        .addAgent(pessimist)
-        .addAgent(realist)
-        .sequential()
-        .build();
-
-// Execute
-List<Msg> results = concurrentPipeline.execute(input).block();
-```
-
-## Pipelines Utility Class
-
-The `Pipelines` class provides static factory methods for quick pipeline operations:
-
-### Method Reference
-
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `sequential(agents, input)` | `Mono<Msg>` | Execute agents sequentially with input |
-| `sequential(agents)` | `Mono<Msg>` | Execute agents sequentially without input |
-| `sequential(agents, input, outputClass)` | `Mono<Msg>` | Sequential with structured output |
-| `fanout(agents, input)` | `Mono<List<Msg>>` | Execute agents concurrently |
-| `fanout(agents)` | `Mono<List<Msg>>` | Execute agents concurrently without input |
-| `fanoutSequential(agents, input)` | `Mono<List<Msg>>` | Execute agents sequentially (same input) |
-| `createSequential(agents)` | `SequentialPipeline` | Create reusable sequential pipeline |
-| `createFanout(agents)` | `FanoutPipeline` | Create reusable concurrent fanout pipeline |
-| `createFanoutSequential(agents)` | `FanoutPipeline` | Create reusable sequential fanout pipeline |
-
-### Pipeline Composition
-
-You can compose multiple pipelines:
-
-```java
-// Create two sequential pipelines
-SequentialPipeline research = Pipelines.createSequential(List.of(researcher, analyst));
-SequentialPipeline writing = Pipelines.createSequential(List.of(writer, editor));
-
-// Compose them into a larger pipeline
-Pipeline<Msg> combined = Pipelines.compose(research, writing);
-
-// Execute the combined pipeline
-Msg result = combined.execute(input).block();
-```
-
-## Combining Pipeline with MsgHub
-
-For complex workflows, you can combine Pipeline with MsgHub:
-
-```java
-import io.agentscope.core.pipeline.MsgHub;
-
-// Stage 1: Parallel analysis using FanoutPipeline
-List<Msg> analyses = Pipelines.fanout(List.of(optimist, pessimist, realist), input).block();
-
-// Stage 2: Group discussion using MsgHub
-try (MsgHub hub = MsgHub.builder()
-        .participants(optimist, pessimist, realist)
-        .build()) {
-
-    hub.enter().block();
-
-    // Broadcast all analyses
-    hub.broadcast(analyses).block();
-
-    // Each agent responds to others' analyses
-    optimist.call().block();
-    pessimist.call().block();
-    realist.call().block();
-}
-
-// Stage 3: Final synthesis using SequentialPipeline
-ReActAgent synthesizer = ReActAgent.builder()
-        .name("Synthesizer")
-        .sysPrompt("Synthesize all perspectives into a final conclusion.")
-        .model(model)
-        .build();
-
-Msg conclusion = synthesizer.call(input).block();
-```
-
-## Related Documentation
-
-- [MsgHub](./msghub.md) - Message broadcasting for multi-agent conversations
-- [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern
-
-
 # MsgHub
 
 MsgHub is a message broadcasting center for multi-agent conversations in AgentScope. It manages message distribution among a group of agents, eliminating the need for manual message passing code.
@@ -6065,163 +5841,1381 @@ hub.enter()
 
 ## Related Documentation
 
-- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
+- [Pipeline](../multi-agent/pipeline.md) - Sequential and parallel agent execution
+- [Multi-Agent Debate](../multi-agent/multiagent-debate.md) - Debate workflow pattern
+
+
+# Coding with AI
+
+AgentScope Java documentation supports the [`llms.txt` standard](https://llmstxt.org/), providing a machine-readable index optimized for Large Language Models. This allows you to use the documentation as context in your AI-powered development environment.
+
+## What is llms.txt?
+
+`llms.txt` is a standardized text file that acts as a map for LLMs, listing the most important documentation pages and their descriptions. This helps AI tools understand the structure of the documentation and retrieve relevant information.
+
+AgentScope provides the following files:
+
+| File | Best For | URL |
+|------|----------|-----|
+| `llms.txt` | Tools that can fetch links dynamically | `https://java.agentscope.io/llms.txt` |
+| `llms-full.txt` | Tools that need a single, static text dump | `https://java.agentscope.io/llms-full.txt` |
+
+## Development Tools
+
+### Claude Code
+
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) can be configured to query the AgentScope documentation by adding an MCP server.
+
+**Installation:**
+
+```bash
+claude mcp add agentscope-docs -- uvx --from mcpdoc mcpdoc --urls AgentScopeJava:https://java.agentscope.io/llms.txt
+```
+
+**Usage:**
+
+Once installed, you can ask questions about AgentScope directly in Claude Code:
+
+> How do I create a tool with AgentScope Java?
+
+### Cursor
+
+[Cursor](https://cursor.com/) IDE can be configured to access the AgentScope documentation in two ways.
+
+**Method 1: Docs Feature (Recommended)**
+
+1. Open **Cursor Settings** -> **Features** -> **Docs**
+2. Click **+ Add new Doc**
+3. Add URL: `https://java.agentscope.io/llms-full.txt`
+
+**Method 2: MCP Server**
+
+1. Open **Cursor Settings** -> **Tools & MCP**
+2. Click **New MCP Server** to edit `mcp.json`
+3. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "agentscope-docs": {
+      "command": "uvx",
+      "args": [
+        "--from", "mcpdoc", "mcpdoc",
+        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+      ]
+    }
+  }
+}
+```
+
+**Usage:**
+
+Once configured, you can prompt the coding agent:
+
+> Use the AgentScope docs to build a ReActAgent with a weather tool.
+
+### Windsurf
+
+[Windsurf](https://codeium.com/windsurf) supports MCP servers for documentation access.
+
+**Configuration:**
+
+1. Open Windsurf Settings
+2. Navigate to MCP configuration
+3. Add the following server:
+
+```json
+{
+  "mcpServers": {
+    "agentscope-docs": {
+      "command": "uvx",
+      "args": [
+        "--from", "mcpdoc", "mcpdoc",
+        "--urls", "AgentScopeJava:https://java.agentscope.io/llms.txt"
+      ]
+    }
+  }
+}
+```
+
+### Other Tools
+
+Any tool that supports the `llms.txt` standard or can ingest documentation from a URL can benefit from these files.
+
+**For tools with Docs/Knowledge Base feature:**
+- Add URL: `https://java.agentscope.io/llms-full.txt`
+
+**For tools with MCP support:**
+- Use the MCP configuration template above with `mcpdoc`
+
+**Prerequisites:**
+
+MCP configurations require [`uv`](https://docs.astral.sh/uv/) to be installed, as they use `uvx` to run the documentation server.
+
+
+# Multi-Agent Overview
+
+Multi-agent systems coordinate specialized agents or components to handle complex workflows. Not every complex task needs multiple agents—a single agent with the right tools and prompt can often suffice. This page summarizes when multi-agent patterns help and which patterns the project supports.
+
+## Why multi-agent?
+
+Multi-agent patterns are useful when you need one or more of the following:
+
+- **Context management**: Expose specialized knowledge without overloading the model’s context. When context and latency are limited, you need ways to surface only what’s relevant per step or per agent.
+- **Distributed development**: Let different teams own different capabilities (e.g. skills, sub-agents, specialists) and compose them behind clear boundaries.
+- **Parallelization**: Run specialized workers for subtasks concurrently to reduce latency.
+- **Structured workflows**: Enforce order (e.g. classify then route, or loop until a condition) or role-based handoffs (e.g. sales vs. support) that a single agent would not naturally enforce.
+
+Multi-agent patterns are especially valuable when a single agent has too many tools and chooses poorly, when tasks need deep domain context (long prompts and domain-specific tools), or when you need sequential or state-driven routing (e.g. collect info before escalating, or switch who “owns” the conversation).
+
+## Patterns supported
+
+The project supports the following multi-agent patterns. Each has a dedicated page with implementation details and examples.
+
+| Pattern | What it does | When to use it |
+|--------|----------------|-----------------|
+| **[Pipeline](pipeline.md)** | Runs agents in a fixed flow: **sequential** (A → B → C), **parallel** (same input to several agents, then merge), or **loop** (repeat a sub-pipeline until a condition). Built with Spring AI Alibaba flow agents and AgentScopeAgent. | You have a clear pipeline (e.g. NL → SQL → score, or one topic → multiple research angles → merged report). |
+| **[Custom Workflow](workflow.md)** | You define the graph with **StateGraph**: sequential, conditional, or mixed **deterministic + agentic** steps (e.g. rewrite → retrieve → agent, or list_tables → get_schema → generate_query). Nodes can be functions or AgentScopeAgent. | Standard patterns don’t fit; you need multi-stage flow with explicit control or mix of non-LLM and LLM/agent steps. |
+| **[Routing](routing.md)** | A **router** classifies the input and sends it to one or more specialist agents (e.g. GitHub, Notion, Slack); results are merged into one answer. | You have distinct verticals (knowledge domains) and want classify → specialists → synthesize in one shot or with a graph. |
+| **[Skills](skills.md)** | **Progressive disclosure**: one agent sees skill names/descriptions and loads full skill content (e.g. `SKILL.md`) on demand via a tool (`read_skill`). No separate sub-agent process. | You want one agent with many specializations and need to avoid loading all domain text into context at once. |
+| **[Subagents](subagent.md)** | A central **orchestrator** delegates work to **sub-agents** via tools (e.g. Task / TaskOutput). Sub-agents can be defined in Markdown or in code. The orchestrator holds the conversation; sub-agents are stateless per call. | You have multiple domains (e.g. codebase, web, dependencies), want one coordinator, and don’t need sub-agents to talk directly to the user. |
+| **[Supervisor](supervisor.md)** | A central **supervisor** agent calls specialized agents as **tools** (one tool per specialist, e.g. `schedule_event`, `manage_email`). Specialists are stateless; only the supervisor’s reply is shown to the user. | You have clear domains (e.g. calendar, email) and want a single entry point that routes and combines specialist results. |
+| **[Handoffs](handoffs.md)** | **State-driven routing**: tools update a state variable (e.g. `active_agent`); a graph uses it to route to different agent nodes. Each agent can “hand off” to another via a tool call. | You need role-based or sequential handoffs (e.g. sales ↔ support) where the active agent changes during the conversation. |
+| **[Multi-Agent Debate](multiagent-debate.md)** | **Debaters** exchange arguments via MsgHub; a **moderator** evaluates with structured output and decides when the debate is finished. | You want multiple perspectives (e.g. reasoning tasks) and a single decision when to stop and what the answer is. |
+
+## Choosing a pattern
+
+At a high level, multi-agent patterns fall into **workflow** and **conversational** modes:
+
+- **Workflow mode**: [Pipeline](pipeline.md), [Routing](routing.md), [Handoffs](handoffs.md), [Custom Workflow](workflow.md). The flow moves between agents or nodes; each node may interact with the user.
+- **Conversational mode**: [Supervisor](supervisor.md), [Subagents](subagent.md), [Skills](skills.md). Agent decisions happen in a continuous dialogue context; usually only the main agent interacts with the user and returns the final result.
+
+Other patterns (e.g. [MsgHub](../task/msghub.md), [Agent as Tool](../task/agent-as-tool.md), [Handoffs](handoffs.md), [Multi-Agent Debate](multiagent-debate.md)) can be combined with either mode as needed.
+
+### Routing vs Supervisor
+
+Both patterns dispatch work to multiple agents, but they differ in **how routing decisions are made**:
+
+- **Routing**: A dedicated **routing step** (often a single LLM call or rule-based logic) classifies the current input and dispatches to one or more specialists. The router itself **does not maintain conversation history** or perform multi-turn orchestration—it is a **preprocessing** step. Use when you have clear input categories and want lightweight or deterministic classification, and one request should complete “classify → specialists → merge”.
+- **Supervisor**: The **main supervisor agent** **dynamically decides** which specialist to call next (as tools) within an ongoing conversation. The main agent keeps context and can call different specialists across turns to orchestrate complex multi-step flows. Use when you need flexible, conversation-aware orchestration where the LLM decides the next step based on evolving context.
+
+**When to choose**: Use **Routing** when input categories are clear and you want a single pass of classification and merge; use **Supervisor** when you need multi-turn dialogue and the main agent should schedule specialists based on context.
+
+### Skills vs Subagents / Supervisor
+
+The main difference is **whether context is isolated**:
+
+- **Skills**: Skill content (e.g. `SKILL.md`) is **loaded on demand into the main agent’s context** via a tool (e.g. `read_skill`), **sharing the same dialogue context** as the main agent—no isolation. There is a single process and one context; the agent just pulls in domain text when needed. Use when you want “one agent, many specializations, load on demand” and do not need separate execution or isolated context.
+- **Subagents / Supervisor**: Sub-agents or specialists run in **separate invocations or sessions**, **isolated** from the main agent’s (orchestrator or supervisor) dialogue context; each call can have its own system prompt and tool set, and results are aggregated back. Use when you need isolated execution, to avoid context pollution, or to restrict tools/permissions per specialist.
+
+**When to choose**: Use **Skills** when you want to load multiple domains on demand in one conversation and are fine with shared context; use **Subagents** or **Supervisor** when you need dedicated sub-agents or specialists to run in isolation and then aggregate.
+
+Use this as a quick guide; details and tradeoffs are on each pattern’s page.
+
+| If you need… | Consider |
+|--------------|----------|
+| A fixed pipeline (sequence, parallel, or loop) | [Pipeline](pipeline.md) |
+| Your own graph (deterministic + agentic steps, multi-stage) | [Custom Workflow](workflow.md) |
+| One classification step then specialist(s) and merge | [Routing](routing.md) |
+| Several agents seeing each other’s messages | [MsgHub](../task/msghub.md) |
+| One agent to call another as a tool (with optional session) | [Agent as Tool](../task/agent-as-tool.md) |
+| One agent, many specializations, load context on demand | [Skills](skills.md) |
+| One orchestrator dispatching to many sub-agents via Task tools | [Subagents](subagent.md) |
+| One supervisor with one tool per specialist (e.g. calendar, email) | [Supervisor](supervisor.md) |
+| Control to move between agents (e.g. sales ↔ support) by tool | [Handoffs](handoffs.md) |
+| Multiple debaters + a moderator with a clear stopping rule | [Multi-Agent Debate](multiagent-debate.md) |
+
+**Combining patterns**: You can mix them. For example, a supervisor can use Agent as Tool for specialists; a subagent orchestrator can use Skills for on-demand context; a graph can use Handoffs for one part and Routing for another. Choose the pattern that best fits each part of your workflow.
+
+## Summary
+
+- Use **Pipeline** for predefined flows (sequential, parallel, loop).
+- Use **Custom Workflow** when you need your own graph with mixed deterministic and agentic steps.
+- Use **Routing** for classify → specialists → synthesize.
+- Use **MsgHub** for group conversation or debate-style message sharing.
+- Use **Agent as Tool** when a parent agent should invoke a sub-agent as a tool.
+- Use **Skills** when one agent should load specialized prompts/content on demand.
+- Use **Subagents** when one orchestrator delegates to many task-style sub-agents.
+- Use **Supervisor** when one agent routes to specialists exposed as one tool each.
+- Use **Handoffs** when the “active” agent changes via tool-driven state in a graph.
+- Use **Multi-Agent Debate** when you want debaters plus a moderator and a clear end condition.
+
+For implementation details, code samples, and example projects, see the linked pages for each pattern.
+
+
+# Pipeline
+
+The pipeline example uses **Spring AI Alibaba** flow agents (**SequentialAgent**, **ParallelAgent**, **LoopAgent**) with **AgentScopeAgent** sub-agents and AgentScope **DashScopeChatModel** (`Model`). Each pipeline is built from ReActAgent-based AgentScopeAgents and invoked via `PipelineService`.
+
+**Location**: `agentscope-examples/multiagent-patterns/pipeline/`
+
+## Prerequisites
+
+- JDK 17+
+- Maven 3.6+
+- **DashScope API key**: `export AI_DASHSCOPE_API_KEY=your-key` or set `spring.ai.dashscope.api-key` in `application.yml`
+
+## Model configuration
+
+The example uses a single `Model` bean (DashScopeChatModel) shared by all pipeline sub-agents:
+
+```java
+package com.alibaba.cloud.ai.examples.multiagents.pipeline;
+
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class PipelineModelConfig {
+
+	@Bean
+	public Model dashScopeChatModel() {
+		String key = System.getenv("AI_DASHSCOPE_API_KEY");
+		return DashScopeChatModel.builder()
+				.apiKey(key)
+				.modelName("qwen-plus")
+				.build();
+	}
+}
+```
+
+## 1. SequentialAgent: natural language → SQL → score
+
+**Scenario:** User describes a query in natural language. The pipeline (1) **SQL Generator** converts it to MySQL SQL, (2) **SQL Rater** scores how well the SQL matches user intent (0–1). Sub-agents run in sequence; each output feeds the next.
+
+**Example input:** "List all orders from the last 30 days with total amount greater than 500."
+
+### Implementation
+
+```java
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.sequential;
+
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.SequentialAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
+
+@Configuration
+public class SequentialPipelineConfig {
+
+	private static final String SQL_GENERATOR_PROMPT = """
+			You are a MySQL database expert. Given the user's natural language request, output the corresponding SQL statement.
+			Only output valid MySQL SQL. Do not include explanations.
+			""";
+
+	private static final String SQL_RATER_PROMPT = """
+			You are a SQL quality reviewer. Given the user's natural language request and the generated SQL,
+			output a single float score between 0 and 1. The score indicates how well the SQL matches the user intent.
+			Output ONLY the number, no other text. Example: 0.85
+			""";
+
+	@Bean("sequentialSqlAgent")
+	public SequentialAgent sequentialSqlAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder sqlGenBuilder = ReActAgent.builder()
+				.name("sql_generator")
+				.model(dashScopeChatModel)
+				.description("Converts natural language to MySQL SQL")
+				.sysPrompt(SQL_GENERATOR_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlGenerateAgent = AgentScopeAgent.fromBuilder(sqlGenBuilder)
+				.name("sql_generator")
+				.description("Converts natural language to MySQL SQL")
+				.instruction("{input}")
+				.includeContents(false)
+				.outputKey("sql")
+				.build();
+
+		ReActAgent.Builder sqlRaterBuilder = ReActAgent.builder()
+				.name("sql_rater")
+				.model(dashScopeChatModel)
+				.description("Scores SQL against user intent")
+				.sysPrompt(SQL_RATER_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent sqlRatingAgent = AgentScopeAgent.fromBuilder(sqlRaterBuilder)
+				.name("sql_rater")
+				.description("Scores SQL against user intent")
+				.instruction("Here's the generated SQL:\n {sql}.\n\n Here's the original user request:\n {input}.")
+				.includeContents(false)
+				.outputKey("score")
+				.build();
+
+		return SequentialAgent.builder()
+				.name("sequential_sql_agent")
+				.description("Natural language to SQL pipeline: generates SQL and scores its quality")
+				.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+				.build();
+	}
+}
+```
+
+- **SQL Generator**: `instruction("{input}")`, `outputKey("sql")` — receives user input, writes generated SQL into state key `sql`.
+- **SQL Rater**: `instruction("... {sql} ... {input} ...")`, `outputKey("score")` — receives previous `sql` and original `input`, writes score into state key `score`.
+
+## 2. ParallelAgent: multi-angle research
+
+**Scenario:** User provides a topic; the pipeline researches it from three angles **in parallel**: technology, finance/business, and market/industry. Results are merged into a single report (`research_report`).
+
+**Example input:** "Research the current state of large language models." (Demo uses "AI agents in enterprise software".)
+
+### Implementation
+
+```java
+package com.alibaba.cloud.ai.examples.multiagents.pipeline.parallel;
+
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.graph.agent.flow.agent.ParallelAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.Model;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
+
+@Configuration
+public class ParallelPipelineConfig {
+
+	private static final String TECH_RESEARCH_PROMPT = """
+			You are a technology analyst. Research the given topic from a technology perspective.
+			Provide a concise 2-3 paragraph analysis covering: key technologies, trends, and innovations.
+			Focus on technical aspects only.
+			""";
+
+	private static final String FINANCE_RESEARCH_PROMPT = """
+			You are a financial analyst. Research the given topic from a finance and business perspective.
+			Provide a concise 2-3 paragraph analysis covering: market size, investment trends, business models.
+			Focus on financial and business aspects only.
+			""";
+
+	private static final String MARKET_RESEARCH_PROMPT = """
+			You are a market analyst. Research the given topic from an industry and market perspective.
+			Provide a concise 2-3 paragraph analysis covering: competitive landscape, growth drivers, challenges.
+			Focus on market and industry aspects only.
+			""";
+
+	@Bean("parallelResearchAgent")
+	public ParallelAgent parallelResearchAgent(Model dashScopeChatModel) {
+		ReActAgent.Builder techBuilder = ReActAgent.builder()
+				.name("tech_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from technology perspective")
+				.sysPrompt(TECH_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent techResearcher = AgentScopeAgent.fromBuilder(techBuilder)
+				.name("tech_researcher")
+				.description("Researches from technology perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("tech_analysis")
+				.build();
+
+		ReActAgent.Builder financeBuilder = ReActAgent.builder()
+				.name("finance_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from finance perspective")
+				.sysPrompt(FINANCE_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent financeResearcher = AgentScopeAgent.fromBuilder(financeBuilder)
+				.name("finance_researcher")
+				.description("Researches from finance perspective")
+				.instruction("Research the following topic: {input}.")
+				.includeContents(false)
+				.outputKey("finance_analysis")
+				.build();
+
+		ReActAgent.Builder marketBuilder = ReActAgent.builder()
+				.name("market_researcher")
+				.model(dashScopeChatModel)
+				.description("Researches from market perspective")
+				.sysPrompt(MARKET_RESEARCH_PROMPT)
+				.memory(new InMemoryMemory());
+		AgentScopeAgent marketResearcher = AgentScopeAgent.fromBuilder(marketBuilder)
+				.name("market_researcher")
+				.description("Researches from market perspective")
+				.instruction("Research the following topic: {input}.")
+				.outputKey("market_analysis")
+				.build();
+
+		return ParallelAgent.builder()
+				.name("parallel_research_agent")
+				.description("Multi-topic research: analyzes a topic from tech, finance, and market angles in parallel")
+				.subAgents(List.of(techResearcher, financeResearcher, marketResearcher))
+				.mergeStrategy(new ParallelAgent.DefaultMergeStrategy())
+				.mergeOutputKey("research_report")
+				.maxConcurrency(3)
+				.build();
+	}
+}
+```
+
+- Each sub-agent has `instruction("Research the following topic: {input}.")` and its own `outputKey` (`tech_analysis`, `finance_analysis`, `market_analysis`).
+- **DefaultMergeStrategy** merges sub-agent outputs into one; merged result is written to **mergeOutputKey** `research_report`.
+
+## 3. LoopAgent: SQL refinement until quality threshold
+
+**Scenario:** Generate SQL from natural language and **iteratively refine** until the quality score exceeds 0.5. Each iteration runs an inner **SequentialAgent**: SQL Generator → SQL Rater. Loop continues until score > 0.5 or max iterations.
+
+**Example input:** "Find customers who placed more than 3 orders in 2024."
+
+### Implementation
+
+`LoopPipelineConfig` builds the same SQL Generator and SQL Rater AgentScopeAgents as `SequentialPipelineConfig` (same prompts, `instruction`, `outputKey`). It then wraps them in a **SequentialAgent** and that in a **LoopAgent** with a condition-based loop strategy:
+
+```java
+SequentialAgent sqlAgent = SequentialAgent.builder()
+		.name("sql_agent")
+		.description("Generates SQL and scores its quality")
+		.subAgents(List.of(sqlGenerateAgent, sqlRatingAgent))
+		.build();
+
+return LoopAgent.builder()
+		.name("loop_sql_refinement_agent")
+		.description("Iteratively refines SQL until quality score exceeds " + QUALITY_THRESHOLD)
+		.subAgent(sqlAgent)
+		.loopStrategy(LoopMode.condition(messages -> {
+			if (messages == null || messages.isEmpty()) return false;
+			String text = messages.get(messages.size() - 1).getText();
+			if (text == null || text.isBlank()) return false;
+			try {
+				double score = Double.parseDouble(text.trim());
+				return score > QUALITY_THRESHOLD;
+			} catch (NumberFormatException e) {
+				return false;
+			}
+		}))
+		.build();
+```
+
+- **LoopAgent** wraps a single **SequentialAgent** (`sql_agent`) that runs SQL Generator then SQL Rater each iteration.
+- **loopStrategy**: `LoopMode.condition(...)` — receives the last turn’s messages, reads the last message (rater output), parses it as a number; returns `true` when score > 0.5 to stop the loop.
+
+## Invoking pipelines: PipelineService
+
+`PipelineService` is wired with the three agents and exposes `runSequential`, `runParallel`, and `runLoop`. Each method invokes the corresponding agent with a string input and returns a result record.
+
+```java
+// Inject in your code
+@Autowired
+PipelineService pipelineService;
+
+// Sequential: natural language → SQL → score
+PipelineService.SequentialResult seq = pipelineService.runSequential(
+		"List all orders from the last 30 days with total amount greater than 500");
+// seq.input(), seq.sql(), seq.score()
+
+// Parallel: one topic → merged research report
+PipelineService.ParallelResult par = pipelineService.runParallel(
+		"AI agents in enterprise software");
+// par.input(), par.researchReport()
+
+// Loop: SQL refinement until score > 0.5
+PipelineService.LoopResult loop = pipelineService.runLoop(
+		"Find customers who placed more than 3 orders in 2024");
+// loop.input(), loop.sql(), loop.score()
+```
+
+**Result types:**
+
+| Method | Return type | Keys used |
+|--------|-------------|-----------|
+| `runSequential(input)` | `SequentialResult(input, sql, score)` | `sql`, `score` from `OverAllState` |
+| `runParallel(input)` | `ParallelResult(input, researchReport)` | `research_report` from `OverAllState` |
+| `runLoop(input)` | `LoopResult(input, sql, score)` | `sql`, `score` from `OverAllState` |
+
+Service implementation (extract of how results are read from state):
+
+```java
+public SequentialResult runSequential(String userInput) throws GraphRunnerException {
+	Optional<OverAllState> resultOpt = sequentialSqlAgent.invoke(userInput);
+	if (resultOpt.isEmpty()) {
+		return new SequentialResult(userInput, null, null);
+	}
+	OverAllState state = resultOpt.get();
+	String sql = extractText(state.value(SQL_KEY));
+	String score = extractText(state.value(SCORE_KEY));
+	return new SequentialResult(userInput, sql, score);
+}
+```
+
+## Optional demo runner
+
+When `pipeline.runner.enabled=true`, `PipelineCommandRunner` runs a demo for each pipeline on startup with sample inputs and logs the results:
+
+```java
+@Component
+@ConditionalOnProperty(name = "pipeline.runner.enabled", havingValue = "true")
+public class PipelineCommandRunner implements ApplicationRunner {
+
+	private final PipelineService pipelineService;
+
+	@Override
+	public void run(ApplicationArguments args) throws Exception {
+		runSequentialDemo();  // "List all orders from the last 30 days..."
+		runParallelDemo();    // "AI agents in enterprise software"
+		runLoopDemo();        // "Find customers who placed more than 3 orders in 2024"
+	}
+	// ...
+}
+```
+
+## Build and run
+
+From the repo root:
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+**With demo runner:**
+
+```bash
+export pipeline.runner.enabled=true
+./mvnw -pl agentscope-examples/multiagent-patterns/pipeline spring-boot:run
+```
+
+Or in `application.yml`: `pipeline.runner.enabled: true`.
+
+## Configuration
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `spring.ai.dashscope.api-key` | (env `AI_DASHSCOPE_API_KEY`) | DashScope API key for the model |
+| `pipeline.runner.enabled` | `false` | If `true`, run Sequential, Parallel, and Loop demos on startup |
+
+## Project layout
+
+```
+agentscope-examples/multiagent-patterns/pipeline/
+├── README.md
+├── pom.xml
+└── src/main/
+    ├── java/.../pipeline/
+    │   ├── PipelineApplication.java
+    │   ├── PipelineModelConfig.java        # Model (DashScopeChatModel) bean
+    │   ├── PipelineService.java            # runSequential, runParallel, runLoop
+    │   ├── PipelineCommandRunner.java      # optional demo (pipeline.runner.enabled)
+    │   ├── PipelineRunnerConfig.java       # PipelineService bean
+    │   ├── sequential/
+    │   │   └── SequentialPipelineConfig.java
+    │   ├── parallel/
+    │   │   └── ParallelPipelineConfig.java
+    │   └── loop/
+    │       └── LoopPipelineConfig.java
+    └── resources/
+        └── application.yml
+```
+
+## Related Documentation
+
+- [Routing](./routing.md) - Classify and route to specialist agents
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
+- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
 - [Multi-Agent Debate](./multiagent-debate.md) - Debate workflow pattern
 
 
-# Agent as Tool
+# Custom Workflow
 
-```{admonition} Experimental Feature
-:class: warning
+In the **custom workflow** pattern, you define your own execution flow using **Spring AI Alibaba StateGraph**. You have full control over the graph structure—sequential steps, conditional branches, loops, and parallel execution. Nodes can be **deterministic** (e.g. vector search, DB query), **LLM-based** (e.g. rewrite, classify), or **agentic** (an agent with tools). State is passed between nodes via a shared state map with configurable strategies (replace, append).
 
-This feature is currently experimental and the API may change. If you encounter any issues, please provide feedback via [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues).
+This pattern is useful when standard patterns (Pipeline, Routing, Subagents, etc.) do not fit, when you need to mix deterministic logic with agentic behavior, or when your use case requires multi-stage processing with explicit control over the flow.
+
+## Key characteristics
+
+- **Full control over graph structure**: You define nodes and edges; the framework does not impose a fixed topology.
+- **Mix deterministic and agentic steps**: Some nodes run without an LLM (e.g. retrieve, list_tables); others call a model or an agent with tools.
+- **Explicit state**: Each node reads and updates state (e.g. `question`, `rewritten_query`, `documents`, `messages`). Key strategies (replace vs append) control how state is merged.
+- **Composable**: You can use other patterns as nodes—for example, an AgentScopeAgent (or a Pipeline) as a single node in the graph.
+
+## When to use
+
+Consider a custom workflow when:
+
+- You need a **multi-stage pipeline** that is not a simple sequence of identical agents (e.g. rewrite → retrieve → agent, or list_tables → get_schema → generate_query).
+- You want to **combine non-LLM steps** (retrieval, DB, APIs) with LLM or agent steps in a fixed order.
+- Standard patterns (Pipeline, Routing, Subagents, Supervisor) do not match your flow, or you need **conditional branches or loops** that those patterns do not express naturally.
+
+## Implementation
+
+The project uses **Spring AI Alibaba** `StateGraph` and `CompiledGraph`. Core steps:
+
+1. **Define state and strategies**: Create a `StateGraph` with a name and a supplier of `Map<String, KeyStrategy>`. Use `ReplaceStrategy` for single-value keys (e.g. `question`, `rewritten_query`) and `AppendStrategy` for lists or message history (e.g. `messages`).
+2. **Add nodes**: Each node is either:
+   - A **function node**: `NodeAction` (sync or async via `node_async(...)`). It receives `OverAllState`, returns a `Map<String, Object>` of state updates. Can be pure logic (e.g. vector search) or an ad-hoc LLM call (e.g. rewrite).
+   - An **agent node**: `AgentScopeAgent.asNode()`. The agent receives state (e.g. via `instruction` with `{input}` or from state contents) and returns updates (e.g. `messages`).
+3. **Add edges**: `addEdge(START, "first_node")`, `addEdge("node_a", "node_b")`, `addEdge("last_node", END)`. For conditional routing you use conditional edges (not shown in the examples below).
+4. **Compile and invoke**: `graph.compile()` returns a `CompiledGraph`; you invoke it with an initial state map and read the final state (e.g. `messages`, `answer`) from the result.
+
+**Example: RAG workflow (conceptual)**
+
 ```
+START → rewrite → retrieve → prepare_agent → rag_agent → END
+```
+
+- **rewrite**: LLM rewrites the query for better retrieval (function node with Model).
+- **retrieve**: Vector similarity search, no LLM (function node using Knowledge).
+- **prepare_agent**: Formats context and question into a prompt (deterministic function node).
+- **rag_agent**: AgentScopeAgent (ReActAgent) with context and optional tools (e.g. `get_latest_news`).
+
+**Example: SQL workflow (conceptual)**
+
+```
+START → list_tables → call_get_schema → get_schema → generate_query → END
+```
+
+- **list_tables**: Lists DB tables (function node using SqlTools).
+- **call_get_schema**: LLM decides which table(s) to get schema for (function node).
+- **get_schema**: Executes schema lookup (function node).
+- **generate_query**: AgentScopeAgent with `sql_db_list_tables`, `sql_db_schema`, `sql_db_query` tools; generates and runs SELECT.
+
+## Example project
+
+**Location**: `agentscope-examples/multiagent-patterns/workflow/`
+
+| Package   | Flow | Description |
+|-----------|------|-------------|
+| **ragagent** | Query → Rewrite → Retrieve → Prepare → Agent → Response | RAG: rewrite query, vector retrieve, then ReActAgent with context and `get_latest_news` tool. Uses AgentScope Model, Knowledge (embedding + store), and AgentScopeAgent. |
+| **sqlagent** | START → list_tables → get_schema → generate_query → END | SQL: list tables, get schema for relevant tables, then ReActAgent with SQL tools (list_tables, schema, query). Uses H2 in-memory and AgentScopeAgent. |
+
+**Build and run** (from repo root):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/workflow -am -B package -DskipTests
+```
+
+**Run RAG workflow** (with optional demo on startup):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
+  -Dspring-boot.run.arguments="--workflow.rag.enabled=true --workflow.runner.enabled=true"
+```
+
+**Run SQL workflow** (with optional demo on startup):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/workflow spring-boot:run \
+  -Dspring-boot.run.arguments="--workflow.sql.enabled=true --workflow.runner.enabled=true"
+```
+
+**Configuration**:
+
+- `workflow.rag.enabled` – Enable RAG workflow beans.
+- `workflow.sql.enabled` – Enable SQL workflow beans.
+- `workflow.runner.enabled` – When `true`, run a one-shot demo on startup (use with one of the above).
+- **DashScope API key**: `AI_DASHSCOPE_API_KEY` or `spring.ai.dashscope.api-key` (required for RAG and SQL; RAG also needs an embedding model).
+
+## Custom workflow vs other patterns
+
+- **Pipeline**: Pipeline uses **flow agents** (SequentialAgent, ParallelAgent, LoopAgent) with a fixed topology (sequence, fan-out, loop). Custom workflow uses **StateGraph** and arbitrary nodes/edges; you can implement pipeline-like flows manually and add conditional or mixed deterministic/agentic steps.
+- **Routing**: Routing is classify → specialist(s) → merge, often with a single router node. In a custom workflow you could implement the same with your own graph (e.g. router node → branch → specialists → merge node).
+- **Handoffs**: Handoffs use state (e.g. `active_agent`) to route between agent nodes. Custom workflow can do the same with conditional edges and state; Handoffs is a dedicated pattern for “who owns the conversation” transitions.
+
+For implementation details and code, see the workflow example (`agentscope-examples/multiagent-patterns/workflow/`) and the RAG/SQL config classes (`RagAgentConfig`, `SqlAgentConfig`).
+
+## Related Documentation
+
+- [Pipeline](pipeline.md) - Predefined flows (sequential, parallel, loop)
+- [Routing](routing.md) - Classify → specialists → synthesize
+- [Overview](overview.md) - Multi-agent patterns summary
+
+
+# Routing
+
+In the **router** pattern, a routing step classifies the input and directs it to specialized agents. Zero or more specialists can be invoked (e.g. in parallel), and results are synthesized into a single response. This is useful when you have distinct **verticals**—separate knowledge domains that each have their own agent (e.g. GitHub, Notion, Slack).
+
+The router decomposes the query, specialist agents are invoked (single or parallel), and a combined answer is produced.
 
 ## Overview
 
-Agent as Tool allows registering an agent as a tool that can be called by other agents. This pattern is useful for building hierarchical or collaborative multi-agent systems:
+Key characteristics:
 
-- **Expert Specialization**: Main agent calls different expert agents based on task type
-- **Task Delegation**: Delegate complex subtasks to specialized agents
-- **Multi-turn Conversation**: Sub-agents can maintain conversation state for continuous interaction
+- **Classification step**: The router (e.g. an LLM or rule-based classifier) determines which specialist(s) to call and what sub-query to send to each.
+- **Specialist agents**: Each vertical has its own agent (e.g. GitHub expert, Notion expert, Slack expert) implemented as **AgentScopeAgent** with AgentScope tools.
+- **Synthesis**: Raw results from specialists are merged into one coherent answer (e.g. by a final LLM call).
 
-## How It Works
+Use the router pattern when you have clear input categories, need to query multiple sources (optionally in parallel), and want a single combined response.
 
-When a parent agent calls a sub-agent tool, the system:
-
-1. **Creates Sub-agent Instance**: Creates a new agent instance via the Provider factory
-2. **Restores Conversation State**: If `session_id` is provided, restores previous state from Session
-3. **Executes Conversation**: Sub-agent processes the message and generates a response
-4. **Saves State**: Saves sub-agent state to Session for future calls
-5. **Returns Result**: Returns the response and `session_id` to the parent agent
+## Architecture
 
 ```
-Parent Agent ──call──→ SubAgentTool ──create──→ Sub-agent
-                           │                       │
-                           │←──── return result ───┘
-                           │
-                        Session (state persistence)
+Query → Router (classify) → [Agent A] → Synthesize → Combined answer
+                    ↘ [Agent B] ↗
+                    ↘ [Agent C] ↗
 ```
 
-## Quick Start
+The AgentScope example provides two variants: **Simple** (single routing agent + service-layer synthesis) and **Graph** (StateGraph wrapping preprocess / routing / postprocess). Both use AgentScope `DashScopeChatModel` and **AgentScopeAgent** for each specialist (GitHub, Notion, Slack) with stub tools (`GitHubStubTools`, `NotionStubTools`, `SlackStubTools`).
+
+### Simple vs Graph comparison
+
+| Aspect | Simple | Graph |
+|--------|--------|--------|
+| **Entry** | `RouterService.run(query)` calls `AgentScopeRoutingAgent.invoke(query)` internally | `RoutingGraphService.run(query)` calls `CompiledGraph.invoke(Map.of("input", query))` internally |
+| **Flow** | One invoke does: classify → parallel specialists → framework merge; then RouterService optionally runs one LLM synthesis | Graph: START → preprocess → **routing (subgraph)** → postprocess → END; inside routing it is still classify → parallel specialists → merge |
+| **State** | Managed inside `AgentScopeRoutingAgent`; RouterService reads `xxx_key`, `xxx_input`, `RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY` from returned `OverAllState` | Explicit StateGraph keys: `input`, `query`, `messages`, `preprocess_metadata`, `merged_result`, `final_answer`, `postprocess_metadata`, and each specialist `xxx_key`; each key has a `KeyStrategy` (Replace/Append) |
+| **Extensibility** | No graph; you cannot insert custom nodes before/after routing | You can add logic in preprocess/postprocess (validation, tracing, formatting); you can add nodes or conditional edges |
+| **Return** | `RouterResult(query, classifications, results, finalAnswer)` with classification list and raw specialist outputs | `RoutingGraphResult(query, state, finalAnswer)` with full graph state for debugging or downstream use |
+
+---
+
+## Implementation (Simple variant)
+
+### Design points
+
+- **Single call for routing**: Callers use only `RouterService.run(query)`; inside, **AgentScopeRoutingAgent** runs one `invoke(query)` that does classify, parallel specialists, and framework merge.
+- **Synthesis optional**: If the routing framework has written `RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY`, that value is used as the final answer; otherwise **RouterService** runs one more LLM call with the same `Model` to synthesize specialist results into one reply.
+
+### Code structure (package `io.agentscope.examples.routing.simple`)
+
+| Class | Role |
+|-------|------|
+| **RoutingConfig** | Defines `Model`, three specialist **AgentScopeAgent**s (github, notion, slack), **AgentScopeRoutingAgent** (router), and **RouterService** |
+| **RouterService** | `run(query)`: invokes router.invoke → collects classifications and specialist outputs from state → uses merged value or calls `synthesize()` → returns **RouterResult** |
+| **Classification** | One routing decision: `source` (specialist name), `query` (sub-query sent to that specialist) |
+| **AgentOutput** | One specialist output: `source`, `result` (text) |
+| **RoutingRunner** | When `routing.runner.enabled=true`, runs one example query on startup and logs |
+
+### Beans and conventions
+
+1. **Model**: One `Model` bean (e.g. `DashScopeChatModel`) shared by the router and all specialists.
+2. **Specialist AgentScopeAgent**: One per vertical, with:
+   - `name` / `description`: used by the router for classification;
+   - **instruction**: template with placeholder `{agentName_input}` (e.g. `{github_input}`), filled at runtime by the routing node with the sub-query;
+   - **outputKey**: state key where this specialist’s result is written, e.g. `github_key`, `notion_key`, `slack_key`;
+   - **Toolkit**: stub tools for that vertical (e.g. `GitHubStubTools` with `search_code`, `search_issues`).
+3. **AgentScopeRoutingAgent**: `AgentScopeRoutingAgent.builder().model(...).subAgents(List.of(githubAgent, notionAgent, slackAgent)).build()`; internally it does classify + parallel specialist calls + writes to each `outputKey` and merge key.
+4. **RouterService**: Holds `Model` and `AgentScopeRoutingAgent`; after `run(query)`, if synthesis is needed it formats specialist results into a prompt and calls the model once to produce `finalAnswer`.
+
+### RouterService.run logic (summary)
+
+1. `routerAgent.invoke(query)` → obtain `OverAllState`.
+2. Iterate over `github_key`, `notion_key`, `slack_key`: if present in state, read `agentName_input` and specialist output from state and build `Classification` and `AgentOutput` lists.
+3. If state contains `RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY`, use its content as `finalAnswer`; otherwise call `synthesize(query, results)` (same Model, system prompt to merge multi-source results to answer the original question) and use its return as `finalAnswer`.
+4. Return `RouterResult(query, classifications, results, finalAnswer)`.
+
+---
+
+## Implementation (Graph variant)
+
+### Design points
+
+- **Routing as embedded subgraph**: The overall flow is a **StateGraph**; the “routing” step is not a single bean call but the **compiled subgraph** returned by **AgentScopeRoutingAgent.getAndCompileGraph()** used as one node; inside that subgraph it is still classify → parallel specialists → merge.
+- **Explicit pre- and post-processing**: **PreprocessNode** and **PostprocessNode** run before and after the routing node for validation, normalization, tracing, and formatting; state flows through the whole graph for easier extension and observability.
+
+### Code structure (package `io.agentscope.examples.routing.graph`)
+
+| Class | Role |
+|-------|------|
+| **RoutingGraphConfig** | Defines three specialist **AgentScopeAgent**s and **AgentScopeRoutingAgent**; builds **StateGraph** (preprocess → routing → postprocess), defines **KeyStrategy** per state key; exposes **CompiledGraph** and **RoutingGraphService** |
+| **PreprocessNode** | `NodeAction`: reads `input`/`query` from state → validates non-empty, length ≥ 3 → normalizes (trim, truncate to 2000 chars) → writes `input`, `messages`, `preprocess_metadata` (traceId, timestamp) |
+| **PostprocessNode** | `NodeAction`: reads `RoutingMergeNode.DEFAULT_MERGED_OUTPUT_KEY` and `preprocess_metadata` → formats into `final_answer` with traceId/timestamp → writes `postprocess_metadata` |
+| **RoutingGraphService** | `run(query)`: `invoke(Map.of("input", query))` → reads `final_answer` from state (or `merged_result` if absent) → returns **RoutingGraphResult(query, state, finalAnswer)** |
+| **RoutingGraphRunner** | When `routing-graph.runner.enabled=true`, runs one example query on startup and logs |
+
+### Graph and state keys
+
+- **StateGraph**: `new StateGraph("routing_graph", keyFactory)` with edges `START → preprocess → routing → postprocess → END`.
+- **keyFactory**: Configures strategy for `input`, `query`, `messages`, `preprocess_metadata`, `merged_result`, `final_answer`, `postprocess_metadata`, and each specialist `xxx_key` (mostly `ReplaceStrategy`; `messages` uses `AppendStrategy(false)`).
+- **preprocess node**: `node_async(new PreprocessNode())`, pure function node (no LLM); output is consumed by the routing subgraph.
+- **routing node**: `routerAgent.getAndCompileGraph()` — the whole “classify + parallel specialists + merge” logic is attached as a subgraph to this node; subgraph output is written to `merged_result` (and each `xxx_key`).
+- **postprocess node**: `node_async(new PostprocessNode())`, reads merge result and preprocess metadata and writes `final_answer` and `postprocess_metadata`.
+
+### How PreprocessNode / PostprocessNode differ from Simple
+
+- **Simple**: No dedicated preprocessing; if “synthesis” is needed it is a single Model call inside **RouterService**, with no shared state keys or trace metadata.
+- **Graph**: Preprocess centralizes validation and normalization and writes `preprocess_metadata` (e.g. traceId); postprocess centralizes final formatting and logging and writes `postprocess_metadata`; the full pipeline shares one state, so you can extend with conditional branches or extra nodes.
+
+---
+
+## Example project
+
+**Location**: `agentscope-examples/multiagent-patterns/routing/`
+
+- **Simple**: Entry is `RouterService.run(query)`; flow is classify → parallel specialists → (framework merge) → optional RouterService synthesis. Set `routing.runner.enabled=true` to run the Simple demo on startup (see **RoutingRunner**).
+- **Graph**: Entry is `RoutingGraphService.run(query)`; flow is preprocess → routing subgraph → postprocess. Set `routing-graph.runner.enabled=true` to run the Graph demo on startup (see **RoutingGraphRunner**).
+
+**Build and run** (from repo root):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/routing -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run
+```
+
+**Run Simple demo only**:
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
+  -Dspring-boot.run.arguments="--routing.runner.enabled=true"
+```
+
+**Run Graph demo only**:
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/routing spring-boot:run \
+  -Dspring-boot.run.arguments="--routing-graph.runner.enabled=true"
+```
+
+**Configuration**: Set `AI_DASHSCOPE_API_KEY` (or `spring.ai.dashscope.api-key`) for DashScope model and specialist calls.
+
+## Related Documentation
+
+- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool
+
+
+# Skills (Progressive Disclosure)
+
+In the **skills** pattern, specialized capabilities are packaged as invokable "skills" that augment an agent’s behavior. Skills are primarily **prompt-driven**: the agent sees skill metadata (e.g. name and description) first and loads full skill content **on demand** via a tool (e.g. `read_skill`). This keeps the initial context small and avoids loading all skill text upfront.
+
+AgentScope implements this with **SkillBox**, **SkillRepository** (e.g. `ClasspathSkillRepository`), and skill tools. The core feature is documented in [Agent Skill](../task/agent-skill.md); this page focuses on the **multi-agent example** that uses the same mechanism for a SQL assistant.
+
+## Overview
+
+Key characteristics:
+
+- **Progressive disclosure**: The model sees skill **descriptions** in the system prompt; when the user asks for something that needs schema or examples, the agent calls **read_skill(skill_name)** to load the full content (e.g. `SKILL.md`).
+- **Prompt-driven**: Each skill is defined by a prompt (and optional resources); no separate sub-agent is invoked—just a tool that returns the skill’s text.
+- **Lightweight**: Skills are simpler than full sub-agents and can be developed and versioned independently (e.g. per team or domain).
+
+Use the skills pattern when you want one agent with many possible specializations, don’t need strict constraints between skills, or want to avoid loading all domain content into context at once.
+
+## Architecture
+
+```
+User → Agent (sees skill descriptions) → read_skill(name) → full SKILL.md content
+                ↓
+        Agent uses content to answer (e.g. generate SQL)
+```
+
+In the example:
+
+- **ClasspathSkillRepository**: Loads skills from classpath `skills/` (each skill is a directory with a `SKILL.md`; frontmatter has `name` and `description`, body is full content).
+- **SkillBox**: Holds a **Toolkit** and registers skills; provides the skill system prompt and the **read_skill** (and optionally **use_skill**) tools.
+- **ReActAgent**: Uses **DashScopeChatModel**, the toolkit, **skillBox**, and **InMemoryMemory**. The agent’s system prompt includes “Available Skills” with descriptions; when needed, it calls **read_skill(skill_name)** to load the full `SKILL.md`.
+
+## Implementation
+
+1. **Skill format**: Under `src/main/resources/skills/`, each skill is a directory with a `SKILL.md` file. YAML frontmatter: `name`, `description`. Body: schema, business logic, example queries, etc.
+2. **Repository**: `new ClasspathSkillRepository("skills")` so skills are loaded from the classpath (e.g. `skills/sales_analytics/SKILL.md`, `skills/inventory_management/SKILL.md`).
+3. **SkillBox**: `SkillBox(toolkit)` and for each skill from `skillRepository.getAllSkills()` call `skillBox.registration().skill(skill).apply()`. The SkillBox adds the skill system prompt and skill tools to the agent.
+4. **Agent**: Build **ReActAgent** with **DashScopeChatModel**, **toolkit**, **skillBox**, and **InMemoryMemory**. The agent sees skill descriptions and the **read_skill** tool; it loads full content only when relevant.
+
+## Example Project
+
+The **SQL assistant** example uses two skills: **sales_analytics** (customers, orders, revenue) and **inventory_management** (products, warehouses, stock). The user asks in natural language; the agent calls **read_skill("sales_analytics")** or **read_skill("inventory_management")** when needed, then generates SQL.
+
+- **Location**: `agentscope-examples/multiagent-patterns/skills/`
+- **Key classes**: `SkillsConfig` (ClasspathSkillRepository, SkillBox, ReActAgent), `SkillsRunner` (optional demo).
+- **Run**: Set `skills.runner.enabled=true` to run a single-query demo on startup (e.g. “Write a SQL query to find all customers who made orders over $1000 in the last month”).
+
+**Build and run** (from repo root):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/skills -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/skills spring-boot:run
+```
+
+**Use in your code**: Inject the ReActAgent (e.g. `sqlAssistantAgent`) and call it with a user `Msg`; get text from the response with `getTextContent()`. The agent will use skill descriptions to decide when to call **read_skill** and then generate the SQL.
+
+## Related Documentation
+
+- [Agent Skill](../task/agent-skill.md) - Skill format, SkillBox, and progressive disclosure in AgentScope
+- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
+- [Agent as Tool](../task/agent-as-tool.md) - Sub-agents as tools
+
+
+# Subagents
+
+Subagents are **specialized agents** that a main **orchestrator** delegates work to. The orchestrator does not execute the work itself; it calls a **Task** tool with a sub-agent type and a task description. The system runs the chosen sub-agent in an **isolated context** (its own system prompt and tools), then returns the result to the orchestrator. This keeps the main conversation focused and avoids context bloat, while still allowing multiple domains (e.g. codebase exploration, web research, dependency analysis) to be handled by dedicated agents.
+
+This pattern is sometimes called a **dispatcher–worker** or **hierarchical** model: one “manager” agent that delegates to “specialist” sub-agents on demand.
+
+## Why use subagents?
+
+| Benefit | Description |
+|--------|----------------|
+| **Context preservation** | Heavy or noisy work (e.g. large codebase search, many URLs) stays in the sub-agent’s context; only a summary or relevant excerpt returns to the main conversation. |
+| **Specialized expertise** | Each sub-agent has a focused system prompt and a limited set of tools, so it behaves consistently for that domain. |
+| **Reusability** | Sub-agents can be defined once (e.g. in Markdown files or as shared beans) and reused across flows or projects. |
+| **Flexible definition** | You can define sub-agents in **Markdown** (file-based specs) for easy editing and versioning, or in **Java** (programmatic ReActAgent) for full control. |
+
+Use the subagent pattern when you have **multiple distinct domains**, want **one orchestrator** to drive the workflow, and sub-agents do **not** need to talk directly to the user—they only report back to the orchestrator.
+
+## How it works
+
+1. **Orchestrator** has a tool named **Task** (and optionally **TaskOutput** for background tasks). It also has direct tools (e.g. `glob_search`, `grep_search`, `web_fetch`) for simple, single-step work.
+2. When the user request is complex or domain-specific, the orchestrator **calls the Task tool** with:
+   - **subagent_type**: which sub-agent to run (e.g. `codebase-explorer`, `web-researcher`)
+   - **prompt**: the task description to send to that sub-agent
+3. The system **looks up** the sub-agent by type, runs it with that prompt in an **isolated context** (its own system prompt and tools), and returns the sub-agent’s reply as the tool result.
+4. The orchestrator uses that result (and optionally other tool results) to **synthesize** a final answer for the user.
+
+Sub-agents are **stateless** per invocation: each Task call gets a fresh run. The orchestrator holds the conversation and any planning state; sub-agents do not see the full chat history.
+
+## Defining sub-agents
+
+You can define sub-agents in two ways.
+
+### 1. Markdown (file-based)
+
+Sub-agents are described in **Markdown files** with **YAML front matter**. The front matter defines the agent’s `name`, `description`, and `tools`; the body is the **system prompt** for that sub-agent.
+
+**Location**: e.g. `src/main/resources/agents/*.md` (classpath).
+
+**Format**:
+
+```markdown
+---
+name: codebase-explorer
+description: Fast agent for exploring codebases. Use for finding files, searching code, analyzing structure. Tools: glob_search, grep_search.
+tools: glob_search, grep_search
+---
+
+You are a codebase exploration specialist. Your job is to explore and analyze codebases efficiently.
+
+**Your capabilities:**
+- Find files using glob patterns
+- Search file contents using regex
+- Analyze project structure and dependencies
+
+**Guidelines:**
+- Use glob_search first to understand layout, then grep_search for content
+- Provide concise, structured findings
+```
+
+- **name**: Unique identifier; the orchestrator uses this as `subagent_type` when calling the Task tool.
+- **description**: Tells the orchestrator (and the model) when to delegate to this sub-agent. Be specific so the main agent knows when to use it.
+- **tools**: Comma-separated list of tool names this sub-agent can use. Only these tools are attached; others are not available, which keeps the sub-agent focused and safe.
+
+The loader (e.g. `AgentSpecLoader`) reads these files and builds a ReActAgent per spec using a shared **Model** and a **default tools map** (tool name → instance). So all Markdown-defined agents share the same underlying tool implementations (e.g. `glob_search`, `grep_search`, `web_fetch`), but each spec restricts which ones that agent sees.
+
+### 2. API (programmatic)
+
+For full control, build a **ReActAgent** in Java and register it with the Task tools builder:
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.model.DashScopeChatModel;
-
-// Create model
-DashScopeChatModel model = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .build();
-
-// Create sub-agent Provider (factory)
-// Note: Must use lambda to ensure new instance is created for each call
-Toolkit toolkit = new Toolkit();
-toolkit.registration()
-        .subAgent(() -> ReActAgent.builder()
-                .name("Expert")
-                .sysPrompt("You are a domain expert responsible for answering professional questions.")
-                .model(model)
-                .build())
-        .apply();
-
-// Create main agent with toolkit
-ReActAgent mainAgent = ReActAgent.builder()
-        .name("Coordinator")
-        .sysPrompt("You are a coordinator. When facing professional questions, call the call_expert tool to consult the expert.")
+ReActAgent dependencyAnalyzerReAct = ReActAgent.builder()
+        .name("dependency-analyzer")
+        .description("Analyzes project dependencies. Use for version conflicts, outdated libs, security.")
         .model(model)
-        .toolkit(toolkit)
+        .sysPrompt(DEPENDENCY_ANALYZER_SYSTEM_PROMPT)
+        .toolkit(depToolkit)  // e.g. glob_search, grep_search only
+        .memory(new InMemoryMemory())
         .build();
 
-// Main agent will automatically call expert agent when needed
-Msg response = mainAgent.call(userMsg).block();
+TaskToolsBuilder.builder()
+        .model(model)
+        .defaultToolsByName(defaultToolsByName)
+        .subAgent("dependency-analyzer", dependencyAnalyzerReAct)
+        // ... addAgentResource(...) for Markdown specs
+        .build();
 ```
 
-## Configuration Options
+The orchestrator can then call the Task tool with `subagent_type="dependency-analyzer"` and a task description. Programmatic sub-agents can use custom tools and logic that are not in the default tools map.
 
-Customize sub-agent tool behavior with `SubAgentConfig`:
+## Task tools builder (AgentScope example)
+
+The example uses **TaskToolsBuilder** to create the **Task** and **TaskOutput** tools and to register all sub-agents:
+
+1. **TaskToolsBuilder.builder()**
+   - **model**: Used when building ReActAgents from Markdown specs.
+   - **defaultToolsByName**: Map of tool name → instance (e.g. `glob_search`, `grep_search`, `web_fetch`). Markdown specs reference these by name in the `tools` field.
+   - **taskRepository**: For background execution; required even if you only use synchronous Task calls.
+   - **subAgent(type, ReActAgent)**: Register one programmatic sub-agent.
+   - **addAgentResource(Resource)**: Load one Markdown spec from a classpath or file resource (e.g. `classpath:agents/codebase-explorer.md`).
+
+2. **build()**  
+   Resolves all Markdown specs into ReActAgents (via `AgentSpecLoader` and a factory), merges them with programmatic sub-agents, and returns a **TaskToolsResult** with:
+   - **taskTool()**: The Task tool to register on the orchestrator’s toolkit.
+   - **taskOutputTool()**: The TaskOutput tool for checking or retrieving results of background tasks.
+
+3. **Orchestrator toolkit**  
+   Register the Task and TaskOutput tools on the orchestrator’s Toolkit, along with any direct tools (glob, grep, web_fetch) the orchestrator can use itself. The orchestrator’s system prompt should describe when to delegate (which subagent_type for which kind of request) and when to use direct tools.
+
+**Synchronous vs background**: By default, the Task tool runs the sub-agent and returns its reply. If you pass a flag like `run_in_background=true`, the tool returns a `task_id` instead; the orchestrator (or user) can later call **TaskOutput** with that `task_id` to get the result. This requires a **TaskRepository** to store in-flight tasks.
+
+## Example: Tech Due Diligence Assistant
+
+The AgentScope example implements a **Tech Due Diligence Assistant**: one orchestrator that delegates to four sub-agents.
+
+| Sub-agent | Definition | Tools | Use case |
+|-----------|------------|-------|----------|
+| **codebase-explorer** | Markdown | glob_search, grep_search | Find files, search code, analyze structure |
+| **web-researcher** | Markdown | web_fetch | Fetch URLs, research docs, compare technologies |
+| **general-purpose** | Markdown | glob_search, grep_search, web_fetch | Combined code + web analysis |
+| **dependency-analyzer** | API (Java) | glob_search, grep_search | Dependencies, version conflicts, outdated libs |
+
+- **Orchestrator** system prompt describes when to use each sub-agent and when to use direct tools. It has Task, TaskOutput, glob_search, grep_search, web_fetch.
+- **Markdown specs** live in `src/main/resources/agents/*.md` and are loaded with `TaskToolsBuilder.addAgentResource(res)`.
+- **dependency-analyzer** is built as a ReActAgent and registered with `TaskToolsBuilder.subAgent("dependency-analyzer", dependencyAnalyzerReAct)`.
+
+**Run interactively**:
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/subagent spring-boot:run \
+  -Dspring-boot.run.arguments="--subagent.run-interactive=true"
+```
+
+**Use in code**: Inject **OrchestratorService** and call `run(userMessage)`; the service invokes the graph that runs the orchestrator with the given input.
 
 ```java
-import io.agentscope.core.tool.subagent.SubAgentConfig;
-import io.agentscope.core.session.JsonSession;
-import java.nio.file.Path;
+@Autowired
+OrchestratorService orchestratorService;
 
-SubAgentConfig config = SubAgentConfig.builder()
-        .toolName("ask_expert")                    // Custom tool name
-        .description("Consult the expert")         // Custom description
-        .forwardEvents(true)                       // Forward sub-agent events
-        .session(new JsonSession(Path.of("sessions")))  // Persistent session
+String answer = orchestratorService.run(
+    "Analyze this codebase for technical debt and research Spring AI documentation");
+```
+
+**Configuration**: `subagent.workspace-path` (default `${user.dir}`) is the root path for glob_search and grep_search; `subagent.run-interactive` (default `false`) enables the interactive chat runner on startup.
+
+## Subagents vs other patterns
+
+- **Supervisor**: The supervisor pattern also has a central agent that calls specialists as tools, but there is **one tool per specialist** (e.g. `schedule_event`, `manage_email`) and often fewer, more stable roles. Subagents use a **single Task tool** parameterized by type and prompt, and support many sub-agents (including Markdown-defined) and optional background execution.
+- **Agent as Tool**: Agent as Tool registers one sub-agent as one tool with a fixed name and signature. Subagents use a **dispatcher** (Task tool) that selects the sub-agent by name and passes a free-form task string; sub-agents are often defined in bulk via Markdown.
+- **Routing**: A router classifies the input and sends it to one or more specialists, then synthesizes results; it usually does not maintain a long conversation. The subagent orchestrator maintains the conversation and can call Task multiple times (possibly different sub-agent types) in one turn or across turns.
+
+## Best practices
+
+- **Write clear sub-agent descriptions**: The orchestrator relies on `description` (and its own system prompt) to decide when to call which sub-agent. Include trigger phrases and example scenarios (e.g. “Use for finding files, searching code, analyzing structure”).
+- **Limit tools per sub-agent**: In Markdown, list only the tools that sub-agent needs. This keeps behavior predictable and reduces the risk of misuse.
+- **Keep system prompts focused**: The body of each Markdown file is the sub-agent’s system prompt. Define responsibilities, steps, and output format so the sub-agent returns useful, consistent results.
+- **Version control Markdown specs**: Store `agents/*.md` in the repo so the team can add and refine sub-agents without code changes.
+
+## Related Documentation
+
+- [Supervisor](./supervisor.md) - One supervisor, one tool per specialist
+- [Agent as Tool](../task/agent-as-tool.md) - Register a single agent as a tool
+- [Pipeline](./pipeline.md) - Sequential and parallel composition
+
+
+# Supervisor
+
+In the **supervisor** pattern, a central **supervisor** (main agent) coordinates specialized agents by calling them as **tools**. The supervisor receives user requests, decides which specialist(s) to call (e.g. calendar, email), and synthesizes their results into one reply. Specialized agents are **stateless** from the user’s perspective; the supervisor keeps the conversation and delegates one-off tasks. This pattern is implemented in AgentScope via **Agent as Tool** ([agent-as-tool.md](../task/agent-as-tool.md)): `Toolkit.registration().subAgent()`.
+
+## Overview
+
+Key characteristics:
+
+- **Centralized control**: All requests go to the supervisor; it routes to specialists via tool calls.
+- **One tool per specialist**: Each specialized agent is registered as a single tool (e.g. `schedule_event`, `manage_email`) with a clear name and description so the supervisor knows when to call it.
+- **No direct user interaction with specialists**: Specialists run in a focused context (instruction + request string) and return a result to the supervisor; only the supervisor’s reply is shown to the user.
+- **Stateless specialists**: Each call creates a new sub-agent instance (or uses a fresh context); the supervisor holds conversation state.
+
+Use the supervisor pattern when you have distinct domains (e.g. calendar, email, CRM), specialists don’t need to converse directly with the user, and you want a single entry point that delegates to the right agent(s).
+
+## Architecture
+
+```
+User → Supervisor (ReActAgent with subAgent tools)
+                │
+                ├→ schedule_event(instruction) → Calendar agent (ReActAgent) → stub tools
+                └→ manage_email(instruction)   → Email agent (ReActAgent)    → stub tools
+```
+
+- **Supervisor**: One ReActAgent with a Toolkit that registers each specialist via **Toolkit.registration().subAgent(provider)**. Tools appear as `schedule_event` and `manage_email` with a single string input (the user’s request for that domain).
+- **Calendar agent**: ReActAgent with calendar-specific prompt and tools (e.g. `get_available_time_slots`, `create_calendar_event`). Exposed as the tool **schedule_event**.
+- **Email agent**: ReActAgent with email-specific prompt and tools (e.g. `send_email`). Exposed as the tool **manage_email**.
+
+In the example, calendar and email “APIs” are **stubbed** (`CalendarStubTools`, `EmailStubTools`); replace with real integrations in production.
+
+## Implementation
+
+1. **Model**: All agents use the same **DashScopeChatModel** (or other AgentScope `Model`); API key from `spring.ai.dashscope.api-key` or `AI_DASHSCOPE_API_KEY`.
+2. **Specialist agents**: Build one ReActAgent per domain (calendar, email) with its own sysPrompt and Toolkit (stub or real tools). Register each with the supervisor’s Toolkit: `toolkit.registration().subAgent(() -> calendarAgent).apply()` and similarly for email. Optionally use **SubAgentConfig** to set `toolName` and `description`.
+3. **Supervisor**: Build a ReActAgent with the same model and the Toolkit that contains the subAgent registrations. The supervisor’s system prompt should describe when to use `schedule_event` and `manage_email`.
+4. **Invocation**: Inject the supervisor ReActAgent and call `supervisorAgent.call(userMsg).block()`. For multi-domain requests (e.g. “schedule a meeting and send an email”), the supervisor will call both tools and combine the results.
+
+## Example Project
+
+- **Location**: `agentscope-examples/multiagent-patterns/supervisor/`
+- **Key classes**: `SupervisorConfig` (model, calendarAgent, emailAgent, supervisorAgent), `CalendarStubTools`, `EmailStubTools`, `SupervisorRunner` (optional demo).
+- **Demo**: Set `supervisor.run-examples=true` to run two scenarios on startup: (1) single-domain: “Schedule a team standup for tomorrow at 9am”; (2) multi-domain: “Schedule a meeting with the design team next Tuesday at 2pm for 1 hour, and send them an email reminder about reviewing the new mockups.”
+
+**Build and run** (from repo root):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/supervisor -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/supervisor spring-boot:run
+```
+
+**Use in your code**: Inject the supervisor ReActAgent (e.g. `@Qualifier("supervisorAgent")`) and call it with a user `Msg`; get text from the response with `getTextContent()`.
+
+## Related Documentation
+
+- [Agent as Tool](../task/agent-as-tool.md) - Sub-agent registration and SubAgentConfig
+- [Subagents](./subagent.md) - Orchestrator with Task/TaskOutput and Markdown/API sub-agents
+- [Pipeline](./pipeline.md) - Sequential and parallel agent composition
+
+
+# Handoffs
+
+In the **handoffs** pattern, behavior changes dynamically based on state. Tools update a state variable (e.g. `active_agent`) that persists across turns; the graph reads this variable to route to different agents. This pattern is well-suited to customer support and sales flows where control transfers between specialized agents (e.g. sales vs. support) via tool calls.
+
+The term **handoffs** is commonly used for using tool calls (such as `transfer_to_sales_agent` or `transfer_to_support`) to transfer control between agents or states (see e.g. [OpenAI Agents](https://openai.github.io/openai-agents-python/handoffs/).
+
+## Overview
+
+Key characteristics:
+
+- **State-driven routing**: The graph routes to different agent nodes based on a state variable (e.g. `active_agent`).
+- **Tool-based transitions**: Handoff tools update that state variable so that when the current node completes, the graph follows conditional edges to the next agent (or end).
+- **Direct user interaction**: Each agent handles the user message in turn; handoff tools only change who handles the next turn.
+- **Persistent state**: State survives across conversation turns within the graph.
+
+Use the handoffs pattern when you need to enforce sequential or role-based routing (e.g. collect information before escalating, or switch between sales and support), and when the user converses with a single “front” at a time that can change based on tool calls.
+
+## Architecture
+
+With AgentScope and Spring AI Graph, the implementation uses:
+
+- **Separate agents as graph nodes**: e.g. a sales agent and a support agent, each implemented as an `AgentScopeAgent` (ReActAgent + Toolkit).
+- **Handoff tools**: Registered on each agent’s Toolkit. When the model calls a handoff tool, the tool uses `ToolContextHelper.getStateForUpdate(toolContext)` to set `active_agent` (or similar). The graph declares that key with a strategy (e.g. `ReplaceStrategy`) so the update is merged when the node completes.
+- **Conditional edges**: After each agent node, a routing action reads `active_agent` and either goes to another agent node or to `END`.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Handoffs StateGraph                          │
+│                                                                  │
+│   START ──route_initial──► sales_agent ──route_after_sales──┐   │
+│        \\                      │                             │   │
+│         \\                     │ (transfer_to_support)        │   │
+│          \\                    ▼                             ▼   │
+│           └────────────► support_agent ──route_after_support  END  │
+│                                │                             ▲   │
+│                                │ (transfer_to_sales)         │   │
+│                                └─────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Implementation
+
+### Step 1: Define state keys and graph state
+
+Define constants for state keys and agent node names, and create a `StateGraph` with key strategies so that handoff tools can update routing state (e.g. `active_agent` with `ReplaceStrategy`).
+
+```java
+// State keys and agent names
+public final class AgentScopeStateConstants {
+    public static final String ACTIVE_AGENT = "active_agent";
+    public static final String SALES_AGENT = "sales_agent";
+    public static final String SUPPORT_AGENT = "support_agent";
+}
+
+// In your config: build the graph with key strategies
+StateGraph graph = new StateGraph("agent_scope_handoffs", () -> {
+    Map<String, KeyStrategy> strategies = new HashMap<>();
+    strategies.put("messages", new AppendStrategy(false));
+    strategies.put(AgentScopeStateConstants.ACTIVE_AGENT, new ReplaceStrategy());
+    return strategies;
+});
+```
+
+### Step 2: Create handoff tools
+
+Each handoff tool is an AgentScope `@Tool` with `ToolContext` auto-injected. The tool updates the graph state via `ToolContextHelper.getStateForUpdate(toolContext)` so that when the node completes, the graph’s conditional edges see the new `active_agent` and route accordingly.
+
+**Transfer to support (used by the sales agent):**
+
+```java
+import com.alibaba.cloud.ai.graph.agent.tools.ToolContextHelper;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+import org.springframework.ai.chat.model.ToolContext;
+
+@Tool(
+    name = "transfer_to_support",
+    description = "Transfer the conversation to the support agent. Use when the customer asks about technical issues, troubleshooting, or account problems.")
+public String transferToSupport(ToolContext toolContext) {
+    ToolContextHelper.getStateForUpdate(toolContext).ifPresent(update ->
+            update.put(AgentScopeStateConstants.ACTIVE_AGENT, AgentScopeStateConstants.SUPPORT_AGENT));
+    return "Transferred to support agent from sales agent.";
+}
+```
+
+**Transfer to sales (used by the support agent):**
+
+```java
+@Tool(
+    name = "transfer_to_sales",
+    description = "Transfer the conversation to the sales agent. Use when the customer asks about pricing, purchasing, or product availability.")
+public String transferToSales(
+        @ToolParam(name = "reason", description = "Brief reason for the transfer") String reason,
+        ToolContext toolContext) {
+    ToolContextHelper.getStateForUpdate(toolContext).ifPresent(update ->
+            update.put(AgentScopeStateConstants.ACTIVE_AGENT, AgentScopeStateConstants.SALES_AGENT));
+    return "Transferred to sales agent from support agent. Reason: " + (reason != null ? reason : "customer needs sales");
+}
+```
+
+Register each tool on the corresponding agent’s Toolkit via `toolkit.registerTool(TransferToSupportTool.create())` and `toolkit.registerTool(TransferToSalesTool.create())`.
+
+### Step 3: Build the agents (AgentScopeAgent + Toolkit)
+
+Create a sales and a support agent as `AgentScopeAgent`, each with its own ReActAgent, system prompt, and Toolkit that includes the appropriate handoff tool.
+
+```java
+import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.tool.Toolkit;
+
+// Sales agent: has transfer_to_support
+Toolkit salesToolkit = new Toolkit();
+salesToolkit.registerTool(TransferToSupportTool.create());
+
+ReActAgent.Builder salesReActBuilder = ReActAgent.builder()
+        .name(AgentScopeStateConstants.SALES_AGENT)
+        .description("Sales agent for pricing, product availability, and sales inquiries")
+        .sysPrompt("""
+            You are a sales agent. Help with sales inquiries, pricing, and product availability.
+            If the customer asks about technical issues, troubleshooting, or account problems,
+            use transfer_to_support to hand off to the support agent.
+            """)
+        .model(model)
+        .toolkit(salesToolkit)
+        .memory(new InMemoryMemory());
+
+AgentScopeAgent salesAgent = AgentScopeAgent.fromBuilder(salesReActBuilder)
+        .name(AgentScopeStateConstants.SALES_AGENT)
+        .instruction("please assist the customer with their sales inquiry: {input}.")
+        .includeContents(true)
+        .returnReasoningContents(true)
         .build();
 
-toolkit.registration()
-        .subAgent(() -> createExpertAgent(), config)
-        .apply();
-```
+// Support agent: has transfer_to_sales
+Toolkit supportToolkit = new Toolkit();
+supportToolkit.registerTool(TransferToSalesTool.create());
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `toolName` | Tool name | Generated from agent name, e.g., `call_expert` |
-| `description` | Tool description | Uses agent's description |
-| `forwardEvents` | Whether to forward sub-agent streaming events | `true` |
-| `session` | Session storage implementation | `InMemorySession` (in-memory) |
+ReActAgent.Builder supportReActBuilder = ReActAgent.builder()
+        .name(AgentScopeStateConstants.SUPPORT_AGENT)
+        .description("Support agent for technical issues and troubleshooting")
+        .sysPrompt("""
+            You are a support agent. Help with technical issues, troubleshooting, and account problems.
+            If the customer asks about pricing, purchasing, or product availability,
+            use transfer_to_sales to hand off to the sales agent.
+            """)
+        .model(model)
+        .toolkit(supportToolkit)
+        .memory(new InMemoryMemory());
 
-## Multi-turn Conversation
-
-Sub-agents support multi-turn conversations, maintaining state via the `session_id` parameter:
-
-```java
-// First call: omit session_id to start a new session
-// Tool returns:
-// session_id: abc-123-def
-//
-// Expert response content...
-
-// Subsequent calls: provide session_id to continue the conversation
-// Parent agent automatically extracts session_id from previous response
-```
-
-The sub-agent tool exposes two parameters:
-- `message` (required): Message to send to the sub-agent
-- `session_id` (optional): Session ID. Omit to start new session, provide to continue existing one
-
-## Persistent Sessions
-
-By default, `InMemorySession` is used and state is lost on process restart. Use `JsonSession` to persist state to files:
-
-```java
-import io.agentscope.core.session.JsonSession;
-import java.nio.file.Path;
-
-SubAgentConfig config = SubAgentConfig.builder()
-        .session(new JsonSession(Path.of("./agent-sessions")))
+AgentScopeAgent supportAgent = AgentScopeAgent.fromBuilder(supportReActBuilder)
+        .name(AgentScopeStateConstants.SUPPORT_AGENT)
+        .instruction("please assist the customer with their product technical inquiry: {input}.")
+        .includeContents(true)
+        .returnReasoningContents(true)
         .build();
-
-toolkit.registration()
-        .subAgent(() -> createAgent(), config)
-        .apply();
-
-// State will be saved to ./agent-sessions/{session_id}.json
 ```
 
-## Tool Group Support
+### Step 4: Add nodes and conditional edges
 
-Sub-agent tools can be added to tool groups like regular tools:
+Add both agents as nodes, then wire START and post-node routing based on `active_agent`:
+
+- **Initial route**: From START, route to `sales_agent` or `support_agent` (e.g. default to `sales_agent` if `active_agent` is unset).
+- **After sales**: From `sales_agent`, if `active_agent` is `support_agent` go to `support_agent`, else go to `END`.
+- **After support**: From `support_agent`, if `active_agent` is `sales_agent` go to `sales_agent`, else go to `END`.
 
 ```java
-toolkit.createToolGroup("experts", "Expert Agents", true);
+graph.addNode(AgentScopeStateConstants.SALES_AGENT, salesAgent.asNode());
+graph.addNode(AgentScopeStateConstants.SUPPORT_AGENT, supportAgent.asNode());
 
-toolkit.registration()
-        .subAgent(() -> createLegalExpert())
-        .group("experts")
-        .apply();
+// START → sales_agent or support_agent (default: sales)
+graph.addConditionalEdges(START, new RouteInitialAction(), Map.of(
+        AgentScopeStateConstants.SALES_AGENT, AgentScopeStateConstants.SALES_AGENT,
+        AgentScopeStateConstants.SUPPORT_AGENT, AgentScopeStateConstants.SUPPORT_AGENT));
 
-toolkit.registration()
-        .subAgent(() -> createTechExpert())
-        .group("experts")
-        .apply();
+// sales_agent → support_agent or END
+graph.addConditionalEdges(AgentScopeStateConstants.SALES_AGENT, new RouteAfterSalesAction(),
+        Map.of(AgentScopeStateConstants.SUPPORT_AGENT, AgentScopeStateConstants.SUPPORT_AGENT, "__end__", END));
+
+// support_agent → sales_agent or END
+graph.addConditionalEdges(AgentScopeStateConstants.SUPPORT_AGENT, new RouteAfterSupportAction(),
+        Map.of(AgentScopeStateConstants.SALES_AGENT, AgentScopeStateConstants.SALES_AGENT, "__end__", END));
+
+CompiledGraph compiledGraph = graph.compile();
 ```
+
+**Routing action example (after sales):** read `active_agent` from state; if it is `support_agent`, return the support node; otherwise return `"__end__"`.
+
+```java
+@Override
+public CompletableFuture<Command> apply(OverAllState state, RunnableConfig config) {
+    String active = state.value(AgentScopeStateConstants.ACTIVE_AGENT)
+            .map(Object::toString)
+            .orElse("");
+    String target = AgentScopeStateConstants.SUPPORT_AGENT.equals(active)
+            ? AgentScopeStateConstants.SUPPORT_AGENT
+            : "__end__";
+    return CompletableFuture.completedFuture(new Command(target));
+}
+```
+
+### Step 5: Invoke the graph
+
+Invoke the compiled graph with the user input. The graph will start at the initial agent (e.g. sales), and each time an agent calls a handoff tool, the state update will cause the next step to route to the other agent or to end.
+
+```java
+Map<String, Object> inputs = Map.of("input", "Hi, I'm having trouble with my account login. Can you help?");
+Optional<OverAllState> resultOpt = compiledGraph.invoke(inputs);
+
+resultOpt.ifPresent(state -> {
+    List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
+    messages.forEach(msg -> System.out.println(msg.getText()));
+});
+```
+
+## Reading and updating state in tools
+
+AgentScope tools that participate in a graph receive `ToolContext` (auto-injected). Use it to read or update graph state:
+
+- **Update state (for routing):** Put keys into the map returned by `ToolContextHelper.getStateForUpdate(toolContext)`. The graph merges this when the node completes. The graph must declare those keys with a key strategy (e.g. `ReplaceStrategy` for `active_agent`).
+
+- **Read state:** Use `ToolContextHelper.getState(toolContext)` to get the current `OverAllState` (e.g. to branch inside the tool or to pass context into the handoff message).
+
+Any key you update via `getStateForUpdate` must be declared in the graph’s key strategies; otherwise the update may not affect routing.
+
+## Design choices
+
+1. **AgentScope Toolkit for both agents**  
+   Sales and support agents both use `io.agentscope.core.tool.Toolkit` and ReActAgent; handoff tools are standard AgentScope `@Tool` implementations with `ToolContext` for state updates.
+
+2. **State update at node completion**  
+   Tools do not redirect the graph immediately; they only update state. When the current agent node finishes, the graph’s conditional edges run and use the updated `active_agent` to choose the next node or end.
+
+3. **ToolContext in tools**  
+   Handoff tools use `io.agentscope.core.tool.Tool` and optional `@ToolParam`; `ToolContext` is auto-injected so tools can call `ToolContextHelper.getStateForUpdate(toolContext)` (and optionally `getState(toolContext)`).
+
+## Example project
+
+The full handoffs example (sales + support with handoff tools) is in the repository:
+
+- **Location**: `agentscope-examples/multiagent-patterns/handoffs/`
+- **Highlights**: `AgentScopeHandoffsConfig` (graph, agents, routing), `TransferToSalesTool`, `TransferToSupportTool`, `RouteInitialAction`, `RouteAfterSalesAction`, `RouteAfterSupportAction`, and `AgentScopeHandoffsService` to invoke the graph.
+
+Build and run (from repo root):
+
+```bash
+./mvnw -pl agentscope-examples/multiagent-patterns/handoffs -am -B package -DskipTests
+./mvnw -pl agentscope-examples/multiagent-patterns/handoffs spring-boot:run
+```
+
+Set `agentscope.runner.enabled=true` in `application.yml` to run the demo on startup. Default port is 8089.
+
+## Related Documentation
+
+- [Pipeline](./pipeline.md) - Sequential and parallel agent execution
+- [Routing](./routing.md) - Classify and route to specialist agents
+- [Supervisor](./supervisor.md) - Central supervisor with specialized agents as tools
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
+- [Agent as Tool](../task/agent-as-tool.md) - Registering an agent as a tool for another agent
+- [Tool System](../task/tool.md) - AgentScope tools and Toolkit
 
 
 # Multi-Agent Debate
@@ -6588,7 +7582,9 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## Related Documentation
 
-- [MsgHub](./msghub.md) - Message broadcasting for multi-agent conversations
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
 - [Pipeline](./pipeline.md) - Sequential and parallel agent execution
+- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
+- [Routing](./routing.md) - Classify and route to specialist agents
 - [Structured Output](../task/structured-output.md) - Extracting structured data from agent responses
 

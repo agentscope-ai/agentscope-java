@@ -102,7 +102,6 @@ System.out.println(response.getTextContent());
 
 ### 多智能体系统
 - **[管道](multi-agent/pipeline.md)** - 使用顺序和并行执行构建多智能体工作流
-- **[MsgHub](multi-agent/msghub.md)** - 多智能体消息广播机制
 - **[A2A 协议](task/a2a.md)** - Agent2Agent 协议支持
 - **[状态管理](task/state.md)** - 跨会话持久化和恢复智能体状态
 
