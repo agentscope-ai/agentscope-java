@@ -206,16 +206,23 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int toolIters = 5;
         boolean toolCompressed = false;
         int compressionCount = 0;
+        int cursorStartIndex = 0;
         while (toolIters > 0) {
             toolIters--;
             List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
+                    extractPrevToolMsgsForCompress(
+                            currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
             if (toolMsgIndices != null) {
-                summaryToolsMessages(currentMsgs, toolMsgIndices);
-                replaceWorkingMessage(currentMsgs);
-                toolCompressed = true;
-                compressionCount++;
+                boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
+                if (actuallyCompressed) {
+                    replaceWorkingMessage(currentMsgs);
+                    toolCompressed = true;
+                    compressionCount++;
+                    cursorStartIndex = 0;
+                } else {
+                    cursorStartIndex = toolMsgIndices.second() + 1;
+                }
             } else {
                 break;
             }
@@ -225,7 +232,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return true;
         } else {
-            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
+            log.info(
+                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
+                            + " to low tokens)");
         }
 
         // Strategy 2: Offload previous round large messages (with lastKeep protection)
@@ -803,9 +812,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * Summarize current round of conversation messages.
      *
      * @param rawMessages the list of messages to process
+     * @param toolMsgIndices the pair of start and end indices
      * @return true if summary was actually performed, false otherwise
      */
-    private void summaryToolsMessages(
+    private boolean summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
@@ -831,7 +841,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             + " ({})",
                     originalTokens,
                     threshold);
-            return;
+            return false;
         }
 
         log.info(
@@ -863,6 +873,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 metadata);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
+
+        return true;
     }
 
     /**
@@ -1311,10 +1323,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      *
      * @param rawMessages all raw messages
      * @param lastKeep number of recent messages to keep uncompressed
+     * @param searchStartIndex the index to start searching from (used as a cursor)
      * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or null if none found
      */
     private Pair<Integer, Integer> extractPrevToolMsgsForCompress(
-            List<Msg> rawMessages, int lastKeep) {
+            List<Msg> rawMessages, int lastKeep, int searchStartIndex) {
         if (rawMessages == null || rawMessages.isEmpty()) {
             return null;
         }
@@ -1348,8 +1361,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int consecutiveCount = 0;
         int startIndex = -1;
         int endIndex = -1;
-
-        for (int i = 0; i < searchEndIndex; i++) {
+        int actualStart = Math.max(0, searchStartIndex);
+        for (int i = actualStart; i < searchEndIndex; i++) {
             Msg msg = rawMessages.get(i);
             if (MsgUtils.isToolMessage(msg)) {
                 if (consecutiveCount == 0) {
