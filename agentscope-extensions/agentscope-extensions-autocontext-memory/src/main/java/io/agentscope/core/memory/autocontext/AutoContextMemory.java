@@ -219,7 +219,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     replaceWorkingMessage(currentMsgs);
                     toolCompressed = true;
                     compressionCount++;
-                    cursorStartIndex = 0;
+                    cursorStartIndex = toolMsgIndices.first() + 1;
                 } else {
                     cursorStartIndex = toolMsgIndices.second() + 1;
                 }
