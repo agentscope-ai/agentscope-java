@@ -257,7 +257,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL数据库存储 (暂未实现)
+#### MySQL数据库存储
+
+```java
+// 使用简单构造函数（使用默认数据库/表名）
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// 使用Builder进行自定义配置
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git仓库 (只读)
 
@@ -294,6 +312,20 @@ try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills"
 资源目录结构: `src/main/resources/skills/` 下放置多个 Skill 子目录,每个子目录包含 `SKILL.md`
 
 > 注意: `JarSkillRepositoryAdapter` 已废弃,请使用 `ClasspathSkillRepository`。
+
+#### Nacos 仓库 (只读)
+
+通过已构建的 `AiService`（或 Nacos 连接配置）从 Nacos 拉取或订阅 Skill，Agent 运行时从 Nacos 实时获取，支持变更订阅与自动感知，适合需要与 Nacos 保持同步的在线场景。
+
+```java
+// 使用已构建的 AiService 创建 Nacos 技能仓库
+try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "namespace")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    boolean exists = repository.skillExists("data-analysis");
+} catch //...
+```
+
+> 注意: 需引入 `agentscope-extensions-nacos-skill` 依赖
 
 ### 性能优化建议
 

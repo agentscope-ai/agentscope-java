@@ -260,7 +260,25 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-#### MySQL Database Storage (not yet implemented)
+#### MySQL Database Storage
+
+```java
+// Using simple constructor with default database/table names
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// Using Builder for custom configuration
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
 
 #### Git Repository (Read-Only)
 
@@ -300,6 +318,20 @@ try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills"
 Resource structure: Place multiple skill subdirectories under `src/main/resources/skills/`, each containing a `SKILL.md`.
 
 > Note: `JarSkillRepositoryAdapter` is deprecated. Use `ClasspathSkillRepository` instead.
+
+#### Nacos Repository (Read-Only)
+
+Pulls or subscribes to Skills from Nacos via a pre-built `AiService` (or Nacos connection config). The Agent fetches Skills from Nacos at runtime in real time, with support for change subscription and automatic awareness. Suitable for online scenarios that need to stay in sync with Nacos.
+
+```java
+// Create Nacos skill repository with a pre-built AiService
+try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "namespace")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    boolean exists = repository.skillExists("data-analysis");
+} catch //...
+```
+
+> Note: Add the `agentscope-extensions-nacos-skill` dependency.
 
 ### Performance Optimization Recommendations
 
