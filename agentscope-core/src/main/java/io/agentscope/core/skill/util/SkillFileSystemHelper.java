@@ -361,14 +361,19 @@ public final class SkillFileSystemHelper {
                     .filter(p -> !p.equals(skillFile))
                     .filter(
                             p -> {
-                                if (p.getFileName().toString().startsWith(".")) {
+                                if (!Files.isReadable(p)) {
                                     return false;
                                 }
+                                for (Path name : skillDir.relativize(p)) {
+                                    if (name.toString().startsWith(".")) {
+                                        return false;
+                                    }
+                                }
                                 try {
-                                    return !Files.isHidden(p) && Files.isReadable(p);
+                                    return !Files.isHidden(p);
                                 } catch (IOException e) {
                                     logger.warn("Failed to check attributes for file: {}", p, e);
-                                    return false;
+                                    return true;
                                 }
                             })
                     .forEach(

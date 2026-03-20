@@ -268,11 +268,17 @@ class SkillFileSystemHelperTest {
         Path hiddenFile = skillDir.resolve(".DS_Store");
         Files.writeString(hiddenFile, "hidden garbage data", StandardCharsets.UTF_8);
 
+        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
+        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
+
         // Attempt to set DOS hidden attribute for strict Windows environments
         // (Wrap in try-catch because Linux/macOS might throw UnsupportedOperationException)
+        boolean isOsHiddenSupported = false;
         try {
-            Files.setAttribute(hiddenFile, "dos:hidden", true);
+            Files.setAttribute(osHiddenFile, "dos:hidden", true);
+            isOsHiddenSupported = true;
         } catch (UnsupportedOperationException | IllegalArgumentException e) {
+            // ignored: DOS file attributes are not supported on all platforms
         }
 
         AgentSkill skill =
@@ -282,9 +288,36 @@ class SkillFileSystemHelperTest {
         Map<String, String> resources = skill.getResources();
 
         assertTrue(resources.containsKey("normal_resource.txt"), "Normal file should be loaded");
-        assertEquals("normal content", resources.get("normal_resource.txt"));
+        assertFalse(resources.containsKey(".DS_Store"), "Dot file should be filtered out");
 
-        assertFalse(resources.containsKey(".DS_Store"), "Hidden file should be filtered out");
+        if (isOsHiddenSupported) {
+            assertFalse(
+                    resources.containsKey("os_hidden_file.txt"),
+                    "OS hidden file should be filtered out");
+        }
+    }
+
+    @Test
+    @DisplayName("Should filter out unreadable files")
+    void testLoadResources_FiltersUnreadableFiles() throws IOException {
+        createSampleSkill("unreadable-skill", "Test Unreadable", "Test content");
+        Path skillDir = skillsBaseDir.resolve("unreadable-skill");
+
+        Path unreadableFile = skillDir.resolve("secret.txt");
+        Files.writeString(unreadableFile, "secret data", StandardCharsets.UTF_8);
+
+        boolean canChangeRead = unreadableFile.toFile().setReadable(false);
+
+        if (canChangeRead && !Files.isReadable(unreadableFile)) {
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(
+                            skillsBaseDir, "unreadable-skill", "test-source");
+
+            assertFalse(
+                    skill.getResources().containsKey("secret.txt"),
+                    "Unreadable file should be filtered out");
+        }
+        unreadableFile.toFile().setReadable(true);
     }
 
     private void createSampleSkill(String name, String description, String content)
