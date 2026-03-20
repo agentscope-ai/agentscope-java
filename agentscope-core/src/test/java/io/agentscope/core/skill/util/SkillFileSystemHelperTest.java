@@ -36,6 +36,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentMatchers;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 /**
  * Unit tests for SkillFileSystemHelper.
@@ -257,67 +260,112 @@ class SkillFileSystemHelperTest {
 
     @Test
     @DisplayName(
-            "Should filter out hidden files and files starting with dot when loading resources")
-    void testLoadResources_FiltersHiddenFiles() throws IOException {
-        createSampleSkill("hidden-test-skill", "Test Hidden Files", "Test content");
-        Path skillDir = skillsBaseDir.resolve("hidden-test-skill");
+            "Should fully cover resource filtering logic (unreadable, dot-files, OS hidden, and"
+                    + " IOException)")
+    void testLoadResources_FiltersAllEdgeCases() throws IOException {
+        createSampleSkill("edge-case-skill", "Test Edge Cases", "Test content");
+        Path skillDir = skillsBaseDir.resolve("edge-case-skill");
 
+        // normal file
         Path normalFile = skillDir.resolve("normal_resource.txt");
-        Files.writeString(normalFile, "normal content", StandardCharsets.UTF_8);
+        Files.writeString(normalFile, "normal", StandardCharsets.UTF_8);
 
-        Path hiddenFile = skillDir.resolve(".DS_Store");
-        Files.writeString(hiddenFile, "hidden garbage data", StandardCharsets.UTF_8);
-
-        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
-        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
-
-        // Attempt to set DOS hidden attribute for strict Windows environments
-        // (Wrap in try-catch because Linux/macOS might throw UnsupportedOperationException)
-        boolean isOsHiddenSupported = false;
-        try {
-            Files.setAttribute(osHiddenFile, "dos:hidden", true);
-            isOsHiddenSupported = true;
-        } catch (UnsupportedOperationException | IllegalArgumentException e) {
-            // ignored: DOS file attributes are not supported on all platforms
-        }
-
-        AgentSkill skill =
-                SkillFileSystemHelper.loadSkill(skillsBaseDir, "hidden-test-skill", "test-source");
-
-        assertNotNull(skill);
-        Map<String, String> resources = skill.getResources();
-
-        assertTrue(resources.containsKey("normal_resource.txt"), "Normal file should be loaded");
-        assertFalse(resources.containsKey(".DS_Store"), "Dot file should be filtered out");
-
-        if (isOsHiddenSupported) {
-            assertFalse(
-                    resources.containsKey("os_hidden_file.txt"),
-                    "OS hidden file should be filtered out");
-        }
-    }
-
-    @Test
-    @DisplayName("Should filter out unreadable files")
-    void testLoadResources_FiltersUnreadableFiles() throws IOException {
-        createSampleSkill("unreadable-skill", "Test Unreadable", "Test content");
-        Path skillDir = skillsBaseDir.resolve("unreadable-skill");
-
+        // unreadable file
         Path unreadableFile = skillDir.resolve("secret.txt");
-        Files.writeString(unreadableFile, "secret data", StandardCharsets.UTF_8);
-
+        Files.writeString(unreadableFile, "secret", StandardCharsets.UTF_8);
         boolean canChangeRead = unreadableFile.toFile().setReadable(false);
 
-        if (canChangeRead && !Files.isReadable(unreadableFile)) {
+        // files starting with '.'
+        Path dotFile = skillDir.resolve(".DS_Store");
+        Files.writeString(dotFile, "garbage", StandardCharsets.UTF_8);
+
+        // hide files in the folder
+        Path dotDir = skillDir.resolve(".hidden_dir");
+        Files.createDirectories(dotDir);
+        Path dotDirFile = dotDir.resolve("config.txt");
+        Files.writeString(dotDirFile, "hidden config", StandardCharsets.UTF_8);
+
+        // hidden files at the operating system level
+        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
+        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        boolean dosHiddenApplied = false;
+        if (isWindows) {
+            try {
+                Files.setAttribute(osHiddenFile, "dos:hidden", true);
+                dosHiddenApplied = true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        // file that triggers IOException
+        Path triggerFile = skillDir.resolve("error_trigger.txt");
+        Files.writeString(triggerFile, "trigger", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> mockedFiles =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            mockedFiles
+                    .when(() -> Files.isReadable(ArgumentMatchers.any(Path.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                Path p = invocation.getArgument(0);
+                                if (p.getFileName().toString().equals("secret.txt")) {
+                                    return false;
+                                }
+                                return invocation.callRealMethod();
+                            });
+
+            mockedFiles
+                    .when(() -> Files.isHidden(org.mockito.ArgumentMatchers.any(Path.class)))
+                    .thenAnswer(
+                            invocation -> {
+                                Path p = invocation.getArgument(0);
+                                if (p.getFileName().toString().equals("error_trigger.txt")) {
+                                    throw new IOException("Simulated IO Exception for testing");
+                                }
+                                return invocation.callRealMethod();
+                            });
+
             AgentSkill skill =
                     SkillFileSystemHelper.loadSkill(
-                            skillsBaseDir, "unreadable-skill", "test-source");
+                            skillsBaseDir, "edge-case-skill", "test-source");
+            assertNotNull(skill);
+            Map<String, String> resources = skill.getResources();
 
+            assertTrue(
+                    resources.containsKey("normal_resource.txt"), "Normal file should be loaded");
+
+            // unreadable files should be filtered
+            if (canChangeRead && !Files.isReadable(unreadableFile)) {
+                assertFalse(
+                        resources.containsKey("secret.txt"),
+                        "Unreadable file should be filtered out");
+            }
+            unreadableFile.toFile().setReadable(true);
+
+            // files starting with dots and files in the directory should be filtered
+            assertFalse(resources.containsKey(".DS_Store"), "Dot file should be filtered out");
             assertFalse(
-                    skill.getResources().containsKey("secret.txt"),
-                    "Unreadable file should be filtered out");
+                    resources.containsKey(".hidden_dir/config.txt"),
+                    "File inside dot directory should be filtered out");
+
+            // system hidden files: Windows files with successfully set attributes are filtered,
+            // otherwise they will load normally
+            if (isWindows && dosHiddenApplied) {
+                assertFalse(
+                        resources.containsKey("os_hidden_file.txt"),
+                        "OS hidden file should be filtered out on Windows");
+            } else {
+                assertTrue(
+                        resources.containsKey("os_hidden_file.txt"),
+                        "File should be loaded normally on non-Windows systems");
+            }
+
+            // file that triggers IOException: Expected to be loaded
+            assertTrue(
+                    resources.containsKey("error_trigger.txt"),
+                    "File causing IOException should default to being loaded");
         }
-        unreadableFile.toFile().setReadable(true);
     }
 
     private void createSampleSkill(String name, String description, String content)
