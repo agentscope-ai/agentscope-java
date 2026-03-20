@@ -1224,9 +1224,9 @@ public class DashScopeMultiModalTool {
         boolean finalWatermark = Optional.ofNullable(watermark).orElse(false);
 
         log.debug(
-                "dashscope_first_and_last_frame_image_to_video called: prompt='{}', model='{}', " +
-                        "firstFrameUrl='{}', lastFrameUrl='{}', negativePrompt='{}', template='{}'," +
-                        " resolution='{}', promptExtend={}, watermark={}, seed={}",
+                "dashscope_first_and_last_frame_image_to_video called: prompt='{}', model='{}',"
+                    + " firstFrameUrl='{}', lastFrameUrl='{}', negativePrompt='{}', template='{}',"
+                    + " resolution='{}', promptExtend={}, watermark={}, seed={}",
                 prompt,
                 finalModel,
                 firstFrameUrl,
