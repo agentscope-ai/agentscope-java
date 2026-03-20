@@ -26,6 +26,7 @@ import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -322,6 +323,13 @@ public class DashScopeChatModel extends ChatModelBase {
         if (enableThinking != null) {
             // Explicitly assign value for thinking mode
             request.getParameters().setEnableThinking(enableThinking);
+        } else if (!stream && isThinkingEnabledByDefaultModel(modelName)) {
+            // Qwen 3.5 defaults to thinking mode on DashScope, but thinking mode only supports
+            // streaming. For non-streaming requests we must opt out explicitly.
+            log.debug(
+                    "Disabling default thinking mode for non-streaming DashScope request: model={}",
+                    modelName);
+            request.getParameters().setEnableThinking(false);
         }
 
         if (Boolean.TRUE.equals(enableThinking) && options.getThinkingBudget() != null) {
@@ -333,6 +341,13 @@ public class DashScopeChatModel extends ChatModelBase {
             // Explicitly assign value for search mode
             request.getParameters().setEnableSearch(enableSearch);
         }
+    }
+
+    private boolean isThinkingEnabledByDefaultModel(String modelName) {
+        if (modelName == null) {
+            return false;
+        }
+        return modelName.toLowerCase(Locale.ROOT).startsWith("qwen3.5");
     }
 
     /**

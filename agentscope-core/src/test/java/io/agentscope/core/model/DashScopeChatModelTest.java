@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
@@ -32,6 +33,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -678,6 +680,26 @@ class DashScopeChatModelTest {
     }
 
     @Test
+    @DisplayName("DashScope qwen3.5 non-stream should disable default thinking mode")
+    void testApplyThinkingModeDisablesDefaultThinkingForQwen35NonStream() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen3.5-plus").stream(
+                                false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+
+        assertFalse(request.getParameters().getEnableThinking());
+    }
+
+    @Test
     @DisplayName(
             "Should throw an IllegalStateException when setting thinkingBudget while thinking mode"
                     + " is disabled")
@@ -742,6 +764,69 @@ class DashScopeChatModelTest {
 
         RecordedRequest recorded = mockServer.takeRequest();
         assertNotNull(recorded);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName(
+            "DashScope qwen3.5 non-stream should use multimodal endpoint and opt out of thinking")
+    void testDoNonStreamQwen35UsesMultimodalEndpointAndDisablesThinking() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                {
+                                  "request_id": "test",
+                                  "output": {
+                                    "choices": [{
+                                      "message": {
+                                        "role": "assistant",
+                                        "content": [{"text": "ok"}]
+                                      },
+                                      "finish_reason": "stop"
+                                    }]
+                                  }
+                                }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen3.5-plus").stream(
+                                false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT, recorded.getPath());
+
+        Map<String, Object> requestBody =
+                JsonUtils.getJsonCodec()
+                        .fromJson(recorded.getBody().readUtf8(), new TypeReference<>() {});
+        Map<String, Object> parameters = (Map<String, Object>) requestBody.get("parameters");
+        Map<String, Object> input = (Map<String, Object>) requestBody.get("input");
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) input.get("messages");
+        Map<String, Object> firstMessage = messages.get(0);
+        List<Map<String, Object>> content = (List<Map<String, Object>>) firstMessage.get("content");
+
+        assertEquals(Boolean.FALSE, parameters.get("enable_thinking"));
+        assertEquals("test", content.get(0).get("text"));
 
         mockServer.shutdown();
     }
