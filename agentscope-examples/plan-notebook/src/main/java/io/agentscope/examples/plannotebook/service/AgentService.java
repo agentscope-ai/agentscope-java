@@ -24,14 +24,28 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.memory.InMemoryMemory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.coding.ShellCommandTool;
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
@@ -50,6 +64,8 @@ public class AgentService implements InitializingBean {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
+    private static final ObjectMapper SSE_JSON = new ObjectMapper();
+
     private static final Set<String> PLAN_TOOL_NAMES =
             Set.of(
                     "create_plan",
@@ -62,6 +78,28 @@ public class AgentService implements InitializingBean {
                     "view_subtasks",
                     "view_historical_plans",
                     "recover_historical_plan");
+
+    /**
+     * Allowed first token for {@link ShellCommandTool} (Unix/macOS). On Windows, extend with e.g.
+     * {@code dir}, {@code type}. Whitelist empty is not used here — an empty whitelist would allow
+     * any command per {@link io.agentscope.core.tool.coding.UnixCommandValidator}.
+     */
+    private static final Set<String> SHELL_COMMAND_WHITELIST =
+            Set.of(
+                    "ls",
+                    "pwd",
+                    "cat",
+                    "echo",
+                    "mkdir",
+                    "rmdir",
+                    "cp",
+                    "mv",
+                    "rm",
+                    "wc",
+                    "head",
+                    "tail",
+                    "bash",
+                    "sh");
 
     private final PlanService planService;
 
@@ -96,6 +134,11 @@ public class AgentService implements InitializingBean {
         memory = new InMemoryMemory();
         toolkit = new Toolkit();
         toolkit.registerTool(new FileToolMock());
+        String workspaceRoot = resolveWorkspaceRoot();
+        toolkit.registerTool(new ReadFileTool(workspaceRoot));
+        toolkit.registerTool(new WriteFileTool(workspaceRoot));
+        toolkit.registerTool(
+                new ShellCommandTool(workspaceRoot, SHELL_COMMAND_WHITELIST, null));
 
         PlanNotebook planNotebook = PlanNotebook.builder().build();
         planService.setPlanNotebook(planNotebook);
@@ -137,6 +180,9 @@ public class AgentService implements InitializingBean {
                                         .apiKey(apiKey)
                                         .modelName("qwen3-max")
                                         .stream(true)
+                                        .enableThinking(true)
+                                        .defaultOptions(
+                                                GenerateOptions.builder().thinkingBudget(8192).build())
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .memory(memory)
@@ -189,34 +235,110 @@ public class AgentService implements InitializingBean {
         return StreamOptions.builder()
                 .eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.AGENT_RESULT)
                 .incremental(true)
+                .includeActingChunk(false)
                 .build();
     }
 
     /**
-     * Map a stream event to a string for SSE output.
+     * Maps a stream event to one SSE line: a JSON object {@code {t: kind, ...}} so the UI can
+     * interleave thinking, answer text, and tool results, then render Markdown.
      */
     private String mapEventToString(Event event) {
-        // Handle AGENT_RESULT events (agent execution ended)
-        if (event.getType() == EventType.AGENT_RESULT) {
-            Msg msg = event.getMessage();
-            if (msg != null && msg.getGenerateReason() == GenerateReason.ACTING_STOP_REQUESTED) {
-                isPaused.set(true);
-                return "[PAUSED]";
+        try {
+            if (event.getType() == EventType.AGENT_RESULT) {
+                Msg msg = event.getMessage();
+                if (msg != null && msg.getGenerateReason() == GenerateReason.ACTING_STOP_REQUESTED) {
+                    isPaused.set(true);
+                    return SSE_JSON.writeValueAsString(Map.of("t", "paused"));
+                }
+                return "";
             }
-            // Normal completion - content already streamed via REASONING chunks
+
+            if (event.getType() == EventType.TOOL_RESULT) {
+                Msg msg = event.getMessage();
+                if (msg == null) {
+                    return "";
+                }
+                List<ToolResultBlock> blocks = msg.getContentBlocks(ToolResultBlock.class);
+                if (blocks.isEmpty()) {
+                    return "";
+                }
+                ToolResultBlock tr = blocks.get(0);
+                String name = tr.getName() != null ? tr.getName() : "";
+                String body = flattenToolOutput(tr);
+                Map<String, Object> payload = new LinkedHashMap<>(4);
+                payload.put("t", "tool");
+                payload.put("n", name);
+                payload.put("d", body);
+                Map<String, Object> md = msg.getMetadata();
+                if (md != null) {
+                    Object in = md.get(Msg.METADATA_STREAM_TOOL_INPUT);
+                    if (in instanceof Map<?, ?> rawIn && !rawIn.isEmpty()) {
+                        Map<String, Object> inputMap = new LinkedHashMap<>();
+                        for (Map.Entry<?, ?> e : rawIn.entrySet()) {
+                            if (e.getKey() != null) {
+                                inputMap.put(String.valueOf(e.getKey()), e.getValue());
+                            }
+                        }
+                        if (!inputMap.isEmpty()) {
+                            payload.put("i", inputMap);
+                        }
+                    }
+                }
+                return SSE_JSON.writeValueAsString(payload);
+            }
+
+            if (event.isLast()) {
+                return "";
+            }
+
+            Msg msg = event.getMessage();
+            if (msg == null) {
+                return "";
+            }
+
+            List<ThinkingBlock> thinkingBlocks = msg.getContentBlocks(ThinkingBlock.class);
+            if (!thinkingBlocks.isEmpty()) {
+                String delta = thinkingBlocks.get(0).getThinking();
+                if (delta == null || delta.isEmpty()) {
+                    return "";
+                }
+                return SSE_JSON.writeValueAsString(Map.of("t", "think", "d", delta));
+            }
+
+            List<TextBlock> textBlocks = msg.getContentBlocks(TextBlock.class);
+            if (!textBlocks.isEmpty()) {
+                String delta = textBlocks.get(0).getText();
+                if (delta == null || delta.isEmpty()) {
+                    return "";
+                }
+                return SSE_JSON.writeValueAsString(Map.of("t", "text", "d", delta));
+            }
+            return "";
+        } catch (Exception e) {
+            log.warn("Failed to encode SSE chunk: {}", e.getMessage());
             return "";
         }
+    }
 
-        // Skip final accumulated messages in incremental mode to avoid duplicate output
-        if (event.isLast()) {
-            return "";
+    private static String flattenToolOutput(ToolResultBlock block) {
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock o : block.getOutput()) {
+            appendContentBlock(sb, o);
         }
+        return sb.toString();
+    }
 
-        List<TextBlock> textBlocks = event.getMessage().getContentBlocks(TextBlock.class);
-        if (!textBlocks.isEmpty()) {
-            return textBlocks.get(0).getText();
+    private static void appendContentBlock(StringBuilder sb, ContentBlock o) {
+        if (o instanceof TextBlock tb) {
+            sb.append(tb.getText());
+        } else if (o instanceof ThinkingBlock th) {
+            sb.append(th.getThinking());
+        } else if (o instanceof ToolResultBlock tr) {
+            sb.append(flattenToolOutput(tr));
+        } else {
+            sb.append(o);
         }
-        return "";
     }
 
     /**
@@ -253,5 +375,30 @@ public class AgentService implements InitializingBean {
         initializeAgent();
         planService.broadcastPlanChange();
         log.info("Agent reset completed");
+    }
+
+    /**
+     * Directory bound for {@link ReadFileTool} / {@link WriteFileTool}. Override with env
+     * {@code PLAN_NOTEBOOK_WORKSPACE}; otherwise {@code ~/.agentscope/plan-notebook/workspace}.
+     */
+    private static String resolveWorkspaceRoot() {
+        String override = System.getenv("PLAN_NOTEBOOK_WORKSPACE");
+        Path root =
+                override != null && !override.isEmpty()
+                        ? Paths.get(override).toAbsolutePath().normalize()
+                        : Paths.get(
+                                        System.getProperty("user.home"),
+                                        ".agentscope",
+                                        "plan-notebook",
+                                        "workspace")
+                                .toAbsolutePath()
+                                .normalize();
+        try {
+            Files.createDirectories(root);
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot create workspace directory: " + root, e);
+        }
+        log.info("Agent file tools restricted to workspace: {}", root);
+        return root.toString();
     }
 }
