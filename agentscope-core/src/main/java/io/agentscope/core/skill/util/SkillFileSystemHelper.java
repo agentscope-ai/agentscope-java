@@ -359,6 +359,18 @@ public final class SkillFileSystemHelper {
         try (Stream<Path> paths = Files.walk(skillDir)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> !p.equals(skillFile))
+                    .filter(
+                            p -> {
+                                if (p.getFileName().toString().startsWith(".")) {
+                                    return false;
+                                }
+                                try {
+                                    return !Files.isHidden(p) && Files.isReadable(p);
+                                } catch (IOException e) {
+                                    logger.warn("Failed to check attributes for file: {}", p, e);
+                                    return false;
+                                }
+                            })
                     .forEach(
                             p -> {
                                 String relativePath =

@@ -255,6 +255,38 @@ class SkillFileSystemHelperTest {
         assertEquals("plain text", Files.readString(savedText, StandardCharsets.UTF_8));
     }
 
+    @Test
+    @DisplayName(
+            "Should filter out hidden files and files starting with dot when loading resources")
+    void testLoadResources_FiltersHiddenFiles() throws IOException {
+        createSampleSkill("hidden-test-skill", "Test Hidden Files", "Test content");
+        Path skillDir = skillsBaseDir.resolve("hidden-test-skill");
+
+        Path normalFile = skillDir.resolve("normal_resource.txt");
+        Files.writeString(normalFile, "normal content", StandardCharsets.UTF_8);
+
+        Path hiddenFile = skillDir.resolve(".DS_Store");
+        Files.writeString(hiddenFile, "hidden garbage data", StandardCharsets.UTF_8);
+
+        // Attempt to set DOS hidden attribute for strict Windows environments
+        // (Wrap in try-catch because Linux/macOS might throw UnsupportedOperationException)
+        try {
+            Files.setAttribute(hiddenFile, "dos:hidden", true);
+        } catch (UnsupportedOperationException | IllegalArgumentException e) {
+        }
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "hidden-test-skill", "test-source");
+
+        assertNotNull(skill);
+        Map<String, String> resources = skill.getResources();
+
+        assertTrue(resources.containsKey("normal_resource.txt"), "Normal file should be loaded");
+        assertEquals("normal content", resources.get("normal_resource.txt"));
+
+        assertFalse(resources.containsKey(".DS_Store"), "Hidden file should be filtered out");
+    }
+
     private void createSampleSkill(String name, String description, String content)
             throws IOException {
         Path skillDir = skillsBaseDir.resolve(name);
