@@ -32,6 +32,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.plan.PlanNotebook;
@@ -47,6 +48,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,6 +116,13 @@ public class AgentService implements InitializingBean {
     // Track if user has requested to stop (will pause on next plan tool execution)
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
 
+    /**
+     * Tool call inputs captured in {@link PostActingEvent} (runs before streaming TOOL_RESULT).
+     * Consumed in {@link #mapEventToString} in order — no core changes required.
+     */
+    private final ConcurrentLinkedQueue<Map<String, Object>> pendingToolInputs =
+            new ConcurrentLinkedQueue<>();
+
     public AgentService(PlanService planService) {
         this.planService = planService;
     }
@@ -131,6 +140,7 @@ public class AgentService implements InitializingBean {
     }
 
     private void initializeAgent() {
+        pendingToolInputs.clear();
         memory = new InMemoryMemory();
         toolkit = new Toolkit();
         toolkit.registerTool(new FileToolMock());
@@ -153,15 +163,23 @@ public class AgentService implements InitializingBean {
                     @Override
                     public <T extends HookEvent> Mono<T> onEvent(T event) {
                         if (event instanceof PostActingEvent postActing) {
-                            String toolName = postActing.getToolUse().getName();
-                            if (PLAN_TOOL_NAMES.contains(toolName)) {
-                                // Only stop if user has requested it
-                                if (stopRequested.compareAndSet(true, false)) {
-                                    log.info(
-                                            "Plan tool '{}' executed, pausing for user review",
-                                            toolName);
-                                    isPaused.set(true);
-                                    postActing.stopAgent();
+                            ToolUseBlock toolUse = postActing.getToolUse();
+                            Map<String, Object> captured = new LinkedHashMap<>();
+                            if (toolUse != null && toolUse.getInput() != null) {
+                                captured.putAll(toolUse.getInput());
+                            }
+                            pendingToolInputs.offer(captured);
+
+                            if (toolUse != null) {
+                                String toolName = toolUse.getName();
+                                if (PLAN_TOOL_NAMES.contains(toolName)) {
+                                    if (stopRequested.compareAndSet(true, false)) {
+                                        log.info(
+                                                "Plan tool '{}' executed, pausing for user review",
+                                                toolName);
+                                        isPaused.set(true);
+                                        postActing.stopAgent();
+                                    }
                                 }
                             }
                         }
@@ -178,7 +196,7 @@ public class AgentService implements InitializingBean {
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)
-                                        .modelName("qwen3-max")
+                                        .modelName("qwen3.5-27b")
                                         .stream(true)
                                         .enableThinking(true)
                                         .defaultOptions(
@@ -199,6 +217,7 @@ public class AgentService implements InitializingBean {
     public Flux<String> chat(String sessionId, String message) {
         // Clear paused state when user sends a new message
         isPaused.set(false);
+        pendingToolInputs.clear();
 
         Msg userMsg =
                 Msg.builder()
@@ -219,6 +238,7 @@ public class AgentService implements InitializingBean {
     public Flux<String> resume(String sessionId) {
         if (isPaused.compareAndSet(true, false)) {
             log.info("Resuming agent execution after user review");
+            pendingToolInputs.clear();
 
             // Resume by calling agent.stream() with no input message
             return agent.stream(createStreamOptions())
@@ -270,20 +290,9 @@ public class AgentService implements InitializingBean {
                 payload.put("t", "tool");
                 payload.put("n", name);
                 payload.put("d", body);
-                Map<String, Object> md = msg.getMetadata();
-                if (md != null) {
-                    Object in = md.get(Msg.METADATA_STREAM_TOOL_INPUT);
-                    if (in instanceof Map<?, ?> rawIn && !rawIn.isEmpty()) {
-                        Map<String, Object> inputMap = new LinkedHashMap<>();
-                        for (Map.Entry<?, ?> e : rawIn.entrySet()) {
-                            if (e.getKey() != null) {
-                                inputMap.put(String.valueOf(e.getKey()), e.getValue());
-                            }
-                        }
-                        if (!inputMap.isEmpty()) {
-                            payload.put("i", inputMap);
-                        }
-                    }
+                Map<String, Object> inputSnapshot = pendingToolInputs.poll();
+                if (inputSnapshot != null && !inputSnapshot.isEmpty()) {
+                    payload.put("i", inputSnapshot);
                 }
                 return SSE_JSON.writeValueAsString(payload);
             }

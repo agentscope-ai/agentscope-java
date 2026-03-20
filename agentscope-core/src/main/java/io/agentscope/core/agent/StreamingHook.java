@@ -27,7 +27,6 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -86,7 +85,7 @@ class StreamingHook implements Hook {
             PostActingEvent e = (PostActingEvent) event;
             // Tool execution completed
             if (options.shouldStream(EventType.TOOL_RESULT)) {
-                Msg toolMsg = createToolMessage(e.getToolResult(), e.getToolUse());
+                Msg toolMsg = createToolMessage(e.getToolResult());
                 emitEvent(EventType.TOOL_RESULT, toolMsg, true);
             }
             return Mono.just(event);
@@ -135,30 +134,6 @@ class StreamingHook implements Hook {
                 .role(MsgRole.TOOL)
                 .content(List.of(toolResultBlock))
                 .build();
-    }
-
-    /**
-     * Creates a tool message with optional call input in metadata (for streaming UIs).
-     *
-     * @param toolResultBlock The tool result
-     * @param toolUse The original tool call; input map is copied into metadata when present
-     */
-    private Msg createToolMessage(ToolResultBlock toolResultBlock, ToolUseBlock toolUse) {
-        Map<String, Object> meta = new HashMap<>(2);
-        if (toolUse != null
-                && toolUse.getInput() != null
-                && !toolUse.getInput().isEmpty()) {
-            meta.put(Msg.METADATA_STREAM_TOOL_INPUT, new HashMap<>(toolUse.getInput()));
-        }
-        Msg.Builder b =
-                Msg.builder()
-                        .name("system")
-                        .role(MsgRole.TOOL)
-                        .content(List.of(toolResultBlock));
-        if (!meta.isEmpty()) {
-            b.metadata(meta);
-        }
-        return b.build();
     }
 
     /**

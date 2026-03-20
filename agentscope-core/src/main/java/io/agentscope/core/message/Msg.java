@@ -55,12 +55,6 @@ public class Msg implements State {
     /** Metadata key for storing the generate reason. */
     public static final String METADATA_GENERATE_REASON = "agentscope_generate_reason";
 
-    /**
-     * Metadata key: tool call input map, attached to streaming TOOL_RESULT messages for UI
-     * observability.
-     */
-    public static final String METADATA_STREAM_TOOL_INPUT = "agentscope_stream_tool_input";
-
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
