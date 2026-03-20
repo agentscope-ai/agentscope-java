@@ -100,7 +100,7 @@ public interface StreamableAgent {
     }
 
     /**
-     * Stream execution events for a single message with JSON scheme support.
+     * Stream execution events for a single message with JSON schema support.
      *
      * @param msg Input message
      * @param options Stream configuration options
@@ -141,7 +141,7 @@ public interface StreamableAgent {
     Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel);
 
     /**
-     * Stream execution events with JSON scheme support.
+     * Stream execution events with JSON schema support.
      *
      * @param msgs Input messages
      * @param options Stream configuration options

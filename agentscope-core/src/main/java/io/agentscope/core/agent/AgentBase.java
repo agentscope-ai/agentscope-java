@@ -675,8 +675,16 @@ public abstract class AgentBase implements StateModule, Agent {
         return createEventStream(options, () -> call(msgs, structuredModel));
     }
 
+    /**
+     * Stream with multiple input messages using a JSON schema.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param schema JSON schema defining the structure of the response
+     * @return Flux of events emitted during execution
+     */
     @Override
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
         return createEventStream(options, () -> call(msgs, schema));
     }
 

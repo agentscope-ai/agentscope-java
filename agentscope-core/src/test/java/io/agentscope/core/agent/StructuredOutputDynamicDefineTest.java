@@ -41,7 +41,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 /**
- * Tests for dynamic define json schema in StructuredOutputCapableAgent (deferred forcing mode).
+ * Tests for dynamically defined JSON schema in StructuredOutputCapableAgent (deferred forcing mode).
  */
 public class StructuredOutputDynamicDefineTest {
 
@@ -114,7 +114,7 @@ public class StructuredOutputDynamicDefineTest {
     }
 
     @Test
-    @DisplayName("Stream execution events with JSON scheme structured support")
+    @DisplayName("Stream execution events with JSON schema structured support")
     void testDynamicComplexNestedStructureStreamingMode() {
         Memory memory = new InMemoryMemory();
         MockModel mockModel = getMockModel();
