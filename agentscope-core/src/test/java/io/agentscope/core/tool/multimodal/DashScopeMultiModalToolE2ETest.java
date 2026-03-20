@@ -386,9 +386,9 @@ class DashScopeMultiModalToolE2ETest {
     void testImageToVideoWithBase64DataUrl() throws IOException {
         Mono<ToolResultBlock> result =
                 multiModalTool.dashscopeImageToVideo(
-                        MediaUtils.urlToBase64DataUrl(TEST_IMAGE_PATH),
+                        TEXT_TO_VIDEO_PROMPT,
                         "wan2.6-i2v-flash",
-                        TEST_IMAGE_PATH,
+                        MediaUtils.urlToBase64DataUrl(TEST_IMAGE_PATH),
                         TEST_AUDIO_URL,
                         "low quality",
                         "hanfu-1",

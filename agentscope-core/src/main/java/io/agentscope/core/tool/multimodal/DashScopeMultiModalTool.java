@@ -69,6 +69,18 @@ import reactor.core.publisher.Mono;
 
 /**
  * DashScope multimodal tool.
+ * <p>
+ * Support tools:
+ * <ul>
+ *     <li>dashscope_text_to_image: Generate image(s) based on the given text.</li>
+ *     <li>dashscope_image_to_text: Generate text based on the given images.</li>
+ *     <li>dashscope_text_to_audio: Convert the given text to audio.</li>
+ *     <li>dashscope_audio_to_text: Convert the given audio to text.</li>
+ *     <li>dashscope_text_to_video: Generate video based on the given text prompt.</li>
+ *     <li>dashscope_image_to_video: Generate a video from a single input image and an optional text prompt.</li>
+ *     <li>dashscope_first_and_last_frame_image_to_video: Generate video transitioning from a first frame to a last frame and an optional text prompt.</li>
+ *     <li>dashscope_video_to_text: Analyze video and generate a text description or answer questions based on the video content.</li>
+ * </ul>
  * convert text to images, convert images to text, convert text to audio, and convert audio to text.
  * Please refer to the <a href="https://dashscope.aliyun.com/">`dashscope documentation`</a> for more details.
  */
@@ -1212,9 +1224,9 @@ public class DashScopeMultiModalTool {
         boolean finalWatermark = Optional.ofNullable(watermark).orElse(false);
 
         log.debug(
-                "dashscope_image_to_video called: prompt='{}', model='{}', firstFrameUrl='{}',"
-                        + " lastFrameUrl='{}', negativePrompt='{}', template='{}', resolution='{}',"
-                        + " promptExtend={}, watermark={}, seed={}",
+                "dashscope_first_and_last_frame_image_to_video called: prompt='{}', model='{}', " +
+                        "firstFrameUrl='{}', lastFrameUrl='{}', negativePrompt='{}', template='{}'," +
+                        " resolution='{}', promptExtend={}, watermark={}, seed={}",
                 prompt,
                 finalModel,
                 firstFrameUrl,
@@ -1308,7 +1320,7 @@ public class DashScopeMultiModalTool {
                             name = "video_url",
                             description =
                                     "The URL, local file path or base64 data URL(the format pattern"
-                                        + " is data:[MIME_type];base64,{base64_image}, e.g.,"
+                                        + " is data:[MIME_type];base64,{base64_video}, e.g.,"
                                         + " 'data:video/mp4;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA...')"
                                         + " of the video to analyze.")
                     String videoUrl,
