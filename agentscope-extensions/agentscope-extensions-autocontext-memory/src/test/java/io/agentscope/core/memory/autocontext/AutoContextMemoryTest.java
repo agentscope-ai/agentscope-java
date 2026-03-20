@@ -1677,4 +1677,61 @@ class AutoContextMemoryTest {
                 resultDone.contains("Goal: Test Description"),
                 "Should contain goal for DONE state");
     }
+
+    @Test
+    @DisplayName(
+            "Should use USER role for current round compressed message to comply with API"
+                    + " specifications")
+    void testCurrentRoundSummaryRoleIsUser() {
+        TestModel testModel = new TestModel("Compressed current round summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("Previous user message", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Previous assistant response", MsgRole.ASSISTANT));
+
+        testMemory.addMessage(createTextMessage("Current user query with tools", MsgRole.USER));
+
+        for (int i = 0; i < 2; i++) {
+            testMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            testMemory.addMessage(createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(compressed, "Compression should be triggered");
+
+        List<Msg> messages = testMemory.getMessages();
+
+        // Looking for the message that was compressed out
+        Msg compressedMsg =
+                messages.stream()
+                        .filter(
+                                msg -> {
+                                    Map<String, Object> meta = msg.getMetadata();
+                                    if (meta != null && meta.containsKey("_compress_meta")) {
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> compressMeta =
+                                                (Map<String, Object>) meta.get("_compress_meta");
+                                        return Boolean.TRUE.equals(
+                                                compressMeta.get("compressed_current_round"));
+                                    }
+                                    return false;
+                                })
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(compressedMsg, "Should find the compressed current round message");
+
+        assertEquals(
+                MsgRole.USER,
+                compressedMsg.getRole(),
+                "Compressed message role MUST be USER to comply with LLM API norms");
+        assertEquals("user", compressedMsg.getName(), "Compressed message name MUST be 'user'");
+    }
 }
