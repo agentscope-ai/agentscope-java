@@ -438,13 +438,16 @@ public class OpenAIClient {
                             })
                     .onErrorMap(
                             ex -> {
-                                if (ex instanceof HttpTransportException) {
-                                    return OpenAIException.create(
-                                            ((HttpTransportException) ex).getStatusCode(),
+                                if (ex instanceof HttpTransportException hte) {
+                                    Integer code = hte.getStatusCode();
+                                    String msg =
                                             "HTTP transport error during streaming: "
-                                                    + ex.getMessage(),
-                                            null,
-                                            ((HttpTransportException) ex).getResponseBody());
+                                                    + ex.getMessage();
+                                    if (code != null) {
+                                        return OpenAIException.create(
+                                                code, msg, null, hte.getResponseBody());
+                                    }
+                                    return new OpenAIException(msg, ex);
                                 }
                                 return ex;
                             });
