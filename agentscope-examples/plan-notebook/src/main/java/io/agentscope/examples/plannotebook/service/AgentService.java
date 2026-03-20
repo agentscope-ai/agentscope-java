@@ -15,6 +15,7 @@
  */
 package io.agentscope.examples.plannotebook.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -24,7 +25,6 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.memory.InMemoryMemory;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -88,20 +88,8 @@ public class AgentService implements InitializingBean {
      */
     private static final Set<String> SHELL_COMMAND_WHITELIST =
             Set.of(
-                    "ls",
-                    "pwd",
-                    "cat",
-                    "echo",
-                    "mkdir",
-                    "rmdir",
-                    "cp",
-                    "mv",
-                    "rm",
-                    "wc",
-                    "head",
-                    "tail",
-                    "bash",
-                    "sh");
+                    "ls", "pwd", "cat", "echo", "mkdir", "rmdir", "cp", "mv", "rm", "wc", "head",
+                    "tail", "bash", "sh");
 
     private final PlanService planService;
 
@@ -147,8 +135,7 @@ public class AgentService implements InitializingBean {
         String workspaceRoot = resolveWorkspaceRoot();
         toolkit.registerTool(new ReadFileTool(workspaceRoot));
         toolkit.registerTool(new WriteFileTool(workspaceRoot));
-        toolkit.registerTool(
-                new ShellCommandTool(workspaceRoot, SHELL_COMMAND_WHITELIST, null));
+        toolkit.registerTool(new ShellCommandTool(workspaceRoot, SHELL_COMMAND_WHITELIST, null));
 
         PlanNotebook planNotebook = PlanNotebook.builder().build();
         planService.setPlanNotebook(planNotebook);
@@ -200,7 +187,9 @@ public class AgentService implements InitializingBean {
                                         .stream(true)
                                         .enableThinking(true)
                                         .defaultOptions(
-                                                GenerateOptions.builder().thinkingBudget(8192).build())
+                                                GenerateOptions.builder()
+                                                        .thinkingBudget(8192)
+                                                        .build())
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .memory(memory)
@@ -267,7 +256,8 @@ public class AgentService implements InitializingBean {
         try {
             if (event.getType() == EventType.AGENT_RESULT) {
                 Msg msg = event.getMessage();
-                if (msg != null && msg.getGenerateReason() == GenerateReason.ACTING_STOP_REQUESTED) {
+                if (msg != null
+                        && msg.getGenerateReason() == GenerateReason.ACTING_STOP_REQUESTED) {
                     isPaused.set(true);
                     return SSE_JSON.writeValueAsString(Map.of("t", "paused"));
                 }
