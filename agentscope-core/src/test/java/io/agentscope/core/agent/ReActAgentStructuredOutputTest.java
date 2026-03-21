@@ -545,7 +545,6 @@ class ReActAgentStructuredOutputTest {
      * Reproduces the subscribeOn(elastic) vs delayed {@code doFinally} race: run many times until
      * failure or increase confidence after a fix.
      */
-    /** Bump to 50–200 locally when hunting the subscribeOn / {@code doFinally} race. */
     @RepeatedTest(25000)
     @DisplayName("Structured output race: 10 repetitions (subscribeOn + immediate second call)")
     void testConcurrencyConflictStructuredOutput_repeated() {
