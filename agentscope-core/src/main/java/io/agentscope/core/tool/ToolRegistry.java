@@ -103,6 +103,22 @@ class ToolRegistry {
     }
 
     /**
+     * Atomically remove a tool only if the current instance matches the expected one.
+     * Uses {@link ConcurrentHashMap#remove(Object, Object)} to avoid TOCTOU races.
+     *
+     * @param toolName Tool name to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    boolean removeToolIfSame(String toolName, AgentTool expected) {
+        boolean removed = tools.remove(toolName, expected);
+        if (removed) {
+            registeredTools.remove(toolName);
+        }
+        return removed;
+    }
+
+    /**
      * Remove multiple tools by names.
      *
      * @param toolNames Set of tool names to remove

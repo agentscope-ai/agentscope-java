@@ -16,8 +16,16 @@
 
 package io.agentscope.core.agent;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -33,11 +41,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import reactor.core.scheduler.Schedulers;
 
 class ReActAgentStructuredOutputTest {
@@ -536,6 +539,26 @@ class ReActAgentStructuredOutputTest {
 
     @Test
     void testConcurrencyConflictStructuredOutput() {
+        runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(toolkit);
+    }
+
+    /**
+     * Reproduces the subscribeOn(elastic) vs delayed {@code doFinally} race: run many times until
+     * failure or increase confidence after a fix.
+     */
+    /** Bump to 50–200 locally when hunting the subscribeOn / {@code doFinally} race. */
+    @RepeatedTest(25000)
+    @DisplayName("Structured output race: 10 repetitions (subscribeOn + immediate second call)")
+    void testConcurrencyConflictStructuredOutput_repeated() {
+        runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(toolkit);
+    }
+
+    /**
+     * First call on {@link Schedulers#boundedElastic()}, second call immediately on the calling
+     * thread — same agent and toolkit. Flaky when structured-output cleanup races the second
+     * registration.
+     */
+    private void runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(Toolkit agentToolkit) {
         Memory memory = new InMemoryMemory();
         Map<String, Object> toolInput =
                 Map.of(
@@ -587,7 +610,7 @@ class ReActAgentStructuredOutputTest {
                         .name("weather-agent")
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
-                        .toolkit(toolkit)
+                        .toolkit(agentToolkit)
                         .memory(memory)
                         .build();
 
