@@ -24,6 +24,8 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -44,12 +46,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -67,6 +71,12 @@ public class AgentService implements InitializingBean {
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
     private static final ObjectMapper SSE_JSON = new ObjectMapper();
+
+    /** Max length of the flattened transcript in each {@code ctx} SSE payload (large tool outputs). */
+    private static final int CTX_FLAT_MAX_CHARS = 48_000;
+
+    /** Max length per text-like field inside structured {@code messages} in {@code ctx} payloads. */
+    private static final int CTX_FIELD_MAX_CHARS = 8_000;
 
     private static final Set<String> PLAN_TOOL_NAMES =
             Set.of(
@@ -111,6 +121,15 @@ public class AgentService implements InitializingBean {
     private final ConcurrentLinkedQueue<Map<String, Object>> pendingToolInputs =
             new ConcurrentLinkedQueue<>();
 
+    /**
+     * Serialized {@code ctx} lines captured after all hooks adjust {@link PreReasoningEvent} /
+     * {@link PreSummaryEvent} input. Drained before each streamed {@link Event} is mapped.
+     */
+    private final ConcurrentLinkedQueue<String> pendingContextSseLines =
+            new ConcurrentLinkedQueue<>();
+
+    private final AtomicInteger contextSeq = new AtomicInteger(0);
+
     public AgentService(PlanService planService) {
         this.planService = planService;
     }
@@ -129,6 +148,8 @@ public class AgentService implements InitializingBean {
 
     private void initializeAgent() {
         pendingToolInputs.clear();
+        pendingContextSseLines.clear();
+        contextSeq.set(0);
         memory = new InMemoryMemory();
         toolkit = new Toolkit();
         toolkit.registerTool(new FileToolMock());
@@ -174,6 +195,28 @@ public class AgentService implements InitializingBean {
                     }
                 };
 
+        /*
+         * Low priority: run after other hooks so the payload matches what the model will receive.
+         */
+        Hook promptCaptureHook =
+                new Hook() {
+                    @Override
+                    public int priority() {
+                        return 1000;
+                    }
+
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreReasoningEvent pre) {
+                            offerContextLine(
+                                    "reasoning", pre.getModelName(), pre.getInputMessages());
+                        } else if (event instanceof PreSummaryEvent sum) {
+                            offerContextLine("summary", sum.getModelName(), sum.getInputMessages());
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
         agent =
                 ReActAgent.builder()
                         .name("PlanAgent")
@@ -196,6 +239,7 @@ public class AgentService implements InitializingBean {
                         .toolkit(toolkit)
                         .maxIters(50)
                         .hook(planChangeHook)
+                        .hook(promptCaptureHook)
                         .planNotebook(planNotebook)
                         .build();
     }
@@ -207,6 +251,8 @@ public class AgentService implements InitializingBean {
         // Clear paused state when user sends a new message
         isPaused.set(false);
         pendingToolInputs.clear();
+        pendingContextSseLines.clear();
+        contextSeq.set(0);
 
         Msg userMsg =
                 Msg.builder()
@@ -214,10 +260,9 @@ public class AgentService implements InitializingBean {
                         .content(TextBlock.builder().text(message).build())
                         .build();
 
-        return agent.stream(userMsg, createStreamOptions())
-                .subscribeOn(Schedulers.boundedElastic())
-                .map(this::mapEventToString)
-                .filter(text -> text != null && !text.isEmpty());
+        return attachPendingContext(
+                agent.stream(userMsg, createStreamOptions())
+                        .subscribeOn(Schedulers.boundedElastic()));
     }
 
     /**
@@ -228,12 +273,12 @@ public class AgentService implements InitializingBean {
         if (isPaused.compareAndSet(true, false)) {
             log.info("Resuming agent execution after user review");
             pendingToolInputs.clear();
+            pendingContextSseLines.clear();
+            contextSeq.set(0);
 
             // Resume by calling agent.stream() with no input message
-            return agent.stream(createStreamOptions())
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .map(this::mapEventToString)
-                    .filter(text -> text != null && !text.isEmpty());
+            return attachPendingContext(
+                    agent.stream(createStreamOptions()).subscribeOn(Schedulers.boundedElastic()));
         } else {
             log.warn("Tried to resume but agent is not paused or already resuming");
             return Flux.just("Agent is not paused or is already resuming.");
@@ -246,6 +291,159 @@ public class AgentService implements InitializingBean {
                 .incremental(true)
                 .includeActingChunk(false)
                 .build();
+    }
+
+    private Flux<String> attachPendingContext(Flux<Event> events) {
+        return events.concatMap(
+                event -> {
+                    List<String> prefix = drainPendingContextLines();
+                    String mapped = mapEventToString(event);
+                    boolean hasPrefix = !prefix.isEmpty();
+                    boolean hasBody = mapped != null && !mapped.isEmpty();
+                    if (!hasPrefix && !hasBody) {
+                        return Flux.empty();
+                    }
+                    Flux<String> head = Flux.fromIterable(prefix);
+                    return hasBody ? head.concatWith(Flux.just(mapped)) : head;
+                });
+    }
+
+    private List<String> drainPendingContextLines() {
+        List<String> out = new ArrayList<>();
+        String line;
+        while ((line = pendingContextSseLines.poll()) != null) {
+            out.add(line);
+        }
+        return out;
+    }
+
+    private void offerContextLine(String phase, String modelName, List<Msg> messages) {
+        try {
+            int seq = contextSeq.incrementAndGet();
+            Map<String, Object> root = new LinkedHashMap<>();
+            root.put("t", "ctx");
+            root.put("phase", phase);
+            root.put("seq", seq);
+            root.put("model", modelName != null ? modelName : "");
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Msg m : messages) {
+                rows.add(msgToDebugRow(m));
+            }
+            root.put("messages", rows);
+            String flat = truncateIfNeeded(buildFlatTranscript(messages), CTX_FLAT_MAX_CHARS);
+            root.put("flat", flat);
+            pendingContextSseLines.offer(SSE_JSON.writeValueAsString(root));
+        } catch (Exception e) {
+            log.warn("Failed to serialize model context for SSE: {}", e.getMessage());
+        }
+    }
+
+    private static Map<String, Object> msgToDebugRow(Msg m) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("role", m.getRole().name());
+        if (m.getName() != null) {
+            row.put("name", m.getName());
+        }
+        List<Object> parts = new ArrayList<>();
+        for (ContentBlock b : m.getContent()) {
+            parts.add(contentBlockToDebugMap(b));
+        }
+        row.put("content", parts);
+        return row;
+    }
+
+    private static Object contentBlockToDebugMap(ContentBlock b) {
+        if (b instanceof TextBlock tb) {
+            return Map.of(
+                    "type",
+                    "text",
+                    "text",
+                    truncateIfNeeded(
+                            tb.getText() != null ? tb.getText() : "", CTX_FIELD_MAX_CHARS));
+        }
+        if (b instanceof ThinkingBlock th) {
+            return Map.of(
+                    "type",
+                    "thinking",
+                    "thinking",
+                    truncateIfNeeded(
+                            th.getThinking() != null ? th.getThinking() : "", CTX_FIELD_MAX_CHARS));
+        }
+        if (b instanceof ToolUseBlock tu) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("type", "tool_use");
+            m.put("id", tu.getId());
+            m.put("name", tu.getName());
+            m.put("input", tu.getInput() != null ? tu.getInput() : Map.of());
+            String raw = tu.getContent();
+            if (raw != null && !raw.isEmpty()) {
+                m.put("raw", truncateIfNeeded(raw, CTX_FIELD_MAX_CHARS));
+            }
+            return m;
+        }
+        if (b instanceof ToolResultBlock tr) {
+            return Map.of(
+                    "type",
+                    "tool_result",
+                    "name",
+                    tr.getName() != null ? tr.getName() : "",
+                    "output",
+                    truncateIfNeeded(flattenToolOutput(tr), CTX_FIELD_MAX_CHARS));
+        }
+        return Map.of(
+                "type", "other", "repr", truncateIfNeeded(String.valueOf(b), CTX_FIELD_MAX_CHARS));
+    }
+
+    private static String buildFlatTranscript(List<Msg> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (Msg m : messages) {
+            sb.append("--- ").append(m.getRole().name());
+            if (m.getName() != null) {
+                sb.append(" (").append(m.getName()).append(')');
+            }
+            sb.append(" ---\n");
+            for (ContentBlock b : m.getContent()) {
+                appendContentBlockForFlat(sb, b);
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static void appendContentBlockForFlat(StringBuilder sb, ContentBlock o) {
+        if (o instanceof TextBlock tb) {
+            sb.append(tb.getText() != null ? tb.getText() : "");
+        } else if (o instanceof ThinkingBlock th) {
+            sb.append(th.getThinking() != null ? th.getThinking() : "");
+        } else if (o instanceof ToolUseBlock tu) {
+            sb.append("[tool_use ")
+                    .append(tu.getName())
+                    .append(" id=")
+                    .append(tu.getId())
+                    .append("] ");
+            sb.append(tu.getInput() != null ? tu.getInput().toString() : "{}");
+            String raw = tu.getContent();
+            if (raw != null && !raw.isEmpty()) {
+                sb.append(" raw=").append(raw);
+            }
+            sb.append('\n');
+        } else if (o instanceof ToolResultBlock tr) {
+            sb.append("[tool_result ").append(tr.getName()).append("]\n");
+            sb.append(flattenToolOutput(tr));
+            sb.append('\n');
+        } else {
+            sb.append(o);
+        }
+    }
+
+    private static String truncateIfNeeded(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        if (s.length() <= max) {
+            return s;
+        }
+        return s.substring(0, max) + "\n...(truncated)";
     }
 
     /**

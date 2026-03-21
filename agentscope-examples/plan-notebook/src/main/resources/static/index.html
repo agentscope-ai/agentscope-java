@@ -356,6 +356,142 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
+        /* Full model prompt / memory snapshot (per reasoning or summary call) */
+        details.ctx-block {
+            margin: 0;
+            border-radius: 12px;
+            border: 1px solid #d8b4fe;
+            background: #faf5ff;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        details.ctx-block summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 0.72rem;
+            color: #6b21a8;
+            background: #ede9fe;
+            user-select: none;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 12px;
+        }
+
+        details.ctx-block summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.ctx-block summary::before {
+            content: '▸';
+            font-size: 0.65rem;
+            color: #7c3aed;
+            transition: transform 0.15s ease;
+        }
+
+        details.ctx-block[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        details.ctx-block .ctx-title {
+            font-weight: 600;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        details.ctx-block .ctx-meta {
+            font-size: 0.68rem;
+            color: #7c3aed;
+            opacity: 0.9;
+        }
+
+        details.ctx-block .ctx-expanded {
+            border-top: 1px solid #e9d5ff;
+            padding: 8px 10px 10px;
+            background: #faf5ff;
+        }
+
+        details.ctx-sub {
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border: 1px solid #ddd6fe;
+            background: rgba(255, 255, 255, 0.7);
+            overflow: hidden;
+        }
+
+        details.ctx-sub > summary {
+            padding: 6px 10px;
+            font-size: 0.68rem;
+            color: #5b21b6;
+            background: #f3e8ff;
+            list-style: none;
+        }
+
+        details.ctx-sub > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.ctx-sub pre.ctx-diff,
+        details.ctx-sub pre.ctx-json,
+        details.ctx-sub pre.ctx-flat {
+            margin: 0;
+            padding: 8px 10px;
+            font-size: 0.72rem;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            max-height: 22rem;
+            overflow: auto;
+        }
+
+        pre.ctx-diff {
+            color: #1f2937;
+            background: #fefce8;
+            border-top: 1px solid #fde047;
+        }
+
+        pre.ctx-diff .ctx-diff-line {
+            display: block;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            padding: 1px 6px 1px 8px;
+            margin: 0 -6px;
+            border-radius: 2px;
+        }
+
+        pre.ctx-diff .ctx-diff-add {
+            background: rgba(34, 197, 94, 0.2);
+            color: #15803d;
+            border-left: 3px solid #22c55e;
+        }
+
+        pre.ctx-diff .ctx-diff-del {
+            background: rgba(239, 68, 68, 0.16);
+            color: #b91c1c;
+            border-left: 3px solid #ef4444;
+        }
+
+        pre.ctx-diff .ctx-diff-ctx {
+            color: #4b5563;
+            border-left: 3px solid transparent;
+        }
+
+        pre.ctx-json {
+            color: #334155;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        pre.ctx-flat {
+            color: #365314;
+            background: #f7fee7;
+            border-top: 1px solid #bef264;
+        }
+
         /* Markdown (assistant bubbles) — stay within chat column, break long tokens */
         .message-content.markdown-body {
             white-space: normal;
@@ -1359,6 +1495,9 @@ Try asking me something like:
             stream.querySelectorAll('details.tool-block').forEach((d) => {
                 d.open = false;
             });
+            stream.querySelectorAll('details.ctx-block').forEach((d) => {
+                d.open = false;
+            });
         }
 
         function streamHasSubstantiveContent(assistantRoot) {
@@ -1379,9 +1518,188 @@ Try asking me something like:
             return false;
         }
 
+        /**
+         * Myers-style line LCS diff (capped) for unified-style -/+/space output.
+         */
+        function buildLineDiffUnified(oldText, newText, maxLines) {
+            const cap = maxLines != null ? maxLines : 500;
+            let a = oldText === '' ? [] : oldText.split('\n');
+            let b = newText === '' ? [] : newText.split('\n');
+            let truncated = false;
+            if (a.length > cap || b.length > cap) {
+                truncated = true;
+                a = a.slice(0, cap);
+                b = b.slice(0, cap);
+            }
+            const n = a.length;
+            const m = b.length;
+            const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+            for (let i = n - 1; i >= 0; i--) {
+                for (let j = m - 1; j >= 0; j--) {
+                    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+                }
+            }
+            const out = [];
+            let i = 0;
+            let j = 0;
+            while (i < n && j < m) {
+                if (a[i] === b[j]) {
+                    out.push(' ' + a[i]);
+                    i++;
+                    j++;
+                } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+                    out.push('-' + a[i]);
+                    i++;
+                } else {
+                    out.push('+' + b[j]);
+                    j++;
+                }
+            }
+            while (i < n) {
+                out.push('-' + a[i++]);
+            }
+            while (j < m) {
+                out.push('+' + b[j++]);
+            }
+            if (truncated) {
+                out.push('...(diff truncated: more than ' + cap + ' lines per side)');
+            }
+            return out.join('\n');
+        }
+
+        /**
+         * Paint unified diff into a &lt;pre&gt; using DOM (no innerHTML / DOMPurify).
+         * Avoids sanitizer stripping +/-/text inside &lt;pre&gt;.
+         */
+        function fillUnifiedDiffPre(preEl, unified) {
+            preEl.replaceChildren();
+            const lines = unified.split('\n');
+            for (let k = 0; k < lines.length; k++) {
+                const line = lines[k];
+                const span = document.createElement('span');
+                span.classList.add('ctx-diff-line');
+                if (line.length === 0) {
+                    span.classList.add('ctx-diff-ctx');
+                    span.textContent = ' ';
+                } else {
+                    const c0 = line[0];
+                    const rest = line.slice(1);
+                    if (c0 === '+') {
+                        span.classList.add('ctx-diff-add');
+                        span.textContent = '+' + rest;
+                    } else if (c0 === '-') {
+                        span.classList.add('ctx-diff-del');
+                        span.textContent = '-' + rest;
+                    } else if (c0 === ' ') {
+                        span.classList.add('ctx-diff-ctx');
+                        span.textContent = ' ' + rest;
+                    } else {
+                        span.classList.add('ctx-diff-ctx');
+                        span.textContent = line;
+                    }
+                }
+                preEl.appendChild(span);
+            }
+        }
+
+        /** @param assistantRoot {HTMLElement} .message.assistant */
+        function appendContextBlock(assistantRoot, obj) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return;
+            }
+            const phase = obj.phase || 'reasoning';
+            const seq = obj.seq != null ? obj.seq : '';
+            const model = obj.model || '';
+            const flat = typeof obj.flat === 'string' ? obj.flat : '';
+            const prev = assistantRoot.dataset.ctxFlatPrev || '';
+            assistantRoot.dataset.ctxFlatPrev = flat;
+
+            const details = document.createElement('details');
+            details.className = 'ctx-block';
+            details.open = false;
+
+            const summary = document.createElement('summary');
+            const title = document.createElement('span');
+            title.className = 'ctx-title';
+            title.textContent = '📋 Model input #' + seq;
+            const meta = document.createElement('span');
+            meta.className = 'ctx-meta';
+            meta.textContent = phase + ' · ' + model;
+            summary.appendChild(title);
+            summary.appendChild(meta);
+
+            const body = document.createElement('div');
+            body.className = 'ctx-expanded';
+
+            {
+                const diffDet = document.createElement('details');
+                diffDet.className = 'ctx-sub';
+                const diffSum = document.createElement('summary');
+                diffSum.textContent = 'Δ Line diff vs previous model call (same assistant reply)';
+                diffDet.appendChild(diffSum);
+                const diffPre = document.createElement('pre');
+                diffPre.className = 'ctx-diff';
+                if (prev && flat && prev !== flat) {
+                    fillUnifiedDiffPre(diffPre, buildLineDiffUnified(prev, flat, 500));
+                } else {
+                    const hint = document.createElement('span');
+                    hint.className = 'ctx-diff-line ctx-diff-ctx';
+                    hint.textContent =
+                        prev
+                            ? '(No changes vs previous model input in this reply.)'
+                            : '(First model call in this assistant message — nothing to diff yet; open again on the next “Model input” block.)';
+                    diffPre.appendChild(hint);
+                }
+                diffDet.appendChild(diffPre);
+                body.appendChild(diffDet);
+            }
+
+            const jsonDet = document.createElement('details');
+            jsonDet.className = 'ctx-sub';
+            const jsonSum = document.createElement('summary');
+            jsonSum.textContent = 'Structured messages (JSON)';
+            jsonDet.appendChild(jsonSum);
+            const jsonPre = document.createElement('pre');
+            jsonPre.className = 'ctx-json';
+            try {
+                jsonPre.textContent = JSON.stringify(
+                    { phase, seq, model, messages: obj.messages },
+                    null,
+                    2
+                );
+            } catch (e) {
+                jsonPre.textContent = String(e);
+            }
+            jsonDet.appendChild(jsonPre);
+            body.appendChild(jsonDet);
+
+            const flatDet = document.createElement('details');
+            flatDet.className = 'ctx-sub';
+            flatDet.open = true;
+            const flatSum = document.createElement('summary');
+            flatSum.textContent = 'Flat transcript (system + memory as sent to the model)';
+            flatDet.appendChild(flatSum);
+            const flatPre = document.createElement('pre');
+            flatPre.className = 'ctx-flat';
+            flatPre.textContent = flat;
+            flatDet.appendChild(flatPre);
+            body.appendChild(flatDet);
+
+            details.appendChild(summary);
+            details.appendChild(body);
+            stream.appendChild(details);
+            scrollToBottomIfPinned();
+        }
+
         /** @param assistantRoot {HTMLElement} .message.assistant */
         function appendStructuredChunk(assistantRoot, obj) {
             if (!obj || !assistantRoot) {
+                return;
+            }
+
+            if (obj.t === 'ctx') {
+                appendContextBlock(assistantRoot, obj);
                 return;
             }
 
@@ -1826,6 +2144,7 @@ Try asking me something like:
                 <div class="message-content">${escapeHtml(text)}</div>
             `;
             } else {
+                div.dataset.ctxFlatPrev = '';
                 div.innerHTML = `
                 <span class="message-label">Assistant</span>
                 <div class="assistant-bubble-wrap">
