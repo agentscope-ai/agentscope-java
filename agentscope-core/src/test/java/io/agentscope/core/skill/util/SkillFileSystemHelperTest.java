@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mockStatic;
 
 import io.agentscope.core.skill.AgentSkill;
 import java.io.IOException;
@@ -36,6 +38,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 /**
  * Unit tests for SkillFileSystemHelper.
@@ -232,6 +236,65 @@ class SkillFileSystemHelperTest {
         String base64 = encoded.substring("base64:".length());
         byte[] decoded = Base64.getDecoder().decode(base64);
         assertArrayEquals(original, decoded);
+    }
+
+    @Test
+    @DisplayName("loadResources skips resource when Files.isHidden(fileName) is true")
+    void testLoadResources_SkipsWhenIsHiddenTrue() throws IOException {
+        Path skillDir = skillsBaseDir.resolve("hidden-flag-skill");
+        Files.createDirectories(skillDir);
+        Files.writeString(
+                skillDir.resolve("SKILL.md"),
+                "---\nname: hidden-flag-skill\ndescription: Hidden flag\n---\nBody",
+                StandardCharsets.UTF_8);
+        Files.writeString(skillDir.resolve("public.txt"), "visible", StandardCharsets.UTF_8);
+        Files.writeString(skillDir.resolve("secret.txt"), "hidden", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> files = mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(
+                            () ->
+                                    Files.isHidden(
+                                            argThat(
+                                                    p ->
+                                                            p != null
+                                                                    && "secret.txt"
+                                                                            .equals(p.toString()))))
+                    .thenReturn(true);
+
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(skillsBaseDir, "hidden-flag-skill", "src");
+            assertEquals("visible", skill.getResources().get("public.txt"));
+            assertFalse(skill.getResources().containsKey("secret.txt"));
+        }
+    }
+
+    @Test
+    @DisplayName("loadResources still reads file when Files.isHidden throws IOException")
+    void testLoadResources_ContinuesWhenIsHiddenThrowsIOException() throws IOException {
+        Path skillDir = skillsBaseDir.resolve("ioe-flag-skill");
+        Files.createDirectories(skillDir);
+        Files.writeString(
+                skillDir.resolve("SKILL.md"),
+                "---\nname: ioe-flag-skill\ndescription: IOE flag\n---\nBody",
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                skillDir.resolve("still-loaded.txt"), "recovered", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> files = mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            files.when(
+                            () ->
+                                    Files.isHidden(
+                                            argThat(
+                                                    p ->
+                                                            p != null
+                                                                    && "still-loaded.txt"
+                                                                            .equals(p.toString()))))
+                    .thenThrow(new IOException("simulated isHidden failure"));
+
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(skillsBaseDir, "ioe-flag-skill", "src");
+            assertEquals("recovered", skill.getResources().get("still-loaded.txt"));
+        }
     }
 
     @Test
