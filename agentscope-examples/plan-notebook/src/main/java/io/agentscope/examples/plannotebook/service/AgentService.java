@@ -99,7 +99,7 @@ public class AgentService implements InitializingBean {
     private static final Set<String> SHELL_COMMAND_WHITELIST =
             Set.of(
                     "ls", "pwd", "cat", "echo", "mkdir", "rmdir", "cp", "mv", "rm", "wc", "head",
-                    "tail", "bash", "sh");
+                    "bash", "sh");
 
     private final PlanService planService;
 
