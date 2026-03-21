@@ -361,6 +361,10 @@ public final class SkillFileSystemHelper {
                     .filter(p -> !p.equals(skillFile))
                     .forEach(
                             p -> {
+                                // skip hidden file
+                                if (p.toFile().isHidden()) {
+                                    return;
+                                }
                                 String relativePath =
                                         skillDir.relativize(p).toString().replace('\\', '/');
                                 try {
