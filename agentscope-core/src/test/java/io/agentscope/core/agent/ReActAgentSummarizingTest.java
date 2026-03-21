@@ -427,7 +427,10 @@ class ReActAgentSummarizingTest {
                                                                 ToolUseBlock.builder()
                                                                         .name("search_tool")
                                                                         .id(toolId)
-                                                                        .input(Map.of("query", "test"))
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "query",
+                                                                                        "test"))
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
@@ -440,9 +443,12 @@ class ReActAgentSummarizingTest {
                                                         List.of(
                                                                 TextBlock.builder()
                                                                         .text(
-                                                                                "I reached the maximum"
-                                                                                    + " iteration limit."
-                                                                                    + " Please try again.")
+                                                                                "I reached the"
+                                                                                    + " maximum"
+                                                                                    + " iteration"
+                                                                                    + " limit."
+                                                                                    + " Please try"
+                                                                                    + " again.")
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
@@ -500,7 +506,8 @@ class ReActAgentSummarizingTest {
 
         // SECOND CALL - This is the critical test for Issue #1005
         // Before the fix, this would throw:
-        // IllegalStateException: Cannot add messages without tool results when pending tool calls exist
+        // IllegalStateException: Cannot add messages without tool results when pending tool calls
+        // exist
 
         // Reset model for second user interaction
         final int[] secondCallCount = {0};
@@ -516,8 +523,9 @@ class ReActAgentSummarizingTest {
                                                         List.of(
                                                                 TextBlock.builder()
                                                                         .text(
-                                                                                "Hello! How can I help"
-                                                                                    + " you today?")
+                                                                                "Hello! How can I"
+                                                                                    + " help you"
+                                                                                    + " today?")
                                                                         .build()))
                                                 .usage(new ChatUsage(5, 10, 15))
                                                 .build());
@@ -538,9 +546,11 @@ class ReActAgentSummarizingTest {
         // Second user message - this would throw IllegalStateException before the fix
         Msg secondUserMsg = TestUtils.createUserMessage("User", "Hello again");
 
-        // This should NOT throw: "Cannot add messages without tool results when pending tool calls exist"
+        // This should NOT throw: "Cannot add messages without tool results when pending tool calls
+        // exist"
         Msg secondResponse =
-                secondAgent.call(secondUserMsg)
+                secondAgent
+                        .call(secondUserMsg)
                         .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify second response succeeded

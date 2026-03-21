@@ -742,8 +742,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                 .output(
                                         TextBlock.builder()
                                                 .text(
-                                                        "Error: Tool execution cancelled because maximum"
-                                                                + " iterations limit ("
+                                                        "Error: Tool execution cancelled because"
+                                                                + " maximum iterations limit ("
                                                                 + maxIters
                                                                 + ") was reached")
                                                 .build())
