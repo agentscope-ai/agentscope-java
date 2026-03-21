@@ -362,9 +362,14 @@ public final class SkillFileSystemHelper {
                     .forEach(
                             p -> {
                                 // skip hidden file
-                                if (p.toFile().isHidden()) {
-                                    return;
+                                try {
+                                    if (Files.isHidden(p.getFileName())) {
+                                        return;
+                                    }
+                                } catch (IOException e) {
+                                    logger.warn("Failed to load file: {}", p, e);
                                 }
+
                                 String relativePath =
                                         skillDir.relativize(p).toString().replace('\\', '/');
                                 try {
