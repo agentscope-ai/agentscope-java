@@ -99,7 +99,7 @@
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.1</jedis.version>
-        <lettuce.version>6.4.2.RELEASE</lettuce.version>
+        <lettuce.version>7.5.0.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.6</spring.version>
