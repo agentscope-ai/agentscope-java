@@ -546,7 +546,7 @@ class ReActAgentStructuredOutputTest {
      * failure or increase confidence after a fix.
      */
     @RepeatedTest(25000)
-    @DisplayName("Structured output race: 10 repetitions (subscribeOn + immediate second call)")
+    @DisplayName("Structured output race: 25000 repetitions (subscribeOn + immediate second call)")
     void testConcurrencyConflictStructuredOutput_repeated() {
         runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(toolkit);
     }
