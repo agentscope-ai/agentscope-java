@@ -611,6 +611,7 @@ public class Toolkit {
     public boolean removeToolIfSame(String toolName, AgentTool expected) {
         if (!config.isAllowToolDeletion()) {
             logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return false;
         }
         return toolRegistry.removeToolIfSame(toolName, expected);
     }

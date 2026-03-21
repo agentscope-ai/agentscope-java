@@ -160,15 +160,6 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                     AgentTool structuredOutputTool =
                             createStructuredOutputTool(jsonSchema, targetClass, schemaDesc);
                     toolkit.registerAgentTool(structuredOutputTool);
-//                    System.out.println(
-//                            "[structured-output] after register thread="
-//                                    + Thread.currentThread().getName()
-//                                    + " agent="
-//                                    + getName()
-//                                    + " toolkit@"
-//                                    + Integer.toHexString(System.identityHashCode(toolkit))
-//                                    + " tools="
-//                                    + toolkit.getToolNames());
 
                     // Create hook for flow control
                     StructuredOutputHook hook =
@@ -199,23 +190,8 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                             .doFinally(
                                     signal -> {
                                         removeHook(hook);
-                                                toolkit.removeToolIfSame(
-                                                        STRUCTURED_OUTPUT_TOOL_NAME,
-                                                        structuredOutputTool);
-//                                        System.out.println(
-//                                                "[structured-output] doFinally signal="
-//                                                        + signal
-//                                                        + " thread="
-//                                                        + Thread.currentThread().getName()
-//                                                        + " agent="
-//                                                        + getName()
-//                                                        + " toolkit@"
-//                                                        + Integer.toHexString(
-//                                                                System.identityHashCode(toolkit))
-//                                                        + " toolsAfterRemove="
-//                                                        + toolkit.getToolNames()
-//                                                        + " removed="
-//                                                        + removed);
+                                        toolkit.removeToolIfSame(
+                                                STRUCTURED_OUTPUT_TOOL_NAME, structuredOutputTool);
                                     });
                 });
     }
