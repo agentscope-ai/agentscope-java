@@ -16,13 +16,12 @@
 
 package io.agentscope.core.skill.util;
 
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -32,8 +31,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 
 /**
  * Utility class for file system operations related to skills.
@@ -362,9 +365,14 @@ public final class SkillFileSystemHelper {
                     .forEach(
                             p -> {
                                 // skip hidden file
-                                if (p.toFile().isHidden()) {
-                                    return;
+                                try {
+                                    if (Files.isHidden(p.getFileName())) {
+                                        return;
+                                    }
+                                } catch (IOException e) {
+                                    logger.warn("Failed to load file: {}", p, e);
                                 }
+
                                 String relativePath =
                                         skillDir.relativize(p).toString().replace('\\', '/');
                                 try {
