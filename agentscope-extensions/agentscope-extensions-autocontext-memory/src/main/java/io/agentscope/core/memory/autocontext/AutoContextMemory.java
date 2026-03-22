@@ -419,18 +419,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             metadata.put("time", compressedMsg.getChatUsage().getTime());
         }
 
-        // Record compression event (before replacing messages to preserve indices)
-        recordCompressionEvent(
-                CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
-                startIndex,
-                endIndex,
-                rawMessages,
-                compressedMsg,
-                metadata);
-
-        // Step 5: Replace original messages with compressed one (Preserving ReAct Structure)
-        rawMessages.subList(startIndex, endIndex + 1).clear();
-
+        // Step 5: Preserve ReAct Structure and Replace
         List<Msg> replacementMsgs = new ArrayList<>();
         int lastToolResultIdx = -1;
         ToolResultBlock lastOrigBlock = null;
@@ -453,11 +442,13 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             Msg.builder()
                                     .role(msg.getRole())
                                     .name(msg.getName())
+                                    .metadata(msg.getMetadata())
                                     .content(
                                             List.of(
                                                     ToolResultBlock.builder()
                                                             .name(origBlock.getName())
                                                             .id(origBlock.getId())
+                                                            .metadata(origBlock.getMetadata())
                                                             .output(
                                                                     List.of(
                                                                             TextBlock.builder()
@@ -476,19 +467,31 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             }
         }
 
+        Msg actualInsertedSummaryMsg;
+
+        // If there is a tool call, inject the summarized summary into the last ToolResult
         if (lastToolResultIdx != -1 && lastOrigBlock != null) {
-            // If there is a tool call, inject the summarized summary into the last ToolResult
             Msg lastToolMsg = replacementMsgs.get(lastToolResultIdx);
+
+            Map<String, Object> mergedMeta = new HashMap<>();
+            if (lastToolMsg.getMetadata() != null) {
+                mergedMeta.putAll(lastToolMsg.getMetadata());
+            }
+            if (compressedMsg.getMetadata() != null) {
+                mergedMeta.putAll(compressedMsg.getMetadata());
+            }
 
             Msg finalSummaryMsg =
                     Msg.builder()
                             .role(lastToolMsg.getRole())
                             .name(lastToolMsg.getName())
+                            .metadata(mergedMeta)
                             .content(
                                     List.of(
                                             ToolResultBlock.builder()
                                                     .name(lastOrigBlock.getName())
                                                     .id(lastOrigBlock.getId())
+                                                    .metadata(lastOrigBlock.getMetadata())
                                                     .output(
                                                             List.of(
                                                                     TextBlock.builder()
@@ -497,14 +500,26 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                                                             .getTextContent())
                                                                             .build()))
                                                     .build()))
-                            .metadata(compressedMsg.getMetadata())
                             .build();
 
             replacementMsgs.set(lastToolResultIdx, finalSummaryMsg);
+            actualInsertedSummaryMsg = finalSummaryMsg;
         } else {
             replacementMsgs.add(compressedMsg);
+            actualInsertedSummaryMsg = compressedMsg;
         }
 
+        // Record compression event
+        recordCompressionEvent(
+                CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
+                startIndex,
+                endIndex,
+                rawMessages,
+                actualInsertedSummaryMsg,
+                metadata);
+
+        // Clean up old data first, then insert new data
+        rawMessages.subList(startIndex, endIndex + 1).clear();
         rawMessages.addAll(startIndex, replacementMsgs);
 
         log.info(
