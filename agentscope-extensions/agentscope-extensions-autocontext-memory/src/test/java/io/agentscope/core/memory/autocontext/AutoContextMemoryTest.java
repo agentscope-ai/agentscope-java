@@ -656,41 +656,25 @@ class AutoContextMemoryTest {
 
         // Verify that messages were compressed
         // Original: 8 initial + 1 user + 4 tool messages = 13 messages
-        // After compression: 8 initial + 1 user + 1 compressed = 10 messages (or less)
-        assertTrue(
-                messages.size() <= 10,
-                "Messages should be compressed. Expected 10 or less, got " + messages.size());
+        assertEquals(
+                13,
+                messages.size(),
+                "Message count should be preserved to maintain ReAct structure");
 
-        // Verify that the compressed message contains the expected format
-        boolean hasCompressedMessage = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("compressed_current_round")
-                            || content.contains("Compressed current round summary"))) {
-                hasCompressedMessage = true;
-                break;
-            }
-        }
-        assertTrue(hasCompressedMessage, "Should contain compressed current round message");
+        ToolResultBlock lastToolResult = (ToolResultBlock) messages.get(12).getContent().get(0);
+        String lastToolResultText = lastToolResult.getOutput().get(0).toString();
 
-        // Verify that tool messages were offloaded (can be reloaded)
-        boolean hasOffloadHint = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("uuid:")
-                            || content.contains("uuid=")
-                            || content.contains("CONTEXT_OFFLOAD")
-                            || content.contains("reload")
-                            || content.contains("context_reload")
-                            || content.contains("offloaded"))) {
-                hasOffloadHint = true;
-                break;
-            }
-        }
         assertTrue(
-                hasOffloadHint,
+                lastToolResultText.contains("Compressed current round summary"),
+                "Should contain compressed current round message in the last ToolResult");
+
+        assertTrue(
+                lastToolResultText.contains("uuid:")
+                        || lastToolResultText.contains("uuid=")
+                        || lastToolResultText.contains("CONTEXT_OFFLOAD")
+                        || lastToolResultText.contains("reload")
+                        || lastToolResultText.contains("context_reload")
+                        || lastToolResultText.contains("offloaded"),
                 "Compressed message should contain offload hint for reloading original tool"
                         + " messages");
 
@@ -1676,5 +1660,66 @@ class AutoContextMemoryTest {
         assertTrue(
                 resultDone.contains("Goal: Test Description"),
                 "Should contain goal for DONE state");
+    }
+
+    @Test
+    @DisplayName(
+            "Should preserve ReAct tool_use/tool_result structure when compressing current round"
+                    + " messages")
+    void testCurrentRoundSummaryPreservesReActStructure() {
+        TestModel testModel = new TestModel("Compressed current round summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("Previous user message", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Previous assistant response", MsgRole.ASSISTANT));
+
+        // Simulate the current round
+        testMemory.addMessage(createTextMessage("Current user query", MsgRole.USER));
+
+        // The simulated large model has initiated two consecutive tool calls in the current round
+        testMemory.addMessage(createToolUseMessage("search", "call_1"));
+        testMemory.addMessage(createToolResultMessage("search", "call_1", "Result 1"));
+
+        testMemory.addMessage(createToolUseMessage("read", "call_2"));
+        testMemory.addMessage(createToolResultMessage("read", "call_2", "Result 2"));
+
+        // Trigger Strategy 6: current round summary
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(compressed, "Compression should be triggered");
+
+        List<Msg> messages = testMemory.getMessages();
+        assertEquals(
+                7,
+                messages.size(),
+                "Should have exactly 7 messages, preserving ToolUse/ToolResult pairs");
+
+        assertTrue(MsgUtils.isToolUseMessage(messages.get(3)));
+        assertTrue(MsgUtils.isToolResultMessage(messages.get(4)));
+        assertTrue(MsgUtils.isToolUseMessage(messages.get(5)));
+        assertTrue(MsgUtils.isToolResultMessage(messages.get(6)));
+
+        ToolResultBlock block1 = (ToolResultBlock) messages.get(4).getContent().get(0);
+
+        String firstToolResultText = block1.getOutput().get(0).toString();
+        assertTrue(
+                firstToolResultText.contains("[Content compressed]"),
+                "The first tool result should be compressed");
+
+        ToolResultBlock block2 = (ToolResultBlock) messages.get(6).getContent().get(0);
+
+        String lastToolResultText = block2.getOutput().get(0).toString();
+        assertTrue(
+                lastToolResultText.contains("Compressed current round summary"),
+                "The last tool result should contain the LLM summary");
+
+        assertNotNull(messages.get(6).getMetadata());
+        assertTrue(messages.get(6).getMetadata().containsKey("_compress_meta"));
     }
 }
