@@ -1216,6 +1216,96 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             Msg msg = rawMessages.get(i);
             String textContent = msg.getTextContent();
 
+            // ASSISTANT messages with ToolUseBlock (tool_calls) must NOT be offloaded as a plain
+            // text stub. Doing so strips the ToolUseBlock, leaving the subsequent TOOL result
+            // messages without a preceding tool_calls assistant message, which violates the API
+            // constraint: "messages with role 'tool' must be a response to a preceding message
+            // with 'tool_calls'". These pairs are handled exclusively by Strategy 1.
+            if (MsgUtils.isToolUseMessage(msg)) {
+                continue;
+            }
+
+            // TOOL result messages can have their output content offloaded, but the
+            // ToolResultBlock structure (id, name) MUST be preserved so that the API formatter
+            // can still emit the correct tool_call_id / name fields. We handle them separately.
+            if (MsgUtils.isToolResultMessage(msg)) {
+                ToolResultBlock originalResult = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (originalResult != null) {
+                    // Use the ToolResultBlock output text for size checking, because
+                    // Msg.getTextContent() only extracts top-level TextBlocks and returns
+                    // empty string for TOOL messages whose content is a ToolResultBlock.
+                    String outputText =
+                            originalResult.getOutput().stream()
+                                    .filter(TextBlock.class::isInstance)
+                                    .map(TextBlock.class::cast)
+                                    .map(TextBlock::getText)
+                                    .collect(Collectors.joining("\n"));
+                    if (outputText.length() > threshold) {
+                        String toolResultUuid = UUID.randomUUID().toString();
+                        List<Msg> offloadMsg = new ArrayList<>();
+                        offloadMsg.add(msg);
+                        offload(toolResultUuid, offloadMsg);
+                        log.info(
+                                "Offloaded large tool result message: index={}, size={} chars,"
+                                        + " uuid={}",
+                                i,
+                                outputText.length(),
+                                toolResultUuid);
+
+                        String preview =
+                                outputText.length() > autoContextConfig.offloadSinglePreview
+                                        ? outputText.substring(
+                                                        0, autoContextConfig.offloadSinglePreview)
+                                                + "..."
+                                        : outputText;
+                        String offloadHint =
+                                preview
+                                        + "\n"
+                                        + String.format(
+                                                Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, toolResultUuid);
+
+                        // Preserve ToolResultBlock structure (id + name) so the API formatter can
+                        // emit the correct tool_call_id / name; only replace the output text.
+                        ToolResultBlock compressedResult =
+                                ToolResultBlock.of(
+                                        originalResult.getId(),
+                                        originalResult.getName(),
+                                        TextBlock.builder().text(offloadHint).build());
+
+                        Map<String, Object> trCompressMeta = new HashMap<>();
+                        trCompressMeta.put("offloaduuid", toolResultUuid);
+                        Map<String, Object> trMetadata = new HashMap<>();
+                        trMetadata.put("_compress_meta", trCompressMeta);
+
+                        Msg replacementToolMsg =
+                                Msg.builder()
+                                        .role(msg.getRole())
+                                        .name(msg.getName())
+                                        .content(compressedResult)
+                                        .metadata(trMetadata)
+                                        .build();
+
+                        int tokenBefore = TokenCounterUtil.calculateToken(List.of(msg));
+                        int tokenAfter =
+                                TokenCounterUtil.calculateToken(List.of(replacementToolMsg));
+                        Map<String, Object> trEventMetadata = new HashMap<>();
+                        trEventMetadata.put("inputToken", tokenBefore);
+                        trEventMetadata.put("outputToken", tokenAfter);
+                        trEventMetadata.put("time", 0.0);
+
+                        String eventType =
+                                lastKeep
+                                        ? CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION
+                                        : CompressionEvent.LARGE_MESSAGE_OFFLOAD;
+                        recordCompressionEvent(eventType, i, i, rawMessages, null, trEventMetadata);
+
+                        rawMessages.set(i, replacementToolMsg);
+                        hasOffloaded = true;
+                    }
+                }
+                continue;
+            }
+
             String uuid = null;
             // Check if message content exceeds threshold
             if (textContent != null && textContent.length() > threshold) {
