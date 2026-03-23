@@ -36,9 +36,9 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.JsonNode;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Tests for dynamically defined JSON schema in StructuredOutputCapableAgent (deferred forcing mode).
