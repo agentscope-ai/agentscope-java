@@ -333,6 +333,11 @@ class JsonlTraceExporterTest {
         }
 
         @Override
+        public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+            return Flux.error(new UnsupportedOperationException("not used"));
+        }
+
+        @Override
         public Mono<Void> observe(Msg msg) {
             return Mono.error(new UnsupportedOperationException("not used"));
         }
