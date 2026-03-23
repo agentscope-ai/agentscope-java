@@ -23,6 +23,10 @@ import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationOutput;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationResult;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesis;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisOutput;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisParam;
+import com.alibaba.dashscope.aigc.videosynthesis.VideoSynthesisResult;
 import com.alibaba.dashscope.audio.asr.recognition.Recognition;
 import com.alibaba.dashscope.audio.asr.recognition.RecognitionParam;
 import com.alibaba.dashscope.audio.asr.recognition.RecognitionResult;
@@ -41,6 +45,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.io.IOException;
@@ -51,6 +56,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,6 +69,18 @@ import reactor.core.publisher.Mono;
 
 /**
  * DashScope multimodal tool.
+ * <p>
+ * Support tools:
+ * <ul>
+ *     <li>dashscope_text_to_image: Generate image(s) based on the given text.</li>
+ *     <li>dashscope_image_to_text: Generate text based on the given images.</li>
+ *     <li>dashscope_text_to_audio: Convert the given text to audio.</li>
+ *     <li>dashscope_audio_to_text: Convert the given audio to text.</li>
+ *     <li>dashscope_text_to_video: Generate video based on the given text prompt.</li>
+ *     <li>dashscope_image_to_video: Generate a video from a single input image and an optional text prompt.</li>
+ *     <li>dashscope_first_and_last_frame_image_to_video: Generate video transitioning from a first frame to a last frame and an optional text prompt.</li>
+ *     <li>dashscope_video_to_text: Analyze video and generate a text description or answer questions based on the video content.</li>
+ * </ul>
  * convert text to images, convert images to text, convert text to audio, and convert audio to text.
  * Please refer to the <a href="https://dashscope.aliyun.com/">`dashscope documentation`</a> for more details.
  */
@@ -227,7 +245,12 @@ public class DashScopeMultiModalTool {
     public Mono<ToolResultBlock> dashscopeImageToText(
             @ToolParam(
                             name = "image_urls",
-                            description = "The URL(s) of image(s) to be converted into text.")
+                            description =
+                                    "The URL(s), local file path(s) or Base64 data URL(s)(the"
+                                        + " format pattern is"
+                                        + " data:[MIME_type];base64,{base64_image}, e.g.,"
+                                        + " 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDg...')"
+                                        + " of image(s) to be converted into text.")
                     List<String> imageUrls,
             @ToolParam(name = "prompt", description = "The text prompt.", required = false)
                     String prompt,
@@ -716,14 +739,14 @@ public class DashScopeMultiModalTool {
 
     /**
      * Send audio input stream by chunk to DashScope.
-     * marked as public for unit test.
+     * marked as package-private for unit test.
      *
      * @param audioUrl   The file path or URL of audio.
      * @param recognizer DashScope Recognition instance
      * @throws IOException          if read failed
      * @throws InterruptedException if interrupted
      */
-    public void sendAudioChunk(String audioUrl, Recognition recognizer)
+    void sendAudioChunk(String audioUrl, Recognition recognizer)
             throws IOException, InterruptedException {
         // chunk size set to 1 seconds for 16KHz sample rate
         byte[] buffer = new byte[3200];
@@ -751,5 +774,659 @@ public class DashScopeMultiModalTool {
                 }
             }
         }
+    }
+
+    /**
+     * Generate video based on the given prompt.
+     *
+     * @param prompt          The text prompt to generate video.
+     * @param model           The model to use, e.g., 'wan2.6-t2v', 'wan2.5-t2v-preview', etc.
+     * @param negativePrompt  The negative prompt to avoid certain elements.
+     * @param audioUrl        The URL for background audio.
+     * @param size            Size of the video, e.g., '1920*1080', '1280*720', etc.
+     * @param duration        Duration of the video in seconds, e.g., '5', '10', etc.
+     * @param shotType        Specify the shot type that generates the video.
+     *                        single: default value, output single shot video; multi: output multi-lens video.
+     * @param promptExtend    Whether to extend the prompt automatically (default true)
+     * @param watermark       Whether to include watermark (default false)
+     * @param seed            The seed for reproducibility
+     * @return A ToolResultBlock containing the generated video url or error message.
+     */
+    @Tool(
+            name = "dashscope_text_to_video",
+            description = "Generate video based on the given text prompt")
+    public Mono<ToolResultBlock> dashscopeTextToVideo(
+            @ToolParam(name = "prompt", description = "The text prompt to generate video")
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description =
+                                    "The model to use, e.g., 'wan2.6-t2v', 'wan2.5-t2v-preview',"
+                                            + " etc",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "negative_prompt",
+                            description = "The negative prompt to avoid certain elements",
+                            required = false)
+                    String negativePrompt,
+            @ToolParam(
+                            name = "audio_url",
+                            description = "The URL for background audio",
+                            required = false)
+                    String audioUrl,
+            @ToolParam(
+                            name = "size",
+                            description = "Size of the video, e.g., '1920*1080', '1280*720', etc",
+                            required = false)
+                    String size,
+            @ToolParam(
+                            name = "duration",
+                            description = "Duration of the video in seconds, e.g., '5', '10', etc",
+                            required = false)
+                    Integer duration,
+            @ToolParam(
+                            name = "shot_type",
+                            description =
+                                    "Specify the shot type that generates the video. single:"
+                                        + " default value, output single shot video; multi: output"
+                                        + " multi-lens video",
+                            required = false)
+                    String shotType,
+            @ToolParam(
+                            name = "prompt_extend",
+                            description =
+                                    "Whether to automatically extend the prompt (default true)",
+                            required = false)
+                    Boolean promptExtend,
+            @ToolParam(
+                            name = "watermark",
+                            description = "Whether to include watermark (default false)",
+                            required = false)
+                    Boolean watermark,
+            @ToolParam(
+                            name = "seed",
+                            description = "The seed for reproducibility",
+                            required = false)
+                    Integer seed) {
+
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("wan2.6-t2v");
+        String finalSize =
+                Optional.ofNullable(size).filter(s -> !s.trim().isEmpty()).orElse("1920*1080");
+        String finalShotType = Optional.ofNullable(shotType).orElse("single");
+        boolean finalPromptExtend = Optional.ofNullable(promptExtend).orElse(true);
+        boolean finalWatermark = Optional.ofNullable(watermark).orElse(false);
+
+        log.debug(
+                "dashscope_text_to_video called: prompt='{}', model='{}', negativePrompt='{}',"
+                    + " audioUrl='{}', size='{}', duration={}, shotType='{}', promptExtend='{}',"
+                    + " watermark='{}', seed={}",
+                prompt,
+                finalModel,
+                negativePrompt,
+                audioUrl,
+                finalSize,
+                duration,
+                finalShotType,
+                finalPromptExtend,
+                finalWatermark,
+                seed);
+
+        return Mono.fromCallable(
+                        () -> {
+                            Map<String, Object> parameters = new HashMap<>();
+                            parameters.put("size", finalSize);
+                            parameters.put("shot_type", finalShotType);
+                            parameters.put("prompt_extend", finalPromptExtend);
+                            parameters.put("watermark", finalWatermark);
+                            if (duration != null) {
+                                parameters.put("duration", duration);
+                            }
+                            if (seed != null) {
+                                parameters.put("seed", seed);
+                            }
+
+                            VideoSynthesisParam param =
+                                    VideoSynthesisParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .model(finalModel)
+                                            .prompt(prompt)
+                                            .negativePrompt(negativePrompt)
+                                            .audioUrl(audioUrl)
+                                            .parameters(parameters)
+                                            .header("user-agent", Version.getUserAgent())
+                                            .build();
+
+                            VideoSynthesis videoSynthesis = new VideoSynthesis();
+
+                            // The video call method blocks until the video is generated or fails
+                            log.info(
+                                    "Starting text to video generation task, please wait for a"
+                                            + " while...");
+                            VideoSynthesisResult response = videoSynthesis.call(param);
+
+                            // Extract video URL from response
+                            String videoUrl =
+                                    Optional.ofNullable(response)
+                                            .map(VideoSynthesisResult::getOutput)
+                                            .map(VideoSynthesisOutput::getVideoUrl)
+                                            .orElse(null);
+
+                            if (videoUrl == null || videoUrl.trim().isEmpty()) {
+                                log.error("No video url returned. Response: {}", response);
+                                return ToolResultBlock.error("Failed to generate video.");
+                            }
+
+                            log.info("Text to video generated successfully, videoUrl:{}", videoUrl);
+
+                            VideoBlock vb =
+                                    VideoBlock.builder()
+                                            .source(URLSource.builder().url(videoUrl).build())
+                                            .build();
+
+                            return ToolResultBlock.of(vb);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error("Failed to generate video '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Generate a video based on a single input image (first frame) and an optional text prompt.
+     *
+     * @param prompt          The text prompt describing the video content and motion.
+     * @param model           The model to use, e.g., 'wan2.6-i2v-flash', 'wan2.1-i2v-turbo'.
+     * @param imageUrl        The URL, local file path, or Base64 data of the input image (first frame).
+     * @param audioUrl        URL of the audio file that the model will use to generate video.
+     * @param negativePrompt  The negative prompt to avoid certain elements.
+     * @param template        Name of video effect template, e.g., 'squish', 'rotation', etc
+     * @param resolution      Resolution of the video, e.g., '720P', '1080P'.
+     * @param duration        Duration of the video in seconds (e.g., 5, 10, 15). Default depends on model.
+     * @param shotType        Specify the shot type that generates the video.
+     *                        single: default value, output single shot video; multi: output multi-lens video.
+     * @param audio           Whether to generate audio video (default true).
+     * @param promptExtend    Whether to automatically extend the prompt (default true).
+     * @param watermark       Whether to include watermark (default false).
+     * @param seed            Optional seed for reproducibility.
+     * @return A ToolResultBlock containing the generated video url or error message.
+     */
+    @Tool(
+            name = "dashscope_image_to_video",
+            description =
+                    "Generate a video from a single input image and an optional text prompt."
+                            + "Supports optional audio guidance and duration control.")
+    public Mono<ToolResultBlock> dashscopeImageToVideo(
+            @ToolParam(
+                            name = "prompt",
+                            description = "Text prompt describing the video content and motion",
+                            required = false)
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description =
+                                    "Model to use, e.g., 'wan2.6-i2v-flash', 'wan2.6-i2v', etc",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "image_url",
+                            description =
+                                    "URL, local file path or Base64 data URL((the format pattern is"
+                                        + " data:[MIME_type];base64,{base64_image}, e.g.,"
+                                        + " 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDg...'))"
+                                        + " of the first frame image")
+                    String imageUrl,
+            @ToolParam(
+                            name = "audio_url",
+                            description =
+                                    "URL of the audio file that the model will use to generate"
+                                            + " video",
+                            required = false)
+                    String audioUrl,
+            @ToolParam(
+                            name = "negative_prompt",
+                            description = "The negative prompt to avoid certain elements",
+                            required = false)
+                    String negativePrompt,
+            @ToolParam(
+                            name = "template",
+                            description =
+                                    "Name of video effect template, e.g., 'squish', 'rotation',"
+                                            + " etc",
+                            required = false)
+                    String template,
+            @ToolParam(
+                            name = "resolution",
+                            description = "Video resolution, e.g., '720P', '1080P'",
+                            required = false)
+                    String resolution,
+            @ToolParam(
+                            name = "duration",
+                            description = "Duration of the video in seconds, e.g., 5, 10, 15",
+                            required = false)
+                    Integer duration,
+            @ToolParam(
+                            name = "shot_type",
+                            description =
+                                    "Specify the shot type that generates the video. single:"
+                                        + " default value, output single shot video; multi: output"
+                                        + " multi-lens video",
+                            required = false)
+                    String shotType,
+            @ToolParam(
+                            name = "audio",
+                            description = "Whether to generate audio video (default true)",
+                            required = false)
+                    Boolean audio,
+            @ToolParam(
+                            name = "prompt_extend",
+                            description =
+                                    "Whether to automatically extend the prompt (default true)",
+                            required = false)
+                    Boolean promptExtend,
+            @ToolParam(
+                            name = "watermark",
+                            description = "Whether to include watermark (default false)",
+                            required = false)
+                    Boolean watermark,
+            @ToolParam(
+                            name = "seed",
+                            description = "The seed for reproducibility",
+                            required = false)
+                    Integer seed) {
+
+        String finalModel =
+                Optional.ofNullable(model)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse("wan2.6-i2v-flash");
+        String finalResolution =
+                Optional.ofNullable(resolution).filter(s -> !s.trim().isEmpty()).orElse("720P");
+        String finalShotType = Optional.ofNullable(shotType).orElse("single");
+        boolean finalAudio = Optional.ofNullable(audio).orElse(true);
+        boolean finalPromptExtend = Optional.ofNullable(promptExtend).orElse(true);
+        boolean finalWatermark = Optional.ofNullable(watermark).orElse(false);
+
+        log.debug(
+                "dashscope_image_to_video called: prompt='{}', model='{}', imageUrl='{}',"
+                        + " audioUrl='{}', negativePrompt='{}', template='{}', resolution='{}',"
+                        + " duration={}, shotType='{}', audio={}, promptExtend={}, watermark={},"
+                        + " seed={}",
+                prompt,
+                finalModel,
+                imageUrl,
+                audioUrl,
+                negativePrompt,
+                template,
+                finalResolution,
+                duration,
+                finalShotType,
+                finalAudio,
+                finalPromptExtend,
+                finalWatermark,
+                seed);
+
+        return Mono.fromCallable(
+                        () -> {
+                            Map<String, Object> parameters = new HashMap<>();
+                            parameters.put("resolution", finalResolution);
+                            parameters.put("shot_type", finalShotType);
+                            parameters.put("audio", finalAudio);
+                            parameters.put("prompt_extend", finalPromptExtend);
+                            parameters.put("watermark", finalWatermark);
+                            if (duration != null) {
+                                parameters.put("duration", duration);
+                            }
+                            if (seed != null) {
+                                parameters.put("seed", seed);
+                            }
+
+                            VideoSynthesisParam param =
+                                    VideoSynthesisParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .prompt(prompt)
+                                            .model(finalModel)
+                                            .imgUrl(MediaUtils.urlToProtocolUrl(imageUrl))
+                                            .audioUrl(audioUrl)
+                                            .negativePrompt(negativePrompt)
+                                            .template(template)
+                                            .parameters(parameters)
+                                            .header("user-agent", Version.getUserAgent())
+                                            .build();
+
+                            VideoSynthesis videoSynthesis = new VideoSynthesis();
+
+                            log.info(
+                                    "Starting image to video generation task, please wait for a"
+                                            + " while...");
+                            VideoSynthesisResult response = videoSynthesis.call(param);
+
+                            // Extract video URL from response
+                            String videoUrl =
+                                    Optional.ofNullable(response)
+                                            .map(VideoSynthesisResult::getOutput)
+                                            .map(VideoSynthesisOutput::getVideoUrl)
+                                            .orElse(null);
+
+                            if (videoUrl == null || videoUrl.trim().isEmpty()) {
+                                log.error("Failed to generate video. No video url returned.");
+                                return ToolResultBlock.error("Failed to generate video.");
+                            }
+
+                            log.info(
+                                    "Image to video generated successfully, videoUrl:{}", videoUrl);
+
+                            VideoBlock vb =
+                                    VideoBlock.builder()
+                                            .source(URLSource.builder().url(videoUrl).build())
+                                            .build();
+
+                            return ToolResultBlock.of(vb);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error("Failed to generate video: '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Generate video transitioning from a first frame to a last frame and an optional text prompt.
+     *
+     * @param prompt          The text prompt describing the video content and camera movement.
+     * @param model           The model to use, e.g., 'wan2.2-kf2v-flash', 'wanx2.1-kf2v-plus'.
+     * @param firstFrameUrl   The URL or Base64 data of the first frame image.
+     * @param lastFrameUrl    The URL or Base64 data of the last frame image.
+     * @param negativePrompt  The negative prompt to avoid certain elements.
+     * @param template        Name of video effect template, e.g., 'hanfu-1', 'solaron', etc.
+     * @param resolution      Resolution of the video, e.g., '480P', '720P', '1080P'.
+     * @param promptExtend    Whether to automatically extend the prompt (default true).
+     * @param watermark       Whether to include watermark (default false).
+     * @param seed            Optional seed for reproducibility.
+     * @return A ToolResultBlock containing the generated video url or error message.
+     */
+    @Tool(
+            name = "dashscope_first_and_last_frame_image_to_video",
+            description =
+                    "Generate video transitioning from a first frame to a last frame and an"
+                            + " optional text prompt")
+    public Mono<ToolResultBlock> dashscopeFirstAndLastFrameImageToVideo(
+            @ToolParam(
+                            name = "prompt",
+                            description = "Text prompt describing the video content and motion",
+                            required = false)
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description =
+                                    "Model to use, e.g., 'wan2.2-kf2v-flash', 'wanx2.1-kf2v-plus'",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "first_frame_url",
+                            description =
+                                    "URL, local file path or Base64 data URL(the format pattern is"
+                                        + " data:[MIME_type];base64,{base64_image}, e.g.,"
+                                        + " 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDg...')"
+                                        + " of the first frame image")
+                    String firstFrameUrl,
+            @ToolParam(
+                            name = "last_frame_url",
+                            description =
+                                    "URL, local file path or Base64 data URL(the format pattern is"
+                                        + " data:[MIME_type];base64,{base64_image}, e.g.,"
+                                        + " 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDg...')"
+                                        + " of the last frame image",
+                            required = false)
+                    String lastFrameUrl,
+            @ToolParam(
+                            name = "negative_prompt",
+                            description = "The negative prompt to avoid certain elements",
+                            required = false)
+                    String negativePrompt,
+            @ToolParam(
+                            name = "template",
+                            description =
+                                    "Name of video effect template, e.g., 'hanfu-1', 'solaron',"
+                                            + " etc",
+                            required = false)
+                    String template,
+            @ToolParam(
+                            name = "resolution",
+                            description = "Video resolution, e.g., '720P', '1080P'",
+                            required = false)
+                    String resolution,
+            @ToolParam(
+                            name = "prompt_extend",
+                            description =
+                                    "Whether to automatically extend the prompt (default true)",
+                            required = false)
+                    Boolean promptExtend,
+            @ToolParam(
+                            name = "watermark",
+                            description = "Whether to include watermark (default false)",
+                            required = false)
+                    Boolean watermark,
+            @ToolParam(
+                            name = "seed",
+                            description = "The seed for reproducibility",
+                            required = false)
+                    Integer seed) {
+
+        String finalModel =
+                Optional.ofNullable(model)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse("wan2.2-kf2v-flash");
+        String finalResolution =
+                Optional.ofNullable(resolution).filter(s -> !s.trim().isEmpty()).orElse("720P");
+        boolean finalPromptExtend = Optional.ofNullable(promptExtend).orElse(true);
+        boolean finalWatermark = Optional.ofNullable(watermark).orElse(false);
+
+        log.debug(
+                "dashscope_first_and_last_frame_image_to_video called: prompt='{}', model='{}',"
+                    + " firstFrameUrl='{}', lastFrameUrl='{}', negativePrompt='{}', template='{}',"
+                    + " resolution='{}', promptExtend={}, watermark={}, seed={}",
+                prompt,
+                finalModel,
+                firstFrameUrl,
+                lastFrameUrl,
+                negativePrompt,
+                template,
+                finalResolution,
+                finalPromptExtend,
+                finalWatermark,
+                seed);
+
+        return Mono.fromCallable(
+                        () -> {
+                            Map<String, Object> parameters = new HashMap<>();
+                            parameters.put("resolution", finalResolution);
+                            parameters.put("prompt_extend", finalPromptExtend);
+                            parameters.put("watermark", finalWatermark);
+                            if (seed != null) {
+                                parameters.put("seed", seed);
+                            }
+
+                            VideoSynthesisParam param =
+                                    VideoSynthesisParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .model(finalModel)
+                                            .prompt(prompt)
+                                            .firstFrameUrl(
+                                                    MediaUtils.urlToProtocolUrl(firstFrameUrl))
+                                            .lastFrameUrl(MediaUtils.urlToProtocolUrl(lastFrameUrl))
+                                            .negativePrompt(negativePrompt)
+                                            .template(template)
+                                            .parameters(parameters)
+                                            .header("user-agent", Version.getUserAgent())
+                                            .build();
+
+                            VideoSynthesis videoSynthesis = new VideoSynthesis();
+
+                            log.info(
+                                    "Starting first and last frame image to video generation task,"
+                                            + " please wait for a while...");
+                            // The video call method blocks until the video is generated or fails
+                            VideoSynthesisResult response = videoSynthesis.call(param);
+
+                            // Extract video URL
+                            String videoUrl =
+                                    Optional.ofNullable(response)
+                                            .map(VideoSynthesisResult::getOutput)
+                                            .map(VideoSynthesisOutput::getVideoUrl)
+                                            .orElse(null);
+
+                            if (videoUrl == null || videoUrl.trim().isEmpty()) {
+                                log.error("Failed to generate video. No URL returned.");
+                                return ToolResultBlock.error("Failed to generate video.");
+                            }
+
+                            log.info(
+                                    "First and last frame image to video video generated"
+                                            + " successfully, videoUrl:{}",
+                                    videoUrl);
+
+                            VideoBlock vb =
+                                    VideoBlock.builder()
+                                            .source(URLSource.builder().url(videoUrl).build())
+                                            .build();
+
+                            return ToolResultBlock.of(vb);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error("Failed to generate key-frame video '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
+    }
+
+    /**
+     * Analyze video and generate a text description or answer questions based on the video content.
+     *
+     * @param videoUrl      The URL or local path of the video to analyze.
+     * @param prompt        The text prompt or question regarding the video content.
+     * @param model         The vision model to use, e.g., 'qwen3.5-plus', 'qwen3.5-flash', 'qwen3-vl-plus', 'qwen3-vl-flash', etc.
+     * @param fps           Frames per second to sample from the video (e.g., 1, 2, 4). Default is 2.
+     * @return A ToolResultBlock containing the generated text analysis or error message.
+     */
+    @Tool(
+            name = "dashscope_video_to_text",
+            description =
+                    "Analyze video and generate a text description or answer questions based on the"
+                            + " video content.Supports controlling the frame sampling rate (fps).")
+    public Mono<ToolResultBlock> dashscopeVideoToText(
+            @ToolParam(
+                            name = "video_url",
+                            description =
+                                    "The URL, local file path or base64 data URL(the format pattern"
+                                        + " is data:[MIME_type];base64,{base64_video}, e.g.,"
+                                        + " 'data:video/mp4;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA...')"
+                                        + " of the video to analyze.")
+                    String videoUrl,
+            @ToolParam(
+                            name = "prompt",
+                            description = "The question or instruction regarding the video content",
+                            required = false)
+                    String prompt,
+            @ToolParam(
+                            name = "model",
+                            description =
+                                    "The vision model to use, e.g., 'qwen3.5-plus',"
+                                            + " 'qwen3.5-flash', 'qwen3-vl-plus', 'qwen3-vl-flash',"
+                                            + " etc",
+                            required = false)
+                    String model,
+            @ToolParam(
+                            name = "fps",
+                            description =
+                                    "Frames per second to sample from the video for analysis"
+                                            + " (default 2.0)",
+                            required = false)
+                    Double fps) {
+
+        String finalModel =
+                Optional.ofNullable(model).filter(s -> !s.trim().isEmpty()).orElse("qwen3.5-plus");
+        String finalPrompt =
+                Optional.ofNullable(prompt)
+                        .filter(s -> !s.trim().isEmpty())
+                        .orElse("Describe the video");
+        double finalFps = Optional.ofNullable(fps).orElse(2.0);
+
+        log.debug(
+                "dashscope_video_to_text called: videoUrl:'{}', prompt='{}', model='{}', fps={}",
+                videoUrl,
+                prompt,
+                finalModel,
+                finalFps);
+
+        return Mono.fromCallable(
+                        () -> {
+                            Map<String, Object> videoParams = new HashMap<>();
+                            videoParams.put("video", MediaUtils.urlToProtocolUrl(videoUrl));
+                            videoParams.put("fps", finalFps);
+                            List<Map<String, Object>> content = new ArrayList<>();
+                            content.add(Map.of("text", finalPrompt));
+                            content.add(videoParams);
+                            MultiModalMessage userMessage =
+                                    MultiModalMessage.builder()
+                                            .role(Role.USER.getValue())
+                                            .content(content)
+                                            .build();
+
+                            MultiModalMessage systemMessage =
+                                    MultiModalMessage.builder()
+                                            .role(Role.SYSTEM.getValue())
+                                            .content(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "text",
+                                                                    "You are a helpful"
+                                                                            + " assistant.")))
+                                            .build();
+
+                            List<MultiModalMessage> multiModalMessages = new ArrayList<>();
+                            multiModalMessages.add(systemMessage);
+                            multiModalMessages.add(userMessage);
+
+                            MultiModalConversationParam param =
+                                    MultiModalConversationParam.builder()
+                                            .apiKey(this.apiKey)
+                                            .model(finalModel)
+                                            .messages(multiModalMessages)
+                                            .header("user-agent", Version.getUserAgent())
+                                            .build();
+
+                            MultiModalConversation conv = new MultiModalConversation();
+                            MultiModalConversationResult result = conv.call(param);
+
+                            // Extract text from the result
+                            String text =
+                                    Optional.ofNullable(result)
+                                            .map(MultiModalConversationResult::getOutput)
+                                            .map(MultiModalConversationOutput::getChoices)
+                                            .flatMap(choices -> choices.stream().findFirst())
+                                            .map(MultiModalConversationOutput.Choice::getMessage)
+                                            .map(MultiModalMessage::getContent)
+                                            .flatMap(contents -> contents.stream().findFirst())
+                                            .map(contentMap -> contentMap.get("text"))
+                                            .map(Object::toString)
+                                            .orElse(null);
+
+                            if (text == null || text.trim().isEmpty()) {
+                                log.error("Failed to analyze video. No text response returned.");
+                                return ToolResultBlock.error("Failed to analyze video.");
+                            }
+
+                            log.info("Video analysis completed successfully.");
+
+                            TextBlock tb = TextBlock.builder().text(text).build();
+                            return ToolResultBlock.of(tb);
+                        })
+                .onErrorResume(
+                        e -> {
+                            log.error("Failed to analyze video '{}'", e.getMessage(), e);
+                            return Mono.just(ToolResultBlock.error(e.getMessage()));
+                        });
     }
 }

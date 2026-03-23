@@ -32,7 +32,7 @@ parts:
     title: Tool System
   - file: en/task/mcp
     title: Model Context Protocol
-  - file: zh/task/agent-as-tool
+  - file: en/task/agent-as-tool
     title: Agent as Tool
   - file: en/task/agent-skill
     title: Agent Skill
@@ -60,7 +60,7 @@ parts:
     title: AG-UI Protocol
   - file: en/task/a2a
     title: A2A Protocol
-  - file: zh/task/msghub
+  - file: en/task/msghub
     title: MsgHub
   - file: en/task/ai-coding
     title: Coding with AI

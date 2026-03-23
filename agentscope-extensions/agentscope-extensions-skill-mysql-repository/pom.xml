@@ -26,9 +26,9 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions - Session - Redis</name>
-    <description>AgentScope Extensions - Session Redis</description>
-    <artifactId>agentscope-extensions-session-redis</artifactId>
+    <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
+    <name>AgentScope Java - Extensions - Skill MySQL</name>
+    <description>AgentScope Extensions - MySQL Skill Storage</description>
 
     <dependencies>
         <dependency>
@@ -38,23 +38,12 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Redisson redis client -->
+        <!-- MySQL JDBC Driver -->
         <dependency>
-            <groupId>org.redisson</groupId>
-            <artifactId>redisson</artifactId>
-        </dependency>
-
-        <!-- Jedis client -->
-        <dependency>
-            <groupId>redis.clients</groupId>
-            <artifactId>jedis</artifactId>
-        </dependency>
-
-        <!-- Lettuce client -->
-        <dependency>
-            <groupId>io.lettuce</groupId>
-            <artifactId>lettuce-core</artifactId>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
         </dependency>
 
     </dependencies>
+
 </project>
