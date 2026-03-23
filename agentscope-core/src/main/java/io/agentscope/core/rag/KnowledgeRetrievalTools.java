@@ -144,7 +144,11 @@ public class KnowledgeRetrievalTools {
 
         // Build retrieval config with conversation history
         RetrieveConfig config =
-                this.defaultConfig.mutate().conversationHistory(conversationHistory).build();
+                this.defaultConfig
+                        .mutate()
+                        .limit(limit)
+                        .conversationHistory(conversationHistory)
+                        .build();
 
         return knowledge
                 .retrieve(query, config)

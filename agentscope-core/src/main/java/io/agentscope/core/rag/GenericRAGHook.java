@@ -41,7 +41,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>Extracts the query from user messages</li>
  *   <li>Retrieves relevant documents from the knowledge base</li>
- *   <li>Injects the retrieved knowledge as a system message</li>
+ *   <li>Injects the retrieved knowledge as a user message</li>
  *   <li>Modifies the input messages to include the knowledge context</li>
  * </ol>
  *
