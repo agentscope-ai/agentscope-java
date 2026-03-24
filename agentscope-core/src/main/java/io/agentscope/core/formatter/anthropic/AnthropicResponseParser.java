@@ -50,7 +50,7 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (com.anthropic.models.messages.ContentBlock block : message.content()) {
+        for (var block : message.content()) {
             // Text block
             block.text()
                     .ifPresent(

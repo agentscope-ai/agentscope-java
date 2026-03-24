@@ -17,6 +17,7 @@ package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,10 +28,10 @@ import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
-import com.anthropic.models.messages.TextBlock;
-import com.anthropic.models.messages.ThinkingBlock;
-import com.anthropic.models.messages.ToolUseBlock;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.lang.reflect.Method;
@@ -43,6 +44,18 @@ import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
 class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
+
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ThinkingBlock mockThinkingBlock() {
+        return mock(com.anthropic.models.messages.ThinkingBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ToolUseBlock mockToolUseBlock() {
+        return mock(com.anthropic.models.messages.ToolUseBlock.class);
+    }
 
     /**
      * Use reflection to call private parseStreamEvent method for unit testing individual event
@@ -63,7 +76,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        var textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_123");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -82,10 +95,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_123", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
-
-        io.agentscope.core.message.TextBlock parsedText =
-                (io.agentscope.core.message.TextBlock) response.getContent().get(0);
+        TextBlock parsedText = assertInstanceOf(TextBlock.class, response.getContent().get(0));
         assertEquals("Hello, world!", parsedText.getText());
 
         ChatUsage responseUsage = response.getUsage();
@@ -101,7 +111,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_456");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -123,10 +133,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_456", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.ToolUseBlock);
-
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
+        ToolUseBlock parsedToolUse =
+                assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
         assertEquals("tool_call_123", parsedToolUse.getId());
         assertEquals("search", parsedToolUse.getName());
         assertNotNull(parsedToolUse.getInput());
@@ -140,7 +148,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ThinkingBlock thinkingBlock = mock(ThinkingBlock.class);
+        var thinkingBlock = mockThinkingBlock();
 
         when(message.id()).thenReturn("msg_789");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -159,11 +167,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_789", response.getId());
         assertEquals(1, response.getContent().size());
-        assertTrue(
-                response.getContent().get(0) instanceof io.agentscope.core.message.ThinkingBlock);
-
-        io.agentscope.core.message.ThinkingBlock parsedThinking =
-                (io.agentscope.core.message.ThinkingBlock) response.getContent().get(0);
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me think about this...", parsedThinking.getThinking());
     }
 
@@ -174,10 +179,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Usage usage = mock(Usage.class);
 
         ContentBlock textContentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        var textBlock = mockTextBlock();
 
         ContentBlock toolContentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_mixed");
         when(message.content()).thenReturn(List.of(textContentBlock, toolContentBlock));
@@ -206,8 +211,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals("msg_mixed", response.getId());
         assertEquals(2, response.getContent().size());
 
-        assertTrue(response.getContent().get(0) instanceof io.agentscope.core.message.TextBlock);
-        assertTrue(response.getContent().get(1) instanceof io.agentscope.core.message.ToolUseBlock);
+        assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertInstanceOf(ToolUseBlock.class, response.getContent().get(1));
     }
 
     @Test
@@ -236,7 +241,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_null_input");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -258,8 +263,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals(1, response.getContent().size());
 
-        io.agentscope.core.message.ToolUseBlock parsedToolUse =
-                (io.agentscope.core.message.ToolUseBlock) response.getContent().get(0);
+        ToolUseBlock parsedToolUse =
+                assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
         assertEquals("tool_null", parsedToolUse.getId());
         assertEquals("test_tool", parsedToolUse.getName());
         // Null input should result in empty map

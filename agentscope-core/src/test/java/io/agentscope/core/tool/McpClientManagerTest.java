@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -284,12 +285,7 @@ class McpClientManagerTest {
         when(mockMcpTool.inputSchema())
                 .thenReturn(
                         new McpSchema.JsonSchema(
-                                "object",
-                                new HashMap<>(),
-                                new java.util.ArrayList<>(),
-                                null,
-                                null,
-                                null));
+                                "object", new HashMap<>(), new ArrayList<>(), null, null, null));
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
 
@@ -334,12 +330,7 @@ class McpClientManagerTest {
         when(mockMcpTool.inputSchema())
                 .thenReturn(
                         new McpSchema.JsonSchema(
-                                "object",
-                                new HashMap<>(),
-                                new java.util.ArrayList<>(),
-                                null,
-                                null,
-                                null));
+                                "object", new HashMap<>(), new ArrayList<>(), null, null, null));
 
         when(clientWrapper.listTools()).thenReturn(Mono.just(List.of(mockMcpTool)));
 

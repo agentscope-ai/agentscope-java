@@ -18,6 +18,7 @@ package io.agentscope.core.model.transport;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -1046,5 +1047,20 @@ class JdkHttpTransportTest {
                 .expectNext(
                         "{\"id\":\"2\",\"text\":\"World\"}") // This is sent before [DONE] marker
                 .verifyComplete();
+    }
+
+    @Test
+    void testHttpVersionConfig() {
+        HttpTransportConfig defaults = HttpTransportConfig.defaults();
+        HttpTransportConfig config =
+                HttpTransportConfig.builder().httpVersion(HttpVersion.HTTP_1_1).build();
+        JdkHttpTransport jdkHttpTransport = JdkHttpTransport.builder().config(defaults).build();
+        JdkHttpTransport jdkHttpTransport2 = JdkHttpTransport.builder().config(config).build();
+        assertSame(HttpVersion.HTTP_2, defaults.getHttpVersion());
+        assertEquals(HttpClient.Version.HTTP_2, defaults.getHttpVersion().toJdkHttpVersion());
+        assertSame(HttpVersion.HTTP_1_1, config.getHttpVersion());
+        assertEquals(HttpClient.Version.HTTP_1_1, config.getHttpVersion().toJdkHttpVersion());
+        assertNotNull(jdkHttpTransport);
+        assertNotNull(jdkHttpTransport2);
     }
 }
