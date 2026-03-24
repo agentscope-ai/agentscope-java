@@ -53,8 +53,30 @@ final class GeminiStructuredOutputHandler {
             return response;
         }
 
-        String targetToolName = resolveStructuredOutputToolName(options, tools);
-        if (targetToolName == null) {
+        // Try to determine if this is a structured output request
+        final String targetToolName;
+        boolean isStructuredOutputRequest = false;
+
+        if (options != null && options.getToolChoice() instanceof ToolChoice.Specific) {
+            targetToolName = ((ToolChoice.Specific) options.getToolChoice()).toolName();
+            isStructuredOutputRequest = true;
+        } else if (tools != null) {
+            // Fallback: check if tools contain the generate_response tool
+            String foundToolName = null;
+            for (ToolSchema tool : tools) {
+                if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                        tool.getName())) {
+                    foundToolName = tool.getName();
+                    isStructuredOutputRequest = true;
+                    break;
+                }
+            }
+            targetToolName = foundToolName;
+        } else {
+            targetToolName = null;
+        }
+
+        if (!isStructuredOutputRequest || targetToolName == null) {
             return response;
         }
 
@@ -358,31 +380,47 @@ final class GeminiStructuredOutputHandler {
                             "Wrapped Gemini response in 'response' property for tool schema"
                                     + " compatibility");
                 }
+
+                for (String key : properties.keySet()) {
+                    if (!normalized.containsKey(key)) {
+                        Object defaultValue = getDefaultValueForSchemaType(properties.get(key));
+                        normalized.put(key, defaultValue);
+                        log.debug("Added missing field '{}' with default: {}", key, defaultValue);
+                    }
+                }
+
+                if (usesResponseWrapper && properties.get("response") instanceof Map<?, ?>) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> responseSchema =
+                            (Map<String, Object>) properties.get("response");
+                    Object responsePropsObj = responseSchema.get("properties");
+                    if (responsePropsObj instanceof Map<?, ?>) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> responseProps = (Map<String, Object>) responsePropsObj;
+                        Object responseValue = normalized.get("response");
+                        if (responseValue instanceof Map<?, ?> responseMap) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> typedResponse =
+                                    new HashMap<>((Map<String, Object>) responseMap);
+                            for (String key : responseProps.keySet()) {
+                                if (!typedResponse.containsKey(key)) {
+                                    Object defaultValue =
+                                            getDefaultValueForSchemaType(responseProps.get(key));
+                                    typedResponse.put(key, defaultValue);
+                                    log.debug(
+                                            "Added missing response field '{}' with default: {}",
+                                            key,
+                                            defaultValue);
+                                }
+                            }
+                            normalized.put("response", typedResponse);
+                        }
+                    }
+                }
                 break;
             }
         }
         return normalized;
-    }
-
-    private String resolveStructuredOutputToolName(
-            GenerateOptions options, List<ToolSchema> tools) {
-        if (options != null && options.getToolChoice() instanceof ToolChoice.Specific specific) {
-            return StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
-                            specific.toolName())
-                    ? specific.toolName()
-                    : null;
-        }
-
-        if (tools == null) {
-            return null;
-        }
-
-        for (ToolSchema tool : tools) {
-            if (StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(tool.getName())) {
-                return tool.getName();
-            }
-        }
-        return null;
     }
 
     private Map<String, Object> extractStructuredOutputFromText(

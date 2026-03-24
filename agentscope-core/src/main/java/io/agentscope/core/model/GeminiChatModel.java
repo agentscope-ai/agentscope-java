@@ -203,8 +203,7 @@ public class GeminiChatModel extends ChatModelBase {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic())
-                .retryWhen(retryPolicy.build())
-                .onErrorMap(GeminiApiException.class, e -> new ModelException(e.getMessage(), e));
+                .retryWhen(retryPolicy.build());
     }
 
     @Override

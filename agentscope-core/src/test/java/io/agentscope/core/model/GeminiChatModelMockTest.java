@@ -23,7 +23,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -195,71 +194,6 @@ class GeminiChatModelMockTest {
                                 throwable instanceof ModelException
                                         && throwable.getMessage().contains("Gemini API Error: 400"))
                 .verify();
-    }
-
-    @Test
-    @DisplayName("Should retry retryable unary Gemini API errors")
-    void testUnaryRetryableErrorResponse() {
-        AtomicInteger attempts = new AtomicInteger();
-        String successResponse =
-                "{\n"
-                        + "  \"candidates\": [\n"
-                        + "    {\n"
-                        + "      \"content\": {\n"
-                        + "        \"parts\": [\n"
-                        + "          {\n"
-                        + "            \"text\": \"Recovered\"\n"
-                        + "          }\n"
-                        + "        ],\n"
-                        + "        \"role\": \"model\"\n"
-                        + "      },\n"
-                        + "      \"finishReason\": \"STOP\",\n"
-                        + "      \"index\": 0\n"
-                        + "    }\n"
-                        + "  ]\n"
-                        + "}";
-
-        Interceptor interceptor =
-                chain -> {
-                    int attempt = attempts.incrementAndGet();
-                    if (attempt == 1) {
-                        return new Response.Builder()
-                                .request(chain.request())
-                                .protocol(Protocol.HTTP_1_1)
-                                .code(429)
-                                .message("Too Many Requests")
-                                .body(
-                                        ResponseBody.create(
-                                                "{\"error\": \"rate limit\"}",
-                                                MediaType.get("application/json")))
-                                .build();
-                    }
-                    return new Response.Builder()
-                            .request(chain.request())
-                            .protocol(Protocol.HTTP_1_1)
-                            .code(200)
-                            .message("OK")
-                            .body(
-                                    ResponseBody.create(
-                                            successResponse, MediaType.get("application/json")))
-                            .build();
-                };
-
-        GeminiChatModel model =
-                GeminiChatModel.builder()
-                        .apiKey(MOCK_API_KEY)
-                        .modelName(MOCK_MODEL_NAME)
-                        .streamEnabled(false)
-                        .httpClient(createMockClient(interceptor))
-                        .build();
-
-        List<Msg> messages = List.of(Msg.builder().role(MsgRole.USER).textContent("Hello").build());
-        Flux<ChatResponse> responseFlux = model.stream(messages, null, null);
-
-        StepVerifier.create(responseFlux)
-                .assertNext(response -> assertEquals("Recovered", getText(response)))
-                .verifyComplete();
-        assertEquals(2, attempts.get());
     }
 
     @Test

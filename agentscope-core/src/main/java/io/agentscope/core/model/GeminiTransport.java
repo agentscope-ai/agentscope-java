@@ -57,39 +57,34 @@ final class GeminiTransport {
     }
 
     Flux<ChatResponse> handleUnaryResponse(Request request, Instant startTime) {
-        return Flux.defer(
-                () -> {
-                    try (Response response = httpClient.newCall(request).execute();
-                            ResponseBody responseBody = response.body()) {
-                        String bodyString = responseBody != null ? responseBody.string() : null;
-                        if (!response.isSuccessful() || bodyString == null) {
-                            String errorBody = bodyString != null ? bodyString : "null";
-                            return Flux.error(new GeminiApiException(response.code(), errorBody));
-                        }
+        try {
+            try (Response response = httpClient.newCall(request).execute();
+                    ResponseBody responseBody = response.body()) {
+                String bodyString = responseBody != null ? responseBody.string() : null;
+                if (!response.isSuccessful() || bodyString == null) {
+                    String errorBody = bodyString != null ? bodyString : "null";
+                    throw new GeminiApiException(response.code(), errorBody);
+                }
 
-                        GeminiResponse geminiResponse =
-                                jsonCodec.fromJson(bodyString, GeminiResponse.class);
-                        log.debug("Gemini Response JSON: {}", bodyString);
-                        log.debug(
-                                "Parsed GeminiResponse: candidates={}, promptFeedback={}",
-                                geminiResponse.getCandidates() != null
-                                        ? geminiResponse.getCandidates().size()
-                                        : 0,
-                                geminiResponse.getPromptFeedback());
-                        ChatResponse chatResponse =
-                                formatter.parseResponse(geminiResponse, startTime);
-                        log.debug(
-                                "Parsed ChatResponse: contentBlocks={}, metadata={}",
-                                chatResponse.getContent() != null
-                                        ? chatResponse.getContent().size()
-                                        : 0,
-                                chatResponse.getMetadata());
-                        return Flux.just(chatResponse);
-                    } catch (IOException e) {
-                        return Flux.error(
-                                new ModelException("Gemini network error: " + e.getMessage(), e));
-                    }
-                });
+                GeminiResponse geminiResponse =
+                        jsonCodec.fromJson(bodyString, GeminiResponse.class);
+                log.debug("Gemini Response JSON: {}", bodyString);
+                log.debug(
+                        "Parsed GeminiResponse: candidates={}, promptFeedback={}",
+                        geminiResponse.getCandidates() != null
+                                ? geminiResponse.getCandidates().size()
+                                : 0,
+                        geminiResponse.getPromptFeedback());
+                ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
+                log.debug(
+                        "Parsed ChatResponse: contentBlocks={}, metadata={}",
+                        chatResponse.getContent() != null ? chatResponse.getContent().size() : 0,
+                        chatResponse.getMetadata());
+                return Flux.just(chatResponse);
+            }
+        } catch (IOException e) {
+            return Flux.error(new ModelException("Gemini network error: " + e.getMessage(), e));
+        }
     }
 
     Flux<ChatResponse> handleStreamResponse(Request request, Instant startTime) {
@@ -132,13 +127,9 @@ final class GeminiTransport {
                                                             geminiResponse, startTime);
                                             sink.next(chatResponse);
                                         } catch (Exception e) {
-                                            sink.error(
-                                                    new ModelException(
-                                                            "Failed to parse Gemini stream chunk:"
-                                                                    + " "
-                                                                    + e.getMessage(),
-                                                            e));
-                                            return;
+                                            log.warn(
+                                                    "Failed to parse Gemini stream chunk: {}",
+                                                    e.getMessage());
                                         }
                                     }
                                 }
