@@ -331,13 +331,13 @@ class ToolRegistryTest {
     }
 
     @Test
-    @DisplayName("Should throw IllegalArgumentException register empty name tool")
+    @DisplayName("Should throw IllegalArgumentException remove empty name tool")
     void testRemoveEmptyNameTool() {
         assertThrows(IllegalArgumentException.class, () -> registry.removeTool(""));
     }
 
     @Test
-    @DisplayName("Should throw IllegalArgumentException register blank name tool")
+    @DisplayName("Should throw IllegalArgumentException remove blank name tool")
     void testRemoveBlankNameTool() {
         assertThrows(IllegalArgumentException.class, () -> registry.removeTool("  "));
     }
