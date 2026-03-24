@@ -797,8 +797,10 @@ class DashScopeChatModelTest {
                             .setHeader("Content-Type", "application/json"));
 
             DashScopeChatModel chatModel =
-                    DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen3.5-plus").stream(
-                                    false)
+                    DashScopeChatModel.builder()
+                            .apiKey(mockApiKey)
+                            .modelName("qwen3.5-plus")
+                            .stream(false)
                             .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
                             .httpTransport(OkHttpTransport.builder().build())
                             .build();
