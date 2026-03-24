@@ -797,4 +797,66 @@ class Mem0ClientTest {
 
         selfHostedClient.shutdown();
     }
+
+    @Test
+    void testApiTypeNullDefaultsToPlatform() throws Exception {
+        // Test that passing null apiType defaults to PLATFORM
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client clientWithNullApiType =
+                new Mem0Client(baseUrl, "test-key", null, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(clientWithNullApiType.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify it uses platform endpoint (default)
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertTrue(recordedRequest.getPath().contains("/v1/memories"));
+        // Verify it uses Authorization: Token header (platform style)
+        assertEquals("Token test-key", recordedRequest.getHeader("Authorization"));
+
+        clientWithNullApiType.shutdown();
+    }
+
+    @Test
+    void testExecutePostRawWithInvalidResponse() {
+        // Test exception handling in executePostRaw when response body cannot be read
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client client = new Mem0Client(baseUrl, "test-key", Duration.ofSeconds(60));
+
+        // Enqueue a response that will cause an error
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("{\"error\":\"Internal server error\"}"));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        // Verify the error message contains operation name
+        StepVerifier.create(client.add(request))
+                .expectErrorMatches(
+                        error ->
+                                error.getMessage().contains("Mem0 API add request failed")
+                                        && error.getMessage().contains("status 500"))
+                .verify();
+
+        client.shutdown();
+    }
 }
