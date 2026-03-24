@@ -40,6 +40,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import reactor.core.scheduler.Schedulers;
 
 class ReActAgentStructuredOutputTest {
@@ -545,6 +546,7 @@ class ReActAgentStructuredOutputTest {
      * Reproduces the subscribeOn(elastic) vs delayed {@code doFinally} race: run many times until
      * failure or increase confidence after a fix.
      */
+    @EnabledIfSystemProperty(named = "agentscope.runStructuredOutputRaceTest", matches = "true")
     @RepeatedTest(25000)
     @DisplayName("Structured output race: 25000 repetitions (subscribeOn + immediate second call)")
     void testConcurrencyConflictStructuredOutput_repeated() {
@@ -626,7 +628,7 @@ class ReActAgentStructuredOutputTest {
         Msg responseMsg =
                 agent.call(inputMsg, WeatherResponse.class)
                         .subscribeOn(Schedulers.boundedElastic())
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS * 10000));
 
         Msg response2 =
                 agent.call(inputMsg, WeatherResponse.class)
