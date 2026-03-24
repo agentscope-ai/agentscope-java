@@ -17,7 +17,9 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -601,25 +603,45 @@ class ReActAgentStructuredOutputTest {
                                         .build())
                         .build();
 
-        Msg responseMsg =
-                agent.call(inputMsg, WeatherResponse.class)
-                        .subscribeOn(Schedulers.boundedElastic())
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        for (int i = 0; i < 5; i++) {
+            Msg responseMsg =
+                    agent.call(inputMsg, WeatherResponse.class)
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        Msg response2 =
-                agent.call(inputMsg, WeatherResponse.class)
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            assertNotNull(responseMsg);
+            WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+            assertNotNull(result);
+            assertEquals("San Francisco", result.location);
+            assertEquals("72°F", result.temperature);
+            assertEquals("Sunny", result.condition);
 
-        assertNotNull(responseMsg);
-        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
-        assertNotNull(result);
-        assertEquals("San Francisco", result.location);
-        assertEquals("72°F", result.temperature);
-        assertEquals("Sunny", result.condition);
+            assertFalse(
+                    agent.getHooks().stream().anyMatch(StructuredOutputHook.class::isInstance),
+                    "Structured output hook should be removed before call returns");
+            assertNull(
+                    agent.getToolkit()
+                            .getTool(StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME),
+                    "Temporary structured output tool should be removed before call returns");
 
-        assertNotNull(response2);
-        // no IllegalStateException throw
-        WeatherResponse result2 = response2.getStructuredData(WeatherResponse.class);
-        assertNotNull(result2);
+            Msg response2 =
+                    agent.call(inputMsg, WeatherResponse.class)
+                            .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+            assertNotNull(response2);
+            WeatherResponse result2 = response2.getStructuredData(WeatherResponse.class);
+            assertNotNull(result2);
+            assertEquals("San Francisco", result2.location);
+            assertEquals("72°F", result2.temperature);
+            assertEquals("Sunny", result2.condition);
+
+            assertFalse(
+                    agent.getHooks().stream().anyMatch(StructuredOutputHook.class::isInstance),
+                    "Structured output hook should not leak into the next call");
+            assertNull(
+                    agent.getToolkit()
+                            .getTool(StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME),
+                    "Temporary structured output tool should not leak into the next call");
+        }
     }
 }
