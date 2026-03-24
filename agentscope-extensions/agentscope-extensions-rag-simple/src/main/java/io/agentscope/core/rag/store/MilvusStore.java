@@ -119,6 +119,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private static final String FIELD_PAYLOAD = "payload";
 
     // Default configuration values
+    private static final String DEFAULT_DATABASE_NAME = "default";
     private static final long DEFAULT_CONNECT_TIMEOUT_MS = 30000L;
 
     private final String uri;
@@ -173,10 +174,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             log.debug("Initialized Milvus client: uri={}, collection={}", uri, collectionName);
 
             // Ensure database exists
-            if (databaseName != null && !databaseName.trim().isEmpty()) {
+            if (!DEFAULT_DATABASE_NAME.equals(databaseName)) {
                 ensureDatabase(tempClient, databaseProperties);
-                tempClient.useDatabase(databaseName);
             }
+            tempClient.useDatabase(databaseName);
 
             // Ensure collection exists
             ensureCollection(tempClient);
@@ -201,37 +202,21 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     /**
-     * Creates a new MilvusStore with minimal configuration.
+     * Creates a new MilvusStore instancee with default databaseName.
      *
      * @param uri the Milvus server URI (e.g., "http://localhost:19530")
      * @param collectionName the name of the collection to use
      * @param dimensions the dimension of vectors that will be stored
      * @return a new MilvusStore instance
      * @throws VectorStoreException if initialization fails
-     * @deprecated Use {@link #create(String, String, String, int)} instead
+     * @deprecated Use {@link MilvusStore#builder()} instead
      */
-    @Deprecated
+    @Deprecated(since = "1.0.11", forRemoval = true)
     public static MilvusStore create(String uri, String collectionName, int dimensions)
-            throws VectorStoreException {
-        return create(uri, null, collectionName, dimensions);
-    }
-
-    /**
-     * Creates a new MilvusStore with minimal configuration.
-     *
-     * @param uri            the Milvus server URI (e.g., "http://localhost:19530")
-     * @param databaseName   the name of the database to use
-     * @param collectionName the name of the collection to use
-     * @param dimensions     the dimension of vectors that will be stored
-     * @return a new MilvusStore instance
-     * @throws VectorStoreException if initialization fails
-     */
-    public static MilvusStore create(
-            String uri, String databaseName, String collectionName, int dimensions)
             throws VectorStoreException {
         return builder()
                 .uri(uri)
-                .databaseName(databaseName)
+                .databaseName(DEFAULT_DATABASE_NAME)
                 .collectionName(collectionName)
                 .dimensions(dimensions)
                 .build();
@@ -855,7 +840,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         private String password;
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private IndexParam.MetricType metricType = IndexParam.MetricType.COSINE;
-        private String databaseName;
+        private String databaseName = DEFAULT_DATABASE_NAME;
         private Map<String, String> databaseProperties;
 
         private Builder() {}
@@ -1003,7 +988,9 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             if (metricType == null) {
                 throw new IllegalArgumentException("Metric type cannot be null");
             }
-
+            if (databaseName == null || databaseName.trim().isEmpty()) {
+                throw new IllegalArgumentException("Database name cannot be null or empty");
+            }
             return new MilvusStore(this);
         }
     }

@@ -25,7 +25,6 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -464,6 +463,41 @@ class MilvusStoreTest {
     }
 
     @Test
+    @DisplayName("Should use default if databaseName not defined")
+    void testUseDefaultDatabase() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was not called
+            verify(client, never()).listDatabases();
+            // Verify createDatabase was not called
+            verify(client, never()).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use default database
+            verify(client).useDatabase("default");
+        }
+    }
+
+    @Test
     @DisplayName("Should create new database when not exists")
     void testCreateNewDatabase() throws Exception {
         try (MockedConstruction<MilvusClientV2> mockConstruction =
@@ -492,9 +526,9 @@ class MilvusStoreTest {
             assertNotNull(store);
             MilvusClientV2 client = mockConstruction.constructed().get(0);
             // Verify listDatabases was called
-            verify(client, times(1)).listDatabases();
+            verify(client).listDatabases();
             // Verify createDatabase was called
-            verify(client, times(1)).createDatabase(any(CreateDatabaseReq.class));
+            verify(client).createDatabase(any(CreateDatabaseReq.class));
             // Verify use new database
             verify(client).useDatabase(TEST_DATABASE);
         }
@@ -511,7 +545,7 @@ class MilvusStoreTest {
 
                             ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
                             when(listDatabasesResp.getDatabaseNames())
-                                    .thenReturn(List.of("default"));
+                                    .thenReturn(List.of("exists_database"));
                             when(mock.listDatabases()).thenReturn(listDatabasesResp);
 
                             doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
@@ -522,18 +556,18 @@ class MilvusStoreTest {
                             .uri(TEST_URI)
                             .collectionName(TEST_COLLECTION)
                             .dimensions(TEST_DIMENSIONS)
-                            .databaseName("default")
+                            .databaseName("exists_database")
                             .databaseProperties(Map.of())
                             .build();
 
             assertNotNull(store);
             MilvusClientV2 client = mockConstruction.constructed().get(0);
             // Verify listDatabases was called
-            verify(client, times(1)).listDatabases();
+            verify(client).listDatabases();
             // Verify createDatabase was not called
             verify(client, never()).createDatabase(any(CreateDatabaseReq.class));
             // Verify use default database
-            verify(client).useDatabase("default");
+            verify(client).useDatabase("exists_database");
         }
     }
 
@@ -567,7 +601,7 @@ class MilvusStoreTest {
             assertNotNull(store);
             MilvusClientV2 client = mockConstruction.constructed().get(0);
             // Verify createCollection was called
-            verify(client, times(1)).createCollection(any(CreateCollectionReq.class));
+            verify(client).createCollection(any(CreateCollectionReq.class));
         }
     }
 
