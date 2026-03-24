@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -51,11 +52,64 @@ class MarkdownSkillParserTest {
 
             assertNotNull(parsed);
             assertTrue(parsed.hasFrontmatter());
-            Map<String, String> metadata = parsed.getMetadata();
+            Map<String, Object> metadata = parsed.getMetadata();
             assertEquals("test_skill", metadata.get("name"));
             assertEquals("A test skill", metadata.get("description"));
             assertEquals("1.0.0", metadata.get("version"));
             assertTrue(parsed.getContent().contains("# Test Content"));
+        }
+
+        @Test
+        @DisplayName(
+                "Should successfully parse Agent Browser skill with complex frontmatter (Issue"
+                        + " #1030)")
+        void testAgentBrowserSkillParsing() {
+            String markdown =
+                    """
+                    ---
+                    name: Agent Browser
+                    description: A fast Rust-based headless browser automation CLI with Node.js fallback that enables AI agents to navigate, click, type, and snapshot pages via structured commands.
+                    read_when:
+                      - Automating web interactions
+                      - Extracting structured data from pages
+                      - Filling forms programmatically
+                      - Testing web UIs
+                    metadata: {"clawdbot":{"emoji":"🌐","requires":{"bins":["node","npm"]}}}
+                    allowed-tools: Bash(agent-browser:*)
+                    ---
+
+                    # Agent Browser Content
+                    This is the markdown body.
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            assertEquals("Agent Browser", String.valueOf(metadata.get("name")));
+            assertTrue(String.valueOf(metadata.get("description")).contains("headless browser"));
+            assertEquals("Bash(agent-browser:*)", String.valueOf(metadata.get("allowed-tools")));
+
+            Object readWhenObj = metadata.get("read_when");
+            assertTrue(readWhenObj instanceof List, "read_when should be a List");
+            List<?> readWhenList = (List<?>) readWhenObj;
+            assertEquals(4, readWhenList.size());
+            assertEquals("Automating web interactions", readWhenList.get(0));
+            assertEquals("Testing web UIs", readWhenList.get(3));
+
+            Object metaObj = metadata.get("metadata");
+            assertTrue(metaObj instanceof Map, "metadata should be a Map");
+            Map<?, ?> nestedMeta = (Map<?, ?>) metaObj;
+
+            Map<?, ?> clawdbot = (Map<?, ?>) nestedMeta.get("clawdbot");
+            assertNotNull(clawdbot);
+            assertEquals("🌐", clawdbot.get("emoji"));
+
+            Map<?, ?> requires = (Map<?, ?>) clawdbot.get("requires");
+            List<?> bins = (List<?>) requires.get("bins");
+            assertTrue(bins.contains("node"));
+            assertTrue(bins.contains("npm"));
+
+            assertTrue(parsed.getContent().contains("# Agent Browser Content"));
         }
 
         @Test
@@ -284,26 +338,14 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should throw exception for invalid YAML")
         void testInvalidYaml() {
-            String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
+            // YAML does not allow the use of the Tab key in indentation
+            String markdown = "---\nkey: !!invalid_tag\n  - *undefined_anchor\n---\nContent";
 
             IllegalArgumentException exception =
                     assertThrows(
                             IllegalArgumentException.class,
                             () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
-            assertTrue(exception.getMessage().contains("expected 'key: value' format"));
-        }
-
-        @Test
-        @DisplayName("Should throw exception for list format")
-        void testListFormat() {
-            String markdown = "---\n- item1\n- item2\n---\nContent";
-
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
+            assertTrue(exception.getMessage().contains("Invalid YAML frontmatter syntax"));
         }
     }
 
@@ -314,7 +356,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with metadata and content")
         void testGenerateBasic() {
-            Map<String, String> metadata = Map.of("name", "test_skill", "description", "Test");
+            Map<String, Object> metadata = Map.of("name", "test_skill", "description", "Test");
             String content = "# Skill Content";
 
             String generated = MarkdownSkillParser.generate(metadata, content);
@@ -350,7 +392,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with special characters in content")
         void testGenerateSpecialContent() {
-            Map<String, String> metadata = Map.of("name", "special");
+            Map<String, Object> metadata = Map.of("name", "special");
             String content = "Content with special chars: @#$%^&*(){}[]|\\:;\"'<>?,./";
 
             String generated = MarkdownSkillParser.generate(metadata, content);
@@ -361,7 +403,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values with special characters")
         void testGenerateQuotingSpecialChars() {
-            Map<String, String> metadata =
+            Map<String, Object> metadata =
                     Map.of(
                             "colon", "http://example.com:8080",
                             "hash", "#important",
@@ -380,7 +422,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values with whitespace")
         void testGenerateQuotingWhitespace() {
-            Map<String, String> metadata = Map.of("leading", "  spaces", "trailing", "spaces  ");
+            Map<String, Object> metadata = Map.of("leading", "  spaces", "trailing", "spaces  ");
 
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
@@ -392,7 +434,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate and quote values starting with YAML special chars")
         void testGenerateQuotingYAMLChars() {
-            Map<String, String> metadata =
+            Map<String, Object> metadata =
                     Map.of(
                             "quote", "\"starts with quote",
                             "bracket", "[array",
@@ -423,7 +465,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should generate with empty value")
         void testGenerateEmptyValue() {
-            Map<String, String> metadata = Map.of("empty", "");
+            Map<String, Object> metadata = Map.of("empty", "");
 
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
@@ -462,7 +504,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should round trip with special characters")
         void testRoundTripSpecialCharacters() {
-            Map<String, String> original =
+            Map<String, Object> original =
                     Map.of(
                             "url", "http://example.com:8080",
                             "tag", "#important",
@@ -486,7 +528,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should provide correct getters")
         void testGetters() {
-            Map<String, String> metadata = Map.of("key", "value");
+            Map<String, Object> metadata = Map.of("key", "value");
             ParsedMarkdown parsed = new ParsedMarkdown(metadata, "content");
 
             assertEquals("value", parsed.getMetadata().get("key"));
@@ -497,7 +539,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should maintain immutability")
         void testImmutability() {
-            Map<String, String> originalMetadata = new java.util.HashMap<>();
+            Map<String, Object> originalMetadata = new java.util.HashMap<>();
             originalMetadata.put("key", "value");
 
             ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
@@ -523,7 +565,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should provide meaningful toString")
         void testToString() {
-            Map<String, String> metadata = Map.of("name", "test");
+            Map<String, Object> metadata = Map.of("name", "test");
             String content = "This is a very long content that should be truncated in toString";
 
             ParsedMarkdown parsed = new ParsedMarkdown(metadata, content);

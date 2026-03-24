@@ -190,7 +190,7 @@ public final class SkillFileSystemHelper {
 
                 Files.createDirectories(skillDir);
 
-                Map<String, String> metadata = new LinkedHashMap<>();
+                Map<String, Object> metadata = new LinkedHashMap<>();
                 metadata.put("name", skill.getName());
                 metadata.put("description", skill.getDescription());
 
@@ -407,8 +407,10 @@ public final class SkillFileSystemHelper {
         try {
             String skillMdContent = Files.readString(skillFile, StandardCharsets.UTF_8);
             ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMdContent);
-            Map<String, String> metadata = parsed.getMetadata();
-            String name = metadata.get("name");
+            Map<String, Object> metadata = parsed.getMetadata();
+
+            Object nameObj = metadata.get("name");
+            String name = nameObj != null ? String.valueOf(nameObj) : null;
             if (name == null || name.isEmpty()) {
                 logger.warn("Missing skill name in SKILL.md: {}", skillFile);
                 return Optional.empty();

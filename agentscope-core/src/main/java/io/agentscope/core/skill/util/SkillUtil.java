@@ -87,10 +87,13 @@ public class SkillUtil {
     public static AgentSkill createFrom(
             String skillMd, Map<String, String> resources, String source) {
         ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMd);
-        Map<String, String> metadata = parsed.getMetadata();
+        Map<String, Object> metadata = parsed.getMetadata();
 
-        String name = metadata.get("name");
-        String description = metadata.get("description");
+        Object nameObj = metadata.get("name");
+        Object descObj = metadata.get("description");
+
+        String name = nameObj != null ? String.valueOf(nameObj) : null;
+        String description = descObj != null ? String.valueOf(descObj) : null;
         String skillContent = parsed.getContent();
 
         if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
