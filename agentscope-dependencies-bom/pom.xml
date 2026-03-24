@@ -76,33 +76,34 @@
         <guava.version>33.5.0-jre</guava.version>
         <google-genai.version>1.38.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
-        <bailian.version>2.8.1</bailian.version>
-        <openai-java.version>4.22.0</openai-java.version>
+        <bailian.version>2.8.2</bailian.version>
+        <openai-java.version>4.28.0</openai-java.version>
         <anthropic.version>2.14.0</anthropic.version>
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
-        <milvus.version>2.6.13</milvus.version>
+        <milvus.version>2.6.16</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
-        <elasticsearch.version>9.3.2</elasticsearch.version>
+        <elasticsearch.version>9.3.3</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
-        <pdfbox.version>3.0.6</pdfbox.version>
+        <pdfbox.version>3.0.7</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <tika.version>3.2.3</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
-        <opentelemetry-reactor.version>2.25.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-reactor.version>2.26.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.40.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.1</jedis.version>
+        <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
-        <spring.version>7.0.5</spring.version>
-        <spring-boot.version>4.0.3</spring-boot.version>
+        <spring.version>7.0.6</spring.version>
+        <spring-boot.version>4.0.4</spring-boot.version>
         <nacos-client.version>3.2.0-BETA</nacos-client.version>
         <json-schema-validator.version>3.0.1</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
@@ -110,9 +111,9 @@
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <kotlin.version>1.9.24</kotlin.version>
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
-        <jgit.version>7.5.0.202512021534-r</jgit.version>
+        <jgit.version>7.6.0.202603022253-r</jgit.version>
 
-        <spotless.version>3.3.0</spotless.version>
+        <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -376,6 +377,13 @@
                 <groupId>redis.clients</groupId>
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
+            </dependency>
+
+            <!-- Lettuce client for Redis-based session implementation -->
+            <dependency>
+                <groupId>io.lettuce</groupId>
+                <artifactId>lettuce-core</artifactId>
+                <version>${lettuce.version}</version>
             </dependency>
 
             <!-- XXL-JOB Core -->

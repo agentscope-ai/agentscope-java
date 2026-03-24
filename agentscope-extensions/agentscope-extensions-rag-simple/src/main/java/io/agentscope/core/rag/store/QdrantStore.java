@@ -35,7 +35,7 @@ import io.qdrant.client.WithVectorsSelectorFactory;
 import io.qdrant.client.grpc.Collections.Distance;
 import io.qdrant.client.grpc.Collections.VectorParams;
 import io.qdrant.client.grpc.Common.PointId;
-import io.qdrant.client.grpc.JsonWithInt.ListValue;
+import io.qdrant.client.grpc.JsonWithInt;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import io.qdrant.client.grpc.Points;
@@ -780,7 +780,7 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             }
             return map;
         } else if (value.hasListValue()) {
-            ListValue listValue = value.getListValue();
+            JsonWithInt.ListValue listValue = value.getListValue();
             List<Object> list = new ArrayList<>();
             for (Value item : listValue.getValuesList()) {
                 list.add(convertValueToObject(item));

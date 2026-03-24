@@ -50,6 +50,10 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     private AnthropicChatFormatter formatter;
 
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
+
     @BeforeEach
     void setUp() {
         formatter = new AnthropicChatFormatter();
@@ -111,7 +115,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        TextBlock textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_test");
         when(message.content()).thenReturn(List.of(contentBlock));

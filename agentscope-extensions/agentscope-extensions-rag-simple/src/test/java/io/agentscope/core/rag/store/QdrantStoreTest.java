@@ -34,7 +34,7 @@ import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
 import io.qdrant.client.grpc.Common.PointId;
-import io.qdrant.client.grpc.JsonWithInt.ListValue;
+import io.qdrant.client.grpc.JsonWithInt;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import io.qdrant.client.grpc.Points;
@@ -478,7 +478,7 @@ class QdrantStoreTest {
         customPayloadStruct.putFields("priority", Value.newBuilder().setIntegerValue(1L).build());
 
         // Add tags list
-        ListValue.Builder tagsList = ListValue.newBuilder();
+        JsonWithInt.ListValue.Builder tagsList = JsonWithInt.ListValue.newBuilder();
         tagsList.addValues(Value.newBuilder().setStringValue("urgent").build());
         tagsList.addValues(Value.newBuilder().setStringValue("quarterly").build());
         customPayloadStruct.putFields("tags", Value.newBuilder().setListValue(tagsList).build());
@@ -490,7 +490,7 @@ class QdrantStoreTest {
         customObjectStruct.putFields("version", Value.newBuilder().setIntegerValue(1L).build());
         customObjectStruct.putFields("active", Value.newBuilder().setBoolValue(true).build());
 
-        ListValue.Builder customTagsList = ListValue.newBuilder();
+        JsonWithInt.ListValue.Builder customTagsList = JsonWithInt.ListValue.newBuilder();
         customTagsList.addValues(Value.newBuilder().setStringValue("urgent").build());
         customTagsList.addValues(Value.newBuilder().setStringValue("quarterly").build());
         customObjectStruct.putFields(

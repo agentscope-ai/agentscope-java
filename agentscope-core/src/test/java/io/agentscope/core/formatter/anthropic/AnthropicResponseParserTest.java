@@ -16,6 +16,8 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,16 +28,15 @@ import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
-import com.anthropic.models.messages.TextBlock;
-import com.anthropic.models.messages.ThinkingBlock;
-import com.anthropic.models.messages.ToolUseBlock;
 import com.anthropic.models.messages.Usage;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -43,6 +44,18 @@ import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
 class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
+
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ThinkingBlock mockThinkingBlock() {
+        return mock(com.anthropic.models.messages.ThinkingBlock.class);
+    }
+
+    private static com.anthropic.models.messages.ToolUseBlock mockToolUseBlock() {
+        return mock(com.anthropic.models.messages.ToolUseBlock.class);
+    }
 
     /**
      * Use reflection to call private parseStreamEvent method for unit testing individual event
@@ -63,7 +76,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        var textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_123");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -82,11 +95,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_123", response.getId());
         assertEquals(1, response.getContent().size());
-        Object parsedTextBlock = response.getContent().get(0);
-        assertEquals("TextBlock", parsedTextBlock.getClass().getSimpleName());
-        String parsedText =
-                (String) parsedTextBlock.getClass().getMethod("getText").invoke(parsedTextBlock);
-        assertEquals("Hello, world!", parsedText);
+        TextBlock parsedText = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("Hello, world!", parsedText.getText());
 
         ChatUsage responseUsage = response.getUsage();
         assertNotNull(responseUsage);
@@ -101,7 +111,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_456");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -123,25 +133,13 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_456", response.getId());
         assertEquals(1, response.getContent().size());
-        Object parsedToolUseBlock = response.getContent().get(0);
-        assertEquals("ToolUseBlock", parsedToolUseBlock.getClass().getSimpleName());
-        assertEquals(
-                "tool_call_123",
-                parsedToolUseBlock.getClass().getMethod("getId").invoke(parsedToolUseBlock));
-        assertEquals(
-                "search",
-                parsedToolUseBlock.getClass().getMethod("getName").invoke(parsedToolUseBlock));
-        assertNotNull(
-                parsedToolUseBlock.getClass().getMethod("getInput").invoke(parsedToolUseBlock));
+        ToolUseBlock parsedToolUse =
+                assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("tool_call_123", parsedToolUse.getId());
+        assertEquals("search", parsedToolUse.getName());
+        assertNotNull(parsedToolUse.getInput());
         // Null input should result in empty map
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsedInput =
-                (Map<String, Object>)
-                        parsedToolUseBlock
-                                .getClass()
-                                .getMethod("getInput")
-                                .invoke(parsedToolUseBlock);
-        assertTrue(parsedInput.isEmpty());
+        assertTrue(parsedToolUse.getInput().isEmpty());
     }
 
     @Test
@@ -150,7 +148,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ThinkingBlock thinkingBlock = mock(ThinkingBlock.class);
+        var thinkingBlock = mockThinkingBlock();
 
         when(message.id()).thenReturn("msg_789");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -169,14 +167,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals("msg_789", response.getId());
         assertEquals(1, response.getContent().size());
-        Object parsedThinkingBlock = response.getContent().get(0);
-        assertEquals("ThinkingBlock", parsedThinkingBlock.getClass().getSimpleName());
-        assertEquals(
-                "Let me think about this...",
-                parsedThinkingBlock
-                        .getClass()
-                        .getMethod("getThinking")
-                        .invoke(parsedThinkingBlock));
+        ThinkingBlock parsedThinking =
+                assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
+        assertEquals("Let me think about this...", parsedThinking.getThinking());
     }
 
     @Test
@@ -186,10 +179,10 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Usage usage = mock(Usage.class);
 
         ContentBlock textContentBlock = mock(ContentBlock.class);
-        TextBlock textBlock = mock(TextBlock.class);
+        var textBlock = mockTextBlock();
 
         ContentBlock toolContentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_mixed");
         when(message.content()).thenReturn(List.of(textContentBlock, toolContentBlock));
@@ -218,8 +211,8 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertEquals("msg_mixed", response.getId());
         assertEquals(2, response.getContent().size());
 
-        assertEquals("TextBlock", response.getContent().get(0).getClass().getSimpleName());
-        assertEquals("ToolUseBlock", response.getContent().get(1).getClass().getSimpleName());
+        assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertInstanceOf(ToolUseBlock.class, response.getContent().get(1));
     }
 
     @Test
@@ -248,7 +241,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        ToolUseBlock toolUseBlock = mock(ToolUseBlock.class);
+        var toolUseBlock = mockToolUseBlock();
 
         when(message.id()).thenReturn("msg_null_input");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -270,24 +263,13 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(response);
         assertEquals(1, response.getContent().size());
 
-        Object parsedToolUseBlock = response.getContent().get(0);
-        assertEquals(
-                "tool_null",
-                parsedToolUseBlock.getClass().getMethod("getId").invoke(parsedToolUseBlock));
-        assertEquals(
-                "test_tool",
-                parsedToolUseBlock.getClass().getMethod("getName").invoke(parsedToolUseBlock));
+        ToolUseBlock parsedToolUse =
+                assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("tool_null", parsedToolUse.getId());
+        assertEquals("test_tool", parsedToolUse.getName());
         // Null input should result in empty map
-        assertNotNull(
-                parsedToolUseBlock.getClass().getMethod("getInput").invoke(parsedToolUseBlock));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsedInput =
-                (Map<String, Object>)
-                        parsedToolUseBlock
-                                .getClass()
-                                .getMethod("getInput")
-                                .invoke(parsedToolUseBlock);
-        assertTrue(parsedInput.isEmpty());
+        assertNotNull(parsedToolUse.getInput());
+        assertTrue(parsedToolUse.getInput().isEmpty());
     }
 
     @Test
@@ -349,6 +331,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
 
         assertNotNull(response);
         assertNotNull(response.getId());
+        assertFalse(response.getId().isEmpty());
         assertTrue(response.getContent().isEmpty());
         assertNull(response.getUsage());
     }
