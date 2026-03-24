@@ -48,7 +48,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * <pre>{@code
  * // Parse markdown with frontmatter
  * ParsedMarkdown parsed = MarkdownSkillParser.parse(markdownContent);
- * Map<String, String> metadata = parsed.getMetadata();
+ * Map<String, Object> metadata = parsed.getMetadata();
  * String content = parsed.getContent();
  *
  * // Generate markdown with frontmatter

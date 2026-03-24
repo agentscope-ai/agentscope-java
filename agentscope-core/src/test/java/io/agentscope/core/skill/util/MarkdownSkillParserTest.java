@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -339,7 +339,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should throw exception for invalid YAML")
         void testInvalidYaml() {
-            // YAML does not allow the use of the Tab key in indentation
+            // YAML is invalid due to an unknown tag and an undefined anchor
             String markdown = "---\nkey: !!invalid_tag\n  - *undefined_anchor\n---\nContent";
 
             IllegalArgumentException exception =

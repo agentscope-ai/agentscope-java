@@ -89,11 +89,8 @@ public class SkillUtil {
         ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMd);
         Map<String, Object> metadata = parsed.getMetadata();
 
-        Object nameObj = metadata.get("name");
-        Object descObj = metadata.get("description");
-
-        String name = nameObj != null ? String.valueOf(nameObj) : null;
-        String description = descObj != null ? String.valueOf(descObj) : null;
+        String name = extractStringScalar(metadata.get("name"), "name");
+        String description = extractStringScalar(metadata.get("description"), "description");
         String skillContent = parsed.getContent();
 
         if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
@@ -300,5 +297,27 @@ public class SkillUtil {
             }
             return outputStream.toString(StandardCharsets.UTF_8);
         }
+    }
+
+    /**
+     * Extracts a scalar string from a YAML parsed object.
+     * Rejects collections (List, Map) to prevent synthetic names like "[a, b]".
+     */
+    public static String extractStringScalar(Object obj, String fieldName) {
+        if (obj == null) {
+            return null;
+        }
+        if (obj instanceof String) {
+            return ((String) obj).trim();
+        }
+        if (obj instanceof Number || obj instanceof Boolean) {
+            return String.valueOf(obj);
+        }
+
+        throw new IllegalArgumentException(
+                String.format(
+                        "Invalid type for field '%s' in YAML frontmatter. Expected String, but"
+                                + " found: %s",
+                        fieldName, obj.getClass().getSimpleName()));
     }
 }

@@ -409,8 +409,7 @@ public final class SkillFileSystemHelper {
             ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMdContent);
             Map<String, Object> metadata = parsed.getMetadata();
 
-            Object nameObj = metadata.get("name");
-            String name = nameObj != null ? String.valueOf(nameObj) : null;
+            String name = SkillUtil.extractStringScalar(metadata.get("name"), "name");
             if (name == null || name.isEmpty()) {
                 logger.warn("Missing skill name in SKILL.md: {}", skillFile);
                 return Optional.empty();
