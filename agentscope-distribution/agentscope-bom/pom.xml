@@ -269,6 +269,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope RocketMQ Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-rocketmq</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Nacos Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>
