@@ -16,7 +16,6 @@
 package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
@@ -87,11 +86,12 @@ class GeminiTransportTest {
                         .post(RequestBody.create("{}", MediaType.get("application/json")))
                         .build();
 
-        GeminiApiException exception =
-                assertThrows(
-                        GeminiApiException.class,
-                        () -> transport.handleUnaryResponse(request, Instant.now()));
-        assertEquals(429, exception.getStatusCode());
+        StepVerifier.create(transport.handleUnaryResponse(request, Instant.now()))
+                .expectErrorMatches(
+                        throwable ->
+                                throwable instanceof GeminiApiException
+                                        && ((GeminiApiException) throwable).getStatusCode() == 429)
+                .verify();
     }
 
     @Test
@@ -108,9 +108,12 @@ class GeminiTransportTest {
                         .post(RequestBody.create("{}", MediaType.get("application/json")))
                         .build();
 
-        assertThrows(
-                GeminiApiException.class,
-                () -> transport.handleUnaryResponse(request, Instant.now()));
+        StepVerifier.create(transport.handleUnaryResponse(request, Instant.now()))
+                .expectErrorMatches(
+                        throwable ->
+                                throwable instanceof GeminiApiException
+                                        && ((GeminiApiException) throwable).getStatusCode() == 429)
+                .verify();
         assertTrue(closed.get());
     }
 
@@ -131,6 +134,27 @@ class GeminiTransportTest {
                         throwable ->
                                 throwable instanceof GeminiApiException
                                         && ((GeminiApiException) throwable).getStatusCode() == 500)
+                .verify();
+    }
+
+    @Test
+    @DisplayName("Should fail stream when a chunk cannot be parsed")
+    void testStreamingMalformedChunkFails() {
+        String malformedChunk = "data: {invalid json}\n\n";
+        GeminiTransport transport = newTransport(okClientWithBody(200, "OK", malformedChunk));
+        Request request =
+                new Request.Builder()
+                        .url("https://example.com")
+                        .post(RequestBody.create("{}", MediaType.get("application/json")))
+                        .build();
+
+        StepVerifier.create(transport.handleStreamResponse(request, Instant.now()))
+                .expectErrorMatches(
+                        throwable ->
+                                throwable instanceof ModelException
+                                        && throwable
+                                                .getMessage()
+                                                .contains("Failed to parse Gemini stream chunk"))
                 .verify();
     }
 

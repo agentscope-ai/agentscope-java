@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -107,6 +108,37 @@ class GeminiStructuredOutputHandlerTest {
     }
 
     @Test
+    @DisplayName("Should preserve missing fields instead of synthesizing defaults")
+    void testFixStructuredOutputResponseDoesNotSynthesizeMissingFields() {
+        ChatResponse response =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("{\"location\":\"San Francisco\"}")
+                                                .build()))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .toolChoice(
+                                new ToolChoice.Specific(
+                                        StructuredOutputCapableAgent.STRUCTURED_OUTPUT_TOOL_NAME))
+                        .build();
+
+        ChatResponse fixed =
+                handler.fixStructuredOutputResponse(response, options, List.of(tool()));
+
+        ToolUseBlock toolUse = (ToolUseBlock) fixed.getContent().get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) toolUse.getInput().get("response");
+        assertNotNull(payload);
+        assertEquals("San Francisco", payload.get("location"));
+        assertFalse(payload.containsKey("temperature"));
+        assertFalse(payload.containsKey("condition"));
+    }
+
+    @Test
     @DisplayName("Should return original response when not structured output request")
     void testFixStructuredOutputResponseNotStructuredRequest() {
         ChatResponse response =
@@ -115,6 +147,27 @@ class GeminiStructuredOutputHandlerTest {
                         .build();
 
         ChatResponse result = handler.fixStructuredOutputResponse(response, null, null);
+
+        assertSame(response, result);
+    }
+
+    @Test
+    @DisplayName("Should ignore specific non-structured tool choice")
+    void testFixStructuredOutputResponseIgnoresSpecificNonStructuredToolChoice() {
+        ChatResponse response =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("{\"query\":\"weather\"}")
+                                                .build()))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder().toolChoice(new ToolChoice.Specific("search")).build();
+
+        ChatResponse result =
+                handler.fixStructuredOutputResponse(
+                        response, options, List.of(simpleTool("search"), tool()));
 
         assertSame(response, result);
     }
