@@ -402,9 +402,6 @@ class GitSkillRepositoryTest {
         repository = new GitSkillRepository(testUrl);
 
         String source = repository.getSource();
-        // Print actual source for debugging in CI
-        System.out.println("DEBUG: Actual source = [" + source + "]");
-        System.out.println("DEBUG: Expected source = [git-test/repo]");
         // Using hyphen instead of colon to avoid Windows path issues
         assertEquals("git-test/repo", source);
         assertFalse(source.contains(":"), "Source should not contain Windows reserved characters");
