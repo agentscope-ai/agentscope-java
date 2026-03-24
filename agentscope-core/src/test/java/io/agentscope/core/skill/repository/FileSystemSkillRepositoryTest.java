@@ -183,6 +183,31 @@ class FileSystemSkillRepositoryTest {
                 new FileSystemSkillRepository(dir).getSource());
     }
 
+    @Test
+    @DisplayName("Should remove Windows reserved characters from source suffix")
+    void testBuildSourceSuffix_WindowsReservedChars() throws IOException {
+        // Create directory with path containing Windows reserved characters
+        // Using dot prefix which can cause issues on some systems
+        Path dir = tempDir.resolve("kafka-sampling").resolve("filesystem:.agents_skills");
+        Files.createDirectories(dir);
+        String source = new FileSystemSkillRepository(dir).getSource();
+
+        // Verify no Windows reserved characters exist
+        assertFalse(source.contains("\\"), "Source should not contain backslash");
+        assertFalse(source.contains("/"), "Source should not contain forward slash");
+        assertFalse(source.contains(":"), "Source should not contain colon");
+        assertFalse(source.contains("*"), "Source should not contain asterisk");
+        assertFalse(source.contains("?"), "Source should not contain question mark");
+        assertFalse(source.contains("\""), "Source should not contain quote");
+        assertFalse(source.contains("<"), "Source should not contain less than");
+        assertFalse(source.contains(">"), "Source should not contain greater than");
+        assertFalse(source.contains("|"), "Source should not contain pipe");
+
+        // Verify the cleaned source still contains expected parts
+        assertTrue(source.startsWith("filesystem-"), "Source should start with filesystem-");
+        assertTrue(source.contains("kafka-sampling"), "Source should contain kafka-sampling");
+    }
+
     // ==================== getRepositoryInfo Tests ====================
 
     @Test

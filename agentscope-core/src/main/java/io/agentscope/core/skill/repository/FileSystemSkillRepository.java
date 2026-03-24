@@ -166,11 +166,16 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return "unknown";
         }
 
+        String suffix;
         if (parent == null || parent.getFileName() == null) {
-            return fileName.toString();
+            suffix = fileName.toString();
+        } else {
+            suffix = parent.getFileName() + "_" + fileName;
         }
 
-        return parent.getFileName() + "_" + fileName;
+        // Remove Windows reserved characters to avoid InvalidPathException on Windows
+        // Reserved characters: < > : " | ? *
+        return suffix.replaceAll("[\\\\/:*?\"<>|]", "");
     }
 
     @Override
