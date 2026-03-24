@@ -174,7 +174,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
 
             // Ensure database exists
             if (databaseName != null && !databaseName.trim().isEmpty()) {
-                ensureDataBase(tempClient, databaseProperties);
+                ensureDatabase(tempClient, databaseProperties);
                 tempClient.useDatabase(databaseName);
             }
 
@@ -198,6 +198,22 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             }
             throw new VectorStoreException("Failed to initialize MilvusStore", e);
         }
+    }
+
+    /**
+     * Creates a new MilvusStore with minimal configuration.
+     *
+     * @param uri the Milvus server URI (e.g., "http://localhost:19530")
+     * @param collectionName the name of the collection to use
+     * @param dimensions the dimension of vectors that will be stored
+     * @return a new MilvusStore instance
+     * @throws VectorStoreException if initialization fails
+     * @deprecated Use {@link #create(String, String, String, int)} instead
+     */
+    @Deprecated
+    public static MilvusStore create(String uri, String collectionName, int dimensions)
+            throws VectorStoreException {
+        return create(uri, null, collectionName, dimensions);
     }
 
     /**
@@ -399,7 +415,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * @param client the MilvusClientV2 to use
      * @throws VectorStoreException if database creation fails
      */
-    private void ensureDataBase(MilvusClientV2 client, Map<String, String> databaseProperties)
+    private void ensureDatabase(MilvusClientV2 client, Map<String, String> databaseProperties)
             throws VectorStoreException {
         try {
             // Check if database exists
@@ -411,7 +427,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             }
 
             // Create database
-            createDataBase(client, databaseProperties);
+            createDatabase(client, databaseProperties);
             log.debug("Created database '{}'", databaseName);
         } catch (Exception e) {
             throw new VectorStoreException(
@@ -498,7 +514,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * @param client             the MilvusClientV2 to use
      * @param databaseProperties the properties for the database
      */
-    private void createDataBase(MilvusClientV2 client, Map<String, String> databaseProperties) {
+    private void createDatabase(MilvusClientV2 client, Map<String, String> databaseProperties) {
         CreateDatabaseReq createDatabaseReq =
                 CreateDatabaseReq.builder()
                         .databaseName(databaseName)

@@ -24,6 +24,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
@@ -33,6 +36,7 @@ import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.IndexParam;
+import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
 import io.milvus.v2.service.database.request.CreateDatabaseReq;
 import io.milvus.v2.service.database.response.ListDatabasesResp;
@@ -325,7 +329,7 @@ class MilvusStoreTest {
 
     @Test
     @DisplayName("Should create store with database properties")
-    void testBuilderDataBaseProperties() {
+    void testBuilderDatabaseProperties() {
         MilvusStore.Builder builder =
                 MilvusStore.builder()
                         .uri(TEST_URI)
@@ -339,7 +343,7 @@ class MilvusStoreTest {
 
     @Test
     @DisplayName("Should create store with empty properties")
-    void testBuilderEmptyDataBaseProperties() {
+    void testBuilderEmptyDatabaseProperties() {
         MilvusStore.Builder builder =
                 MilvusStore.builder()
                         .uri(TEST_URI)
@@ -457,6 +461,147 @@ class MilvusStoreTest {
         store = createMockStoreWithDatabase(TEST_DATABASE, Map.of());
         assertNotNull(store);
         assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create new database when not exists")
+    void testCreateNewDatabase() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName(TEST_DATABASE)
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was called
+            verify(client, times(1)).listDatabases();
+            // Verify createDatabase was called
+            verify(client, times(1)).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use new database
+            verify(client).useDatabase(TEST_DATABASE);
+        }
+    }
+
+    @Test
+    @DisplayName("Should not create new database when exists")
+    void testNotCreateDatabaseIfExists() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("default")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was called
+            verify(client, times(1)).listDatabases();
+            // Verify createDatabase was not called
+            verify(client, never()).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use default database
+            verify(client).useDatabase("default");
+        }
+    }
+
+    @Test
+    @DisplayName("Should create new collection when not exists")
+    void testCreateNewCollection() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(false);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                            doNothing().when(mock).createCollection(any(CreateCollectionReq.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("default")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify createCollection was called
+            verify(client, times(1)).createCollection(any(CreateCollectionReq.class));
+        }
+    }
+
+    @Test
+    @DisplayName("Should not create new collection when exists")
+    void testNotCreateCollectionIfExists() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("default")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify createCollection was called
+            verify(client, never()).createCollection(any(CreateCollectionReq.class));
+        }
     }
 
     @Test
