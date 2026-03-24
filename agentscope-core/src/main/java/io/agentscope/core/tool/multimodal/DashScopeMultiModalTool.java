@@ -48,9 +48,13 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -440,24 +444,21 @@ public class DashScopeMultiModalTool {
         return Mono.fromCallable(
                         () -> {
                             // Build request for Qwen TTS API
-                            Map<String, Object> input = new java.util.HashMap<>();
+                            Map<String, Object> input = new HashMap<>();
                             input.put("text", text);
                             input.put("voice", finalVoice);
                             input.put("language_type", finalLanguage);
 
-                            Map<String, Object> request = new java.util.HashMap<>();
+                            Map<String, Object> request = new HashMap<>();
                             request.put("model", model);
                             request.put("input", input);
 
-                            String requestBody =
-                                    io.agentscope.core.util.JsonUtils.getJsonCodec()
-                                            .toJson(request);
+                            String requestBody = JsonUtils.getJsonCodec().toJson(request);
 
                             // Call DashScope API using Java HttpClient
-                            java.net.http.HttpClient client =
-                                    java.net.http.HttpClient.newHttpClient();
-                            java.net.http.HttpRequest httpRequest =
-                                    java.net.http.HttpRequest.newBuilder()
+                            HttpClient client = HttpClient.newHttpClient();
+                            HttpRequest httpRequest =
+                                    HttpRequest.newBuilder()
                                             .uri(
                                                     URI.create(
                                                             "https://dashscope.aliyuncs.com/api/v1/services"
@@ -465,15 +466,11 @@ public class DashScopeMultiModalTool {
                                             .header("Authorization", "Bearer " + this.apiKey)
                                             .header("Content-Type", "application/json")
                                             .header("User-Agent", Version.getUserAgent())
-                                            .POST(
-                                                    java.net.http.HttpRequest.BodyPublishers
-                                                            .ofString(requestBody))
+                                            .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                                             .build();
 
-                            java.net.http.HttpResponse<String> response =
-                                    client.send(
-                                            httpRequest,
-                                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                            HttpResponse<String> response =
+                                    client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
                             if (response.statusCode() != 200) {
                                 log.error(
@@ -525,8 +522,7 @@ public class DashScopeMultiModalTool {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response =
-                    io.agentscope.core.util.JsonUtils.getJsonCodec()
-                            .fromJson(responseBody, Map.class);
+                    JsonUtils.getJsonCodec().fromJson(responseBody, Map.class);
 
             // Check for error
             if (response.containsKey("code") && response.get("code") != null) {

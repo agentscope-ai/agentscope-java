@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.training.util.TrainingTestConstants;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -184,7 +185,7 @@ class RunRegistryTest {
         int allocationsPerThread = 100;
         CountDownLatch latch = new CountDownLatch(threadCount);
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-        Set<String> allRunIds = java.util.Collections.synchronizedSet(new HashSet<>());
+        Set<String> allRunIds = Collections.synchronizedSet(new HashSet<>());
 
         // Act
         for (int i = 0; i < threadCount; i++) {

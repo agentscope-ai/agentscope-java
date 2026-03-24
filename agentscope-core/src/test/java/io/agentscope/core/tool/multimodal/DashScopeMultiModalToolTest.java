@@ -66,6 +66,7 @@ import io.agentscope.core.message.VideoBlock;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URL;
 import java.nio.ByteBuffer;
@@ -693,7 +694,7 @@ class DashScopeMultiModalToolTest {
          * Use reflection to call private parseQwenTTSResponse method for unit testing.
          */
         private ToolResultBlock invokeParseQwenTTSResponse(String responseBody) throws Exception {
-            java.lang.reflect.Method method =
+            Method method =
                     DashScopeMultiModalTool.class.getDeclaredMethod(
                             "parseQwenTTSResponse", String.class);
             method.setAccessible(true);
