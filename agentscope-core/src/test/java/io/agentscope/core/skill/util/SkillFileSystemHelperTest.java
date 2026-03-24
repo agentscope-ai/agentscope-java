@@ -35,6 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentMatchers;
 import org.mockito.MockedStatic;
@@ -260,9 +262,9 @@ class SkillFileSystemHelperTest {
 
     @Test
     @DisplayName(
-            "Should fully cover resource filtering logic (unreadable, dot-files, OS hidden, and"
+            "Should fully cover resource filtering logic (unreadable, dot-files, and"
                     + " IOException)")
-    void testLoadResources_FiltersAllEdgeCases() throws IOException {
+    void testLoadResources_FiltersSomeEdgeCases() throws IOException {
         createSampleSkill("edge-case-skill", "Test Edge Cases", "Test content");
         Path skillDir = skillsBaseDir.resolve("edge-case-skill");
 
@@ -284,19 +286,6 @@ class SkillFileSystemHelperTest {
         Files.createDirectories(dotDir);
         Path dotDirFile = dotDir.resolve("config.txt");
         Files.writeString(dotDirFile, "hidden config", StandardCharsets.UTF_8);
-
-        // hidden files at the operating system level
-        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
-        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
-        boolean dosHiddenApplied = false;
-        if (isWindows) {
-            try {
-                Files.setAttribute(osHiddenFile, "dos:hidden", true);
-                dosHiddenApplied = true;
-            } catch (Exception ignored) {
-            }
-        }
 
         // file that triggers IOException
         Path triggerFile = skillDir.resolve("error_trigger.txt");
@@ -349,23 +338,33 @@ class SkillFileSystemHelperTest {
                     resources.containsKey(".hidden_dir/config.txt"),
                     "File inside dot directory should be filtered out");
 
-            // system hidden files: Windows files with successfully set attributes are filtered,
-            // otherwise they will load normally
-            if (isWindows && dosHiddenApplied) {
-                assertFalse(
-                        resources.containsKey("os_hidden_file.txt"),
-                        "OS hidden file should be filtered out on Windows");
-            } else {
-                assertTrue(
-                        resources.containsKey("os_hidden_file.txt"),
-                        "File should be loaded normally on non-Windows systems");
-            }
-
             // file that triggers IOException: Expected to be loaded
             assertTrue(
                     resources.containsKey("error_trigger.txt"),
                     "File causing IOException should default to being loaded");
         }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Should filter OS-level hidden files on Windows")
+    void shouldFilterOsHiddenFilesOnWindows() throws IOException {
+        createSampleSkill("os-hidden-skill", "Test OS Hidden", "Test content");
+        Path skillDir = skillsBaseDir.resolve("os-hidden-skill");
+
+        Path osHiddenFile = skillDir.resolve("os_hidden_file.txt");
+        Files.writeString(osHiddenFile, "hidden data", StandardCharsets.UTF_8);
+
+        try {
+            Files.setAttribute(osHiddenFile, "dos:hidden", true);
+        } catch (Exception ignored) {
+        }
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "os-hidden-skill", "test-source");
+        assertFalse(
+                skill.getResources().containsKey("os_hidden_file.txt"),
+                "OS hidden file should be filtered out on Windows");
     }
 
     private void createSampleSkill(String name, String description, String content)
