@@ -18,12 +18,13 @@ package io.agentscope.spring.boot.nacos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.alibaba.nacos.api.config.ConfigService;
+import com.alibaba.nacos.api.ai.AiService;
+import com.alibaba.nacos.api.ai.model.prompt.Prompt;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.Model;
@@ -46,14 +47,14 @@ class AgentscopeNacosReActAgentAutoConfigurationTest {
     private Model mockModel;
     private Memory mockMemory;
     private Toolkit mockToolkit;
-    private ConfigService mockConfigService;
+    private AiService mockAiService;
 
     @BeforeEach
     void setUp() {
         mockModel = mock(Model.class);
         mockMemory = mock(Memory.class);
         mockToolkit = mock(Toolkit.class);
-        mockConfigService = mock(ConfigService.class);
+        mockAiService = mock(AiService.class);
     }
 
     private ApplicationContextRunner contextRunner() {
@@ -63,19 +64,15 @@ class AgentscopeNacosReActAgentAutoConfigurationTest {
                 .withBean(Model.class, () -> mockModel)
                 .withBean(Memory.class, () -> mockMemory)
                 .withBean(Toolkit.class, () -> mockToolkit)
-                .withBean(
-                        NacosPromptListener.class,
-                        () -> new NacosPromptListener(mockConfigService));
+                .withBean(NacosPromptListener.class, () -> new NacosPromptListener(mockAiService));
     }
 
     @Test
     @DisplayName("should create ReActAgent with Nacos prompt when config is available")
     void shouldCreateAgentWithNacosPrompt() throws Exception {
-        String nacosConfig =
-                "{\"promptKey\":\"test-agent\"," + "\"template\":\"You are {{role}} in {{dept}}\"}";
-        when(mockConfigService.getConfigAndSignListener(
-                        eq("test-agent.json"), eq("nacos-ai-prompt"), anyLong(), any()))
-                .thenReturn(nacosConfig);
+        Prompt prompt = new Prompt("test-agent", "1.0.0", "You are {{role}} in {{dept}}");
+        when(mockAiService.subscribePrompt(eq("test-agent"), isNull(), isNull(), any()))
+                .thenReturn(prompt);
 
         contextRunner()
                 .withPropertyValues(
@@ -97,12 +94,56 @@ class AgentscopeNacosReActAgentAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("should create ReActAgent with versioned Nacos prompt")
+    void shouldCreateAgentWithVersionedPrompt() throws Exception {
+        Prompt prompt = new Prompt("test-agent", "2.0.0", "V2: You are {{role}}");
+        when(mockAiService.subscribePrompt(eq("test-agent"), eq("2.0.0"), isNull(), any()))
+                .thenReturn(prompt);
+
+        contextRunner()
+                .withPropertyValues(
+                        "agentscope.agent.name=VersionBot",
+                        "agentscope.agent.sys-prompt=Default prompt",
+                        "agentscope.nacos.prompt.enabled=true",
+                        "agentscope.nacos.prompt.sys-prompt-key=test-agent",
+                        "agentscope.nacos.prompt.version=2.0.0",
+                        "agentscope.nacos.prompt.variables.role=Assistant")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(ReActAgent.class);
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getSysPrompt()).isEqualTo("V2: You are Assistant");
+                        });
+    }
+
+    @Test
+    @DisplayName("should create ReActAgent with labeled Nacos prompt")
+    void shouldCreateAgentWithLabeledPrompt() throws Exception {
+        Prompt prompt = new Prompt("test-agent", "1.0.0", "Prod: You are {{role}}");
+        when(mockAiService.subscribePrompt(eq("test-agent"), isNull(), eq("prod"), any()))
+                .thenReturn(prompt);
+
+        contextRunner()
+                .withPropertyValues(
+                        "agentscope.agent.name=LabelBot",
+                        "agentscope.agent.sys-prompt=Default prompt",
+                        "agentscope.nacos.prompt.enabled=true",
+                        "agentscope.nacos.prompt.sys-prompt-key=test-agent",
+                        "agentscope.nacos.prompt.label=prod",
+                        "agentscope.nacos.prompt.variables.role=Assistant")
+                .run(
+                        context -> {
+                            assertThat(context).hasSingleBean(ReActAgent.class);
+                            ReActAgent agent = context.getBean(ReActAgent.class);
+                            assertThat(agent.getSysPrompt()).isEqualTo("Prod: You are Assistant");
+                        });
+    }
+
+    @Test
     @DisplayName("should fallback to YAML prompt when Nacos config is missing")
     void shouldFallbackToYamlPrompt() throws Exception {
-        // Nacos returns config without template field -> empty prompt -> fallback
-        when(mockConfigService.getConfigAndSignListener(
-                        eq("missing.json"), eq("nacos-ai-prompt"), anyLong(), any()))
-                .thenReturn("{\"promptKey\":\"missing\"}");
+        when(mockAiService.subscribePrompt(eq("missing"), isNull(), isNull(), any()))
+                .thenReturn(null);
 
         contextRunner()
                 .withPropertyValues(
