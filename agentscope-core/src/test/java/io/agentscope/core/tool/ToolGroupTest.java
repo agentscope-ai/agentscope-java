@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -179,7 +180,7 @@ class ToolGroupTest {
     @Test
     void testBuilderToolsCreatesDefensiveCopy() {
         // Arrange
-        Set<String> originalTools = new java.util.HashSet<>(Set.of("tool1"));
+        Set<String> originalTools = new HashSet<>(Set.of("tool1"));
 
         // Act
         ToolGroup group = ToolGroup.builder().name("testGroup").tools(originalTools).build();
