@@ -21,8 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
-import tools.jackson.core.type.TypeReference;
 import java.util.Map;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * DashScope message DTO.
