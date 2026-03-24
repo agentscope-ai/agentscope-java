@@ -335,7 +335,13 @@ public class GitSkillRepository implements AgentSkillRepository {
 
     private String buildDefaultSource() {
         String repoIdentifier = extractRepositoryIdentifier(remoteUrl);
-        return branch != null ? "git:" + repoIdentifier + "@" + branch : "git:" + repoIdentifier;
+        // Use hyphen instead of colon to avoid Windows path issues
+        String source =
+                branch != null
+                        ? "git-" + repoIdentifier + "@" + branch
+                        : "git-" + repoIdentifier;
+        // Remove any Windows reserved characters that might be in branch names
+        return source.replaceAll("[\\\\/:*?\"<>|]", "");
     }
 
     /**

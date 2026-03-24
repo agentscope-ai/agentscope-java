@@ -396,13 +396,15 @@ class GitSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should return correct source identifier")
+    @DisplayName("Should return correct source identifier without Windows reserved characters")
     void testGetSource() {
         String testUrl = "https://github.com/test/repo.git";
         repository = new GitSkillRepository(testUrl);
 
         String source = repository.getSource();
-        assertEquals("git:test/repo", source);
+        // Using hyphen instead of colon to avoid Windows path issues
+        assertEquals("git-test/repo", source);
+        assertFalse(source.contains(":"), "Source should not contain Windows reserved characters");
     }
 
     @Test
