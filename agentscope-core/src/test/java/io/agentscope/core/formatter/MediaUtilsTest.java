@@ -358,4 +358,11 @@ class MediaUtilsTest {
                 MediaUtils.getExtension("https://example.com/img.png?id=1&type=png#section1");
         assertEquals("png", extension);
     }
+
+    @Test
+    @DisplayName("Should get extension with query string and dot params")
+    void testGetExtensionWithQueryStringAndDotValues() {
+        String extension = MediaUtils.getExtension("https://example.com/img.png?v=2.0.0");
+        assertEquals("png", extension);
+    }
 }

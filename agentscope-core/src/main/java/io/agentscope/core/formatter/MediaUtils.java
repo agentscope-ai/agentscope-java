@@ -353,8 +353,6 @@ public class MediaUtils {
         if (path == null) {
             return "";
         }
-        int dotIndex = path.lastIndexOf('.');
-        int slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
 
         // Check for query string or fragment
         Set<String> masks = Set.of("?", "&", "#");
@@ -366,11 +364,13 @@ public class MediaUtils {
             }
         }
 
+        // Strip query string or fragment
+        path = path.substring(0, endIdx);
+        int dotIndex = path.lastIndexOf('.');
+        int slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+
         // Ensure the dot is after the last slash (not part of directory name)
         if (dotIndex > slashIndex && dotIndex < path.length() - 1) {
-            if (dotIndex < endIdx - 1) {
-                return path.substring(dotIndex + 1, endIdx);
-            }
             return path.substring(dotIndex + 1);
         }
         return "";
