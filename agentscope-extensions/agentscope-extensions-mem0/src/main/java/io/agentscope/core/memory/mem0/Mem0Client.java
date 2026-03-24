@@ -56,6 +56,7 @@ public class Mem0Client {
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
     private final String apiKey;
+    private final Mem0ApiType apiType;
     private final JsonCodec jsonCodec;
     private final String addEndpoint;
     private final String searchEndpoint;
@@ -98,6 +99,7 @@ public class Mem0Client {
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
                         : apiBaseUrl;
         this.apiKey = apiKey;
+        this.apiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
         this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient =
                 new OkHttpClient.Builder()
@@ -106,11 +108,8 @@ public class Mem0Client {
                         .writeTimeout(Duration.ofSeconds(30))
                         .build();
 
-        // Determine API type (default to PLATFORM if null)
-        Mem0ApiType resolvedApiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
-
         // Select endpoints based on API type
-        if (resolvedApiType == Mem0ApiType.SELF_HOSTED) {
+        if (this.apiType == Mem0ApiType.SELF_HOSTED) {
             this.addEndpoint = SELF_HOSTED_MEMORIES_ENDPOINT;
             this.searchEndpoint = SELF_HOSTED_SEARCH_ENDPOINT;
         } else {
@@ -148,7 +147,11 @@ public class Mem0Client {
 
                             // Add Authorization header only if apiKey is provided
                             if (apiKey != null && !apiKey.isEmpty()) {
-                                requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                if (apiType == Mem0ApiType.SELF_HOSTED) {
+                                    requestBuilder.addHeader("X-API-Key", apiKey);
+                                } else {
+                                    requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                }
                             }
 
                             Request httpRequest = requestBuilder.build();
