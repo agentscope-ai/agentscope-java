@@ -150,7 +150,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                     new IllegalArgumentException("Cannot provide both targetClass and schemaDesc"));
         }
 
-        return Mono.using(
+        return Mono.defer(
                 () -> {
                     // Create and register temporary tool
                     Map<String, Object> jsonSchema =
@@ -161,40 +161,39 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                             createStructuredOutputTool(jsonSchema, targetClass, schemaDesc);
                     toolkit.registerAgentTool(structuredOutputTool);
 
+                    // Create hook for flow control
                     StructuredOutputHook hook =
                             new StructuredOutputHook(
                                     structuredOutputReminder, buildGenerateOptions(), getMemory());
-                    addHook(hook);
-                    return hook;
-                },
-                hook ->
-                        doCall(msgs)
-                                .map(result -> finalizeStructuredOutputResult(hook, result))
-                                .switchIfEmpty(
-                                        Mono.fromSupplier(
-                                                () -> finalizeStructuredOutputResult(hook, null))),
-                hook -> {
-                    // Eager cleanup prevents the next call from observing stale hooks/tools.
-                    removeHook(hook);
-                    toolkit.removeTool(STRUCTURED_OUTPUT_TOOL_NAME);
-                },
-                true);
-    }
 
-    private Msg finalizeStructuredOutputResult(StructuredOutputHook hook, Msg result) {
-        Msg finalResult = result;
-        Msg hookResult = hook.getResultMsg();
-        if (hookResult != null) {
-            finalResult = extractStructuredResult(hookResult);
-            if (finalResult != null) {
-                finalResult =
-                        mergeCollectedMetadata(
-                                finalResult,
-                                hook.getAggregatedUsage(),
-                                hook.getAggregatedThinking());
-            }
-        }
-        return finalResult;
+                    addHook(hook);
+
+                    return doCall(msgs)
+                            .flatMap(
+                                    result -> {
+                                        // Extract result from hook's output
+                                        Msg hookResult = hook.getResultMsg();
+                                        if (hookResult != null) {
+                                            Msg extracted = extractStructuredResult(hookResult);
+                                            // Merge aggregated metadata from reasoning rounds
+                                            if (extracted != null) {
+                                                extracted =
+                                                        mergeCollectedMetadata(
+                                                                extracted,
+                                                                hook.getAggregatedUsage(),
+                                                                hook.getAggregatedThinking());
+                                            }
+                                            return Mono.just(extracted);
+                                        }
+                                        return Mono.just(result);
+                                    })
+                            .doFinally(
+                                    signal -> {
+                                        // Cleanup: remove hook and unregister tool
+                                        removeHook(hook);
+                                        toolkit.removeTool(STRUCTURED_OUTPUT_TOOL_NAME);
+                                    });
+                });
     }
 
     /**
