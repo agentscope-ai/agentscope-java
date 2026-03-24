@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -539,7 +540,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should maintain immutability")
         void testImmutability() {
-            Map<String, Object> originalMetadata = new java.util.HashMap<>();
+            Map<String, Object> originalMetadata = new HashMap<>();
             originalMetadata.put("key", "value");
 
             ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");

@@ -588,7 +588,7 @@ public class GitSkillRepository implements AgentSkillRepository {
             logger.info("Successfully pulled updates from: {}", remoteUrl);
             lastRemoteRef = resolveLocalHead();
 
-        } catch (org.eclipse.jgit.api.errors.TransportException e) {
+        } catch (TransportException e) {
             throw new RuntimeException(
                     "Unable to pull updates from remote repository: "
                             + remoteUrl

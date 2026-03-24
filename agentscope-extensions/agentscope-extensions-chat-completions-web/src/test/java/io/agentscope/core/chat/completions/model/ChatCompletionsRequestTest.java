@@ -181,12 +181,10 @@ class ChatCompletionsRequestTest {
         @DisplayName("Should set and get tools")
         void shouldSetAndGetTools() {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
-            io.agentscope.core.chat.completions.model.OpenAIToolFunction function =
-                    new io.agentscope.core.chat.completions.model.OpenAIToolFunction();
+            OpenAIToolFunction function = new OpenAIToolFunction();
             function.setName("get_weather");
             function.setDescription("Get weather");
-            io.agentscope.core.chat.completions.model.OpenAITool tool =
-                    new io.agentscope.core.chat.completions.model.OpenAITool(function);
+            OpenAITool tool = new OpenAITool(function);
 
             request.setTools(List.of(tool));
 
@@ -242,12 +240,10 @@ class ChatCompletionsRequestTest {
             request.setMessages(List.of(new ChatMessage("user", "Hello")));
             request.setStream(false);
 
-            io.agentscope.core.chat.completions.model.OpenAIToolFunction function =
-                    new io.agentscope.core.chat.completions.model.OpenAIToolFunction();
+            OpenAIToolFunction function = new OpenAIToolFunction();
             function.setName("get_weather");
             function.setDescription("Get weather");
-            io.agentscope.core.chat.completions.model.OpenAITool tool =
-                    new io.agentscope.core.chat.completions.model.OpenAITool(function);
+            OpenAITool tool = new OpenAITool(function);
             request.setTools(List.of(tool));
 
             assertEquals("gpt-4", request.getModel());

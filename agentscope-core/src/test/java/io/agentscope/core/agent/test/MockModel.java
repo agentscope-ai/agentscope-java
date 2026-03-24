@@ -28,6 +28,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -90,7 +91,7 @@ public class MockModel implements Model {
      * Create a mock model that calls a tool.
      */
     public static MockModel withToolCall(
-            String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
+            String toolName, String toolCallId, Map<String, Object> arguments) {
         MockModel model = new MockModel("");
         model.responsesToReturn.clear();
         model.responsesToReturn.add(createToolCallResponse(toolName, toolCallId, arguments));
@@ -197,7 +198,7 @@ public class MockModel implements Model {
     private static ChatResponse createTextResponse(String text) {
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
-                .content(java.util.List.of(TextBlock.builder().text(text).build()))
+                .content(List.of(TextBlock.builder().text(text).build()))
                 .usage(new ChatUsage(10, 20, 30))
                 .build();
     }
@@ -205,18 +206,18 @@ public class MockModel implements Model {
     private static ChatResponse createThinkingResponse(String thinking) {
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
-                .content(java.util.List.of(ThinkingBlock.builder().thinking(thinking).build()))
+                .content(List.of(ThinkingBlock.builder().thinking(thinking).build()))
                 .usage(new ChatUsage(5, 10, 15))
                 .build();
     }
 
     private static ChatResponse createToolCallResponse(
-            String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
-        java.util.Map<String, Object> args = arguments != null ? arguments : new HashMap<>();
+            String toolName, String toolCallId, Map<String, Object> arguments) {
+        Map<String, Object> args = arguments != null ? arguments : new HashMap<>();
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
                 .content(
-                        java.util.List.of(
+                        List.of(
                                 ToolUseBlock.builder()
                                         .name(toolName)
                                         .id(

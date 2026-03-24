@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.zip.CRC32;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -630,7 +631,7 @@ class ClasspathSkillRepositoryTest {
             nestedJarEntry.setMethod(JarEntry.STORED);
             nestedJarEntry.setSize(innerJarBytes.length);
             nestedJarEntry.setCompressedSize(innerJarBytes.length);
-            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            CRC32 crc = new CRC32();
             crc.update(innerJarBytes);
             nestedJarEntry.setCrc(crc.getValue());
             jos.putNextEntry(nestedJarEntry);
