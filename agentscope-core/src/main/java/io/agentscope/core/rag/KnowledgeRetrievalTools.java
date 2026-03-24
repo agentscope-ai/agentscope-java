@@ -37,7 +37,7 @@ import java.util.List;
  * <p>Example usage:
  * <pre>{@code
  * KnowledgeBase knowledgeBase = new SimpleKnowledge(embeddingModel, vectorStore);
- * KnowledgeRetrievalTools tools = new KnowledgeRetrievalTools(knowledgeBase);
+ * KnowledgeRetrievalTools tools = new KnowledgeRetrievalTools(knowledgeBase, RetrieveConfig.builder().build());
  *
  * Toolkit toolkit = new Toolkit();
  * toolkit.registerObject(tools);
@@ -53,17 +53,40 @@ public class KnowledgeRetrievalTools {
 
     private final Knowledge knowledge;
 
+    private final RetrieveConfig defaultConfig;
+
     /**
-     * Creates a new KnowledgeRetrievalTools instance.
+     * Creates a new KnowledgeRetrievalTools instance with default configuration.
+     *
+     * <p>Default configuration:
+     * <ul>
+     *   <li>Limit: 5 documents</li>
+     *   <li>Score threshold: 0.5</li>
+     * </ul>
      *
      * @param knowledge the knowledge base to retrieve from
      * @throws IllegalArgumentException if knowledgeBase is null
      */
     public KnowledgeRetrievalTools(Knowledge knowledge) {
+        this(knowledge, RetrieveConfig.builder().build());
+    }
+
+    /**
+     * Creates a new KnowledgeRetrievalTools instance.
+     *
+     * @param knowledge     the knowledge base to retrieve from
+     * @param defaultConfig the default retrieval configuration
+     * @throws IllegalArgumentException if knowledgeBase is null
+     */
+    public KnowledgeRetrievalTools(Knowledge knowledge, RetrieveConfig defaultConfig) {
         if (knowledge == null) {
             throw new IllegalArgumentException("Knowledge base cannot be null");
         }
+        if (defaultConfig == null) {
+            throw new IllegalArgumentException("Retrieve config cannot be null");
+        }
         this.knowledge = knowledge;
+        this.defaultConfig = defaultConfig;
     }
 
     /**
@@ -121,9 +144,9 @@ public class KnowledgeRetrievalTools {
 
         // Build retrieval config with conversation history
         RetrieveConfig config =
-                RetrieveConfig.builder()
+                this.defaultConfig
+                        .mutate()
                         .limit(limit)
-                        .scoreThreshold(0.5)
                         .conversationHistory(conversationHistory)
                         .build();
 
@@ -171,5 +194,14 @@ public class KnowledgeRetrievalTools {
      */
     public Knowledge getKnowledgeBase() {
         return knowledge;
+    }
+
+    /**
+     * Gets the default retrieval configuration.
+     *
+     * @return the default config
+     */
+    public RetrieveConfig getDefaultConfig() {
+        return defaultConfig;
     }
 }

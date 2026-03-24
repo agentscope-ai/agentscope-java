@@ -82,9 +82,9 @@
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
-        <milvus.version>2.6.13</milvus.version>
+        <milvus.version>2.6.16</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
-        <elasticsearch.version>9.3.2</elasticsearch.version>
+        <elasticsearch.version>9.3.3</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.7</pdfbox.version>
@@ -103,7 +103,7 @@
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.6</spring.version>
-        <spring-boot.version>4.0.3</spring-boot.version>
+        <spring-boot.version>4.0.4</spring-boot.version>
         <nacos-client.version>3.2.0-BETA</nacos-client.version>
         <json-schema-validator.version>3.0.1</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
@@ -113,7 +113,7 @@
         <kotlin.coroutines.version>1.10.2</kotlin.coroutines.version>
         <jgit.version>7.6.0.202603022253-r</jgit.version>
 
-        <spotless.version>3.3.0</spotless.version>
+        <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>

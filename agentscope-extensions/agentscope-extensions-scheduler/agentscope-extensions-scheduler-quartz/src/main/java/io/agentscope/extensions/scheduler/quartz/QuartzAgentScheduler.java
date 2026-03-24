@@ -31,12 +31,14 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 import org.quartz.CronScheduleBuilder;
+import org.quartz.CronTrigger;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.SimpleScheduleBuilder;
+import org.quartz.SimpleTrigger;
 import org.quartz.Trigger;
 import org.quartz.Trigger.TriggerState;
 import org.quartz.TriggerBuilder;
@@ -537,7 +539,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
             ScheduleConfig scheduleConfig = null;
             if (triggers != null && !triggers.isEmpty()) {
                 Trigger trigger = triggers.get(0);
-                if (trigger instanceof org.quartz.CronTrigger ct) {
+                if (trigger instanceof CronTrigger ct) {
                     scheduleConfig =
                             ScheduleConfig.builder()
                                     .cron(ct.getCronExpression())
@@ -546,7 +548,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
                                                     ? ct.getTimeZone().getID()
                                                     : null)
                                     .build();
-                } else if (trigger instanceof org.quartz.SimpleTrigger st) {
+                } else if (trigger instanceof SimpleTrigger st) {
                     scheduleConfig =
                             ScheduleConfig.builder().fixedRate(st.getRepeatInterval()).build();
                 }
@@ -589,7 +591,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
      */
     public static class Builder {
         private boolean autoStart = true;
-        private org.quartz.Scheduler scheduler;
+        private Scheduler scheduler;
         private String schedulerId = "default-scheduler";
 
         /**
@@ -609,7 +611,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
          * @param scheduler The Scheduler to use
          * @return This builder
          */
-        public Builder scheduler(org.quartz.Scheduler scheduler) {
+        public Builder scheduler(Scheduler scheduler) {
             this.scheduler = scheduler;
             return this;
         }
