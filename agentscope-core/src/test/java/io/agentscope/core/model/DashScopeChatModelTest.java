@@ -775,60 +775,63 @@ class DashScopeChatModelTest {
         MockWebServer mockServer = new MockWebServer();
         mockServer.start();
 
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody(
-                                """
-                                {
-                                  "request_id": "test",
-                                  "output": {
-                                    "choices": [{
-                                      "message": {
-                                        "role": "assistant",
-                                        "content": [{"text": "ok"}]
-                                      },
-                                      "finish_reason": "stop"
-                                    }]
-                                  }
-                                }
-                                """)
-                        .setHeader("Content-Type", "application/json"));
+        try {
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody(
+                                    """
+                                    {
+                                      "request_id": "test",
+                                      "output": {
+                                        "choices": [{
+                                          "message": {
+                                            "role": "assistant",
+                                            "content": [{"text": "ok"}]
+                                          },
+                                          "finish_reason": "stop"
+                                        }]
+                                      }
+                                    }
+                                    """)
+                            .setHeader("Content-Type", "application/json"));
 
-        DashScopeChatModel chatModel =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen3.5-plus").stream(
-                                false)
-                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
-                        .httpTransport(OkHttpTransport.builder().build())
-                        .build();
+            DashScopeChatModel chatModel =
+                    DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen3.5-plus").stream(
+                                    false)
+                            .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                            .httpTransport(OkHttpTransport.builder().build())
+                            .build();
 
-        chatModel
-                .doStream(
-                        List.of(
-                                Msg.builder()
-                                        .role(MsgRole.USER)
-                                        .content(TextBlock.builder().text("test").build())
-                                        .build()),
-                        List.of(),
-                        GenerateOptions.builder().build())
-                .blockLast();
+            chatModel
+                    .doStream(
+                            List.of(
+                                    Msg.builder()
+                                            .role(MsgRole.USER)
+                                            .content(TextBlock.builder().text("test").build())
+                                            .build()),
+                            List.of(),
+                            GenerateOptions.builder().build())
+                    .blockLast();
 
-        RecordedRequest recorded = mockServer.takeRequest();
-        assertEquals(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT, recorded.getPath());
+            RecordedRequest recorded = mockServer.takeRequest();
+            assertEquals(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT, recorded.getPath());
 
-        Map<String, Object> requestBody =
-                JsonUtils.getJsonCodec()
-                        .fromJson(recorded.getBody().readUtf8(), new TypeReference<>() {});
-        Map<String, Object> parameters = (Map<String, Object>) requestBody.get("parameters");
-        Map<String, Object> input = (Map<String, Object>) requestBody.get("input");
-        List<Map<String, Object>> messages = (List<Map<String, Object>>) input.get("messages");
-        Map<String, Object> firstMessage = messages.get(0);
-        List<Map<String, Object>> content = (List<Map<String, Object>>) firstMessage.get("content");
+            Map<String, Object> requestBody =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(recorded.getBody().readUtf8(), new TypeReference<>() {});
+            Map<String, Object> parameters = (Map<String, Object>) requestBody.get("parameters");
+            Map<String, Object> input = (Map<String, Object>) requestBody.get("input");
+            List<Map<String, Object>> messages = (List<Map<String, Object>>) input.get("messages");
+            Map<String, Object> firstMessage = messages.get(0);
+            List<Map<String, Object>> content =
+                    (List<Map<String, Object>>) firstMessage.get("content");
 
-        assertEquals(Boolean.FALSE, parameters.get("enable_thinking"));
-        assertEquals("test", content.get(0).get("text"));
-
-        mockServer.shutdown();
+            assertEquals(Boolean.FALSE, parameters.get("enable_thinking"));
+            assertEquals("test", content.get(0).get("text"));
+        } finally {
+            mockServer.shutdown();
+        }
     }
 
     // ========== Encryption Configuration Tests ==========
