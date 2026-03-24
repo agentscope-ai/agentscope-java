@@ -203,15 +203,7 @@ public class OllamaChatModel extends ChatModelBase {
                                                         return parsedResponse;
                                                     }
 
-                                                    return ChatResponse.builder()
-                                                            .id(finalStableId[0])
-                                                            .content(parsedResponse.getContent())
-                                                            .usage(parsedResponse.getUsage())
-                                                            .metadata(parsedResponse.getMetadata())
-                                                            .finishReason(
-                                                                    parsedResponse
-                                                                            .getFinishReason())
-                                                            .build();
+                                                    return parsedResponse.withId(finalStableId[0]);
                                                 });
                             });
         } else {
