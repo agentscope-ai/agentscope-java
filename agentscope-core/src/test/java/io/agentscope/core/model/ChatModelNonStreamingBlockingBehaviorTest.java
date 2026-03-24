@@ -161,6 +161,71 @@ class ChatModelNonStreamingBlockingBehaviorTest {
     }
 
     @Test
+    @DisplayName("AnthropicChatModel - Should be NON-BLOCKING in non-streaming mode")
+    void testAnthropicChatModelNonBlocking() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "msg_123",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Hello!"
+                        }
+                    ],
+                    "model": "claude-sonnet-4-5-20250929",
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 5
+                    }
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json")
+                        .setBodyDelay(RESPONSE_DELAY_MS, TimeUnit.MILLISECONDS));
+
+        AnthropicChatModel model =
+                AnthropicChatModel.builder()
+                        .apiKey("test-key")
+                        .modelName("claude-sonnet-4-5-20250929")
+                        .stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .build();
+
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
+                                .build());
+
+        CountDownLatch latch = new CountDownLatch(1);
+        String currentThreadName = Thread.currentThread().getName();
+        AtomicReference<String> streamThreadName = new AtomicReference<>();
+
+        model.stream(messages, null, null)
+                .subscribe(
+                        response -> {
+                            streamThreadName.set(Thread.currentThread().getName());
+                            latch.countDown();
+                        },
+                        error -> latch.countDown());
+
+        latch.await(3, TimeUnit.SECONDS);
+        assertNotNull(streamThreadName.get());
+        assertNotEquals(
+                currentThreadName,
+                streamThreadName.get(),
+                "AnthropicChatModel should be NON-BLOCKING");
+    }
+
+    @Test
     @DisplayName("OllamaChatModel - Should be NON-BLOCKING in non-streaming mode")
     void testOllamaChatModelNonBlocking() throws Exception {
         // Setup mock response with delay
