@@ -949,8 +949,7 @@ class OllamaChatModelTest {
                 .doOnNext(
                         response -> {
                             if (response.getContent() != null && !response.getContent().isEmpty()) {
-                                io.agentscope.core.message.ContentBlock block =
-                                        response.getContent().get(0);
+                                ContentBlock block = response.getContent().get(0);
                                 if (block instanceof TextBlock) {
                                     String text = ((TextBlock) block).getText();
                                     System.out.print(text); // Print chunk to stdout

@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * OpenAI message DTO.
@@ -93,6 +94,10 @@ public class OpenAIMessage {
     @JsonProperty("refusal")
     private String refusal;
 
+    /** Cache control configuration for prompt caching. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
+
     public OpenAIMessage() {}
 
     public String getRole() {
@@ -157,6 +162,14 @@ public class OpenAIMessage {
 
     public void setRefusal(String refusal) {
         this.refusal = refusal;
+    }
+
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
     }
 
     /**
@@ -256,6 +269,11 @@ public class OpenAIMessage {
 
         public Builder refusal(String refusal) {
             message.setRefusal(refusal);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            message.setCacheControl(cacheControl);
             return this;
         }
 

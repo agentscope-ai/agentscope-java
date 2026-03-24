@@ -79,6 +79,19 @@ public class RetrieveConfig {
     }
 
     /**
+     * Mutate the current instance to a new builder.
+     *
+     * @return a new builder with the same values of this instance
+     */
+    public Builder mutate() {
+        return new Builder()
+                .limit(this.limit)
+                .scoreThreshold(this.scoreThreshold)
+                .vectorName(this.vectorName)
+                .conversationHistory(this.conversationHistory);
+    }
+
+    /**
      * Creates a new builder instance.
      *
      * @return a new builder

@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -1361,6 +1363,170 @@ class ShellCommandToolTest {
                 }
             } finally {
                 Files.deleteIfExists(tempDir);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Charset Configuration Tests")
+    class CharsetConfigurationTests {
+
+        @Test
+        @DisplayName("Should use UTF-8 as default charset")
+        void testDefaultCharset() {
+            ShellCommandTool tool = new ShellCommandTool();
+            assertEquals(
+                    StandardCharsets.UTF_8, tool.getCharset(), "Default charset should be UTF-8");
+        }
+
+        @Test
+        @DisplayName("Should accept custom charset in constructor")
+        void testCustomCharsetInConstructor() {
+            ShellCommandTool tool =
+                    new ShellCommandTool(
+                            null,
+                            null,
+                            null,
+                            createDefaultValidator(),
+                            StandardCharsets.ISO_8859_1);
+            assertEquals(
+                    StandardCharsets.ISO_8859_1, tool.getCharset(), "Charset should be ISO-8859-1");
+        }
+
+        @Test
+        @DisplayName("Should use GBK charset when specified")
+        void testGBKCharset() {
+            Charset gbk = Charset.forName("GBK");
+            ShellCommandTool tool =
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), gbk);
+            assertEquals(gbk, tool.getCharset(), "Charset should be GBK");
+        }
+
+        @Test
+        @DisplayName("Should fall back to UTF-8 when null charset is provided")
+        void testNullCharsetFallback() {
+            ShellCommandTool tool =
+                    new ShellCommandTool(null, null, null, createDefaultValidator(), null);
+            assertEquals(
+                    StandardCharsets.UTF_8,
+                    tool.getCharset(),
+                    "Charset should fall back to UTF-8 when null");
+        }
+
+        @Test
+        @DisplayName("Should include charset in parameters schema")
+        void testCharsetInParameterSchema() {
+            ShellCommandTool tool = new ShellCommandTool();
+            Map<String, Object> params = tool.getParameters();
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+
+            assertTrue(properties.containsKey("charset"), "Parameters should include charset");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> charsetProp = (Map<String, Object>) properties.get("charset");
+            assertTrue(charsetProp.containsKey("description"), "charset should have description");
+            assertTrue(
+                    ((String) charsetProp.get("description")).contains("UTF-8"),
+                    "charset description should mention UTF-8");
+        }
+
+        @Test
+        @DisplayName("Should execute command with custom charset via callAsync")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testExecuteWithCustomCharsetViaCallAsync() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo 'Hello World'");
+            input.put("charset", "UTF-8");
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should execute successfully");
+                                assertTrue(
+                                        text.contains("Hello World"),
+                                        "Output should contain the echoed text");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle invalid charset name gracefully")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testInvalidCharsetNameFallsBackToDefault() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo test");
+            input.put("charset", "INVALID-CHARSET-NAME");
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            // Should not throw, should fall back to default charset
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should still execute with default charset");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should execute with GBK charset override")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testExecuteWithGBKCharsetOverride() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            // Execute with GBK charset override
+            Charset gbk = Charset.forName("GBK");
+            Mono<ToolResultBlock> result = tool.executeShellCommand("echo '测试中文'", 10, gbk);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>0</returncode>"),
+                                        "Command should execute successfully");
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should maintain charset across multiple executions")
+        void testCharsetPersistence() {
+            Charset iso88591 = StandardCharsets.ISO_8859_1;
+            ShellCommandTool tool =
+                    new ShellCommandTool(
+                            null, Set.of("echo"), null, createDefaultValidator(), iso88591);
+
+            // Charset should remain the same
+            assertEquals(
+                    iso88591, tool.getCharset(), "Charset should remain ISO-8859-1 after creation");
+            assertEquals(
+                    iso88591, tool.getCharset(), "Charset should remain ISO-8859-1 after check");
+        }
+
+        private CommandValidator createDefaultValidator() {
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                return new WindowsCommandValidator();
+            } else {
+                return new UnixCommandValidator();
             }
         }
     }
