@@ -68,13 +68,13 @@ import reactor.core.scheduler.Schedulers;
  * <dependency>
  *     <groupId>io.milvus</groupId>
  *     <artifactId>milvus-sdk-java</artifactId>
- *     <version>2.5.9</version>
+ *     <version>2.6.16</version>
  * </dependency>
  * }</pre>
  *
  * <p>Example usage:
  * <pre>{@code
- * // Using builder with authentication and timeout options (recommended)
+ * // Using builder with authentication and timeout options
  * try (MilvusStore store = MilvusStore.builder()
  *         .uri("http://localhost:19530")
  *         .databaseName("my_database")
@@ -86,12 +86,6 @@ import reactor.core.scheduler.Schedulers;
  *     store.add(document).block();
  *     List<Document> results = store.search(queryEmbedding, 5).block();
  *     // Store is automatically closed here
- * }
- *
- * // Using static factory method (simpler, uses defaults)
- * try (MilvusStore store = MilvusStore.create("http://localhost:19530", "my_collection", 1024)) {
- *     store.add(document).block();
- *     List<Document> results = store.search(queryEmbedding, 5).block();
  * }
  * }</pre>
  *
@@ -202,7 +196,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     /**
-     * Creates a new MilvusStore instancee with default databaseName.
+     * Creates a new MilvusStore with minimal configuration.
      *
      * @param uri the Milvus server URI (e.g., "http://localhost:19530")
      * @param collectionName the name of the collection to use
@@ -214,12 +208,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     @Deprecated(since = "1.0.11", forRemoval = true)
     public static MilvusStore create(String uri, String collectionName, int dimensions)
             throws VectorStoreException {
-        return builder()
-                .uri(uri)
-                .databaseName(DEFAULT_DATABASE_NAME)
-                .collectionName(collectionName)
-                .dimensions(dimensions)
-                .build();
+        return builder().uri(uri).collectionName(collectionName).dimensions(dimensions).build();
     }
 
     @Override
