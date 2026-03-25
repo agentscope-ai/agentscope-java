@@ -1264,13 +1264,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                         + String.format(
                                                 Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, toolResultUuid);
 
-                        // Preserve ToolResultBlock structure (id + name) so the API formatter can
-                        // emit the correct tool_call_id / name; only replace the output text.
+                        // Preserve ToolResultBlock structure (id, name, metadata) so the API
+                        // formatter can emit the correct tool_call_id / name, and downstream
+                        // consumers retain semantic flags (e.g. agentscope_suspended) after
+                        // offloading.  Only the output text is replaced with the offload hint.
                         ToolResultBlock compressedResult =
                                 ToolResultBlock.of(
                                         originalResult.getId(),
                                         originalResult.getName(),
-                                        TextBlock.builder().text(offloadHint).build());
+                                        TextBlock.builder().text(offloadHint).build(),
+                                        originalResult.getMetadata());
 
                         Map<String, Object> trCompressMeta = new HashMap<>();
                         trCompressMeta.put("offloaduuid", toolResultUuid);
