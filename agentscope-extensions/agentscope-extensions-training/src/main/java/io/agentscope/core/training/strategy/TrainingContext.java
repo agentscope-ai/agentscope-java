@@ -16,9 +16,11 @@
 
 package io.agentscope.core.training.strategy;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.util.context.Context;
@@ -76,7 +78,7 @@ public class TrainingContext {
      *
      * @return Reactor Context write function
      */
-    public static java.util.function.Function<Context, Context> mark() {
+    public static Function<Context, Context> mark() {
         TrainingAnnotation annotation = TrainingAnnotation.enabled();
         logger.info("Creating training marker: annotation={}", annotation);
         return ctx -> ctx.put(REACTOR_KEY, annotation);
@@ -97,11 +99,11 @@ public class TrainingContext {
      * @param labels Training labels
      * @return Reactor Context write function
      */
-    public static java.util.function.Function<Context, Context> mark(String... labels) {
+    public static Function<Context, Context> mark(String... labels) {
         TrainingAnnotation annotation = TrainingAnnotation.withLabels(labels);
         logger.info(
                 "Creating training marker with labels: labels={}, annotation={}",
-                java.util.Arrays.asList(labels),
+                Arrays.asList(labels),
                 annotation);
         return ctx -> ctx.put(REACTOR_KEY, annotation);
     }
@@ -125,7 +127,7 @@ public class TrainingContext {
      * @param metadata Metadata
      * @return Reactor Context write function
      */
-    public static java.util.function.Function<Context, Context> mark(
+    public static Function<Context, Context> mark(
             List<String> labels, Map<String, Object> metadata) {
         TrainingAnnotation annotation = TrainingAnnotation.withLabelsAndMetadata(labels, metadata);
         logger.info(
@@ -141,7 +143,7 @@ public class TrainingContext {
      * @param metadata Metadata
      * @return Reactor Context write function
      */
-    public static java.util.function.Function<Context, Context> mark(Map<String, Object> metadata) {
+    public static Function<Context, Context> mark(Map<String, Object> metadata) {
         return mark(Collections.emptyList(), metadata);
     }
 

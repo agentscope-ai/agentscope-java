@@ -23,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Path;
@@ -158,8 +159,7 @@ class InMemoryMemoryNewApiTest {
         @Test
         @DisplayName("Should work with JsonSession for persistence")
         void testWithJsonSession() {
-            io.agentscope.core.session.JsonSession jsonSession =
-                    new io.agentscope.core.session.JsonSession(tempDir);
+            JsonSession jsonSession = new JsonSession(tempDir);
             SessionKey key = SimpleSessionKey.of("json_session_test");
 
             InMemoryMemory memory = new InMemoryMemory();
@@ -178,8 +178,7 @@ class InMemoryMemoryNewApiTest {
         @Test
         @DisplayName("Should handle incremental saves with JsonSession")
         void testIncrementalWithJsonSession() {
-            io.agentscope.core.session.JsonSession jsonSession =
-                    new io.agentscope.core.session.JsonSession(tempDir);
+            JsonSession jsonSession = new JsonSession(tempDir);
             SessionKey key = SimpleSessionKey.of("incremental_test");
 
             InMemoryMemory memory = new InMemoryMemory();

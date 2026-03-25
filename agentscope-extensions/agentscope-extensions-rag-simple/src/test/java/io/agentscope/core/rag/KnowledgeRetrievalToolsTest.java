@@ -22,11 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -51,6 +53,7 @@ class KnowledgeRetrievalToolsTest {
     private static final int DIMENSIONS = 3;
 
     private Knowledge knowledge;
+    private RetrieveConfig retrieveConfig;
     private KnowledgeRetrievalTools tools;
     private Toolkit toolkit;
 
@@ -63,22 +66,64 @@ class KnowledgeRetrievalToolsTest {
                         .embeddingModel(embeddingModel)
                         .embeddingStore(vectorStore)
                         .build();
-        tools = new KnowledgeRetrievalTools(knowledge);
+        retrieveConfig = RetrieveConfig.builder().build();
+        tools = new KnowledgeRetrievalTools(knowledge, retrieveConfig);
         toolkit = new Toolkit();
     }
 
     @Test
     @DisplayName("Should create KnowledgeRetrievalTools with valid knowledge base")
     void testCreate() {
+        KnowledgeRetrievalTools newTools = new KnowledgeRetrievalTools(knowledge, retrieveConfig);
+        assertNotNull(newTools);
+        assertEquals(knowledge, newTools.getKnowledgeBase());
+        assertEquals(retrieveConfig, newTools.getDefaultConfig());
+    }
+
+    @Test
+    @DisplayName("Should create KnowledgeRetrievalTools with default config")
+    void testCreateWithDefaultConfig() {
         KnowledgeRetrievalTools newTools = new KnowledgeRetrievalTools(knowledge);
         assertNotNull(newTools);
         assertEquals(knowledge, newTools.getKnowledgeBase());
+        assertNotNull(newTools.getDefaultConfig());
+        assertEquals(5, newTools.getDefaultConfig().getLimit());
+        assertEquals(0.5, newTools.getDefaultConfig().getScoreThreshold());
     }
 
     @Test
     @DisplayName("Should throw exception for null knowledge base")
     void testCreateNullKnowledgeBase() {
         assertThrows(IllegalArgumentException.class, () -> new KnowledgeRetrievalTools(null));
+    }
+
+    @Test
+    @DisplayName("Should throw exception for null retrieve config")
+    void testCreateNullConfig() {
+        assertThrows(
+                IllegalArgumentException.class, () -> new KnowledgeRetrievalTools(knowledge, null));
+    }
+
+    @Test
+    @DisplayName("Should create KnowledgeRetrievalTools with custom retrieve config")
+    void testCreateCustomRetrieveConfig() {
+        List<Msg> conversationHistory = List.of(Msg.builder().textContent("Hello").build());
+        RetrieveConfig customRetrieveConfig =
+                RetrieveConfig.builder()
+                        .limit(3)
+                        .scoreThreshold(0.9)
+                        .vectorName("test_vector")
+                        .conversationHistory(conversationHistory)
+                        .build();
+        KnowledgeRetrievalTools newTools =
+                new KnowledgeRetrievalTools(knowledge, customRetrieveConfig);
+        assertNotNull(newTools);
+        assertEquals(knowledge, newTools.getKnowledgeBase());
+        assertEquals(customRetrieveConfig, newTools.getDefaultConfig());
+        assertEquals(3, newTools.getDefaultConfig().getLimit());
+        assertEquals(0.9, newTools.getDefaultConfig().getScoreThreshold());
+        assertEquals("test_vector", newTools.getDefaultConfig().getVectorName());
+        assertEquals(conversationHistory, newTools.getDefaultConfig().getConversationHistory());
     }
 
     @Test

@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -209,11 +210,7 @@ public class ObservationHook implements Hook {
     }
 
     private void logMessages(
-            java.util.function.Consumer<String> logFn,
-            String color,
-            String title,
-            String meta,
-            List<Msg> messages) {
+            Consumer<String> logFn, String color, String title, String meta, List<Msg> messages) {
         StringBuilder sb = logHeader(color, title, meta);
         for (Msg msg : messages) {
             sb.append('\n').append(formatMsg(msg));

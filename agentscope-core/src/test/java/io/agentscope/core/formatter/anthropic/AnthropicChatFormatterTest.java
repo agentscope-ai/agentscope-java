@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
@@ -39,6 +40,7 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,10 @@ import org.junit.jupiter.api.Test;
 class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     private AnthropicChatFormatter formatter;
+
+    private static com.anthropic.models.messages.TextBlock mockTextBlock() {
+        return mock(com.anthropic.models.messages.TextBlock.class);
+    }
 
     @BeforeEach
     void setUp() {
@@ -122,10 +128,8 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         // Create mock Message
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
-        com.anthropic.models.messages.ContentBlock contentBlock =
-                mock(com.anthropic.models.messages.ContentBlock.class);
-        com.anthropic.models.messages.TextBlock textBlock =
-                mock(com.anthropic.models.messages.TextBlock.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+        var textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_test");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -325,9 +329,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                 ToolSchema.builder()
                         .name("search")
                         .description("Search the web")
-                        .parameters(
-                                java.util.Map.of(
-                                        "type", "object", "properties", java.util.Map.of()))
+                        .parameters(Map.of("type", "object", "properties", Map.of()))
                         .build();
 
         // First set options, then apply tools (tools need options for tool_choice)
@@ -427,7 +429,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                                         ToolUseBlock.builder()
                                                 .id("tool_123")
                                                 .name("search")
-                                                .input(java.util.Map.of("query", "test"))
+                                                .input(Map.of("query", "test"))
                                                 .build()))
                         .build();
 
