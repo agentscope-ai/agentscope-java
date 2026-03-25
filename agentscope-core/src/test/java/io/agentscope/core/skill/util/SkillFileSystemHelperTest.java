@@ -261,35 +261,29 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
-    @DisplayName(
-            "Should fully cover resource filtering logic (unreadable, dot-files, and"
-                    + " IOException)")
-    void testLoadResources_FiltersSomeEdgeCases() throws IOException {
-        createSampleSkill("edge-case-skill", "Test Edge Cases", "Test content");
-        Path skillDir = skillsBaseDir.resolve("edge-case-skill");
-
-        // normal file
+    @DisplayName("Should load normal readable files")
+    void shouldLoadNormalResourceFiles() throws IOException {
+        createSampleSkill("normal-skill", "Test Normal", "Test content");
+        Path skillDir = skillsBaseDir.resolve("normal-skill");
         Path normalFile = skillDir.resolve("normal_resource.txt");
         Files.writeString(normalFile, "normal", StandardCharsets.UTF_8);
 
-        // unreadable file
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "normal-skill", "test-source");
+
+        assertNotNull(skill);
+        assertTrue(
+                skill.getResources().containsKey("normal_resource.txt"),
+                "Normal file should be loaded");
+    }
+
+    @Test
+    @DisplayName("Should filter out unreadable files")
+    void shouldFilterUnreadableFiles() throws IOException {
+        createSampleSkill("unreadable-skill", "Test Unreadable", "Test content");
+        Path skillDir = skillsBaseDir.resolve("unreadable-skill");
         Path unreadableFile = skillDir.resolve("secret.txt");
         Files.writeString(unreadableFile, "secret", StandardCharsets.UTF_8);
-        boolean canChangeRead = unreadableFile.toFile().setReadable(false);
-
-        // files starting with '.'
-        Path dotFile = skillDir.resolve(".DS_Store");
-        Files.writeString(dotFile, "garbage", StandardCharsets.UTF_8);
-
-        // hide files in the folder
-        Path dotDir = skillDir.resolve(".hidden_dir");
-        Files.createDirectories(dotDir);
-        Path dotDirFile = dotDir.resolve("config.txt");
-        Files.writeString(dotDirFile, "hidden config", StandardCharsets.UTF_8);
-
-        // file that triggers IOException
-        Path triggerFile = skillDir.resolve("error_trigger.txt");
-        Files.writeString(triggerFile, "trigger", StandardCharsets.UTF_8);
 
         try (MockedStatic<Files> mockedFiles =
                 Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
@@ -298,14 +292,54 @@ class SkillFileSystemHelperTest {
                     .thenAnswer(
                             invocation -> {
                                 Path p = invocation.getArgument(0);
-                                if (p.getFileName().toString().equals("secret.txt")) {
-                                    return false;
-                                }
+                                if (p.getFileName().toString().equals("secret.txt")) return false;
                                 return invocation.callRealMethod();
                             });
 
+            AgentSkill skill =
+                    SkillFileSystemHelper.loadSkill(
+                            skillsBaseDir, "unreadable-skill", "test-source");
+            assertFalse(
+                    skill.getResources().containsKey("secret.txt"),
+                    "Unreadable file should be filtered out");
+        }
+    }
+
+    @Test
+    @DisplayName("Should explicitly filter out dot-files and files within dot-directories")
+    void shouldFilterDotFilesAndDirectories() throws IOException {
+        createSampleSkill("dot-skill", "Test Dot Files", "Test content");
+        Path skillDir = skillsBaseDir.resolve("dot-skill");
+
+        Path dotFile = skillDir.resolve(".DS_Store");
+        Files.writeString(dotFile, "garbage", StandardCharsets.UTF_8);
+
+        Path dotDir = skillDir.resolve(".hidden_dir");
+        Files.createDirectories(dotDir);
+        Path dotDirFile = dotDir.resolve("config.txt");
+        Files.writeString(dotDirFile, "hidden config", StandardCharsets.UTF_8);
+
+        AgentSkill skill =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "dot-skill", "test-source");
+
+        assertFalse(skill.getResources().containsKey(".DS_Store"), "Dot file should be filtered");
+        assertFalse(
+                skill.getResources().containsKey(".hidden_dir/config.txt"),
+                "File inside dot directory should be filtered");
+    }
+
+    @Test
+    @DisplayName("Should default to loading the file if isHidden() throws IOException")
+    void shouldHandleIOExceptionDuringAttributeCheck() throws IOException {
+        createSampleSkill("io-exception-skill", "Test IO Exception", "Test content");
+        Path skillDir = skillsBaseDir.resolve("io-exception-skill");
+        Path triggerFile = skillDir.resolve("error_trigger.txt");
+        Files.writeString(triggerFile, "trigger", StandardCharsets.UTF_8);
+
+        try (MockedStatic<Files> mockedFiles =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
             mockedFiles
-                    .when(() -> Files.isHidden(org.mockito.ArgumentMatchers.any(Path.class)))
+                    .when(() -> Files.isHidden(ArgumentMatchers.any(Path.class)))
                     .thenAnswer(
                             invocation -> {
                                 Path p = invocation.getArgument(0);
@@ -317,30 +351,9 @@ class SkillFileSystemHelperTest {
 
             AgentSkill skill =
                     SkillFileSystemHelper.loadSkill(
-                            skillsBaseDir, "edge-case-skill", "test-source");
-            assertNotNull(skill);
-            Map<String, String> resources = skill.getResources();
-
+                            skillsBaseDir, "io-exception-skill", "test-source");
             assertTrue(
-                    resources.containsKey("normal_resource.txt"), "Normal file should be loaded");
-
-            // unreadable files should be filtered
-            if (canChangeRead && !Files.isReadable(unreadableFile)) {
-                assertFalse(
-                        resources.containsKey("secret.txt"),
-                        "Unreadable file should be filtered out");
-            }
-            unreadableFile.toFile().setReadable(true);
-
-            // files starting with dots and files in the directory should be filtered
-            assertFalse(resources.containsKey(".DS_Store"), "Dot file should be filtered out");
-            assertFalse(
-                    resources.containsKey(".hidden_dir/config.txt"),
-                    "File inside dot directory should be filtered out");
-
-            // file that triggers IOException: Expected to be loaded
-            assertTrue(
-                    resources.containsKey("error_trigger.txt"),
+                    skill.getResources().containsKey("error_trigger.txt"),
                     "File causing IOException should default to being loaded");
         }
     }
