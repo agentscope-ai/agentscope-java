@@ -207,7 +207,7 @@ cd agentscope-examples/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
 
-## Built-in JSONL Trace Exporter
+## 内置 JSONL 跟踪导出器
 
 AgentScope Java 内置了一个 JSONL 导出器，可用于本地调试和离线排障：
 

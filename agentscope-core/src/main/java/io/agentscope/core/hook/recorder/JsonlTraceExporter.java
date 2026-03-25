@@ -96,6 +96,9 @@ public final class JsonlTraceExporter implements Hook, AutoCloseable {
     private final ExecutorService exportExecutor;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    // WeakHashMap keeps per-agent run state from accumulating indefinitely after agent instances
+    // become unreachable. Concurrency safety does not rely on WeakHashMap itself: all access to
+    // this map is serialized through the exporter’s single-threaded queue.
     private final Map<String, RunState> runStates = new WeakHashMap<>();
 
     private JsonlTraceExporter(
