@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
@@ -283,28 +282,29 @@ class MarkdownSkillParserTest {
     class ErrorHandlingTests {
 
         @Test
-        @DisplayName("Should throw exception for invalid YAML")
+        @DisplayName("Should gracefully ignore invalid YAML lines instead of throwing exception")
         void testInvalidYaml() {
             String markdown = "---\nname: test\nthis is not a valid line\n---\nContent";
 
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
-            assertTrue(exception.getMessage().contains("expected 'key: value' format"));
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, String> metadata = parsed.getMetadata();
+
+            assertEquals("test", metadata.get("name"));
+            assertFalse(metadata.containsKey("this is not a valid line"));
+            assertEquals("Content", parsed.getContent());
         }
 
         @Test
-        @DisplayName("Should throw exception for list format")
+        @DisplayName("Should gracefully ignore list format instead of throwing exception")
         void testListFormat() {
-            String markdown = "---\n- item1\n- item2\n---\nContent";
+            String markdown = "---\nname: test_skill\n- item1\n- item2\n---\nContent";
 
-            IllegalArgumentException exception =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, String> metadata = parsed.getMetadata();
+
+            assertEquals("test_skill", metadata.get("name"));
+            assertFalse(metadata.containsKey("- item1"));
+            assertFalse(metadata.containsKey("- item2"));
         }
     }
 
@@ -429,7 +429,7 @@ class MarkdownSkillParserTest {
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
 
-            assertEquals("", parsed.getMetadata().get("empty"));
+            assertNull(parsed.getMetadata().get("empty"));
         }
     }
 
@@ -533,6 +533,44 @@ class MarkdownSkillParserTest {
             assertTrue(toString.contains("ParsedMarkdown"));
             assertTrue(toString.contains("metadata"));
             assertTrue(toString.contains("content"));
+        }
+
+        @Test
+        @DisplayName(
+                "Should parse basic scalars and gracefully ignore complex YAML structures like"
+                        + " lists or JSON")
+        void testParseAndIgnoreComplexMetadata() {
+            String markdown =
+                    """
+                    ---
+                    name: Agent Browser
+                    description: A fast Rust-based headless browser automation CLI
+                    read_when:
+                      - Automating web interactions
+                      - Extracting structured data from pages
+                    metadata: {"clawdbot":{"emoji":"🌐"}}
+                    allowed-tools: Bash(agent-browser:*)
+                    ---
+
+                    # Content
+                    This is the content.\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, String> metadata = parsed.getMetadata();
+
+            assertEquals("Agent Browser", metadata.get("name"));
+            assertEquals(
+                    "A fast Rust-based headless browser automation CLI",
+                    metadata.get("description"));
+            assertEquals("Bash(agent-browser:*)", metadata.get("allowed-tools"));
+
+            assertEquals("{\"clawdbot\":{\"emoji\":\"🌐\"}}", metadata.get("metadata"));
+
+            assertNull(metadata.get("read_when"));
+            assertNull(metadata.get("- Automating web interactions"));
+
+            assertTrue(parsed.getContent().contains("# Content"));
         }
     }
 }
