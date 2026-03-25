@@ -209,7 +209,7 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 
 ## Built-in JSONL Trace Exporter
 
-AgentScope Java provides a built-in JSONL exporter for local debugging:
+AgentScope Java 内置了一个 JSONL 导出器，可用于本地调试和离线排障：
 
 ```java
 import io.agentscope.core.hook.recorder.JsonlTraceExporter;
@@ -220,6 +220,6 @@ try (JsonlTraceExporter exporter =
                 .includeReasoningChunks(true) // optional
                 .includeActingChunks(true)    // optional
                 .build()) {
-    // Add exporter into hooks list when building agent
+    // 在构建智能体时，将 exporter 加入 hooks 列表
 }
 ```

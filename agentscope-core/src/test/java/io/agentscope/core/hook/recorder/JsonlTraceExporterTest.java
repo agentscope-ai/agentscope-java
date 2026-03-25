@@ -47,12 +47,24 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Scope;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -150,6 +162,13 @@ class JsonlTraceExporterTest {
         assertTrue(containsKeyValue(records, "event_type", "POST_SUMMARY"));
         assertTrue(containsKeyValue(records, "event_type", "ERROR"));
         assertTrue(containsKeyValue(records, "event_type", "POST_CALL"));
+
+        Map<String, Object> actingChunkRecord = findByEventType(records, "ACTING_CHUNK");
+        assertNotNull(actingChunkRecord.get("incremental_chunk"));
+        assertNotNull(actingChunkRecord.get("chunk"));
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(actingChunkRecord.get("incremental_chunk")),
+                JsonUtils.getJsonCodec().toJson(actingChunkRecord.get("chunk")));
     }
 
     @Test
@@ -190,6 +209,8 @@ class JsonlTraceExporterTest {
         assertNotNull(run1);
         assertNotNull(run2);
         assertNotEquals(run1, run2);
+        assertEquals(1, ((Number) records.get(0).get("turn_id")).intValue());
+        assertEquals(2, ((Number) records.get(2).get("turn_id")).intValue());
     }
 
     @Test
@@ -223,22 +244,119 @@ class JsonlTraceExporterTest {
     }
 
     @Test
-    void exportsOpenTelemetryIdsWhenAvailable() throws Exception {
-        io.opentelemetry.api.trace.Span.setCurrent(
-                new io.opentelemetry.api.trace.Span(
-                        new io.opentelemetry.api.trace.SpanContext(true, "trace-abc", "span-xyz")));
+    void rejectsNullEvents() throws Exception {
+        Path output = tempDir.resolve("null.jsonl");
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(output).append(false).flushEveryLine(true).build()) {
+            assertThrows(NullPointerException.class, () -> exporter.onEvent(null));
+        }
+    }
 
-        Path output = tempDir.resolve("otel.jsonl");
+    @Test
+    void serializesConcurrentExportsPerAgent() throws Exception {
+        Path output = tempDir.resolve("concurrent.jsonl");
         TestAgent agent = new TestAgent("agent-1", "TestAgent");
+        Msg assistantMsg = textMsg(MsgRole.ASSISTANT, "world");
+        GenerateOptions options = GenerateOptions.builder().build();
+        int eventCount = 200;
+
+        ExecutorService executor = Executors.newFixedThreadPool(32);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(eventCount);
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
 
         try (JsonlTraceExporter exporter =
                 JsonlTraceExporter.builder(output).append(false).flushEveryLine(true).build()) {
             exporter.onEvent(new PreCallEvent(agent, List.of(textMsg(MsgRole.USER, "hi")))).block();
+
+            for (int i = 0; i < eventCount; i++) {
+                executor.submit(
+                        () -> {
+                            try {
+                                assertTrue(start.await(30, TimeUnit.SECONDS));
+                                exporter.onEvent(
+                                                new PostReasoningEvent(
+                                                        agent, "mock-model", options, assistantMsg))
+                                        .block();
+                            } catch (Throwable t) {
+                                failures.add(t);
+                            } finally {
+                                done.countDown();
+                            }
+                        });
+            }
+
+            start.countDown();
+            assertTrue(done.await(30, TimeUnit.SECONDS));
+            assertTrue(failures.isEmpty(), () -> "Unexpected failures: " + failures);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        List<Map<String, Object>> records = readAll(output);
+        assertEquals(eventCount + 1, records.size());
+
+        Set<Long> stepIds = new HashSet<>();
+        Set<String> runIds = new HashSet<>();
+        for (Map<String, Object> record : records) {
+            runIds.add((String) record.get("run_id"));
+            stepIds.add(((Number) record.get("step_id")).longValue());
+        }
+
+        assertEquals(1, runIds.size());
+        assertEquals(eventCount + 1, stepIds.size());
+        for (long expected = 0; expected <= eventCount; expected++) {
+            long expectedStepId = expected;
+            assertTrue(stepIds.contains(expectedStepId), () -> "Missing step_id " + expectedStepId);
+        }
+    }
+
+    @Test
+    void closeWaitsForSubscribedWrites() throws Exception {
+        Path output = tempDir.resolve("close-drain.jsonl");
+        int eventCount = 100;
+        List<Mono<PreCallEvent>> subscriptions = new ArrayList<>();
+
+        JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(output).append(false).flushEveryLine(false).build();
+        for (int i = 0; i < eventCount; i++) {
+            TestAgent agent = new TestAgent("agent-" + i, "Agent-" + i);
+            subscriptions.add(
+                    exporter.onEvent(
+                            new PreCallEvent(agent, List.of(textMsg(MsgRole.USER, "hi-" + i)))));
+        }
+
+        subscriptions.forEach(Mono::subscribe);
+        exporter.close();
+
+        List<Map<String, Object>> records = readAll(output);
+        assertEquals(eventCount, records.size());
+    }
+
+    @Test
+    void exportsOpenTelemetryIdsWhenAvailable() throws Exception {
+        Path output = tempDir.resolve("otel.jsonl");
+        TestAgent agent = new TestAgent("agent-1", "TestAgent");
+
+        SpanContext spanContext =
+                SpanContext.create(
+                        "0123456789abcdef0123456789abcdef",
+                        "89abcdef01234567",
+                        TraceFlags.getSampled(),
+                        TraceState.getDefault());
+
+        try (Scope ignored = Span.wrap(spanContext).makeCurrent();
+                JsonlTraceExporter exporter =
+                        JsonlTraceExporter.builder(output)
+                                .append(false)
+                                .flushEveryLine(true)
+                                .build()) {
+            exporter.onEvent(new PreCallEvent(agent, List.of(textMsg(MsgRole.USER, "hi")))).block();
         }
 
         Map<String, Object> record = readAll(output).get(0);
-        assertEquals("trace-abc", record.get("trace_id"));
-        assertEquals("span-xyz", record.get("span_id"));
+        assertEquals("0123456789abcdef0123456789abcdef", record.get("trace_id"));
+        assertEquals("89abcdef01234567", record.get("span_id"));
     }
 
     private static Msg textMsg(MsgRole role, String text) {
@@ -258,13 +376,21 @@ class JsonlTraceExporterTest {
 
     private static boolean containsKeyValue(
             List<Map<String, Object>> records, String key, String value) {
-        for (Map<String, Object> r : records) {
-            Object v = r.get(key);
-            if (value.equals(v)) {
+        for (Map<String, Object> record : records) {
+            Object actual = record.get(key);
+            if (value.equals(actual)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static Map<String, Object> findByEventType(
+            List<Map<String, Object>> records, String eventType) {
+        return records.stream()
+                .filter(record -> eventType.equals(record.get("event_type")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing event type " + eventType));
     }
 
     private static final class TestAgent implements Agent {

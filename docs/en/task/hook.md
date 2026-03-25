@@ -134,6 +134,10 @@ Hooks are immutable after agent construction.
 
 For local debugging and offline troubleshooting, AgentScope Java provides a built-in JSONL exporter:
 
+> Warning: the JSONL trace exporter writes full prompts, messages, tool inputs, and error stack
+> traces to local files. These records may contain sensitive user data, credentials, or other
+> secrets, so only enable it in trusted environments and handle the output file as sensitive data.
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.recorder.JsonlTraceExporter;
