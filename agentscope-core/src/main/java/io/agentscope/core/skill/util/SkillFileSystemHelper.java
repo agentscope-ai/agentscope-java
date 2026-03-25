@@ -359,6 +359,17 @@ public final class SkillFileSystemHelper {
         try (Stream<Path> paths = Files.walk(skillDir)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> !p.equals(skillFile))
+                    .filter(
+                            p -> {
+                                try {
+                                    if (Files.isHidden(p.getFileName())) {
+                                        return false;
+                                    }
+                                } catch (IOException e) {
+                                    logger.warn("Failed to load file: {}", p, e);
+                                }
+                                return true;
+                            })
                     .forEach(
                             p -> {
                                 String relativePath =
