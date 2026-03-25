@@ -5539,6 +5539,7 @@ agent.interrupt(Msg.builder()
 - **Nacos Java SDK Additional Configuration Parameters**: https://nacos.io/docs/latest/manual/user/java-sdk/properties
 - **Nacos Community**: https://github.com/alibaba/nacos
 
+
 # MsgHub
 
 MsgHub is a message broadcasting center for multi-agent conversations in AgentScope. It manages message distribution among a group of agents, eliminating the need for manual message passing code.
