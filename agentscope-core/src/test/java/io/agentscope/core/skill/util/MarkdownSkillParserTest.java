@@ -306,6 +306,80 @@ class MarkdownSkillParserTest {
             assertFalse(metadata.containsKey("- item1"));
             assertFalse(metadata.containsKey("- item2"));
         }
+
+        @Test
+        @DisplayName(
+                "Should parse basic scalars and gracefully ignore complex YAML structures like"
+                        + " lists or JSON")
+        void testParseAndIgnoreComplexMetadata() {
+            String markdown =
+                    """
+                    ---
+                    name: Agent Browser
+                    description: A fast Rust-based headless browser automation CLI
+                    read_when:
+                      - Automating web interactions
+                      - Extracting structured data from pages
+                    metadata: {"clawdbot":{"emoji":"🌐"}}
+                    allowed-tools: Bash(agent-browser:*)
+                    ---
+
+                    # Content
+                    This is the content.\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, String> metadata = parsed.getMetadata();
+
+            assertEquals("Agent Browser", metadata.get("name"));
+            assertEquals(
+                    "A fast Rust-based headless browser automation CLI",
+                    metadata.get("description"));
+            assertEquals("Bash(agent-browser:*)", metadata.get("allowed-tools"));
+
+            assertEquals("{\"clawdbot\":{\"emoji\":\"🌐\"}}", metadata.get("metadata"));
+
+            assertEquals("", metadata.get("read_when"));
+            assertNull(metadata.get("- Automating web interactions"));
+
+            assertTrue(parsed.getContent().contains("# Content"));
+        }
+
+        @Test
+        @DisplayName(
+                "Should gracefully skip keys with block-style modifiers (| or >) instead of"
+                        + " recording them as literal values")
+        void testSkipBlockStyleModifiers() {
+            String markdown =
+                    """
+                    ---
+                    name: test_skill
+                    description: |
+                      This is a multi-line description.
+                      It should be ignored by the simple parser.
+                    summary: >
+                      This is a folded multi-line summary.
+                      It should also be ignored.
+                    version: "1.0"
+                    ---
+                    Content\
+                    """;
+
+            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            Map<String, String> metadata = parsed.getMetadata();
+
+            assertEquals("test_skill", metadata.get("name"));
+            assertEquals("1.0", metadata.get("version"));
+
+            assertNull(
+                    metadata.get("description"),
+                    "Block scalar modifier '|' should not be parsed as a literal value");
+            assertNull(
+                    metadata.get("summary"),
+                    "Block scalar modifier '>' should not be parsed as a literal value");
+
+            assertFalse(metadata.containsKey("  This is a multi-line description."));
+        }
     }
 
     @Nested
@@ -429,7 +503,7 @@ class MarkdownSkillParserTest {
             String generated = MarkdownSkillParser.generate(metadata, "Content");
             ParsedMarkdown parsed = MarkdownSkillParser.parse(generated);
 
-            assertNull(parsed.getMetadata().get("empty"));
+            assertEquals("", parsed.getMetadata().get("empty"));
         }
     }
 
@@ -533,44 +607,6 @@ class MarkdownSkillParserTest {
             assertTrue(toString.contains("ParsedMarkdown"));
             assertTrue(toString.contains("metadata"));
             assertTrue(toString.contains("content"));
-        }
-
-        @Test
-        @DisplayName(
-                "Should parse basic scalars and gracefully ignore complex YAML structures like"
-                        + " lists or JSON")
-        void testParseAndIgnoreComplexMetadata() {
-            String markdown =
-                    """
-                    ---
-                    name: Agent Browser
-                    description: A fast Rust-based headless browser automation CLI
-                    read_when:
-                      - Automating web interactions
-                      - Extracting structured data from pages
-                    metadata: {"clawdbot":{"emoji":"🌐"}}
-                    allowed-tools: Bash(agent-browser:*)
-                    ---
-
-                    # Content
-                    This is the content.\
-                    """;
-
-            MarkdownSkillParser.ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
-            Map<String, String> metadata = parsed.getMetadata();
-
-            assertEquals("Agent Browser", metadata.get("name"));
-            assertEquals(
-                    "A fast Rust-based headless browser automation CLI",
-                    metadata.get("description"));
-            assertEquals("Bash(agent-browser:*)", metadata.get("allowed-tools"));
-
-            assertEquals("{\"clawdbot\":{\"emoji\":\"🌐\"}}", metadata.get("metadata"));
-
-            assertNull(metadata.get("read_when"));
-            assertNull(metadata.get("- Automating web interactions"));
-
-            assertTrue(parsed.getContent().contains("# Content"));
         }
     }
 }

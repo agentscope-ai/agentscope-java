@@ -193,19 +193,35 @@ public class MarkdownSkillParser {
                 }
 
                 String key = matcher.group(1);
-                String value = parseValue(matcher.group(2));
+                String rawValue = matcher.group(2);
 
-                if (!value.isEmpty()) {
-                    result.put(key, value);
-                } else {
+                if (isBlockScalarModifier(rawValue)) {
                     logger.debug(
-                            "Skipping key '{}': empty values or block-style complex structures are"
-                                    + " unsupported",
-                            key);
+                            "Skipping key '{}': block-style values ('{}') are unsupported",
+                            key,
+                            rawValue.trim());
+                    continue;
                 }
+
+                result.put(key, parseValue(rawValue));
             }
 
             return result;
+        }
+
+        /**
+         * Check if the raw value is a YAML block scalar modifier ('|' or '>').
+         *
+         * @param rawValue The raw string captured after the colon
+         * @return true if it is a block scalar modifier
+         */
+        private static boolean isBlockScalarModifier(String rawValue) {
+            if (rawValue == null) {
+                return false;
+            }
+
+            String trimmed = rawValue.trim();
+            return "|".equals(trimmed) || ">".equals(trimmed);
         }
 
         /**
