@@ -19,7 +19,7 @@
     "ant-design-vue": "^4.0.8",
     "axios": "^1.13.5",
     "dayjs": "^1.11.10",
-    "dompurify": "^3.2.6",
+    "dompurify": "^3.3.2",
     "highlight.js": "^11.11.1",
     "marked": "^16.1.2",
     "nprogress": "^0.2.0",
