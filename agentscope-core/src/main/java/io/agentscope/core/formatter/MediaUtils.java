@@ -53,6 +53,9 @@ public class MediaUtils {
     private static final List<String> SUPPORTED_VIDEO_EXTENSIONS =
             List.of("mp4", "mpeg", "mpg", "mov", "avi", "webm", "wmv", "flv", "3gp", "3gpp");
 
+    // URL masks
+    private static final Set<String> URL_MASKS = Set.of("?", "&", "#");
+
     private MediaUtils() {
         // Utility class, prevent instantiation
     }
@@ -355,9 +358,8 @@ public class MediaUtils {
         }
 
         // Check for query string or fragment
-        Set<String> masks = Set.of("?", "&", "#");
         int endIdx = path.length();
-        for (String mask : masks) {
+        for (String mask : URL_MASKS) {
             int idx = path.indexOf(mask);
             if (idx != -1) {
                 endIdx = Math.min(endIdx, idx);
