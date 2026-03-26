@@ -27,6 +27,7 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
 import javax.imageio.ImageIO;
@@ -52,16 +53,13 @@ public class MediaUtils {
     private static final List<String> SUPPORTED_VIDEO_EXTENSIONS =
             List.of("mp4", "mpeg", "mpg", "mov", "avi", "webm", "wmv", "flv", "3gp", "3gpp");
 
-    // URL masks
-    private static final List<String> URL_MASKS = List.of("?", "&", "#");
-
     private MediaUtils() {
         // Utility class, prevent instantiation
     }
 
     /**
      * Check if a URL is a local file path (not a URL with protocol scheme).
-     * Returns true for paths without http://, https://, ftp://, or file:// prefixes.
+     * Returns true for paths without http://, https://, ftp://, file:// or oss:// prefixes.
      * Used to distinguish local files from remote URLs for different processing paths.
      *
      * @param url The URL or file path to check
@@ -352,27 +350,37 @@ public class MediaUtils {
      * Extract file extension from path or URL.
      */
     public static String getExtension(String path) {
-        if (path == null) {
+        if (path == null || path.isBlank()) {
             return "";
         }
 
-        // Check for query string or fragment
-        int endIdx = path.length();
-        for (String mask : URL_MASKS) {
-            int idx = path.indexOf(mask);
-            if (idx != -1) {
-                endIdx = Math.min(endIdx, idx);
+        boolean localFile = isLocalFile(path);
+
+        Path fileNamePath;
+        if (localFile) {
+            // treat as file
+            fileNamePath = Paths.get(path).normalize().getFileName();
+        } else {
+            // treat as url
+            URI uri;
+            try {
+                uri = URI.create(path).normalize();
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid URL: {}", path);
+                return "";
             }
+            fileNamePath = Paths.get(uri.getPath()).getFileName();
         }
 
-        // Strip query string or fragment
-        path = path.substring(0, endIdx);
-        int dotIndex = path.lastIndexOf('.');
-        int slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (fileNamePath == null) {
+            return "";
+        }
 
-        // Ensure the dot is after the last slash (not part of directory name)
-        if (dotIndex > slashIndex && dotIndex < path.length() - 1) {
-            return path.substring(dotIndex + 1);
+        String fileName = fileNamePath.toString();
+        int dotIndex = fileName.lastIndexOf('.');
+        // Ensure the dot exists and is not the last character
+        if (dotIndex > -1 && dotIndex < path.length() - 1) {
+            return fileName.substring(dotIndex + 1);
         }
         return "";
     }
