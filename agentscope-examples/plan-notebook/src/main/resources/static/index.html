@@ -1103,31 +1103,56 @@
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullText = '';
+            // SSE can be split across chunks; keep an incremental buffer so we only
+            // process complete lines like `data: xxx`.
+            let buffer = '';
+
+            const handleData = (data) => {
+                if (data === '[PAUSED]') {
+                    isPaused = true;
+                    stopRequested = false;
+                    controlState = 'continue';
+                    updateControlUI();
+                    if (!fullText) {
+                        fullText = '(Plan updated - Review and edit the plan, then Continue)';
+                    }
+                } else {
+                    fullText += data;
+                }
+                contentDiv.textContent = fullText;
+            };
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+
+                const lines = buffer.split('\n');
+                // Keep the last (possibly incomplete) line for the next chunk.
+                buffer = lines.pop();
+
                 for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        const data = line.substring(5).trim();
-                        if (data) {
-                            if (data === '[PAUSED]') {
-                                isPaused = true;
-                                stopRequested = false;
-                                controlState = 'continue';
-                                updateControlUI();
-                                if (!fullText) {
-                                    fullText = '(Plan updated - Review and edit the plan, then Continue)';
-                                }
-                            } else {
-                                fullText += data;
-                            }
-                            contentDiv.textContent = fullText;
-                        }
+                    const lineClean = line.trimEnd();
+                    if (!lineClean.startsWith('data:')) continue;
+
+                    const data = lineClean.substring(5).trim();
+                    if (data) {
+                        handleData(data);
                     }
+                }
+            }
+
+            // Flush any remaining decoded text and process the final buffered line
+            // (in case the stream ends without a trailing newline).
+            const remaining = decoder.decode();
+            if (remaining) buffer += remaining;
+            if (buffer) {
+                const lineClean = buffer.trimEnd();
+                if (lineClean.startsWith('data:')) {
+                    const data = lineClean.substring(5).trim();
+                    if (data) handleData(data);
                 }
             }
 
