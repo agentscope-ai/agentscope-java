@@ -338,10 +338,10 @@ public class GitSkillRepository implements AgentSkillRepository {
         // Use hyphen instead of colon to avoid Windows path issues
         String source =
                 branch != null ? "git-" + repoIdentifier + "@" + branch : "git-" + repoIdentifier;
-        // Remove Windows reserved characters that might be in branch names
+        // Replace Windows reserved characters with hyphen that might be in branch names
         // Note: forward slash (/) is kept as it's valid in source identifiers (owner/repo format)
         // and is not a Windows reserved character in the context of file name
-        return source.replaceAll("[\\\\:*?\"<>|]", "");
+        return source.replaceAll("[\\\\:*?\"<>|]", "-");
     }
 
     /**

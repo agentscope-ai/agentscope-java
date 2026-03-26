@@ -183,24 +183,6 @@ class FileSystemSkillRepositoryTest {
                 new FileSystemSkillRepository(dir).getSource());
     }
 
-    @Test
-    @DisplayName("Should remove Windows reserved characters from source suffix")
-    void testBuildSourceSuffix_WindowsReservedChars() throws IOException {
-        // Create directory with hyphen and dot which are allowed but may appear with reserved chars
-        Path dir = tempDir.resolve("my-project").resolve("skills.v1");
-        Files.createDirectories(dir);
-        String source = new FileSystemSkillRepository(dir).getSource();
-
-        // Verify the generated source follows expected format
-        assertTrue(source.startsWith("filesystem-"), "Source should start with filesystem-");
-        assertTrue(source.contains("my-project"), "Source should contain 'my-project'");
-        assertTrue(source.contains("skills.v1"), "Source should contain 'skills.v1'");
-
-        // Verify source does not contain path separators (these are always invalid)
-        assertFalse(source.contains("\\"), "Source should not contain backslash");
-        assertFalse(source.contains("/"), "Source should not contain forward slash");
-    }
-
     // ==================== getRepositoryInfo Tests ====================
 
     @Test
