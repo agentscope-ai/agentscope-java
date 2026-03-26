@@ -207,16 +207,23 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int toolIters = 5;
         boolean toolCompressed = false;
         int compressionCount = 0;
+        int cursorStartIndex = 0;
         while (toolIters > 0) {
             toolIters--;
             List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
+                    extractPrevToolMsgsForCompress(
+                            currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
             if (toolMsgIndices != null) {
-                summaryToolsMessages(currentMsgs, toolMsgIndices);
-                replaceWorkingMessage(currentMsgs);
-                toolCompressed = true;
-                compressionCount++;
+                boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
+                if (actuallyCompressed) {
+                    replaceWorkingMessage(currentMsgs);
+                    toolCompressed = true;
+                    compressionCount++;
+                    cursorStartIndex = toolMsgIndices.first() + 1;
+                } else {
+                    cursorStartIndex = toolMsgIndices.second() + 1;
+                }
             } else {
                 break;
             }
@@ -226,7 +233,9 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return true;
         } else {
-            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
+            log.info(
+                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
+                            + " to low tokens)");
         }
 
         // Strategy 2: Offload previous round large messages (with lastKeep protection)
@@ -896,9 +905,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * Summarize current round of conversation messages.
      *
      * @param rawMessages the list of messages to process
+     * @param toolMsgIndices the pair of start and end indices
      * @return true if summary was actually performed, false otherwise
      */
-    private void summaryToolsMessages(
+    private boolean summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
@@ -924,7 +934,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                             + " ({})",
                     originalTokens,
                     threshold);
-            return;
+            return false;
         }
 
         log.info(
@@ -956,6 +966,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 metadata);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
+
+        return true;
     }
 
     /**
@@ -1392,22 +1404,27 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
      * Extract tool messages from raw messages for compression.
      *
      * <p>This method finds consecutive tool invocation messages in historical conversations
-     * that can be compressed. It searches for sequences of more than  consecutive tool messages
-     * before the latest assistant message.
+     * that can be compressed. It searches, using a cursor-based {@code searchStartIndex},
+     * for sequences of more than a minimum number of consecutive tool messages that appear
+     * before the latest assistant message that should be preserved.
      *
      * <p>Strategy:
-     * 1. If rawMessages has less than lastKeep messages, return null
-     * 2. Find the latest assistant message and protect it and all messages after it
-     * 3. Search from the beginning for the oldest consecutive tool messages (more than minConsecutiveToolMessages consecutive)
-     *    that can be compressed
-     * 4. If no assistant message is found, protect the last N messages (lastKeep)
+     * 1. If {@code rawMessages} has less than {@code lastKeep} messages, return {@code null}.
+     * 2. Identify the latest assistant message and treat it and all messages after it as
+     *    protected content that will not be compressed.
+     * 3. Starting from {@code searchStartIndex}, search for the oldest range of consecutive
+     *    tool messages (more than {@code minConsecutiveToolMessages} consecutive) that lies
+     *    entirely before the protected region and can be compressed.
+     * 4. If no eligible assistant message or compressible tool-message sequence is found
+     *    in the searchable range, return {@code null}.
      *
      * @param rawMessages all raw messages
      * @param lastKeep number of recent messages to keep uncompressed
-     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or null if none found
+     * @param searchStartIndex the index to start searching from (used as a cursor)
+     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or {@code null} if none found
      */
     private Pair<Integer, Integer> extractPrevToolMsgsForCompress(
-            List<Msg> rawMessages, int lastKeep) {
+            List<Msg> rawMessages, int lastKeep, int searchStartIndex) {
         if (rawMessages == null || rawMessages.isEmpty()) {
             return null;
         }
@@ -1441,8 +1458,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
         int consecutiveCount = 0;
         int startIndex = -1;
         int endIndex = -1;
-
-        for (int i = 0; i < searchEndIndex; i++) {
+        int actualStart = Math.max(0, searchStartIndex);
+        for (int i = actualStart; i < searchEndIndex; i++) {
             Msg msg = rawMessages.get(i);
             if (MsgUtils.isToolMessage(msg)) {
                 if (consecutiveCount == 0) {

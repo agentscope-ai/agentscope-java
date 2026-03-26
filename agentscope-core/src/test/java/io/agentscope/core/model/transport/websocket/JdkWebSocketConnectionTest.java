@@ -42,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -411,15 +412,13 @@ class JdkWebSocketConnectionTest {
         @DisplayName("Should send binary message successfully")
         void shouldSendBinaryMessageSuccessfully() {
             binaryConnection.setWebSocket(mockWebSocket);
-            when(mockWebSocket.sendBinary(
-                            org.mockito.ArgumentMatchers.any(ByteBuffer.class), eq(true)))
+            when(mockWebSocket.sendBinary(ArgumentMatchers.any(ByteBuffer.class), eq(true)))
                     .thenReturn(CompletableFuture.completedFuture(mockWebSocket));
 
             byte[] data = {0x01, 0x02, 0x03};
             StepVerifier.create(binaryConnection.send(data)).verifyComplete();
 
-            verify(mockWebSocket)
-                    .sendBinary(org.mockito.ArgumentMatchers.any(ByteBuffer.class), eq(true));
+            verify(mockWebSocket).sendBinary(ArgumentMatchers.any(ByteBuffer.class), eq(true));
         }
 
         @Test

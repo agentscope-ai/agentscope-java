@@ -18,6 +18,8 @@ package io.agentscope.core.rag.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.agentscope.core.message.Msg;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -100,5 +102,18 @@ class RetrieveConfigTest {
         assertEquals(20, config.getLimit());
         assertEquals(0.8, config.getScoreThreshold());
         assertEquals("test-vector", config.getVectorName());
+    }
+
+    @Test
+    @DisplayName("Should mutate RetrieveConfig with same values")
+    void testMutate() {
+        RetrieveConfig originConfig = RetrieveConfig.builder().build();
+        List<Msg> conversationHistory = List.of(Msg.builder().textContent("test content").build());
+        RetrieveConfig mutateConfig =
+                originConfig.mutate().conversationHistory(conversationHistory).build();
+        assertEquals(conversationHistory, mutateConfig.getConversationHistory());
+        assertEquals(originConfig.getLimit(), mutateConfig.getLimit());
+        assertEquals(originConfig.getScoreThreshold(), mutateConfig.getScoreThreshold());
+        assertEquals(originConfig.getVectorName(), mutateConfig.getVectorName());
     }
 }

@@ -29,6 +29,7 @@ import io.agentscope.core.training.runner.TrainingConfig;
 import io.agentscope.core.training.strategy.SamplingRateStrategy;
 import java.util.Arrays;
 import java.util.List;
+import org.mockito.ArgumentMatchers;
 import reactor.core.publisher.Mono;
 
 /**
@@ -54,7 +55,7 @@ public final class TrainingTestUtils {
      */
     public static RewardCalculator createMockRewardCalculator(double reward) {
         RewardCalculator calculator = mock(RewardCalculator.class);
-        when(calculator.calculate(org.mockito.ArgumentMatchers.any())).thenReturn(reward);
+        when(calculator.calculate(ArgumentMatchers.any())).thenReturn(reward);
         return calculator;
     }
 
@@ -64,8 +65,8 @@ public final class TrainingTestUtils {
     public static TrinityClient createMockTrinityClient() {
         TrinityClient client = mock(TrinityClient.class);
         when(client.getEndpoint()).thenReturn(TrainingTestConstants.TEST_TRINITY_ENDPOINT);
-        when(client.feedback(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
-        when(client.commit(org.mockito.ArgumentMatchers.any())).thenReturn(Mono.empty());
+        when(client.feedback(ArgumentMatchers.any())).thenReturn(Mono.empty());
+        when(client.commit(ArgumentMatchers.any())).thenReturn(Mono.empty());
         return client;
     }
 
