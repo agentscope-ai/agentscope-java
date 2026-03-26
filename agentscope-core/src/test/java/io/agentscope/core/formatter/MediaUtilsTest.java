@@ -349,6 +349,7 @@ class MediaUtilsTest {
         assertEquals("", MediaUtils.getExtension("https://abc[@]123"));
         assertEquals("", MediaUtils.getExtension("https://example.com/abc"));
         assertEquals("", MediaUtils.getExtension("https://example.com/abc/"));
+        assertEquals("", MediaUtils.getExtension("https://example.com/img.png."));
     }
 
     @Test
