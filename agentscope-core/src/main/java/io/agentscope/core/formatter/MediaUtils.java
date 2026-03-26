@@ -29,7 +29,6 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
-import java.util.Set;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +53,7 @@ public class MediaUtils {
             List.of("mp4", "mpeg", "mpg", "mov", "avi", "webm", "wmv", "flv", "3gp", "3gpp");
 
     // URL masks
-    private static final Set<String> URL_MASKS = Set.of("?", "&", "#");
+    private static final List<String> URL_MASKS = List.of("?", "&", "#");
 
     private MediaUtils() {
         // Utility class, prevent instantiation
