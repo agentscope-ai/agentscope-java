@@ -1732,6 +1732,10 @@ class AutoContextMemoryTest {
                 compressedMsg.getRole(),
                 "Compressed message role MUST be USER to comply with LLM API norms");
         assertEquals("user", compressedMsg.getName(), "Compressed message name MUST be 'user'");
+    }
+
+    @Test
+    @DisplayName(
             "Should continue to subsequent strategies when tool compression is skipped due to low"
                     + " tokens")
     void testCompressionStrategiesContinueWhenToolCompressionSkipped() {
