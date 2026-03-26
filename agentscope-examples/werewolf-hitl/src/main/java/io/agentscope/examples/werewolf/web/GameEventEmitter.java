@@ -19,6 +19,7 @@ import io.agentscope.examples.werewolf.entity.Role;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
@@ -161,9 +162,9 @@ public class GameEventEmitter {
         godViewHistory.add(godEvent);
         System.out.println("\n════════════════════════════════");
         System.out.println("游戏初始化 - 玩家分配:");
-        if (allPlayers instanceof java.util.List<?> list) {
+        if (allPlayers instanceof List<?> list) {
             for (Object player : list) {
-                if (player instanceof java.util.Map<?, ?> map) {
+                if (player instanceof Map<?, ?> map) {
                     System.out.println("  " + map.get("name") + " - " + map.get("roleDisplay"));
                 }
             }

@@ -60,7 +60,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <spring.boot.version>4.0.3</spring.boot.version>
+        <spring.boot.version>4.0.4</spring.boot.version>
         <micronaut.version>4.10.9</micronaut.version>
     </properties>
 
