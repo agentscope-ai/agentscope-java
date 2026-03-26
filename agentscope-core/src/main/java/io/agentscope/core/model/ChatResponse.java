@@ -102,6 +102,17 @@ public class ChatResponse {
     }
 
     /**
+     * Creates a new instance of ChatResponse with the specified ID,
+     * copying all other fields from this instance.
+     *
+     * @param newId the new identifier
+     * @return a new ChatResponse instance
+     */
+    public ChatResponse withId(String newId) {
+        return new ChatResponse(newId, this.content, this.usage, this.metadata, this.finishReason);
+    }
+
+    /**
      * Creates a new builder for ChatResponse.
      *
      * @return a new Builder instance
