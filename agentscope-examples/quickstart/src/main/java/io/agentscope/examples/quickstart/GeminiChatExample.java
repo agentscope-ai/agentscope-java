@@ -47,7 +47,7 @@ public class GeminiChatExample {
                         .model(
                                 GeminiChatModel.builder()
                                         .apiKey(apiKey)
-                                        .modelName("gemini-3-pro-preview")
+                                        .modelName("gemini-3.1-pro-preview")
                                         .streamEnabled(true)
                                         .formatter(new GeminiChatFormatter())
                                         .defaultOptions(

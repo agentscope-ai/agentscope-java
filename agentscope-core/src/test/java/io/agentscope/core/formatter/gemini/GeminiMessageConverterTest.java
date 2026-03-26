@@ -193,6 +193,69 @@ class GeminiMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should restore thoughtSignature from preceding ThinkingBlock")
+    void testConvertToolUseBlockWithPrecedingThinkingSignature() {
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_123")
+                        .name("search")
+                        .input(Map.of("query", "test"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Reasoning")
+                                                .signature("sig_123")
+                                                .build(),
+                                        toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
+        assertEquals("sig_123", part.getThoughtSignature());
+    }
+
+    @Test
+    @DisplayName("Should prioritize thoughtSignature from ToolUseBlock metadata")
+    void testConvertToolUseBlockWithThoughtSignatureMetadata() {
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_123")
+                        .name("search")
+                        .input(Map.of("query", "test"))
+                        .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, "sig_from_tool"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder()
+                                                .thinking("Reasoning")
+                                                .signature("sig_from_thinking")
+                                                .build(),
+                                        toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<GeminiContent> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        GeminiPart part = result.get(0).getParts().get(0);
+        assertNotNull(part.getFunctionCall());
+        assertEquals("sig_from_tool", part.getThoughtSignature());
+    }
+
+    @Test
     @DisplayName("Should convert ToolResultBlock to independent Content with user role")
     void testConvertToolResultBlock() {
         ToolResultBlock toolResultBlock =
@@ -751,32 +814,6 @@ class GeminiMessageConverterTest {
                 "Sunny, 25°C",
                 result.get(2).getParts().get(0).getFunctionResponse().getResponse().get("output"));
     }
-
-    // Commented out tests relying on thoughtSignature which is not yet supported in
-    // DTOs
-    /*
-     * @Test
-     *
-     * @DisplayName("Should convert ToolUseBlock with thoughtSignature")
-     * void testConvertToolUseBlockWithThoughtSignature() {
-     * ...
-     * }
-     *
-     * @Test
-     *
-     * @DisplayName("Should convert ToolUseBlock without thoughtSignature")
-     * void testConvertToolUseBlockWithoutThoughtSignature() {
-     * ...
-     * }
-     *
-     * @Test
-     *
-     * @DisplayName("Should handle round-trip of thoughtSignature in function calling flow"
-     * )
-     * void testThoughtSignatureRoundTrip() {
-     * ...
-     * }
-     */
 
     @Test
     @DisplayName("Should convert ThinkingBlock with signature")

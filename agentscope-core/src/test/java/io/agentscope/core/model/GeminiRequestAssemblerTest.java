@@ -88,8 +88,10 @@ class GeminiRequestAssemblerTest {
     }
 
     @Test
-    @DisplayName("Should force unary endpoint when structured output tool is present")
-    void testForceUnaryForStructuredOutput() {
+    @DisplayName(
+            "Should force unary endpoint and send thinkingBudget=0 when structured output"
+                    + " tool is present")
+    void testForceUnaryForStructuredOutput() throws IOException {
         GeminiRequestAssembler assembler =
                 newAssembler(
                         "https://example.com/v1beta/models/",
@@ -109,6 +111,18 @@ class GeminiRequestAssemblerTest {
                 prepared.getHttpRequest().url().toString().endsWith(":generateContent"),
                 "Expected unary endpoint URL");
         assertFalse(prepared.getHttpRequest().url().toString().contains("alt=sse"));
+
+        Map<String, Object> requestBody = parseRequestBody(prepared.getHttpRequest());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> generationConfig =
+                (Map<String, Object>) requestBody.get("generationConfig");
+        assertNotNull(generationConfig);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> thinkingConfig =
+                (Map<String, Object>) generationConfig.get("thinkingConfig");
+        assertNotNull(thinkingConfig);
+        assertEquals(0, thinkingConfig.get("thinkingBudget"));
+        assertFalse(thinkingConfig.containsKey("includeThoughts"));
     }
 
     @Test
@@ -144,7 +158,7 @@ class GeminiRequestAssemblerTest {
                 GenerateOptions.builder().build(),
                 new GeminiChatFormatter(),
                 codec,
-                new GeminiThinkingPolicy(LOG),
+                new GeminiThinkingPolicy(),
                 LOG);
     }
 

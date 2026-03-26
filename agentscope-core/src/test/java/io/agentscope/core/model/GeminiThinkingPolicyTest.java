@@ -30,14 +30,12 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 @Tag("unit")
 @DisplayName("GeminiThinkingPolicy Unit Tests")
 class GeminiThinkingPolicyTest {
 
-    private final GeminiThinkingPolicy policy =
-            new GeminiThinkingPolicy(LoggerFactory.getLogger(GeminiThinkingPolicyTest.class));
+    private final GeminiThinkingPolicy policy = new GeminiThinkingPolicy();
 
     @Test
     @DisplayName("Should disable thinking config for Gemini 3 Flash structured output")
@@ -47,13 +45,13 @@ class GeminiThinkingPolicyTest {
         config.setThinkingConfig(new GeminiGenerationConfig.GeminiThinkingConfig());
         request.setGenerationConfig(config);
 
-        boolean isStructuredOutput =
-                policy.disableThinkingForGemini3FlashStructuredOutput(
-                        "gemini-3-flash-preview", request, List.of(structuredOutputTool()));
+        policy.disableThinkingForGemini3FlashStructuredOutput(
+                "gemini-3-flash-preview", request, List.of(structuredOutputTool()));
 
-        assertTrue(isStructuredOutput);
         assertNotNull(request.getGenerationConfig());
-        assertNull(request.getGenerationConfig().getThinkingConfig());
+        assertNotNull(request.getGenerationConfig().getThinkingConfig());
+        assertEquals(0, request.getGenerationConfig().getThinkingConfig().getThinkingBudget());
+        assertNull(request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
     }
 
     @Test
@@ -66,11 +64,9 @@ class GeminiThinkingPolicyTest {
         config.setThinkingConfig(thinkingConfig);
         request.setGenerationConfig(config);
 
-        boolean isStructuredOutput =
-                policy.disableThinkingForGemini3FlashStructuredOutput(
-                        "gemini-2.5-flash", request, List.of(structuredOutputTool()));
+        policy.disableThinkingForGemini3FlashStructuredOutput(
+                "gemini-2.5-flash", request, List.of(structuredOutputTool()));
 
-        assertFalse(isStructuredOutput);
         assertSame(thinkingConfig, request.getGenerationConfig().getThinkingConfig());
     }
 
@@ -80,129 +76,24 @@ class GeminiThinkingPolicyTest {
     void testDisableThinkingCreatesGenerationConfigWhenMissing() {
         GeminiRequest request = new GeminiRequest();
 
-        boolean isStructuredOutput =
-                policy.disableThinkingForGemini3FlashStructuredOutput(
-                        "gemini-3-flash-preview", request, List.of(structuredOutputTool()));
-
-        assertTrue(isStructuredOutput);
-        assertNotNull(request.getGenerationConfig());
-        assertNull(request.getGenerationConfig().getThinkingConfig());
-    }
-
-    @Test
-    @DisplayName("Should disable thoughts when Gemini 3 has non structured output tools")
-    void testApplyGemini3CompatibilityPolicyWithNonStructuredTool() {
-        GeminiRequest request = new GeminiRequest();
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-3-pro", request, List.of(simpleTool("search_web")), false);
+        policy.disableThinkingForGemini3FlashStructuredOutput(
+                "gemini-3-flash-preview", request, List.of(structuredOutputTool()));
 
         assertNotNull(request.getGenerationConfig());
         assertNotNull(request.getGenerationConfig().getThinkingConfig());
-        assertFalse(request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
-    }
-
-    @Test
-    @DisplayName("Should remove thinking budget and enable thoughts for structured output tool")
-    void testApplyGemini3CompatibilityPolicyWithStructuredOutputTool() {
-        GeminiGenerationConfig.GeminiThinkingConfig thinkingConfig =
-                new GeminiGenerationConfig.GeminiThinkingConfig();
-        thinkingConfig.setIncludeThoughts(false);
-        thinkingConfig.setThinkingBudget(512);
-        GeminiGenerationConfig generationConfig = new GeminiGenerationConfig();
-        generationConfig.setThinkingConfig(thinkingConfig);
-        GeminiRequest request = new GeminiRequest();
-        request.setGenerationConfig(generationConfig);
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-3-pro", request, List.of(structuredOutputTool()), false);
-
-        assertEquals(true, request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
-        assertNull(request.getGenerationConfig().getThinkingConfig().getThinkingBudget());
+        assertEquals(0, request.getGenerationConfig().getThinkingConfig().getThinkingBudget());
+        assertNull(request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
     }
 
     @Test
     @DisplayName(
-            "Should disable thoughts for Gemini 3 Flash structured output in compatibility policy")
-    void testApplyGemini3CompatibilityPolicyWithFlashStructuredOutputTool() {
-        GeminiGenerationConfig.GeminiThinkingConfig thinkingConfig =
-                new GeminiGenerationConfig.GeminiThinkingConfig();
-        thinkingConfig.setIncludeThoughts(true);
-        thinkingConfig.setThinkingBudget(2048);
-        GeminiGenerationConfig generationConfig = new GeminiGenerationConfig();
-        generationConfig.setThinkingConfig(thinkingConfig);
-        GeminiRequest request = new GeminiRequest();
-        request.setGenerationConfig(generationConfig);
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-3-flash-preview", request, List.of(structuredOutputTool()), false);
-
-        assertEquals(false, request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
-        assertNull(request.getGenerationConfig().getThinkingConfig().getThinkingBudget());
-    }
-
-    @Test
-    @DisplayName("Should keep request unchanged when model is not Gemini 3")
-    void testApplyGemini3CompatibilityPolicyWithNonGemini3Model() {
-        GeminiRequest request = new GeminiRequest();
-        GeminiGenerationConfig generationConfig = new GeminiGenerationConfig();
-        request.setGenerationConfig(generationConfig);
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-2.5-flash", request, List.of(simpleTool("search")), false);
-
-        assertSame(generationConfig, request.getGenerationConfig());
-    }
-
-    @Test
-    @DisplayName("Should skip compatibility policy when flash structured output already handled")
-    void testApplyGemini3CompatibilityPolicySkippedByFlag() {
-        GeminiRequest request = new GeminiRequest();
-        GeminiGenerationConfig generationConfig = new GeminiGenerationConfig();
-        request.setGenerationConfig(generationConfig);
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-3-flash-preview", request, List.of(simpleTool("search")), true);
-
-        assertSame(generationConfig, request.getGenerationConfig());
-        assertNull(request.getGenerationConfig().getThinkingConfig());
-    }
-
-    @Test
-    @DisplayName("Should keep null generation config when Gemini 3 has no tools")
-    void testApplyGemini3CompatibilityPolicyWithNoTools() {
-        GeminiRequest request = new GeminiRequest();
-
-        policy.applyGemini3CompatibilityPolicy("gemini-3-pro", request, null, false);
-
-        assertNull(request.getGenerationConfig());
-    }
-
-    @Test
-    @DisplayName("Should keep null thinking config when generation config exists")
-    void testApplyGemini3CompatibilityPolicyWithNullThinkingConfig() {
-        GeminiRequest request = new GeminiRequest();
-        request.setGenerationConfig(new GeminiGenerationConfig());
-
-        policy.applyGemini3CompatibilityPolicy(
-                "gemini-3-pro", request, List.of(structuredOutputTool()), false);
-
-        assertNotNull(request.getGenerationConfig());
-        assertNull(request.getGenerationConfig().getThinkingConfig());
-    }
-
-    @Test
-    @DisplayName("Should force unary structured output and disable thoughts for Gemini 3 Flash")
+            "Should force unary for structured output tool (thinking already handled by"
+                    + " disableThinkingForGemini3FlashStructuredOutput)")
     void testApplyForceUnaryForStructuredOutput() {
-        GeminiRequest request = new GeminiRequest();
         boolean forceUnary =
-                policy.applyForceUnaryForStructuredOutput(
-                        "gemini-3-flash-preview", request, List.of(structuredOutputTool()));
+                policy.applyForceUnaryForStructuredOutput(List.of(structuredOutputTool()));
 
         assertTrue(forceUnary);
-        assertNotNull(request.getGenerationConfig());
-        assertNotNull(request.getGenerationConfig().getThinkingConfig());
-        assertEquals(false, request.getGenerationConfig().getThinkingConfig().getIncludeThoughts());
     }
 
     @Test
@@ -213,8 +104,7 @@ class GeminiThinkingPolicyTest {
         request.setGenerationConfig(generationConfig);
 
         boolean forceUnary =
-                policy.applyForceUnaryForStructuredOutput(
-                        "gemini-3-pro", request, List.of(structuredOutputTool()));
+                policy.applyForceUnaryForStructuredOutput(List.of(structuredOutputTool()));
 
         assertTrue(forceUnary);
         assertSame(generationConfig, request.getGenerationConfig());
@@ -227,8 +117,7 @@ class GeminiThinkingPolicyTest {
         GeminiRequest request = new GeminiRequest();
 
         boolean forceUnary =
-                policy.applyForceUnaryForStructuredOutput(
-                        "gemini-3-pro", request, List.of(simpleTool("search")));
+                policy.applyForceUnaryForStructuredOutput(List.of(simpleTool("search")));
 
         assertFalse(forceUnary);
         assertNull(request.getGenerationConfig());
@@ -239,8 +128,7 @@ class GeminiThinkingPolicyTest {
     void testApplyForceUnaryForStructuredOutputWithNullTools() {
         GeminiRequest request = new GeminiRequest();
 
-        boolean forceUnary =
-                policy.applyForceUnaryForStructuredOutput("gemini-3-pro", request, null);
+        boolean forceUnary = policy.applyForceUnaryForStructuredOutput(null);
 
         assertFalse(forceUnary);
         assertNull(request.getGenerationConfig());

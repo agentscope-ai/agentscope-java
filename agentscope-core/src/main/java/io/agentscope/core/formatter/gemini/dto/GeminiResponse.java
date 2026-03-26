@@ -37,8 +37,19 @@ public class GeminiResponse {
     @JsonProperty("promptFeedback")
     private Object promptFeedback; // Simplification
 
-    @JsonProperty("requestId")
+    @JsonProperty("responseId")
     private String responseId;
+
+    @JsonProperty("modelStatus")
+    private Object modelStatus;
+
+    public Object getModelStatus() {
+        return modelStatus;
+    }
+
+    public void setModelStatus(Object modelStatus) {
+        this.modelStatus = modelStatus;
+    }
 
     public String getResponseId() {
         return responseId;

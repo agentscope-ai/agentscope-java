@@ -28,14 +28,26 @@ import io.agentscope.core.message.ThinkingBlock;
 public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
+    // Preserve the last non-null signature seen across streaming chunks.
+    // Gemini may include a thoughtSignature on one of the thought parts;
+    // we capture it here so the aggregated block can pass it back on
+    // subsequent turns (e.g. for thought-signature-based context preservation).
+    private String lastSignature;
 
     /**
      * @hidden
      */
     @Override
     public void add(ThinkingBlock block) {
-        if (block != null && block.getThinking() != null) {
+        if (block == null) {
+            return;
+        }
+        if (block.getThinking() != null) {
             accumulated.append(block.getThinking());
+        }
+        String sig = block.getSignature();
+        if (sig != null && !sig.isEmpty()) {
+            lastSignature = sig;
         }
     }
 
@@ -44,7 +56,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
      */
     @Override
     public boolean hasContent() {
-        return accumulated.length() > 0;
+        return !accumulated.isEmpty() || (lastSignature != null && !lastSignature.isEmpty());
     }
 
     /**
@@ -55,7 +67,10 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (!hasContent()) {
             return null;
         }
-        return ThinkingBlock.builder().thinking(accumulated.toString()).build();
+        return ThinkingBlock.builder()
+                .thinking(accumulated.toString())
+                .signature(lastSignature)
+                .build();
     }
 
     /**
@@ -64,6 +79,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     @Override
     public void reset() {
         accumulated.setLength(0);
+        lastSignature = null;
     }
 
     /**

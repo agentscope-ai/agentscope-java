@@ -70,7 +70,7 @@ public class GeminiChatModel extends ChatModelBase {
     private final JsonCodec jsonCodec;
     private final GeminiStructuredOutputHandler structuredOutputHandler =
             new GeminiStructuredOutputHandler();
-    private final GeminiThinkingPolicy thinkingPolicy = new GeminiThinkingPolicy(log);
+    private final GeminiThinkingPolicy thinkingPolicy = new GeminiThinkingPolicy();
     private final GeminiTransport transport;
     private final GeminiRequestAssembler requestAssembler;
     private final GeminiResponseGuard responseGuard;

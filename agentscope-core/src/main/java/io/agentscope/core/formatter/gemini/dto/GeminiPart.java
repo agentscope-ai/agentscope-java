@@ -48,6 +48,17 @@ public class GeminiPart {
     @JsonProperty("thoughtSignature")
     private String thoughtSignature;
 
+    @JsonProperty("partMetadata")
+    private Map<String, Object> partMetadata;
+
+    public Map<String, Object> getPartMetadata() {
+        return partMetadata;
+    }
+
+    public void setPartMetadata(Map<String, Object> partMetadata) {
+        this.partMetadata = partMetadata;
+    }
+
     public String getText() {
         return text;
     }

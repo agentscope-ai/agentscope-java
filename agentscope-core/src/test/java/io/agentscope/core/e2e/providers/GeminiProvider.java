@@ -129,10 +129,10 @@ public class GeminiProvider extends BaseModelProvider {
         }
     }
 
-    /** Gemini 3 Pro Preview - Advanced thinking model. */
+    /** Gemini 3.1 Pro Preview - Advanced thinking model. */
     public static class Gemini3Pro extends GeminiProvider {
         public Gemini3Pro() {
-            super("gemini-3-pro-preview", false, true);
+            super("gemini-3.1-pro-preview", false, true);
         }
 
         @Override
@@ -141,10 +141,10 @@ public class GeminiProvider extends BaseModelProvider {
         }
     }
 
-    /** Gemini 3 Pro Preview with multi-agent formatter. */
+    /** Gemini 3.1 Pro Preview with multi-agent formatter. */
     public static class Gemini3ProMultiAgent extends GeminiProvider {
         public Gemini3ProMultiAgent() {
-            super("gemini-3-pro-preview", true, true);
+            super("gemini-3.1-pro-preview", true, true);
         }
 
         @Override

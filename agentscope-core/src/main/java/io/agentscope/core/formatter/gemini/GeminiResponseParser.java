@@ -173,6 +173,12 @@ public class GeminiResponseParser {
                                 .build();
             }
 
+            Map<String, Object> responseMetadata = null;
+            if (response.getModelStatus() != null) {
+                responseMetadata = new HashMap<>();
+                responseMetadata.put("modelStatus", response.getModelStatus());
+            }
+
             return ChatResponse.builder()
                     // Use actual response ID if available, otherwise generate one
                     .id(
@@ -181,6 +187,7 @@ public class GeminiResponseParser {
                                     : UUID.randomUUID().toString())
                     .content(blocks)
                     .usage(usage)
+                    .metadata(responseMetadata)
                     .finishReason(finishReason)
                     .build();
 

@@ -93,11 +93,7 @@ final class GeminiRequestAssembler {
         // Apply options, tools, tool choice
         formatter.applyOptions(requestDto, options, defaultOptions);
 
-        boolean isGemini3FlashStructuredOutput =
-                thinkingPolicy.disableThinkingForGemini3FlashStructuredOutput(
-                        modelName, requestDto, tools);
-        thinkingPolicy.applyGemini3CompatibilityPolicy(
-                modelName, requestDto, tools, isGemini3FlashStructuredOutput);
+        thinkingPolicy.disableThinkingForGemini3FlashStructuredOutput(modelName, requestDto, tools);
 
         if (tools != null && !tools.isEmpty()) {
             formatter.applyTools(requestDto, tools);
@@ -124,7 +120,7 @@ final class GeminiRequestAssembler {
         }
 
         boolean forceUnaryForStructuredOutput =
-                thinkingPolicy.applyForceUnaryForStructuredOutput(modelName, requestDto, tools);
+                thinkingPolicy.applyForceUnaryForStructuredOutput(tools);
         boolean streamForRequest = streamEnabled && !forceUnaryForStructuredOutput;
 
         String endpoint = streamForRequest ? ":streamGenerateContent" : ":generateContent";

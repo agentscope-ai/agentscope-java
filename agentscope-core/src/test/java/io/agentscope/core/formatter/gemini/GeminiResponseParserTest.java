@@ -351,6 +351,26 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseResponsePreservesModelStatusInMetadata() {
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("Hello");
+
+        GeminiContent content = new GeminiContent("model", List.of(textPart));
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(content);
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+        response.setModelStatus(Map.of("state", "ACTIVE"));
+
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        assertNotNull(chatResponse.getMetadata());
+        assertEquals(Map.of("state", "ACTIVE"), chatResponse.getMetadata().get("modelStatus"));
+    }
+
+    @Test
     void testParseToolCallWithoutId() {
         // Build function call without explicit ID
         Map<String, Object> args = new HashMap<>();
