@@ -182,7 +182,7 @@ public final class SkillFileSystemHelper {
                     if (!force) {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
-                        return false;
+                        continue; // Skip to the next skill if force=false
                     } else {
                         logger.info("Overwriting existing skill directory: {}", skillName);
                         deleteDirectory(skillDir);
