@@ -907,6 +907,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(
                             this, model.getModelName(), generateOptions, chunkMsg, accumulated);
