@@ -50,6 +50,9 @@ class ToolRegistry {
      * @param registered RegisteredToolFunction wrapper with metadata
      */
     void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.put(toolName, tool);
         registeredTools.put(toolName, registered);
     }
@@ -61,6 +64,9 @@ class ToolRegistry {
      * @return AgentTool or null if not found
      */
     AgentTool getTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return tools.get(name);
     }
 
@@ -71,6 +77,9 @@ class ToolRegistry {
      * @return RegisteredToolFunction or null if not found
      */
     RegisteredToolFunction getRegisteredTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return registeredTools.get(name);
     }
 
@@ -98,6 +107,9 @@ class ToolRegistry {
      * @param toolName Tool name to remove
      */
     void removeTool(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.remove(toolName);
         registeredTools.remove(toolName);
     }
