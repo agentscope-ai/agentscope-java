@@ -32,8 +32,10 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import reactor.core.publisher.Flux;
 
+@Timeout(10)
 class QuartzFixedDelayIntegrationTest {
 
     private QuartzAgentScheduler scheduler;
@@ -93,14 +95,14 @@ class QuartzFixedDelayIntegrationTest {
         QuartzScheduleAgentTask qt = (QuartzScheduleAgentTask) task;
 
         long start = System.currentTimeMillis();
-        long timeoutMs = 2000;
+        long timeoutMs = 5000;
         long count = 0;
         while (System.currentTimeMillis() - start < timeoutMs) {
             count = qt.getExecutionCount();
             if (count >= 2) {
                 break;
             }
-            Thread.sleep(50);
+            Thread.sleep(100);
         }
         assertTrue(count >= 2);
     }

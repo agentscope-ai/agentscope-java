@@ -37,6 +37,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -982,6 +983,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             this, model.getModelName(), null, chunkMsg, accumulated);
@@ -1024,6 +1030,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(
                             this, model.getModelName(), generateOptions, chunkMsg, accumulated);
