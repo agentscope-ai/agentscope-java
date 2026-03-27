@@ -36,7 +36,10 @@ import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -340,6 +343,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .build();
         AutoContextMemory toolMemory = new AutoContextMemory(toolConfig, toolTestModel);
 
@@ -919,7 +923,7 @@ class AutoContextMemoryTest {
 
         // Use reflection to set the plan (since PlanNotebook doesn't expose a setter)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -980,7 +984,7 @@ class AutoContextMemoryTest {
                         ToolUseBlock.builder()
                                 .name(toolName)
                                 .id(callId)
-                                .input(new java.util.HashMap<>())
+                                .input(new HashMap<>())
                                 .build())
                 .build();
     }
@@ -1075,7 +1079,7 @@ class AutoContextMemoryTest {
 
         // Manually set the plan (using reflection for testing)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -1204,6 +1208,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
         AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
@@ -1265,6 +1270,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .customPrompt(customPrompt)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
@@ -1369,6 +1375,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .customPrompt(customPrompt)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed");
@@ -1438,8 +1445,7 @@ class AutoContextMemoryTest {
         AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1454,8 +1460,7 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1473,13 +1478,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1517,13 +1521,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1553,13 +1556,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1580,13 +1582,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1610,13 +1611,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1641,13 +1641,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         // Test with IN_PROGRESS state
@@ -1676,5 +1675,137 @@ class AutoContextMemoryTest {
         assertTrue(
                 resultDone.contains("Goal: Test Description"),
                 "Should contain goal for DONE state");
+    }
+
+    @Test
+    @DisplayName(
+            "Should continue to subsequent strategies when tool compression is skipped due to low"
+                    + " tokens")
+    void testCompressionStrategiesContinueWhenToolCompressionSkipped() {
+        TestModel testModel = new TestModel("Large payload summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(2)
+                        .largePayloadThreshold(100)
+                        .lastKeep(2)
+                        .minCompressionTokenThreshold(10000)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("skipped_tool", "id" + i));
+            testMemory.addMessage(createToolResultMessage("skipped_tool", "id" + i, "ok"));
+        }
+
+        // Add a large message to trigger Strategy 2 or 3
+        String largeText = "x".repeat(200);
+        testMemory.addMessage(createTextMessage(largeText, MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+        testMemory.addMessage(createTextMessage("Padding message", MsgRole.USER));
+
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(
+                compressed,
+                "Compression should return true because subsequent strategy (large payload) was"
+                        + " applied");
+
+        long toolMessageCount =
+                testMemory.getMessages().stream().filter(MsgUtils::isToolMessage).count();
+        assertEquals(
+                6, toolMessageCount, "Tool messages should not be compressed due to low tokens");
+
+        boolean hasOffloadedLargeMsg =
+                testMemory.getMessages().stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("CONTEXT_OFFLOAD"));
+        assertTrue(
+                hasOffloadedLargeMsg,
+                "Large message should be offloaded by Strategy 2/3 because the chain was not"
+                        + " broken");
+    }
+
+    @Test
+    @DisplayName(
+            "Should advance search cursor and compress subsequent tool groups when earlier group is"
+                    + " skipped")
+    void testToolCompressionCursorAdvancesWhenSkipped() {
+        TestModel testModel = new TestModel("Compressed tool summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(2)
+                        .lastKeep(2)
+                        .minCompressionTokenThreshold(5000)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("User query 1", MsgRole.USER));
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("short_tool", "a" + i));
+            testMemory.addMessage(createToolResultMessage("short_tool", "a" + i, "ok"));
+        }
+
+        testMemory.addMessage(createTextMessage("User query 2", MsgRole.USER));
+
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("long_tool", "b" + i));
+            String largeResult = "long_result_".repeat(1000);
+            testMemory.addMessage(createToolResultMessage("long_tool", "b" + i, largeResult));
+        }
+
+        testMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        testMemory.addMessage(createTextMessage("Padding 1", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Padding 2", MsgRole.USER));
+
+        // Trigger compression explicitly
+        testMemory.compressIfNeeded();
+
+        List<Msg> messages = testMemory.getMessages();
+
+        // The filter condition only captured Tool Result (name="short_tool").
+        // So 3 results indicate that all 6 messages in the first group were preserved.
+        long shortToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "short_tool".equals(msg.getName()))
+                        .count();
+        assertEquals(
+                3,
+                shortToolMsgs,
+                "First tool group should be skipped and remain in memory (3 result messages)");
+
+        long longToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "long_tool".equals(msg.getName()))
+                        .count();
+        assertEquals(
+                0,
+                longToolMsgs,
+                "Second tool group should be completely compressed and removed from memory");
+
+        boolean hasSummary =
+                messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("Compressed tool summary"));
+        assertTrue(hasSummary, "Second tool group should be replaced by a summary message");
+
+        assertEquals(
+                1,
+                testModel.getCallCount(),
+                "Model should be called exactly once for the second high-token tool group");
     }
 }

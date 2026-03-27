@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
+import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
@@ -255,9 +256,7 @@ class DeepSeekFormatterTest {
                     OpenAIToolCall.builder()
                             .id("call_123")
                             .type("function")
-                            .function(
-                                    io.agentscope.core.formatter.openai.dto.OpenAIFunction.of(
-                                            "test_tool", "{}"))
+                            .function(OpenAIFunction.of("test_tool", "{}"))
                             .build();
 
             List<OpenAIMessage> messages =

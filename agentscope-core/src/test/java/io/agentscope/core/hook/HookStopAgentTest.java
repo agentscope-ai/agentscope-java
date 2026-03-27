@@ -38,6 +38,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -788,7 +789,7 @@ class HookStopAgentTest {
             this.executed = executed;
         }
 
-        @io.agentscope.core.tool.Tool(name = "test_tool", description = "A test tool")
+        @Tool(name = "test_tool", description = "A test tool")
         public ToolResultBlock testTool() {
             executed.set(true);
             return ToolResultBlock.text("Tool executed");
@@ -805,13 +806,13 @@ class HookStopAgentTest {
             this.executionCount2 = executionCount2;
         }
 
-        @io.agentscope.core.tool.Tool(name = "tool1", description = "Counting tool 1")
+        @Tool(name = "tool1", description = "Counting tool 1")
         public ToolResultBlock tool1() {
             executionCount1.incrementAndGet();
             return ToolResultBlock.text("Tool1 executed: " + executionCount1.get());
         }
 
-        @io.agentscope.core.tool.Tool(name = "tool2", description = "Counting tool 2")
+        @Tool(name = "tool2", description = "Counting tool 2")
         public ToolResultBlock tool2() {
             executionCount2.incrementAndGet();
             return ToolResultBlock.text("Tool2 executed: " + executionCount2.get());

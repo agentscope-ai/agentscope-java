@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.core.model.transport.ProxyType;
 import io.agentscope.core.model.transport.WebSocketTransport;
+import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Set;
@@ -439,7 +440,7 @@ class JdkWebSocketTransportTest {
         void shouldGetSocketAddressFromProxyConfig() {
             ProxyConfig proxyConfig = ProxyConfig.http("proxy.example.com", 8080);
 
-            java.net.InetSocketAddress socketAddress = proxyConfig.getSocketAddress();
+            InetSocketAddress socketAddress = proxyConfig.getSocketAddress();
 
             assertEquals("proxy.example.com", socketAddress.getHostString());
             assertEquals(8080, socketAddress.getPort());

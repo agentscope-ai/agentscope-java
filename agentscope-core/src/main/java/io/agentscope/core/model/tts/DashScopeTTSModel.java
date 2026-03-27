@@ -23,6 +23,8 @@ import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import java.io.InputStream;
+import java.net.URL;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
@@ -362,8 +364,8 @@ public class DashScopeTTSModel implements TTSModel {
      * @throws Exception if download fails (network error, invalid URL, etc.)
      */
     private byte[] downloadAudio(String audioUrl) throws Exception {
-        java.net.URL url = new java.net.URL(audioUrl);
-        try (java.io.InputStream is = url.openStream()) {
+        URL url = new URL(audioUrl);
+        try (InputStream is = url.openStream()) {
             return is.readAllBytes();
         }
     }
