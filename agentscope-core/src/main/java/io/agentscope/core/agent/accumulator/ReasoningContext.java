@@ -271,4 +271,20 @@ public class ReasoningContext {
     public List<ToolUseBlock> getAllAccumulatedToolCalls() {
         return toolCallsAcc.getAllAccumulatedToolCalls();
     }
+
+    /**
+     * Get the accumulated ChatUsage.
+     *
+     * @return ChatUsage with accumulated tokens, or null if no usage data
+     */
+    public ChatUsage getChatUsage() {
+        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+            return ChatUsage.builder()
+                    .inputTokens(inputTokens)
+                    .outputTokens(outputTokens)
+                    .time(time)
+                    .build();
+        }
+        return null;
+    }
 }

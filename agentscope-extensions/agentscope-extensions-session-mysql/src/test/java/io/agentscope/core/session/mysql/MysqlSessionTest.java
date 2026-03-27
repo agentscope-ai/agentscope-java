@@ -376,6 +376,18 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should truncate session table")
+    void testTruncateAllSessions() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(0);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        int success = session.truncateAllSessions();
+
+        assertEquals(0, success);
+    }
+
+    @Test
     @DisplayName("Should not close DataSource when closing session")
     void testClose() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
