@@ -379,7 +379,7 @@ public class MediaUtils {
         String fileName = fileNamePath.toString();
         int dotIndex = fileName.lastIndexOf('.');
         // Ensure the dot exists and is not the last character
-        if (dotIndex > -1 && dotIndex < path.length() - 1) {
+        if (dotIndex != -1 && dotIndex < path.length() - 1) {
             return fileName.substring(dotIndex + 1);
         }
         return "";

@@ -331,16 +331,11 @@ class MediaUtilsTest {
     }
 
     @Test
-    @DisplayName("Should return empty string when path is null, empty or blank")
-    void testGetExtensionWithNullEmptyOrBlankPath() {
+    @DisplayName("Should return empty string when path is invalid")
+    void testGetExtensionWithInvalidPath() {
         assertEquals("", MediaUtils.getExtension(null));
         assertEquals("", MediaUtils.getExtension(""));
         assertEquals("", MediaUtils.getExtension("  "));
-    }
-
-    @Test
-    @DisplayName("Should return empty string when path is invalid")
-    void testGetExtensionWithInvalidPath() {
         assertEquals("", MediaUtils.getExtension("/"));
         assertEquals("", MediaUtils.getExtension("\\"));
         assertEquals("", MediaUtils.getExtension("/home/user"));
@@ -359,7 +354,7 @@ class MediaUtilsTest {
         assertEquals("wav", MediaUtils.getExtension("https://example.com/audio.wav"));
         assertEquals("mp3", MediaUtils.getExtension("https://example.com/audio.mp3"));
         assertEquals("mp4", MediaUtils.getExtension("https://example.com/video.mp4"));
-        assertEquals("xxx", MediaUtils.getExtension("https://example.com/video.xxx"));
+        assertEquals("xxx", MediaUtils.getExtension("https://example.com/xxx.xxx"));
     }
 
     @Test
@@ -370,36 +365,18 @@ class MediaUtilsTest {
     }
 
     @Test
-    @DisplayName("Should get extension with query string")
-    void testGetExtensionWithQueryString() {
+    @DisplayName("Should get extension with masks")
+    void testGetExtensionWithMasks() {
         assertEquals("png", MediaUtils.getExtension("https://example.com/img.png?id=1&type=png"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with fragment")
-    void testGetExtensionWithFragment() {
         assertEquals("png", MediaUtils.getExtension("https://example.com/img.png#section1.1"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with query string and fragment")
-    void testGetExtensionWithQueryStringAndFragment() {
         assertEquals(
                 "png",
                 MediaUtils.getExtension("https://example.com/img.png?id=1&type=png#section1.1"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with query string and dot params")
-    void testGetExtensionWithQueryStringAndDotValues() {
         assertEquals("png", MediaUtils.getExtension("https://example.com/img.png?v=2.0.0"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with mask name")
-    void testGetExtensionWithMaskName() {
         assertEquals(
                 "png", MediaUtils.getExtension("https://example.com/img-123&type=png&v=2.0.0.png"));
+
+        // verify the file name include special masks
         assertEquals("png", MediaUtils.getExtension("/home/user/img-123&type=png&v=2.0.0.png"));
         assertEquals(
                 "png",
@@ -407,32 +384,20 @@ class MediaUtilsTest {
     }
 
     @Test
-    @DisplayName("Should get extension with http protocol")
-    void testGetExtensionWithHttpProtocol() {
+    @DisplayName("Should get extension with all supported protocol")
+    void testGetExtensionWithSupportedProtocol() {
         assertEquals(
                 "png",
                 MediaUtils.getExtension("http://example.com/img.png?id=1&type=png#section1.1"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with oss protocol")
-    void testGetExtensionWithOssProtocol() {
+        assertEquals(
+                "png",
+                MediaUtils.getExtension("https://example.com/img.png?id=1&type=png#section1.1"));
         assertEquals(
                 "png",
                 MediaUtils.getExtension("oss://example.com/img.png?id=1&type=png#section1.1"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with file protocol")
-    void testGetExtensionWithFileProtocol() {
         assertEquals(
                 "png",
                 MediaUtils.getExtension("file://example.com/img.png?id=1&type=png#section1.1"));
-    }
-
-    @Test
-    @DisplayName("Should get extension with ftp protocol")
-    void testGetExtensionWithFtpProtocol() {
         assertEquals(
                 "png",
                 MediaUtils.getExtension("ftp://example.com/img.png?id=1&type=png#section1.1"));
