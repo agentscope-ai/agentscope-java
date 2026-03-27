@@ -378,6 +378,46 @@ class HookStopAgentTest {
             Msg result2 = agent.call(newMsg).block(TEST_TIMEOUT);
 
             assertNotNull(result2, "Agent should auto-recover and return a result");
+
+            // Verify the model was invoked a second time (the follow-up reasoning call)
+            verify(mockModel, times(2)).stream(anyList(), anyList(), any());
+
+            // Verify the follow-up response content is the expected text
+            assertTrue(
+                    result2.hasContentBlocks(TextBlock.class),
+                    "Recovery result should contain text content");
+            String resultText =
+                    result2.getContentBlocks(TextBlock.class).stream()
+                            .map(TextBlock::getText)
+                            .findFirst()
+                            .orElse("");
+            assertEquals(
+                    "Recovered after auto-generated error results",
+                    resultText,
+                    "Recovery result should match the model's follow-up response");
+
+            // Verify that an error ToolResultBlock was written into memory for the
+            // pending tool call id, proving the pending state was actually cleared
+            List<Msg> memoryMsgs = memory.getMessages();
+            boolean hasErrorToolResult =
+                    memoryMsgs.stream()
+                            .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                            .anyMatch(
+                                    tr ->
+                                            "tool1".equals(tr.getId())
+                                                    && tr.getOutput().stream()
+                                                            .anyMatch(
+                                                                    cb ->
+                                                                            cb instanceof TextBlock
+                                                                                    && ((TextBlock)
+                                                                                                    cb)
+                                                                                            .getText()
+                                                                                            .contains(
+                                                                                                    "[ERROR]")));
+            assertTrue(
+                    hasErrorToolResult,
+                    "Memory should contain an error ToolResultBlock for the pending tool call"
+                            + " id='tool1'");
         }
     }
 
