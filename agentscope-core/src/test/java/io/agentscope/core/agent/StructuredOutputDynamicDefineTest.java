@@ -35,9 +35,14 @@ import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
-/** Tests for dynamic define json schema in StructuredOutputCapableAgent (deferred forcing mode). */
+/**
+ * Tests for dynamically defined JSON schema in StructuredOutputCapableAgent (deferred forcing mode).
+ */
 public class StructuredOutputDynamicDefineTest {
 
     private Toolkit toolkit;
@@ -50,58 +55,7 @@ public class StructuredOutputDynamicDefineTest {
     @Test
     void testDynamicComplexNestedStructure() {
         Memory memory = new InMemoryMemory();
-        Map<String, Object> toolInput =
-                Map.of(
-                        "response",
-                        Map.of(
-                                "location",
-                                "San Francisco",
-                                "temperature",
-                                "72°F",
-                                "condition",
-                                "Sunny"));
-
-        MockModel mockModel =
-                new MockModel(
-                        msgs -> {
-                            // Check if we have any TOOL role messages (tool execution results)
-                            boolean hasToolResults =
-                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
-
-                            if (!hasToolResults) {
-                                // First call: return tool use for generate_response
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_1")
-                                                .content(
-                                                        List.of(
-                                                                ToolUseBlock.builder()
-                                                                        .id("call_123")
-                                                                        .name("generate_response")
-                                                                        .input(toolInput)
-                                                                        .content(
-                                                                                JsonUtils
-                                                                                        .getJsonCodec()
-                                                                                        .toJson(
-                                                                                                toolInput))
-                                                                        .build()))
-                                                .usage(new ChatUsage(10, 20, 30))
-                                                .build());
-                            } else {
-                                // Second call (after tool execution): return simple text
-                                // (no more tool calls, indicating we're done)
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("msg_2")
-                                                .content(
-                                                        List.of(
-                                                                TextBlock.builder()
-                                                                        .text("Response generated")
-                                                                        .build()))
-                                                .usage(new ChatUsage(5, 10, 15))
-                                                .build());
-                            }
-                        });
+        MockModel mockModel = getMockModel();
 
         // Create agent with TOOL_BASED strategy
         ReActAgent agent =
@@ -157,5 +111,134 @@ public class StructuredOutputDynamicDefineTest {
         assertEquals("San Francisco", result.get("location"));
         assertEquals("72°F", result.get("temperature"));
         assertEquals("Sunny", result.get("condition"));
+    }
+
+    @Test
+    @DisplayName("Stream execution events with JSON schema structured support")
+    void testDynamicComplexNestedStructureStreamingMode() {
+        Memory memory = new InMemoryMemory();
+        MockModel mockModel = getMockModel();
+
+        // Create agent with TOOL_BASED strategy
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
+
+        // Execute structured output call
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("What's the weather in San Francisco?")
+                                        .build())
+                        .build();
+        String json =
+                """
+                {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "temperature": {
+                      "type": "string"
+                    },
+                    "condition": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["location", "temperature", "condition"],
+                  "additionalProperties": false
+                }
+                """;
+        // Streaming agent and extract structured data from response message
+        Flux<Event> eventFlux =
+                agent.stream(
+                        inputMsg,
+                        StreamOptions.defaults(),
+                        JsonUtils.getJsonCodec().fromJson(json, JsonNode.class));
+
+        StepVerifier.create(eventFlux)
+                .thenConsumeWhile(
+                        event -> !(event.isLast() && event.getType() == EventType.AGENT_RESULT))
+                .assertNext(
+                        event -> {
+                            Msg responseMsg = event.getMessage();
+                            assertNotNull(responseMsg);
+                            assertNotNull(responseMsg.getMetadata());
+
+                            // Extract structured data from metadata
+                            Map<String, Object> result = responseMsg.getStructuredData(false);
+
+                            // Verify
+                            assertNotNull(result);
+                            assertEquals("San Francisco", result.get("location"));
+                            assertEquals("72°F", result.get("temperature"));
+                            assertEquals("Sunny", result.get("condition"));
+                        })
+                .verifyComplete();
+    }
+
+    private static MockModel getMockModel() {
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location",
+                                "San Francisco",
+                                "temperature",
+                                "72°F",
+                                "condition",
+                                "Sunny"));
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            // Check if we have any TOOL role messages (tool execution results)
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+
+                            if (!hasToolResults) {
+                                // First call: return tool use for generate_response
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_123")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .content(
+                                                                                JsonUtils
+                                                                                        .getJsonCodec()
+                                                                                        .toJson(
+                                                                                                toolInput))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                // Second call (after tool execution): return simple text
+                                // (no more tool calls, indicating we're done)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_2")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Response generated")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                        });
+        return mockModel;
     }
 }

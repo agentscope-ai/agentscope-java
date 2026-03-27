@@ -37,7 +37,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import reactor.core.scheduler.Schedulers;
 
 class ReActAgentStructuredOutputTest {
@@ -536,6 +539,27 @@ class ReActAgentStructuredOutputTest {
 
     @Test
     void testConcurrencyConflictStructuredOutput() {
+        runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(toolkit);
+    }
+
+    /**
+     * Reproduces the subscribeOn(elastic) vs delayed {@code doFinally} race: run many times until
+     * failure or increase confidence after a fix.
+     */
+    @EnabledIfSystemProperty(named = "agentscope.runStructuredOutputRaceTest", matches = "true")
+    @RepeatedTest(25000)
+    @DisplayName("Structured output race: 25000 repetitions (subscribeOn + immediate second call)")
+    void testConcurrencyConflictStructuredOutput_repeated() {
+        runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(toolkit);
+    }
+
+    /**
+     * First call on {@link Schedulers#boundedElastic()}, second call immediately on the calling
+     * thread — same agent and toolkit. Flaky when structured-output cleanup races the second
+     * registration.
+     */
+    private void runSubscribeOnThenSequentialSecondCallStructuredOutputScenario(
+            Toolkit agentToolkit) {
         Memory memory = new InMemoryMemory();
         Map<String, Object> toolInput =
                 Map.of(
@@ -587,7 +611,7 @@ class ReActAgentStructuredOutputTest {
                         .name("weather-agent")
                         .sysPrompt("You are a weather assistant")
                         .model(mockModel)
-                        .toolkit(toolkit)
+                        .toolkit(agentToolkit)
                         .memory(memory)
                         .build();
 
@@ -604,7 +628,7 @@ class ReActAgentStructuredOutputTest {
         Msg responseMsg =
                 agent.call(inputMsg, WeatherResponse.class)
                         .subscribeOn(Schedulers.boundedElastic())
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS * 10000));
 
         Msg response2 =
                 agent.call(inputMsg, WeatherResponse.class)

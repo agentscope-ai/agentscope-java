@@ -43,6 +43,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     prompt:
  *       enabled: true
  *       sys-prompt-key: agent-main
+ *       version: "1.0.0"
+ *       label: "prod"
  *       variables:
  *         env: prod
  *         app: order-service
@@ -58,9 +60,20 @@ public class AgentScopeNacosPromptProperties extends BaseNacosProperties {
 
     /**
      * The promptKey used to locate the system prompt in Nacos.
-     * <p>The actual Nacos dataId will typically be {@code promptKey + ".json"}.
      */
     private String sysPromptKey;
+
+    /**
+     * Target prompt version (e.g. "1.0.0"). Mutually exclusive with {@link #label}.
+     * When both are null, the latest version is used.
+     */
+    private String version;
+
+    /**
+     * Target prompt label (e.g. "prod", "staging"). Mutually exclusive with {@link #version}.
+     * When both are null, the latest version is used.
+     */
+    private String label;
 
     /**
      * Template variables used to render the Nacos prompt with {{}} placeholders.
@@ -81,6 +94,22 @@ public class AgentScopeNacosPromptProperties extends BaseNacosProperties {
 
     public void setSysPromptKey(String sysPromptKey) {
         this.sysPromptKey = sysPromptKey;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setLabel(String label) {
+        this.label = label;
     }
 
     public Map<String, String> getVariables() {

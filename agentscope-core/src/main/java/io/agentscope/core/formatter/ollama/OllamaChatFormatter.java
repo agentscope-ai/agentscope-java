@@ -28,6 +28,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -213,10 +214,8 @@ public class OllamaChatFormatter
                 ImageBlock imageBlock = (ImageBlock) multimodalBlock;
                 // Add text block with image information
                 String imageUrl = imageBlock.getSource().toString();
-                if (imageBlock.getSource() instanceof io.agentscope.core.message.URLSource) {
-                    imageUrl =
-                            ((io.agentscope.core.message.URLSource) imageBlock.getSource())
-                                    .getUrl();
+                if (imageBlock.getSource() instanceof URLSource) {
+                    imageUrl = ((URLSource) imageBlock.getSource()).getUrl();
                 }
                 promotedBlocks.add(
                         new TextBlock.Builder()
