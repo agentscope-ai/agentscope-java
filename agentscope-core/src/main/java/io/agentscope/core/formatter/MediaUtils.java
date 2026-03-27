@@ -354,22 +354,19 @@ public class MediaUtils {
             return "";
         }
 
-        boolean localFile = isLocalFile(path);
-
         Path fileNamePath;
-        if (localFile) {
-            // treat as file
-            fileNamePath = Paths.get(path).normalize().getFileName();
-        } else {
-            // treat as url
-            URI uri;
-            try {
-                uri = URI.create(path).normalize();
-            } catch (IllegalArgumentException e) {
-                log.error("Invalid URL: {}", path);
-                return "";
+        try {
+            if (isLocalFile(path)) {
+                // treat as file
+                fileNamePath = Paths.get(path).normalize().getFileName();
+            } else {
+                // treat as url
+                URI uri = URI.create(path).normalize();
+                fileNamePath = Paths.get(uri.getPath()).getFileName();
             }
-            fileNamePath = Paths.get(uri.getPath()).getFileName();
+        } catch (Exception e) {
+            log.warn("Invalid path: {}", path, e);
+            return "";
         }
 
         if (fileNamePath == null) {
