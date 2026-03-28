@@ -21,6 +21,9 @@
   <img src="https://img.shields.io/badge/JDK-17%2B-orange" alt="JDK 17+" />
   <img src="https://img.shields.io/maven-central/v/io.agentscope/agentscope?color=green" alt="Maven Central" />
   <a href="https://deepwiki.com/agentscope-ai/agentscope-java"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a href="https://gitcgr.com/agentscope-ai/agentscope-java" target="_blank" rel="noopener noreferrer">
+    <img src="https://gitcgr.com/badge/agentscope-ai/agentscope-java.svg" alt="gitcgr" />
+  </a>
 </p>
 
 ---
