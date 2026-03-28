@@ -1015,7 +1015,7 @@ class SkillBoxTest {
             String prompt = skillBox.getSkillPrompt();
 
             assertTrue(prompt.contains("absolute paths"));
-            assertTrue(prompt.contains("existing scripts"));
+            assertTrue(prompt.contains("existing script"));
         }
 
         @Test

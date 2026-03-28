@@ -166,7 +166,7 @@ public class AgentSkillPromptProvider {
         sb.append("</available_skills>");
 
         // Conditionally append code execution instructions
-        if (codeExecutionEable && uploadDir != null) {
+        if (codeExecutionEnabled && uploadDir != null) {
             String template =
                     codeExecutionInstruction != null
                             ? codeExecutionInstruction
@@ -180,10 +180,10 @@ public class AgentSkillPromptProvider {
     /**
      * Sets whether code execution instructions are included in the skill system prompt.
      *
-     * @param codeExecutionEable {@code true} to append code execution instructions
+     * @param codeExecutionEnabled {@code true} to append code execution instructions
      */
-    public void setCodeExecutionEnable(boolean codeExecutionEable) {
-        this.codeExecutionEable = codeExecutionEable;
+    public void setCodeExecutionEnable(boolean codeExecutionEnabled) {
+        this.codeExecutionEnabled = codeExecutionEnabled;
     }
 
     /**
