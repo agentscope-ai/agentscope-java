@@ -199,7 +199,7 @@ class AgentSkillPromptProviderTest {
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("absolute paths"));
-        assertTrue(prompt.contains("existing Python script"));
+        assertTrue(prompt.contains("existing script"));
     }
 
     @Test

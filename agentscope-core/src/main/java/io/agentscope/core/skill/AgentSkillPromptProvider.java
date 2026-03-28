@@ -95,7 +95,7 @@ public class AgentSkillPromptProvider {
               # Explore what scripts are available for a skill
               execute_shell_command(command="ls %s/data-analysis_builtin/scripts/")
 
-              # Run an existing Python script with absolute path
+              # Run an existing script with absolute path
               execute_shell_command(command="python3 %s/data-analysis_builtin/scripts/analyze.py")
             </code_execution>
             """;
