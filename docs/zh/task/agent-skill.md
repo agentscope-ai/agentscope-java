@@ -342,7 +342,7 @@ SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill
 
 开启代码执行后,还可通过 `.codeExecutionInstruction()` 自定义追加在 `</available_skills>` 之后的代码执行说明段落:
 
-- **`codeExecutionInstruction`**: 代码执行说明模板,`%s` 占位符会被替换为 `uploadDir` 的绝对路径(最多替换 5 次)。传 `null` 或空字符串时使用内置默认值
+- **`codeExecutionInstruction`**: 代码执行说明模板,所有 `%s` 占位符都会被替换为 `uploadDir` 的绝对路径。传 `null` 或空字符串时使用内置默认值
 
 三者传 `null` 或空字符串时均使用内置默认值。
 

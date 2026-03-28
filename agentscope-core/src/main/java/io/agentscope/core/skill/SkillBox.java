@@ -987,8 +987,8 @@ public class SkillBox implements StateModule {
          * Set a custom code execution instruction for the system prompt.
          *
          * <p>The instruction is appended to the skill system prompt when code execution is enabled.
-         * Use {@code %s} as a placeholder for the upload directory absolute path — it will be
-         * substituted up to 5 times (for the description line and example paths).
+         * Use {@code %s} as a placeholder for the upload directory absolute path — every
+         * occurrence will be replaced with the actual path.
          *
          * <p>Pass {@code null} or blank to use the default instruction.
          *
@@ -1114,7 +1114,8 @@ public class SkillBox implements StateModule {
                     enableRead,
                     enableWrite);
 
-            skillBox.skillPromptProvider.setCodeExecutionEnable(true);
+            boolean injectCodeExecutionPrompt = shellEnabled || codeExecutionInstruction != null;
+            skillBox.skillPromptProvider.setCodeExecutionEnable(injectCodeExecutionPrompt);
             skillBox.skillPromptProvider.setCodeExecutionInstruction(codeExecutionInstruction);
         }
 

@@ -33,7 +33,7 @@ public class AgentSkillPromptProvider {
     private final SkillRegistry skillRegistry;
     private final String instruction;
     private final String template;
-    private boolean codeExecutionEable;
+    private boolean codeExecutionEnabled;
     private String uploadDir;
     private String codeExecutionInstruction;
 
@@ -64,8 +64,7 @@ public class AgentSkillPromptProvider {
 
             """;
 
-    // First %s = uploadDir absolute path (description), Second %s = uploadDir absolute path
-    // (example paths)
+    // Every %s placeholder in the template will be replaced with the uploadDir absolute path
     public static final String DEFAULT_CODE_EXECUTION_INSTRUCTION =
             """
 
@@ -172,21 +171,40 @@ public class AgentSkillPromptProvider {
                     codeExecutionInstruction != null
                             ? codeExecutionInstruction
                             : DEFAULT_CODE_EXECUTION_INSTRUCTION;
-            sb.append(
-                    String.format(template, uploadDir, uploadDir, uploadDir, uploadDir, uploadDir));
+            sb.append(template.replace("%s", uploadDir));
         }
 
         return sb.toString();
     }
 
+    /**
+     * Sets whether code execution instructions are included in the skill system prompt.
+     *
+     * @param codeExecutionEable {@code true} to append code execution instructions
+     */
     public void setCodeExecutionEnable(boolean codeExecutionEable) {
         this.codeExecutionEable = codeExecutionEable;
     }
 
+    /**
+     * Sets the upload directory whose absolute path replaces every {@code %s}
+     * placeholder in the code execution instruction template.
+     *
+     * @param uploadDir the upload directory path, or {@code null} to disable path substitution
+     */
     public void setUploadDir(Path uploadDir) {
         this.uploadDir = uploadDir != null ? uploadDir.toAbsolutePath().toString() : null;
     }
 
+    /**
+     * Sets a custom code execution instruction template.
+     *
+     * <p>Every {@code %s} placeholder in the template will be replaced with
+     * the {@code uploadDir} absolute path. Pass {@code null} or blank to
+     * fall back to {@link #DEFAULT_CODE_EXECUTION_INSTRUCTION}.
+     *
+     * @param codeExecutionInstruction the custom template, or {@code null}/blank for default
+     */
     public void setCodeExecutionInstruction(String codeExecutionInstruction) {
         this.codeExecutionInstruction =
                 codeExecutionInstruction == null || codeExecutionInstruction.isBlank()

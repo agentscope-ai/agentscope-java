@@ -348,7 +348,7 @@ When SkillBox injects a system prompt into the Agent, it generates a description
 
 When code execution is enabled, the section appended after `</available_skills>` can also be customized via `.codeExecutionInstruction()`:
 
-- **`codeExecutionInstruction`**: Template for the code execution section; `%s` placeholders are replaced with the `uploadDir` absolute path (up to 5 substitutions). Passing `null` or blank uses the built-in default.
+- **`codeExecutionInstruction`**: Template for the code execution section; every `%s` placeholder will be replaced with the `uploadDir` absolute path. Passing `null` or blank uses the built-in default.
 
 Passing `null` or a blank string for any of these uses the built-in default.
 

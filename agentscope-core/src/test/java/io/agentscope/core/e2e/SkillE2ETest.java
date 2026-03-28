@@ -387,8 +387,6 @@ class SkillE2ETest {
                                 capturedCommand.set(command);
                                 if (command.contains(expectedScriptAbsPath)) {
                                     calledCorrectScript.set(true);
-                                    throw new RuntimeException(
-                                            "Script reference detected — test passed");
                                 }
                                 return false;
                             });
@@ -398,18 +396,27 @@ class SkillE2ETest {
                     .withShell(interceptingShell)
                     .enable();
 
+            Hook earlyExitHook =
+                    new Hook() {
+                        @Override
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            if (event instanceof PostActingEvent postActing
+                                    && calledCorrectScript.get()) {
+                                postActing.stopAgent();
+                            }
+                            return Mono.just(event);
+                        }
+                    };
+
             ReActAgent agent =
                     provider.createAgentBuilder("CodeExecAgent-" + skillName, toolkit)
                             .memory(new InMemoryMemory())
                             .maxIters(6)
                             .skillBox(skillBox)
+                            .hook(earlyExitHook)
                             .build();
 
-            try {
-                agent.call(TestUtils.createUserMessage("User", prompt)).block(TIMEOUT);
-            } catch (Exception e) {
-                // RuntimeException thrown by callback on successful detection is expected
-            }
+            agent.call(TestUtils.createUserMessage("User", prompt)).block(TIMEOUT);
 
             // Print tool call trace for diagnosis
             agent.getMemory().getMessages().stream()
