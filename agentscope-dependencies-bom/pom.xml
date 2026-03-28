@@ -104,7 +104,7 @@
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.6</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
-        <nacos-client.version>3.2.0-BETA</nacos-client.version>
+        <nacos-client.version>3.2.0</nacos-client.version>
         <json-schema-validator.version>3.0.1</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>
