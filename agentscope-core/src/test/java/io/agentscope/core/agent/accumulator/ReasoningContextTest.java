@@ -65,6 +65,13 @@ class ReasoningContextTest {
         assertEquals(50, resultUsage.getOutputTokens());
         assertEquals(150, resultUsage.getTotalTokens());
         assertEquals(1.5, resultUsage.getTime(), 0.001);
+
+        resultUsage = context.getChatUsage();
+        assertNotNull(resultUsage);
+        assertEquals(100, resultUsage.getInputTokens());
+        assertEquals(50, resultUsage.getOutputTokens());
+        assertEquals(150, resultUsage.getTotalTokens());
+        assertEquals(1.5, resultUsage.getTime(), 0.001);
     }
 
     @Test

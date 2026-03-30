@@ -108,7 +108,7 @@ parts:
   - file: zh/task/agent-as-tool
     title: Agent as Tool
   - file: zh/task/agent-skill
-    title: 智能体技能
+    title: Agent Skill
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook

@@ -17,11 +17,14 @@
 package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class AgentSkillPromptProviderTest {
 
@@ -117,5 +120,136 @@ class AgentSkillPromptProviderTest {
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("Description with \"quotes\" and 'apostrophes'"));
+    }
+
+    @Test
+    @DisplayName("Should not include code execution section when not enabled")
+    void testNoCodeExecutionSectionByDefault() {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertFalse(prompt.contains("## Code Execution"));
+        assertFalse(prompt.contains("<code_execution>"));
+    }
+
+    @Test
+    @DisplayName("Should not include code execution section when enabled but uploadDir not set")
+    void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        // uploadDir not set
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertFalse(prompt.contains("## Code Execution"));
+        assertFalse(prompt.contains("<code_execution>"));
+    }
+
+    @Test
+    @DisplayName("Should include code execution section with uploadDir when enabled")
+    void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("## Code Execution"));
+        assertTrue(prompt.contains("<code_execution>"));
+        assertTrue(prompt.contains("</code_execution>"));
+        assertTrue(prompt.contains(tempDir.toAbsolutePath().toString()));
+    }
+
+    @Test
+    @DisplayName("Should include skill-id based path pattern in code execution section")
+    void testCodeExecutionSectionContainsSkillIdPattern(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+        String uploadDirStr = tempDir.toAbsolutePath().toString();
+
+        assertTrue(prompt.contains(uploadDirStr + "/<skill-id>/scripts/"));
+        assertTrue(prompt.contains(uploadDirStr + "/<skill-id>/assets/"));
+    }
+
+    @Test
+    @DisplayName("Should include absolute path instruction in code execution section")
+    void testCodeExecutionSectionMentionsAbsolutePaths(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("absolute paths"));
+        assertTrue(prompt.contains("existing script"));
+    }
+
+    @Test
+    @DisplayName("Code execution section should appear after </available_skills>")
+    void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        int availableSkillsEnd = prompt.indexOf("</available_skills>");
+        int codeExecutionStart = prompt.indexOf("## Code Execution");
+        assertTrue(availableSkillsEnd < codeExecutionStart);
+    }
+
+    @Test
+    @DisplayName("Should use custom code execution instruction when set")
+    void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+        provider.setCodeExecutionInstruction("## Custom Section\nSkills dir: %s");
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("## Custom Section"));
+        assertTrue(prompt.contains("Skills dir: " + tempDir.toAbsolutePath()));
+        assertFalse(prompt.contains("## Code Execution"));
+    }
+
+    @Test
+    @DisplayName("Should fall back to default instruction when null is set")
+    void testNullCodeExecutionInstructionUsesDefault(@TempDir Path tempDir) {
+        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
+        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+
+        provider.setCodeExecutionEnable(true);
+        provider.setUploadDir(tempDir);
+        provider.setCodeExecutionInstruction(null);
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("## Code Execution"));
     }
 }
