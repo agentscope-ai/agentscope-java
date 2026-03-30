@@ -93,6 +93,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
     private static final String FIELD_DOC_ID = "doc_id";
     private static final String FIELD_CHUNK_ID = "chunk_id";
     private static final String FIELD_CONTENT = "content";
+    private static final String FIELD_PAYLOAD = "payload";
 
     private final String indexName;
     private final int dimensions;
@@ -404,6 +405,10 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         DocumentMetadata meta = doc.getMetadata();
         map.put(FIELD_DOC_ID, meta.getDocId());
         map.put(FIELD_CHUNK_ID, meta.getChunkId());
+        Map<String, Object> customPayload = meta.getPayload();
+        if (customPayload != null && !customPayload.isEmpty()) {
+            map.put(FIELD_PAYLOAD, meta.getPayload());
+        }
 
         // Serialize ContentBlock to JSON string to ensure safe storage/retrieval
         try {
