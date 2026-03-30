@@ -41,24 +41,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Nacos-based implementation of {@link AgentSkillRepository}.
+ * {@link AgentSkillRepository} backed by Nacos AI skill packages.
  *
- * <p>Fetches the skill package from Nacos using {@link AiService#downloadSkillZip(String)}, or
- * {@link AiService#downloadSkillZipByVersion(String, String)} / {@link
- * AiService#downloadSkillZipByLabel(String, String)} when a version or label is configured, then
- * parses the ZIP (including {@code SKILL.md}) into {@link AgentSkill}.
+ * <p><strong>Loading:</strong> Downloads the skill ZIP through {@link AiService}, then builds
+ * {@link AgentSkill} from it (including {@code SKILL.md}). Indented YAML frontmatter in Nacos
+ * exports is normalized so AgentScope's flat {@code key: value} parser can read it. API choice:
+ * {@link AiService#downloadSkillZipByVersion(String, String)} if a version is set; else {@link
+ * AiService#downloadSkillZipByLabel(String, String)} if only a label is set; else {@link
+ * AiService#downloadSkillZip(String)}. When both version and label resolve, version wins and the
+ * label is not used for download.
  *
- * <p><strong>Read/write:</strong> {@link #getSkill(String)}, {@link #skillExists(String)}, {@link
- * #getRepositoryInfo()}, {@link #getSource()}, and {@link #isWriteable()} are supported. Listing
- * and mutation ({@link #getAllSkillNames()}, {@link #getAllSkills()}, {@link #save(List, boolean)},
- * {@link #delete(String)}) are no-ops that log a warning.
+ * <p><strong>Capabilities:</strong> Read operations work: {@link #getSkill(String)}, {@link
+ * #skillExists(String)}, {@link #getRepositoryInfo()}, {@link #getSource()}, {@link
+ * #isWriteable()} (always {@code false}). Listing and writes are unsupported: {@link
+ * #getAllSkillNames()} and {@link #getAllSkills()} return empty results; {@link #save(List,
+ * boolean)} and {@link #delete(String)} do nothing; {@link #setWriteable(boolean)} is ignored. These
+ * paths log a warning.
  *
- * <p><strong>Version and label:</strong> For each of version and label, the first non-blank among
- * the following wins (independent of the other field): (1) {@link Properties} passed to {@link
- * #NacosSkillRepository(AiService, String, Properties)}, (2) JVM system property with the same key
- * as {@link #SKILL_VERSION_PATH} or {@link #SKILL_LABEL_PATH}, (3) for that field, the environment
- * variable {@link #ENV_SKILL_VERSION_PATH} or {@link #ENV_SKILL_LABEL_PATH} respectively. If both
- * version and label are resolved, {@code downloadSkillZipByVersion} is used.
+ * <p><strong>Version and label resolution:</strong> Independently for version and for label, the
+ * first non-blank value wins, in order: (1) {@link Properties} from {@link
+ * #NacosSkillRepository(AiService, String, Properties)}, (2) JVM system property {@link
+ * #SKILL_VERSION_PATH} or {@link #SKILL_LABEL_PATH}, (3) environment variable {@link
+ * #ENV_SKILL_VERSION_PATH} or {@link #ENV_SKILL_LABEL_PATH}.
  */
 public class NacosSkillRepository implements AgentSkillRepository {
 
