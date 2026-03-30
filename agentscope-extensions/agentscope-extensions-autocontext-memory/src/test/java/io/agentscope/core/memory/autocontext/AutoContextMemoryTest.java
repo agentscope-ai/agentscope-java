@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -38,6 +39,7 @@ import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -716,6 +718,52 @@ class AutoContextMemoryTest {
     }
 
     @Test
+    @DisplayName("Should skip timed out current round compression without hanging")
+    void testCurrentRoundCompressionTimeoutDoesNotHang() {
+        NeverCompletingModel neverCompletingModel = new NeverCompletingModel();
+        AutoContextConfig timeoutConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .compressionTimeoutMillis(50)
+                        .build();
+        AutoContextMemory timeoutMemory =
+                new AutoContextMemory(timeoutConfig, neverCompletingModel);
+
+        for (int i = 0; i < 8; i++) {
+            timeoutMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        timeoutMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
+        for (int i = 0; i < 2; i++) {
+            timeoutMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            timeoutMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        boolean compressed =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        timeoutMemory::compressIfNeeded,
+                        "Timed out compression should not block the caller indefinitely");
+
+        assertFalse(compressed, "Compression should be skipped after timeout");
+        assertEquals(1, neverCompletingModel.getCallCount(), "Should attempt compression once");
+        assertEquals(
+                13,
+                timeoutMemory.getMessages().size(),
+                "Working memory should remain unchanged after timeout");
+        assertTrue(
+                timeoutMemory.getOffloadContext().isEmpty(),
+                "Timed out compression should clean up temporary offloaded messages");
+    }
+
+    @Test
     @DisplayName(
             "Should skip tool message compression when token count is below"
                     + " minCompressionTokenThreshold")
@@ -1036,6 +1084,26 @@ class AutoContextMemoryTest {
 
         void reset() {
             callCount = 0;
+        }
+    }
+
+    private static class NeverCompletingModel implements Model {
+        private int callCount = 0;
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            callCount++;
+            return Flux.never();
+        }
+
+        @Override
+        public String getModelName() {
+            return "never-completing-model";
+        }
+
+        int getCallCount() {
+            return callCount;
         }
     }
 

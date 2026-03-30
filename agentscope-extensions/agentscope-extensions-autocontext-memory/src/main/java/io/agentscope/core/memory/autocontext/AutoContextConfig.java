@@ -65,6 +65,13 @@ public class AutoContextConfig {
     int minCompressionTokenThreshold = 5000;
 
     /**
+     * Timeout in milliseconds for a single LLM-based compression attempt.
+     * If the timeout is reached, AutoContext skips that compression candidate
+     * so the agent can continue reasoning.
+     */
+    long compressionTimeoutMillis = 30_000;
+
+    /**
      * Optional custom prompt configuration.
      * If null, default prompts from {@link Prompts} will be used.
      */
@@ -104,6 +111,10 @@ public class AutoContextConfig {
 
     public int getMinCompressionTokenThreshold() {
         return minCompressionTokenThreshold;
+    }
+
+    public long getCompressionTimeoutMillis() {
+        return compressionTimeoutMillis;
     }
 
     /**
@@ -149,6 +160,7 @@ public class AutoContextConfig {
         private int minConsecutiveToolMessages = 6;
         private double currentRoundCompressionRatio = 0.3;
         private int minCompressionTokenThreshold = 5000;
+        private long compressionTimeoutMillis = 30_000;
         private PromptConfig customPrompt;
 
         /**
@@ -255,6 +267,18 @@ public class AutoContextConfig {
         }
 
         /**
+         * Sets the timeout in milliseconds for a single LLM-based compression attempt.
+         * If the timeout is reached, AutoContext skips that compression candidate.
+         *
+         * @param compressionTimeoutMillis the timeout in milliseconds
+         * @return this builder instance for method chaining
+         */
+        public Builder compressionTimeoutMillis(long compressionTimeoutMillis) {
+            this.compressionTimeoutMillis = compressionTimeoutMillis;
+            return this;
+        }
+
+        /**
          * Sets custom prompt configuration.
          *
          * <p>If provided, custom prompts will be used instead of default prompts from {@link Prompts}.
@@ -284,6 +308,7 @@ public class AutoContextConfig {
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
             config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
             config.minCompressionTokenThreshold = this.minCompressionTokenThreshold;
+            config.compressionTimeoutMillis = this.compressionTimeoutMillis;
             config.customPrompt = this.customPrompt;
             return config;
         }
