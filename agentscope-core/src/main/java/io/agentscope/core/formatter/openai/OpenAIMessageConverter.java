@@ -24,6 +24,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
@@ -75,16 +76,23 @@ public class OpenAIMessageConverter {
      */
     public OpenAIMessage convertToMessage(Msg msg, boolean hasMediaContent) {
         // Check if SYSTEM message contains tool result - treat as TOOL role
+        OpenAIMessage result;
         if (msg.getRole() == MsgRole.SYSTEM && msg.hasContentBlocks(ToolResultBlock.class)) {
-            return convertToolMessage(msg);
+            result = convertToolMessage(msg);
+        } else {
+            result =
+                    switch (msg.getRole()) {
+                        case SYSTEM -> convertSystemMessage(msg);
+                        case USER -> convertUserMessage(msg, hasMediaContent);
+                        case ASSISTANT -> convertAssistantMessage(msg);
+                        case TOOL -> convertToolMessage(msg);
+                    };
         }
 
-        return switch (msg.getRole()) {
-            case SYSTEM -> convertSystemMessage(msg);
-            case USER -> convertUserMessage(msg, hasMediaContent);
-            case ASSISTANT -> convertAssistantMessage(msg);
-            case TOOL -> convertToolMessage(msg);
-        };
+        // Apply cache_control from message metadata if manually marked
+        applyCacheControlFromMetadata(msg, result);
+
+        return result;
     }
 
     /**
@@ -467,5 +475,21 @@ public class OpenAIMessageConverter {
      */
     private String detectAudioFormat(String mediaType) {
         return OpenAIConverterUtils.detectAudioFormat(mediaType);
+    }
+
+    /**
+     * Apply cache_control from Msg metadata to the converted OpenAIMessage.
+     *
+     * @param msg the source message with metadata
+     * @param result the converted OpenAI message
+     */
+    private void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
+        if (msg.getMetadata() == null) {
+            return;
+        }
+        Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
+        if (Boolean.TRUE.equals(cacheFlag)) {
+            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+        }
     }
 }

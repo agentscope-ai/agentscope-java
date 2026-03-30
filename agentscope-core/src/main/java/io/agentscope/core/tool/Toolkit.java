@@ -431,17 +431,30 @@ public class Toolkit {
     /**
      * Set the chunk callback for streaming tool responses.
      *
-     * <p>This is an internal method used by ReActAgent to receive streaming updates from tool
-     * executions. When tools emit progress updates via ToolEmitter, this callback will be invoked
-     * with the tool use block and the incremental result chunk.
-     *
-     * <p><b>Note:</b> This method is primarily intended for internal framework use. Most users
-     * should not need to call this directly as it is automatically configured by the agent.
+     * <p>This callback is preserved when the toolkit is deep-copied and will be invoked whenever
+     * tools emit progress updates via ToolEmitter. When the toolkit is used by ReActAgent, the
+     * user callback is invoked in addition to the framework's internal chunk callback.
      *
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         executor.setChunkCallback(callback);
+    }
+
+    /**
+     * Set the framework-internal chunk callback for streaming tool responses.
+     *
+     * <p>This method is used by ReActAgent to forward tool chunks into ActingChunkEvent hooks
+     * without overwriting any user callback configured via {@link #setChunkCallback(BiConsumer)}.
+     *
+     * <p><b>Internal API - Not recommended for external use.</b> This method is intended for
+     * framework components such as {@link io.agentscope.core.ReActAgent}. External callers should
+     * use {@link #setChunkCallback(BiConsumer)} instead.
+     *
+     * @param callback Internal callback to invoke when tools emit chunks via ToolEmitter
+     */
+    public void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        executor.setInternalChunkCallback(callback);
     }
 
     /**
@@ -589,6 +602,21 @@ public class Toolkit {
     }
 
     /**
+     * Atomically remove a tool only if the registered instance is the expected one.
+     *
+     * @param toolName Name of the tool to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    public boolean removeToolIfSame(String toolName, AgentTool expected) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return false;
+        }
+        return toolRegistry.removeToolIfSame(toolName, expected);
+    }
+
+    /**
      * Remove tool groups and all tools within them.
      *
      * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning
@@ -684,6 +712,9 @@ public class Toolkit {
     /**
      * Create a deep copy of this toolkit.
      *
+     * <p>Note: User-defined chunk callbacks are preserved during copy so they continue to work
+     * when the toolkit is passed into ReActAgent.Builder and copied internally.
+     *
      * @return A new Toolkit instance with copied state
      */
     public Toolkit copy() {
@@ -694,6 +725,9 @@ public class Toolkit {
 
         // Copy all tool groups and their states
         this.groupManager.copyTo(copy.groupManager);
+
+        // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
+        copy.executor.setChunkCallback(this.executor.getChunkCallback());
 
         return copy;
     }

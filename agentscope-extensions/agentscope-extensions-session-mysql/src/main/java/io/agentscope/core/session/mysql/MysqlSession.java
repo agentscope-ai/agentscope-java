@@ -206,7 +206,7 @@ public class MysqlSession implements Session {
                         + getFullTableName()
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
                         + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
-                        + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
+                        + " created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME"
                         + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY"
                         + " (session_id, state_key, item_index)) DEFAULT CHARACTER SET utf8mb4"
                         + " COLLATE utf8mb4_unicode_ci";
@@ -699,7 +699,9 @@ public class MysqlSession implements Session {
      * Clear all sessions from the database (for testing or cleanup).
      *
      * @return Number of rows deleted
+     * @deprecated Use {@link #truncateAllSessions()} instead
      */
+    @Deprecated
     public int clearAllSessions() {
         String clearSql = "DELETE FROM " + getFullTableName();
 
@@ -710,6 +712,31 @@ public class MysqlSession implements Session {
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to clear sessions", e);
+        }
+    }
+
+    /**
+     * Truncate session table from the database (for testing or cleanup).
+     * <p>
+     * This method clears all session records by executing a TRUNCATE TABLE statement on the
+     * sessions table. TRUNCATE is faster than DELETE as it resets the table without logging
+     * individual row deletions and reclaims storage space immediately.
+     *
+     * <p>
+     * <strong>Note:</strong> The TRUNCATE operation requires DROP privileges in MySQL.
+     *
+     * @return typically 0 if successful
+     */
+    public int truncateAllSessions() {
+        String clearSql = "TRUNCATE TABLE " + getFullTableName();
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(clearSql)) {
+
+            return stmt.executeUpdate();
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to truncate sessions", e);
         }
     }
 

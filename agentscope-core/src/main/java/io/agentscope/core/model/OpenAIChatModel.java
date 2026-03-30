@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.openai.OpenAIBaseFormatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
@@ -140,6 +141,12 @@ public class OpenAIChatModel extends ChatModelBase {
         // Apply tool choice if specified (formatter handles provider-specific tool choice)
         if (effectiveOptions.getToolChoice() != null) {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
+        }
+
+        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
+        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
+                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
+            openAIFormatter.applyCacheControl(request.getMessages());
         }
 
         // Make the API call
