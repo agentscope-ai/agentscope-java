@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -427,22 +428,114 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             metadata.put("time", compressedMsg.getChatUsage().getTime());
         }
 
-        // Record compression event (before replacing messages to preserve indices)
+        // Step 5: Preserve ReAct Structure and Replace
+        List<Msg> replacementMsgs = new ArrayList<>();
+        int lastToolResultIdx = -1;
+        ToolResultBlock lastOrigBlock = null;
+
+        for (Msg msg : messagesToCompress) {
+            if (MsgUtils.isToolUseMessage(msg)) {
+                replacementMsgs.add(msg);
+            } else if (MsgUtils.isToolResultMessage(msg)) {
+                ToolResultBlock origBlock = null;
+
+                for (ContentBlock block : msg.getContent()) {
+                    if (block instanceof ToolResultBlock) {
+                        origBlock = (ToolResultBlock) block;
+                        break;
+                    }
+                }
+
+                if (origBlock != null) {
+                    Msg placeholder =
+                            Msg.builder()
+                                    .role(msg.getRole())
+                                    .name(msg.getName())
+                                    .metadata(msg.getMetadata())
+                                    .content(
+                                            List.of(
+                                                    ToolResultBlock.builder()
+                                                            .name(origBlock.getName())
+                                                            .id(origBlock.getId())
+                                                            .metadata(origBlock.getMetadata())
+                                                            .output(
+                                                                    List.of(
+                                                                            TextBlock.builder()
+                                                                                    .text(
+                                                                                            "[Content"
+                                                                                                + " compressed]")
+                                                                                    .build()))
+                                                            .build()))
+                                    .build();
+                    replacementMsgs.add(placeholder);
+                    lastToolResultIdx = replacementMsgs.size() - 1;
+                    lastOrigBlock = origBlock;
+                } else {
+                    replacementMsgs.add(msg);
+                }
+            }
+        }
+
+        Msg actualInsertedSummaryMsg;
+
+        // If there is a tool call, inject the summarized summary into the last ToolResult
+        if (lastToolResultIdx != -1 && lastOrigBlock != null) {
+            Msg lastToolMsg = replacementMsgs.get(lastToolResultIdx);
+
+            Map<String, Object> mergedMeta = new HashMap<>();
+            if (lastToolMsg.getMetadata() != null) {
+                mergedMeta.putAll(lastToolMsg.getMetadata());
+            }
+            if (compressedMsg.getMetadata() != null) {
+                mergedMeta.putAll(compressedMsg.getMetadata());
+            }
+
+            Msg finalSummaryMsg =
+                    Msg.builder()
+                            .role(lastToolMsg.getRole())
+                            .name(lastToolMsg.getName())
+                            .metadata(mergedMeta)
+                            .content(
+                                    List.of(
+                                            ToolResultBlock.builder()
+                                                    .name(lastOrigBlock.getName())
+                                                    .id(lastOrigBlock.getId())
+                                                    .metadata(lastOrigBlock.getMetadata())
+                                                    .output(
+                                                            List.of(
+                                                                    TextBlock.builder()
+                                                                            .text(
+                                                                                    compressedMsg
+                                                                                            .getTextContent())
+                                                                            .build()))
+                                                    .build()))
+                            .build();
+
+            replacementMsgs.set(lastToolResultIdx, finalSummaryMsg);
+            actualInsertedSummaryMsg = finalSummaryMsg;
+        } else {
+            replacementMsgs.add(compressedMsg);
+            actualInsertedSummaryMsg = compressedMsg;
+        }
+
+        // Record compression event
         recordCompressionEvent(
                 CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
                 startIndex,
                 endIndex,
                 rawMessages,
-                compressedMsg,
+                actualInsertedSummaryMsg,
                 metadata);
 
-        // Step 5: Replace original messages with compressed one
+        // Clean up old data first, then insert new data
         rawMessages.subList(startIndex, endIndex + 1).clear();
-        rawMessages.add(startIndex, compressedMsg);
+        rawMessages.addAll(startIndex, replacementMsgs);
 
         log.info(
-                "Replaced {} messages with 1 compressed message at index {}",
+                "Replaced {} messages with {} structured messages (including summary) starting at"
+                        + " index {}",
                 messagesToCompress.size(),
+                replacementMsgs.size(),
                 startIndex);
         return true;
     }
