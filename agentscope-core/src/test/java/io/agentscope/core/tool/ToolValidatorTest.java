@@ -529,6 +529,102 @@ class ToolValidatorTest {
         }
     }
 
+    @Nested
+    @DisplayName("validateInput - Nested Object with $ref (Issue #893)")
+    class ValidateInputNestedObjectWithRef {
+
+        /**
+         * Regression test for https://github.com/agentscope-ai/agentscope-java/issues/893
+         *
+         * After the fix, ToolSchemaGenerator hoists $defs to the schema root so that
+         * $ref "#/$defs/Material" resolves correctly against the document root.
+         */
+        @Test
+        @DisplayName("Should resolve $ref when $defs is at schema root (Issue #893 fix)")
+        void testRootDefsRefResolution() {
+            Map<String, Object> materialDef =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of(
+                                    "key", Map.of("type", "string"),
+                                    "value", Map.of("type", "string")));
+
+            Map<String, Object> requestSchema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of(
+                                    "materialList",
+                                    Map.of(
+                                            "type",
+                                            "array",
+                                            "items",
+                                            Map.of("$ref", "#/$defs/Material"))));
+
+            // After the fix, $defs is hoisted to the tool schema root.
+            Map<String, Object> toolSchema =
+                    Map.of(
+                            "type", "object",
+                            "$defs", Map.of("Material", materialDef),
+                            "properties", Map.of("request", requestSchema),
+                            "required", List.of("request"));
+
+            String validInput =
+                    "{\"request\":{\"materialList\":[{\"key\":\"aaa\",\"value\":\"bbb\"}]}}";
+
+            String result = ToolValidator.validateInput(validInput, toolSchema);
+            assertNull(result, "Validation should pass with $defs at root, but got: " + result);
+        }
+
+        /**
+         * Demonstrates the original bug: nested $defs cannot be resolved.
+         */
+        @Test
+        @DisplayName("Should fail when $defs is nested inside a property (original bug)")
+        void testNestedDefsRefFailsWithoutFix() {
+            Map<String, Object> materialDef =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of(
+                                    "key", Map.of("type", "string"),
+                                    "value", Map.of("type", "string")));
+
+            Map<String, Object> requestSchema =
+                    Map.of(
+                            "$defs", Map.of("Material", materialDef),
+                            "type", "object",
+                            "properties",
+                                    Map.of(
+                                            "materialList",
+                                            Map.of(
+                                                    "type",
+                                                    "array",
+                                                    "items",
+                                                    Map.of("$ref", "#/$defs/Material"))));
+
+            // Before the fix, $defs was nested inside properties.request
+            Map<String, Object> toolSchema =
+                    Map.of(
+                            "type", "object",
+                            "properties", Map.of("request", requestSchema),
+                            "required", List.of("request"));
+
+            String validInput =
+                    "{\"request\":{\"materialList\":[{\"key\":\"aaa\",\"value\":\"bbb\"}]}}";
+
+            String result = ToolValidator.validateInput(validInput, toolSchema);
+            assertNotNull(result, "Nested $defs should fail to resolve");
+            assertTrue(
+                    result.contains("cannot be resolved"),
+                    "Error should mention unresolved reference, but got: " + result);
+        }
+    }
+
     // ==================== validateToolResultMatch Tests ====================
 
     @Nested
