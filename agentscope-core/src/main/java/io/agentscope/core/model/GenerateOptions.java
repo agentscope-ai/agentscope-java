@@ -50,6 +50,7 @@ public class GenerateOptions {
     private final Integer topK;
     private final Long seed;
     private final Boolean cacheControl;
+    private final Boolean parallelToolCalls;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -78,6 +79,7 @@ public class GenerateOptions {
         this.topK = builder.topK;
         this.seed = builder.seed;
         this.cacheControl = builder.cacheControl;
+        this.parallelToolCalls = builder.parallelToolCalls;
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -321,6 +323,17 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets whether parallel tool calls are enabled.
+     *
+     * <p>When true, enable parallel function calling during tool use.
+     *
+     * @return true if parallel tool calls are enabled, false or null if not set
+     */
+    public Boolean getParallelToolCalls() {
+        return parallelToolCalls;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -451,6 +464,10 @@ public class GenerateOptions {
         builder.seed(primary.seed != null ? primary.seed : fallback.seed);
         builder.cacheControl(
                 primary.cacheControl != null ? primary.cacheControl : fallback.cacheControl);
+        builder.parallelToolCalls(
+                primary.parallelToolCalls != null
+                        ? primary.parallelToolCalls
+                        : fallback.parallelToolCalls);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -502,6 +519,7 @@ public class GenerateOptions {
         private Integer topK;
         private Long seed;
         private Boolean cacheControl;
+        private Boolean parallelToolCalls;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -751,6 +769,17 @@ public class GenerateOptions {
          */
         public Builder cacheControl(Boolean cacheControl) {
             this.cacheControl = cacheControl;
+            return this;
+        }
+
+        /**
+         * Sets whether to enable parallel function calling during tool use.
+         *
+         * @param parallelToolCalls true to enable parallel tool calls, false to disable
+         * @return this builder instance
+         */
+        public Builder parallelToolCalls(Boolean parallelToolCalls) {
+            this.parallelToolCalls = parallelToolCalls;
             return this;
         }
 
