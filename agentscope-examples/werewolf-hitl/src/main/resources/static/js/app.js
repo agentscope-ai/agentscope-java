@@ -27,6 +27,7 @@ let isSpectatorMode = false;
 // Audio state
 let audioContext = null;
 const playerAudioPlayers = new Map(); // Map<playerName, audioPlayer>
+let audioMuted = false;               // Audio mute state (toggle switch)
 // Global audio playback coordination (single speaker at a time)
 let currentSpeakingPlayer = null;
 const pendingSpeakingPlayers = []; // Queue of player names waiting to speak
@@ -55,6 +56,16 @@ const inputOptions = document.getElementById('input-options');
 const inputTextArea = document.getElementById('input-text-area');
 const inputPrompt = document.getElementById('input-prompt');
 const inputTextarea = document.getElementById('input-textarea');
+
+// Add Enter key listener for textarea
+if (inputTextarea) {
+    inputTextarea.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            submitTextInput();
+        }
+    });
+}
 const myRoleIcon = document.getElementById('my-role-icon');
 const myRoleName = document.getElementById('my-role-name');
 const teammatesInfo = document.getElementById('teammates-info');
@@ -118,22 +129,19 @@ const CONFIG_MIN_WEREWOLVES = 1;
 function validateConfig() {
     const villager = parseInt(document.getElementById('config-villager').value) || 0;
     const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
-    const seer = parseInt(document.getElementById('config-seer').value) || 0;
-    const witch = parseInt(document.getElementById('config-witch').value) || 0;
-    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
+    const seer = 1;
+    const witch = 1;
+    const hunter = 1;
     const total = villager + werewolf + seer + witch + hunter;
-    
+
     const errors = [];
-    
+
     // Validate individual role counts
     if (villager < 0) errors.push(t('configErrorNegativeVillager') || '村民数量不能为负数');
     if (werewolf < CONFIG_MIN_WEREWOLVES) {
         errors.push(t('configErrorMinWerewolf') || `狼人数量至少需要${CONFIG_MIN_WEREWOLVES}个`);
     }
-    if (seer < 0) errors.push(t('configErrorNegativeSeer') || '预言家数量不能为负数');
-    if (witch < 0) errors.push(t('configErrorNegativeWitch') || '女巫数量不能为负数');
-    if (hunter < 0) errors.push(t('configErrorNegativeHunter') || '猎人数量不能为负数');
-    
+
     // Validate total player count
     if (total < CONFIG_MIN_PLAYERS) {
         errors.push(t('configErrorMinPlayers') || `总玩家数至少需要${CONFIG_MIN_PLAYERS}人`);
@@ -141,11 +149,11 @@ function validateConfig() {
     if (total > CONFIG_MAX_PLAYERS) {
         errors.push(t('configErrorMaxPlayers') || `总玩家数不能超过${CONFIG_MAX_PLAYERS}人`);
     }
-    
+
     // Display errors
     const errorElement = document.getElementById('config-error');
     const confirmBtn = document.getElementById('config-confirm-btn');
-    
+
     if (errors.length > 0) {
         errorElement.style.display = 'block';
         errorElement.textContent = errors.join('；');
@@ -170,12 +178,9 @@ function validateConfig() {
 function updateTotalCount() {
     const villager = parseInt(document.getElementById('config-villager').value) || 0;
     const werewolf = parseInt(document.getElementById('config-werewolf').value) || 0;
-    const seer = parseInt(document.getElementById('config-seer').value) || 0;
-    const witch = parseInt(document.getElementById('config-witch').value) || 0;
-    const hunter = parseInt(document.getElementById('config-hunter').value) || 0;
-    const total = villager + werewolf + seer + witch + hunter;
+    const total = villager + werewolf + 3; // seer=1, witch=1, hunter=1 fixed
     document.getElementById('config-total-count').textContent = total;
-    
+
     // Validate and show errors
     validateConfig();
 }
@@ -185,28 +190,22 @@ function getGameConfig() {
     if (!validateConfig()) {
         return null; // Return null if validation fails
     }
-    
+
     const villagerInput = document.getElementById('config-villager').value.trim();
     const werewolfInput = document.getElementById('config-werewolf').value.trim();
-    const seerInput = document.getElementById('config-seer').value.trim();
-    const witchInput = document.getElementById('config-witch').value.trim();
-    const hunterInput = document.getElementById('config-hunter').value.trim();
-    
+
     const villager = villagerInput ? parseInt(villagerInput) : NaN;
     const werewolf = werewolfInput ? parseInt(werewolfInput) : NaN;
-    const seer = seerInput ? parseInt(seerInput) : NaN;
-    const witch = witchInput ? parseInt(witchInput) : NaN;
-    const hunter = hunterInput ? parseInt(hunterInput) : NaN;
-    
+
     const params = new URLSearchParams();
     params.append('lang', currentLanguage);
     params.append('role', selectedRole);
     if (!isNaN(villager)) params.append('villagerCount', villager);
     if (!isNaN(werewolf)) params.append('werewolfCount', werewolf);
-    if (!isNaN(seer)) params.append('seerCount', seer);
-    if (!isNaN(witch)) params.append('witchCount', witch);
-    if (!isNaN(hunter)) params.append('hunterCount', hunter);
-    
+    params.append('seerCount', 1);
+    params.append('witchCount', 1);
+    params.append('hunterCount', 1);
+
     return params.toString();
 }
 
@@ -235,7 +234,7 @@ async function startGame() {
             startBtn.querySelector('[data-i18n]').textContent = t('startGame');
             return;
         }
-        
+
         const response = await fetch(`/api/game/start?${configParams}`, {
             method: 'POST',
             signal: abortController.signal
@@ -259,10 +258,10 @@ async function startGame() {
         let buffer = '';
 
         while (true) {
-            const { done, value } = await reader.read();
+            const {done, value} = await reader.read();
             if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, {stream: true});
             const lines = buffer.split('\n');
             buffer = lines.pop();
 
@@ -348,6 +347,36 @@ function handleEvent(event) {
             break;
         case 'USER_INPUT_RECEIVED':
             handleUserInputReceived(data.inputType, data.content);
+            break;
+        case 'SHERIFF_REGISTRATION':
+            handleSheriffRegistration(data.playerName, data.registered, data.reason);
+            break;
+        case 'SHERIFF_CANDIDATES_ANNOUNCED':
+            handleSheriffCandidatesAnnounced(data.candidates);
+            break;
+        case 'SHERIFF_CAMPAIGN':
+            handleSheriffCampaign(data.playerName, data.speech, data.checkResult, data.nextCheckTarget);
+            break;
+        case 'SHERIFF_VOTE':
+            handleSheriffVote(data.voter, data.target, data.reason);
+            break;
+        case 'SHERIFF_ELECTED':
+            handleSheriffElected(data.sheriffName, data.voteCount, data.voteDetails);
+            break;
+        case 'SHERIFF_TRANSFER':
+            handleSheriffTransfer(data.fromPlayer, data.toPlayer, data.checkInfo, data.reason);
+            break;
+        case 'NIGHT_ACTION_WEREWOLF_KILL':
+            showNightActionPopup('werewolf_kill', data.victimName);
+            break;
+        case 'NIGHT_ACTION_WITCH_HEAL':
+            showNightActionPopup('witch_heal', data.victimName);
+            break;
+        case 'NIGHT_ACTION_WITCH_POISON':
+            showNightActionPopup('witch_poison', data.targetName);
+            break;
+        case 'NIGHT_ACTION_SEER_CHECK':
+            showNightActionPopup('seer_check', data.targetName, data.isWerewolf);
             break;
         case 'AUDIO_CHUNK':
             handleAudioChunk(data.player, data.audio);
@@ -499,10 +528,378 @@ function handleUserInputReceived(inputType, content) {
     addLog(`👤 ${t('youSubmitted') || '你提交了'}: ${content}`, 'system');
 }
 
+function handleSheriffRegistration(playerName, registered, reason) {
+    const status = registered ? '✅ 上警' : '❌ 不上警';
+    const reasonText = reason ? ` (${reason})` : '';
+    addLog(`🎖️ [${playerName}] ${status}${reasonText}`, 'system');
+}
+
+function handleSheriffCandidatesAnnounced(candidateNames) {
+    // Mark players as sheriff candidates and show raise hand icon
+    candidateNames.forEach(name => {
+        // Mark player as candidate in players array
+        const player = players.find(p => p.name === name);
+        if (player) {
+            player.isSheriffCandidate = true;
+        }
+
+        // Add raise hand icon to player card
+        const card = document.getElementById(`player-${name}`);
+        if (card && !card.querySelector('.raise-hand-icon')) {
+            const icon = document.createElement('div');
+            icon.className = 'raise-hand-icon';
+            icon.textContent = '✋';
+            card.appendChild(icon);
+        }
+    });
+}
+
+function handleSheriffCampaign(playerName, speech, checkResult, nextCheckTarget) {
+    let message = `🎤 [${playerName}] 竞选发言: ${speech}`;
+    if (checkResult && checkResult.trim()) {
+        message += `<br>   📋 验人信息: ${checkResult}`;
+    }
+    if (nextCheckTarget && nextCheckTarget.trim()) {
+        message += `<br>   🔍 今晚将验: ${nextCheckTarget}`;
+    }
+    addLog(message, 'speak');
+}
+
+function handleSheriffVote(voter, target, reason) {
+    const reasonText = reason ? ` (${reason})` : '';
+    addLog(`<span class="highlight-vote">🎖️ [${voter}] 投票给 ${target}${reasonText}</span>`, 'vote');
+}
+
+function handleSheriffElected(sheriffName, voteCount, voteDetails) {
+    // Always remove all raise-hand icons first
+    players.forEach(player => {
+        player.isSheriffCandidate = false;
+        const card = document.getElementById(`player-${player.name}`);
+        if (card) {
+            const raiseHandIcon = card.querySelector('.raise-hand-icon');
+            if (raiseHandIcon) {
+                raiseHandIcon.remove();
+            }
+        }
+    });
+
+    // Check if sheriff badge is lost (voteCount = 0 or sheriffName is null)
+    if (!sheriffName || voteCount === 0) {
+        addLog('🚫 警徽流失！所有候选人得票为0', 'system');
+        return;
+    }
+
+    // Normal sheriff election
+    addLog(`👑 ${sheriffName} 当选警长！得票 ${voteCount} 票`, 'system');
+    highlightPlayer(sheriffName);
+
+    // Add sheriff badge to elected sheriff
+    const sheriffPlayer = players.find(p => p.name === sheriffName);
+    if (sheriffPlayer) {
+        sheriffPlayer.isSheriff = true;
+    }
+
+    const sheriffCard = document.getElementById(`player-${sheriffName}`);
+    if (sheriffCard && !sheriffCard.querySelector('.sheriff-badge')) {
+        const badge = document.createElement('div');
+        badge.className = 'sheriff-badge';
+        badge.textContent = '🎖️';
+        sheriffCard.appendChild(badge);
+    }
+
+    // Show popup with badge and vote details
+    showSheriffElectedPopup(sheriffName, voteCount, voteDetails);
+
+    setTimeout(() => unhighlightPlayer(sheriffName), 3000);
+}
+
+function showSheriffElectedPopup(sheriffName, voteCount, voteDetails) {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById('sheriff-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+
+    // Create popup container
+    const popup = document.createElement('div');
+    popup.id = 'sheriff-popup';
+    popup.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border: 3px solid #ffd700;
+        border-radius: 20px;
+        padding: 30px 40px;
+        z-index: 10000;
+        text-align: center;
+        box-shadow: 0 0 50px rgba(255, 215, 0, 0.5), 0 10px 40px rgba(0,0,0,0.5);
+        min-width: 320px;
+        max-width: 450px;
+        animation: popupShow 0.5s ease-out;
+    `;
+
+    // Add animation style
+    if (!document.getElementById('popup-animation')) {
+        const style = document.createElement('style');
+        style.id = 'popup-animation';
+        style.textContent = `
+            @keyframes popupShow {
+                0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+                100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            }
+            @keyframes popupHide {
+                0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+                100% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Build vote details HTML
+    let voteDetailsHtml = '<div style="margin-top: 20px; text-align: left; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px;">';
+    voteDetailsHtml += '<div style="color: #ffd700; font-size: 14px; margin-bottom: 10px; text-align: center;">📊 投票详情</div>';
+
+    if (voteDetails) {
+        for (const [candidate, detail] of Object.entries(voteDetails)) {
+            const votes = detail.votes || 0;
+            const voters = detail.voters || [];
+            const voterStr = voters.length > 0 ? voters.join('、') : '无';
+            const isWinner = candidate === sheriffName;
+            const crown = isWinner ? '👑 ' : '';
+            const highlight = isWinner ? 'color: #ffd700; font-weight: bold;' : 'color: #ccc;';
+
+            voteDetailsHtml += `
+                <div style="${highlight} margin: 8px 0; font-size: 13px; padding: 5px; border-radius: 5px; ${isWinner ? 'background: rgba(255,215,0,0.1);' : ''}">
+                    ${crown}${candidate}: ${votes}票
+                    <div style="color: #888; font-size: 11px; margin-top: 2px;">← ${voterStr}</div>
+                </div>
+            `;
+        }
+    }
+    voteDetailsHtml += '</div>';
+
+    popup.innerHTML = `
+        <div style="font-size: 60px; margin-bottom: 10px;">🎖️</div>
+        <div style="color: #ffd700; font-size: 22px; font-weight: bold; margin-bottom: 5px;">警徽授予</div>
+        <div style="color: #fff; font-size: 28px; font-weight: bold; margin: 15px 0;">${sheriffName}</div>
+        <div style="color: #aaa; font-size: 14px;">获得 ${voteCount} 票当选警长</div>
+        ${voteDetailsHtml}
+    `;
+
+    // Add overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'sheriff-popup-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 9999;
+    `;
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(popup);
+
+    // Auto close after 5 seconds
+    setTimeout(() => {
+        popup.style.animation = 'popupHide 0.3s ease-in forwards';
+        setTimeout(() => {
+            popup.remove();
+            overlay.remove();
+        }, 300);
+    }, 5000);
+
+    // Click to close
+    overlay.addEventListener('click', () => {
+        popup.style.animation = 'popupHide 0.3s ease-in forwards';
+        setTimeout(() => {
+            popup.remove();
+            overlay.remove();
+        }, 300);
+    });
+}
+
+function showNightActionPopup(actionType, targetName, isWerewolf) {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById('night-action-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+    const existingOverlay = document.getElementById('night-action-popup-overlay');
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // Create popup container
+    const popup = document.createElement('div');
+    popup.id = 'night-action-popup';
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'night-action-popup-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+    `;
+
+    // Define popup content based on action type
+    let icon = '';
+    let title = '';
+    let message = '';
+    let bgColor = '';
+    let borderColor = '';
+
+    switch (actionType) {
+        case 'werewolf_kill':
+            icon = '🐺';
+            title = '狼人出击';
+            message = `${targetName} 被击杀`;
+            bgColor = 'linear-gradient(135deg, #2d1b1b 0%, #1a0f0f 100%)';
+            borderColor = '#ff4444';
+            break;
+        case 'witch_heal':
+            icon = '🧪';
+            title = '女巫救人';
+            message = `你救了 ${targetName}`;
+            bgColor = 'linear-gradient(135deg, #1b2d1b 0%, #0f1a0f 100%)';
+            borderColor = '#ff6666';
+            break;
+        case 'witch_poison':
+            icon = '☠️';
+            title = '女巫毒人';
+            message = `你毒了 ${targetName}`;
+            bgColor = 'linear-gradient(135deg, #1b2d1b 0%, #0f1a0f 100%)';
+            borderColor = '#66ff66';
+            break;
+        case 'seer_check':
+            if (isWerewolf) {
+                icon = '🐺';
+                title = '查验结果';
+                message = `你查验的 ${targetName} 是狼人！`;
+                bgColor = 'linear-gradient(135deg, #2d1b1b 0%, #1a0f0f 100%)';
+                borderColor = '#ff4444';
+            } else {
+                icon = '👤';
+                title = '查验结果';
+                message = `你查验的 ${targetName} 是好人`;
+                bgColor = 'linear-gradient(135deg, #1b1b2d 0%, #0f0f1a 100%)';
+                borderColor = '#44ff44';
+            }
+            break;
+    }
+
+    popup.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: ${bgColor};
+        border: 3px solid ${borderColor};
+        border-radius: 20px;
+        padding: 40px 50px;
+        z-index: 10000;
+        text-align: center;
+        box-shadow: 0 0 60px ${borderColor}80, 0 10px 40px rgba(0,0,0,0.5);
+        min-width: 300px;
+        animation: popupShow 0.5s ease-out;
+    `;
+
+    popup.innerHTML = `
+        <div style="font-size: 70px; margin-bottom: 15px; filter: drop-shadow(0 0 20px ${borderColor});">${icon}</div>
+        <div style="color: ${borderColor}; font-size: 24px; font-weight: bold; margin-bottom: 20px; text-shadow: 0 0 10px ${borderColor}40;">${title}</div>
+        <div style="color: #fff; font-size: 22px; font-weight: 500;">${message}</div>
+    `;
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(popup);
+
+    // Auto close after 4 seconds
+    setTimeout(() => {
+        popup.style.animation = 'popupHide 0.3s ease-in forwards';
+        setTimeout(() => {
+            popup.remove();
+            overlay.remove();
+        }, 300);
+    }, 4000);
+
+    // Click to close
+    overlay.addEventListener('click', () => {
+        popup.style.animation = 'popupHide 0.3s ease-in forwards';
+        setTimeout(() => {
+            popup.remove();
+            overlay.remove();
+        }, 300);
+    });
+}
+
+function handleSheriffTransfer(fromPlayer, toPlayer, checkInfo, reason) {
+    let message = `🎖️ 警长 ${fromPlayer} 移交警徽`;
+    if (toPlayer) {
+        message += ` → ${toPlayer}`;
+    } else {
+        message += ` （未移交）`;
+    }
+    if (checkInfo) {
+        message += `\n   📋 留言: ${checkInfo}`;
+    }
+    addLog(message, 'system');
+
+    // Update UI: remove badge from previous sheriff, add to new sheriff
+    if (toPlayer) {
+        // Remove badge from previous sheriff
+        const fromPlayerData = players.find(p => p.name === fromPlayer);
+        if (fromPlayerData) {
+            fromPlayerData.isSheriff = false;
+            const fromCard = document.getElementById(`player-${fromPlayer}`);
+            if (fromCard) {
+                const badge = fromCard.querySelector('.sheriff-badge');
+                if (badge) {
+                    badge.remove();
+                }
+            }
+        }
+
+        // Add badge to new sheriff
+        const toPlayerData = players.find(p => p.name === toPlayer);
+        if (toPlayerData) {
+            toPlayerData.isSheriff = true;
+            const toCard = document.getElementById(`player-${toPlayer}`);
+            if (toCard && !toCard.querySelector('.sheriff-badge')) {
+                const badge = document.createElement('div');
+                badge.className = 'sheriff-badge';
+                badge.textContent = '🎖️';
+                toCard.appendChild(badge);
+            }
+        }
+    } else {
+        // Badge not transferred, remove from previous sheriff
+        const fromPlayerData = players.find(p => p.name === fromPlayer);
+        if (fromPlayerData) {
+            fromPlayerData.isSheriff = false;
+            const fromCard = document.getElementById(`player-${fromPlayer}`);
+            if (fromCard) {
+                const badge = fromCard.querySelector('.sheriff-badge');
+                if (badge) {
+                    badge.remove();
+                }
+            }
+        }
+    }
+}
+
 // ==================== Input Functions ====================
 function showInputCard() {
     inputCard.style.display = 'block';
-    inputCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    inputCard.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
 function hideInputCard() {
@@ -568,7 +965,7 @@ async function submitInput(inputType, content) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ inputType, content })
+            body: JSON.stringify({inputType, content})
         });
 
         if (!response.ok) {
@@ -599,6 +996,22 @@ function renderPlayers() {
         `;
 
         playersGrid.appendChild(card);
+
+        // Restore raise-hand icon if player was a sheriff candidate
+        if (player.isSheriffCandidate) {
+            const icon = document.createElement('div');
+            icon.className = 'raise-hand-icon';
+            icon.textContent = '✋';
+            card.appendChild(icon);
+        }
+
+        // Restore sheriff badge if player is the sheriff
+        if (player.isSheriff) {
+            const badge = document.createElement('div');
+            badge.className = 'sheriff-badge';
+            badge.textContent = '🎖️';
+            card.appendChild(badge);
+        }
     });
 }
 
@@ -765,6 +1178,28 @@ function handleReplayEvent(event) {
                 : (t('werewolvesWin') || '🐺 狼人阵营获胜！');
             addLog(`${t('gameEnd') || '游戏结束'} - ${winnerText} ${data.reason}`, 'system');
             break;
+        case 'SHERIFF_REGISTRATION':
+            handleSheriffRegistration(data.playerName, data.registered, data.reason);
+            break;
+        case 'SHERIFF_CANDIDATES_ANNOUNCED':
+            handleSheriffCandidatesAnnounced(data.candidates);
+            break;
+        case 'SHERIFF_CAMPAIGN':
+            handleSheriffCampaign(data.playerName, data.speech, data.checkResult, data.nextCheckTarget);
+            break;
+        case 'SHERIFF_VOTE':
+            handleSheriffVote(data.voter, data.target, data.reason);
+            break;
+        case 'SHERIFF_ELECTED':
+            if (!data.sheriffName || data.voteCount === 0) {
+                addLog('🚫 警徽流失！所有候选人得票为0', 'system');
+            } else {
+                addLog(`👑 ${data.sheriffName} 当选警长！得票 ${data.voteCount} 票`, 'system');
+            }
+            break;
+        case 'SHERIFF_TRANSFER':
+            handleSheriffTransfer(data.fromPlayer, data.toPlayer, data.checkInfo, data.reason);
+            break;
     }
 }
 
@@ -799,6 +1234,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ==================== Audio Functions ====================
 /**
+ * Handle audio toggle switch change.
+ *
+ * @param {boolean} enabled - Whether audio is enabled
+ */
+function onAudioToggleChange(enabled) {
+    audioMuted = !enabled;
+    const label = document.getElementById('audio-toggle-label');
+    if (label) {
+        label.textContent = enabled ? '🔊 启用语音' : '🔇 语音已关闭';
+        if (enabled) {
+            label.classList.remove('muted');
+        } else {
+            label.classList.add('muted');
+        }
+    }
+
+    if (audioMuted) {
+        // Stop all active playback immediately
+        playerAudioPlayers.forEach((audioPlayer, playerName) => {
+            audioPlayer.isPlaying = false;
+            audioPlayer.chunks = [];
+            audioPlayer.currentIndex = 0;
+            unhighlightPlayer(playerName);
+        });
+        playerAudioPlayers.clear();
+        currentSpeakingPlayer = null;
+        pendingSpeakingPlayers.length = 0;
+    }
+}
+
+/**
  * Initialize audio context on first user interaction.
  */
 function initAudio() {
@@ -809,12 +1275,13 @@ function initAudio() {
 
 /**
  * Handle audio chunk event from backend.
- *  
+ *
  * @param {string} playerName - The name of the speaking player
  * @param {string} audioBase64 - Base64 encoded audio data
  */
 function handleAudioChunk(playerName, audioBase64) {
     if (!audioBase64) return;
+    if (audioMuted) return;
 
     // Initialize audio context
     initAudio();
@@ -875,7 +1342,7 @@ function addAudioChunk(audioPlayer, audioData) {
 /**
  * Play audio from queue.
  *
- * @param {object} audioPlayer - Audio player object  
+ * @param {object} audioPlayer - Audio player object
  * @param {string} playerName - Player name for visual feedback
  */
 async function playAudio(audioPlayer, playerName) {
@@ -888,6 +1355,7 @@ async function playAudio(audioPlayer, playerName) {
 
     // Play chunks from current index to end
     while (audioPlayer.currentIndex < audioPlayer.chunks.length && audioPlayer.isPlaying) {
+        if (audioMuted) { audioPlayer.isPlaying = false; break; }
         const chunk = audioPlayer.chunks[audioPlayer.currentIndex];
         audioPlayer.currentIndex++;
         await playAudioChunk(chunk, audioPlayer);
