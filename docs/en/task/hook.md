@@ -141,20 +141,30 @@ For local debugging and offline troubleshooting, AgentScope Java provides a buil
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-try (JsonlTraceExporter exporter =
-        JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
-                .includeReasoningChunks(true) // optional
-                .includeActingChunks(true)    // optional
-                .build()) {
-    ReActAgent agent = ReActAgent.builder()
-            .name("Assistant")
-            .model(model)
-            .toolkit(toolkit)
-            .hooks(List.of(exporter))
-            .build();
+public class JsonlTraceExample {
+
+    public void run(Model model, Toolkit toolkit) throws IOException {
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                        .includeReasoningChunks(true) // optional
+                        .includeActingChunks(true)    // optional
+                        .build()) {
+            ReActAgent agent = ReActAgent.builder()
+                    .name("Assistant")
+                    .model(model)
+                    .toolkit(toolkit)
+                    .hooks(List.of(exporter))
+                    .build();
+
+            // Use the agent while the exporter is still open
+        }
+    }
 }
 ```
 
