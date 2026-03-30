@@ -153,7 +153,9 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
-    @DisplayName("Should save zero skills and leave file contents unchanged when all exist and force is false")
+    @DisplayName(
+            "Should save zero skills and leave file contents unchanged when all exist and force is"
+                    + " false")
     void testSaveSkills_AllExistingSkills_ForceDisabled_NoSkillsSaved() throws IOException {
         String originalTestSkill =
                 Files.readString(
