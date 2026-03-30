@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T08:40:25+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="Agent as Tool（子智能体工具）" href="agent-as-tool.html">
+    <meta property="article:modified_time" content="2026-03-30T09:09:13+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="Agent as Tool（子智能体工具）" href="agent-as-tool.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -371,7 +371,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent-as-tool.html">Agent as Tool</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">智能体技能</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Agent Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hitl.html">Human-in-the-Loop</a></li>
@@ -632,7 +632,7 @@
 </section>
 <section id="id11">
 <h3>功能 2: 代码执行能力<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
-<p>为 Skill 提供隔离的代码执行文件夹,支持 Shell 命令、文件读写等操作。使用 Builder 模式灵活配置所需工具。</p>
+<p>为 Skill 提供隔离的代码执行环境,支持 Shell 命令、文件读写等操作。使用 Builder 模式按需组合工具和配置。</p>
 <p><strong>基础用法</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
 
@@ -644,35 +644,40 @@
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><strong>配置说明</strong>:</p>
+<ul class="simple">
+<li><p><strong>工具选择</strong>: 按需组合 <code class="docutils literal notranslate"><span class="pre">withShell()</span></code>、<code class="docutils literal notranslate"><span class="pre">withRead()</span></code>、<code class="docutils literal notranslate"><span class="pre">withWrite()</span></code>,仅注册显式启用的工具</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">workDir</span></code></strong>: 所有工具共享的工作目录。指定时自动创建;未指定时延迟创建临时目录 <code class="docutils literal notranslate"><span class="pre">agentscope-code-execution-*</span></code>,JVM 退出自动清理</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">uploadDir</span></code></strong>: Skill 资源文件的上传位置,默认为 <code class="docutils literal notranslate"><span class="pre">workDir/skills</span></code></p></li>
+<li><p><strong>文件过滤</strong>: 控制允许上传的资源文件类型,默认接受 <code class="docutils literal notranslate"><span class="pre">scripts/</span></code>、<code class="docutils literal notranslate"><span class="pre">assets/</span></code> 目录及 <code class="docutils literal notranslate"><span class="pre">.py</span></code>、<code class="docutils literal notranslate"><span class="pre">.js</span></code>、<code class="docutils literal notranslate"><span class="pre">.sh</span></code> 扩展名。可通过 <code class="docutils literal notranslate"><span class="pre">includeFolders()</span></code>/<code class="docutils literal notranslate"><span class="pre">includeExtensions()</span></code> 调整,或用 <code class="docutils literal notranslate"><span class="pre">fileFilter()</span></code> 完全自定义(两种方式互斥)</p></li>
+<li><p><strong>自定义 Shell</strong>: <code class="docutils literal notranslate"><span class="pre">withShell(customShellTool)</span></code> 支持传入自定义工具,其 <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> 会被自动覆盖为 <code class="docutils literal notranslate"><span class="pre">workDir</span></code>,安全策略保持不变</p></li>
+</ul>
 <p><strong>自定义配置</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义工作目录和 Shell 命令白名单</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 指定目录 + 自定义 Shell + 文件过滤</span>
 <span class="n">ShellCommandTool</span><span class="w"> </span><span class="n">customShell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span>
-<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir 会被自动设置为 workDir</span>
+<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir 会被自动覆盖为 workDir</span>
 <span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;node&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;npm&quot;</span><span class="p">),</span>
-<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选的命令审批回调</span>
+<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
 <span class="p">);</span>
 
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/path/to/workdir&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 指定工作目录</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span><span class="w">       </span><span class="c1">// 使用自定义 Shell 工具</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span><span class="w">                   </span><span class="c1">// 启用文件读取</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span><span class="w">                  </span><span class="c1">// 启用文件写入</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace&quot;</span><span class="p">)</span><span class="w">              </span><span class="c1">// 工作目录</span>
+<span class="w">    </span><span class="p">.</span><span class="na">uploadDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace/my-skills&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选,默认 workDir/skills</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeFolders</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;scripts/&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;data/&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// 可选,自定义上传文件夹</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeExtensions</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;.json&quot;</span><span class="p">))</span><span class="w">      </span><span class="c1">// 可选,自定义上传扩展名</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 
-<span class="c1">// 或仅启用文件操作,不启用 Shell</span>
+<span class="c1">// 或使用完全自定义的文件过滤器(与 includeFolders/includeExtensions 互斥)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">fileFilter</span><span class="p">(</span><span class="n">path</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">path</span><span class="p">.</span><span class="na">endsWith</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 或 SkillFileFilter.acceptAll()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><strong>核心特性</strong>:</p>
-<ul class="simple">
-<li><p><strong>统一工作目录</strong>: 所有工具共享同一 <code class="docutils literal notranslate"><span class="pre">workDir</span></code>,确保文件隔离</p></li>
-<li><p><strong>选择性启用</strong>: 根据需求灵活组合 Shell、读文件、写文件工具</p></li>
-<li><p><strong>灵活配置</strong>: 支持自定义 ShellCommandTool, 满足定制化的ShellCommandTool需求</p></li>
-<li><p><strong>自动管理</strong>: 未指定 <code class="docutils literal notranslate"><span class="pre">workDir</span></code> 时自动创建临时目录,程序退出时自动清理</p></li>
-</ul>
 </section>
 <section id="id12">
 <h3>功能 3: Skill 持久化存储<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
@@ -756,7 +761,45 @@
 </section>
 </section>
 <section id="id14">
-<h3>性能优化建议<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<h3>功能 4: 自定义 Skill 提示词<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<p>SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成描述信息,供 LLM 判断何时加载哪个 Skill。通过构造函数可自定义提示词的两个组成部分:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">instruction</span></code></strong>: 提示词头部,说明 Skill 的使用方式(如何加载、路径约定等)。默认包含 <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> 的调用说明</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">template</span></code></strong>: 每个 Skill 条目的格式模板,包含三个 <code class="docutils literal notranslate"><span class="pre">%s</span></code> 占位符,依次对应 <code class="docutils literal notranslate"><span class="pre">name</span></code>、<code class="docutils literal notranslate"><span class="pre">description</span></code>、<code class="docutils literal notranslate"><span class="pre">skillId</span></code></p></li>
+</ul>
+<p>开启代码执行后,还可通过 <code class="docutils literal notranslate"><span class="pre">.codeExecutionInstruction()</span></code> 自定义追加在 <code class="docutils literal notranslate"><span class="pre">&lt;/available_skills&gt;</span></code> 之后的代码执行说明段落:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code></strong>: 代码执行说明模板,所有 <code class="docutils literal notranslate"><span class="pre">%s</span></code> 占位符都会被替换为 <code class="docutils literal notranslate"><span class="pre">uploadDir</span></code> 的绝对路径。传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时使用内置默认值</p></li>
+</ul>
+<p>三者传 <code class="docutils literal notranslate"><span class="pre">null</span></code> 或空字符串时均使用内置默认值。</p>
+<p><strong>示例代码</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义 instruction 和 template</span>
+<span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">    ## 可用技能</span>
+<span class="s">    当任务匹配某个技能时,使用 load_skill_through_path 加载它。</span>
+<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="n">String</span><span class="w"> </span><span class="n">customTemplate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">    - **%s**: %s (id: %s)</span>
+<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">,</span><span class="w"> </span><span class="n">customTemplate</span><span class="p">);</span>
+
+<span class="c1">// 自定义代码执行说明(开启代码执行后生效)</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">codeExecutionInstruction</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">        ## 脚本执行</span>
+<span class="s">        技能脚本根目录: %s</span>
+<span class="s">        执行时请使用绝对路径。</span>
+<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id15">
+<h3>性能优化建议<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
 <ol class="arabic simple">
 <li><p><strong>控制 SKILL.md 大小</strong>: 保持在 5k tokens 以内,建议 1.5-2k tokens</p></li>
 <li><p><strong>合理组织资源</strong>: 将详细文档放在 <code class="docutils literal notranslate"><span class="pre">references/</span></code> 中,而非 SKILL.md</p></li>
@@ -765,8 +808,8 @@
 </ol>
 </section>
 </section>
-<section id="id15">
-<h2>相关文档<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h2>
+<section id="id16">
+<h2>相关文档<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills 官方文档</a> - 完整的概念和架构介绍</p></li>
 <li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool 使用指南</span></a> - 工具系统的使用方法</p></li>
@@ -828,7 +871,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-03-30</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -898,10 +941,11 @@
 <li><a class="reference internal" href="#nacos">Nacos 仓库 (只读)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id14">性能优化建议</a></li>
+<li><a class="reference internal" href="#id14">功能 4: 自定义 Skill 提示词</a></li>
+<li><a class="reference internal" href="#id15">性能优化建议</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id15">相关文档</a></li>
+<li><a class="reference internal" href="#id16">相关文档</a></li>
 </ul>
 </li>
 </ul>

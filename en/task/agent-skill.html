@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T08:40:25+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="Agent as Tool" href="agent-as-tool.html">
+    <meta property="article:modified_time" content="2026-03-30T09:09:13+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="Agent as Tool" href="agent-as-tool.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/agent-skill.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -371,7 +371,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-as-tool.html">Agent as Tool</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-skill.html">智能体技能</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-skill.html">Agent Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hitl.html">Human-in-the-Loop</a></li>
@@ -635,7 +635,7 @@
 </section>
 <section id="feature-2-code-execution-capabilities">
 <h3>Feature 2: Code Execution Capabilities<a class="headerlink" href="#feature-2-code-execution-capabilities" title="Link to this heading">¶</a></h3>
-<p>Provides an isolated code execution folder for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern for flexible configuration of required tools.</p>
+<p>Provides an isolated code execution environment for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern to compose tools and configuration on demand.</p>
 <p><strong>Basic Usage</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
 
@@ -647,35 +647,40 @@
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><strong>Configuration Reference</strong>:</p>
+<ul class="simple">
+<li><p><strong>Tool Selection</strong>: Combine <code class="docutils literal notranslate"><span class="pre">withShell()</span></code>, <code class="docutils literal notranslate"><span class="pre">withRead()</span></code>, <code class="docutils literal notranslate"><span class="pre">withWrite()</span></code> as needed — only explicitly enabled tools are registered</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">workDir</span></code></strong>: Shared working directory for all tools. Created automatically when specified; if omitted, a temporary directory <code class="docutils literal notranslate"><span class="pre">agentscope-code-execution-*</span></code> is created lazily and cleaned up on JVM exit</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">uploadDir</span></code></strong>: Upload location for Skill resource files; defaults to <code class="docutils literal notranslate"><span class="pre">workDir/skills</span></code></p></li>
+<li><p><strong>File Filtering</strong>: Controls which resource files are allowed to upload. Defaults to <code class="docutils literal notranslate"><span class="pre">scripts/</span></code>, <code class="docutils literal notranslate"><span class="pre">assets/</span></code> folders and <code class="docutils literal notranslate"><span class="pre">.py</span></code>, <code class="docutils literal notranslate"><span class="pre">.js</span></code>, <code class="docutils literal notranslate"><span class="pre">.sh</span></code> extensions. Adjust with <code class="docutils literal notranslate"><span class="pre">includeFolders()</span></code>/<code class="docutils literal notranslate"><span class="pre">includeExtensions()</span></code>, or fully customize with <code class="docutils literal notranslate"><span class="pre">fileFilter()</span></code> (the two approaches are mutually exclusive)</p></li>
+<li><p><strong>Custom Shell</strong>: <code class="docutils literal notranslate"><span class="pre">withShell(customShellTool)</span></code> accepts a custom tool whose <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> is automatically overridden with <code class="docutils literal notranslate"><span class="pre">workDir</span></code> while preserving its security policy</p></li>
+</ul>
 <p><strong>Custom Configuration</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Customize working directory and Shell command whitelist</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Specify directory + custom Shell + file filtering</span>
 <span class="n">ShellCommandTool</span><span class="w"> </span><span class="n">customShell</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span>
-<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir will be automatically set to workDir</span>
+<span class="w">    </span><span class="kc">null</span><span class="p">,</span><span class="w">  </span><span class="c1">// baseDir will be automatically overridden with workDir</span>
 <span class="w">    </span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;python3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;node&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;npm&quot;</span><span class="p">),</span>
-<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span><span class="w">  </span><span class="c1">// Optional command approval callback</span>
+<span class="w">    </span><span class="n">command</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserApproval</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
 <span class="p">);</span>
 
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/path/to/workdir&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Specify working directory</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span><span class="w">       </span><span class="c1">// Use custom Shell tool</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span><span class="w">                   </span><span class="c1">// Enable file reading</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span><span class="w">                  </span><span class="c1">// Enable file writing</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace&quot;</span><span class="p">)</span><span class="w">              </span><span class="c1">// working directory</span>
+<span class="w">    </span><span class="p">.</span><span class="na">uploadDir</span><span class="p">(</span><span class="s">&quot;/data/agent-workspace/my-skills&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// optional, defaults to workDir/skills</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeFolders</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;scripts/&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;data/&quot;</span><span class="p">))</span><span class="w">   </span><span class="c1">// optional, customize upload folders</span>
+<span class="w">    </span><span class="p">.</span><span class="na">includeExtensions</span><span class="p">(</span><span class="n">Set</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;.json&quot;</span><span class="p">))</span><span class="w">      </span><span class="c1">// optional, customize upload extensions</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">(</span><span class="n">customShell</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 
-<span class="c1">// Or enable only file operations, without Shell</span>
+<span class="c1">// Or use a fully custom file filter (mutually exclusive with includeFolders/includeExtensions)</span>
 <span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">fileFilter</span><span class="p">(</span><span class="n">path</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">path</span><span class="p">.</span><span class="na">endsWith</span><span class="p">(</span><span class="s">&quot;.py&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// or SkillFileFilter.acceptAll()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withRead</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withWrite</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><strong>Core Features</strong>:</p>
-<ul class="simple">
-<li><p><strong>Unified Working Directory</strong>: All tools share the same <code class="docutils literal notranslate"><span class="pre">workDir</span></code>, ensuring file isolation</p></li>
-<li><p><strong>Selective Enabling</strong>: Flexibly combine Shell, read file, and write file tools as needed</p></li>
-<li><p><strong>Flexible Configuration</strong>: Supports custom ShellCommandTool to meet customization requirements</p></li>
-<li><p><strong>Automatic Management</strong>: Automatically creates temporary directory when <code class="docutils literal notranslate"><span class="pre">workDir</span></code> is not specified, with automatic cleanup on program exit</p></li>
-</ul>
 </section>
 <section id="feature-3-skill-persistence-storage">
 <h3>Feature 3: Skill Persistence Storage<a class="headerlink" href="#feature-3-skill-persistence-storage" title="Link to this heading">¶</a></h3>
@@ -761,6 +766,44 @@ is used.</p>
 </div></blockquote>
 </section>
 </section>
+<section id="feature-4-custom-skill-prompts">
+<h3>Feature 4: Custom Skill Prompts<a class="headerlink" href="#feature-4-custom-skill-prompts" title="Link to this heading">¶</a></h3>
+<p>When SkillBox injects a system prompt into the Agent, it generates a description entry for each registered Skill so the LLM can decide when to load which Skill. The two components of this prompt can be customized via the constructor:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">instruction</span></code></strong>: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in <code class="docutils literal notranslate"><span class="pre">load_skill_through_path</span></code> usage guide</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">template</span></code></strong>: The format template for each Skill entry, containing three <code class="docutils literal notranslate"><span class="pre">%s</span></code> placeholders corresponding to <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">description</span></code>, and <code class="docutils literal notranslate"><span class="pre">skillId</span></code> in order</p></li>
+</ul>
+<p>When code execution is enabled, the section appended after <code class="docutils literal notranslate"><span class="pre">&lt;/available_skills&gt;</span></code> can also be customized via <code class="docutils literal notranslate"><span class="pre">.codeExecutionInstruction()</span></code>:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">codeExecutionInstruction</span></code></strong>: Template for the code execution section; every <code class="docutils literal notranslate"><span class="pre">%s</span></code> placeholder will be replaced with the <code class="docutils literal notranslate"><span class="pre">uploadDir</span></code> absolute path. Passing <code class="docutils literal notranslate"><span class="pre">null</span></code> or blank uses the built-in default.</p></li>
+</ul>
+<p>Passing <code class="docutils literal notranslate"><span class="pre">null</span></code> or a blank string for any of these uses the built-in default.</p>
+<p><strong>Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Customize instruction and template</span>
+<span class="n">String</span><span class="w"> </span><span class="n">customInstruction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">    ## Available Skills</span>
+<span class="s">    When a task matches a skill, load it with load_skill_through_path.</span>
+<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="n">String</span><span class="w"> </span><span class="n">customTemplate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">    - **%s**: %s (id: %s)</span>
+<span class="s">    &quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">,</span><span class="w"> </span><span class="n">customInstruction</span><span class="p">,</span><span class="w"> </span><span class="n">customTemplate</span><span class="p">);</span>
+
+<span class="c1">// Customize the code execution section (takes effect when code execution is enabled)</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">codeExecution</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workDir</span><span class="p">(</span><span class="s">&quot;/data/workspace&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">codeExecutionInstruction</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">        ## Script Execution</span>
+<span class="s">        Skills root directory: %s</span>
+<span class="s">        Always use absolute paths when running scripts.</span>
+<span class="s">        &quot;&quot;&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withShell</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enable</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 <section id="performance-optimization-recommendations">
 <h3>Performance Optimization Recommendations<a class="headerlink" href="#performance-optimization-recommendations" title="Link to this heading">¶</a></h3>
 <ol class="arabic simple">
@@ -834,7 +877,7 @@ is used.</p>
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-03-30</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -904,6 +947,7 @@ is used.</p>
 <li><a class="reference internal" href="#nacos-repository-read-only">Nacos Repository (Read-Only)</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#feature-4-custom-skill-prompts">Feature 4: Custom Skill Prompts</a></li>
 <li><a class="reference internal" href="#performance-optimization-recommendations">Performance Optimization Recommendations</a></li>
 </ul>
 </li>
