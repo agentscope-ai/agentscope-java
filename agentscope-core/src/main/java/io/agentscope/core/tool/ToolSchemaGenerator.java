@@ -91,6 +91,9 @@ class ToolSchemaGenerator {
         return schema;
     }
 
+    // TODO: putAll silently overwrites when different parameters define the same def key
+    //  (e.g. different classes with the same simple name under PLAIN_DEFINITION_KEYS).
+    //  Add value-equality check and fail-fast on true conflicts in a follow-up.
     @SuppressWarnings("unchecked")
     private void hoistDefs(
             Map<String, Object> paramSchema, String key, Map<String, Object> target) {

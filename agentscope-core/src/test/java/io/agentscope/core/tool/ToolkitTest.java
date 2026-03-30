@@ -988,7 +988,6 @@ class ToolkitTest {
         // Print the generated schema for debugging
         Map<String, Object> parameters = tool.getParameters();
         String schemaJson = JsonUtils.getJsonCodec().toJson(parameters);
-        System.out.println("Generated schema for createTheme: " + schemaJson);
 
         // Verify the schema contains $defs (victools should generate it for Material)
         assertTrue(
