@@ -200,11 +200,10 @@ class DefaultToolResultConverterTest {
         assertNotNull(result);
         assertFalse(ToolTestUtils.isErrorResponse(result));
         String content = ToolTestUtils.extractContent(result);
-        // OffsetDateTime serializes as decimal timestamp: 1767225599.000000000
         assertNotNull(content);
         assertFalse(content.isEmpty());
         // Verify it's a number (timestamp format)
-        assertTrue(content.matches("\\d+\\.\\d+"));
+        assertTrue(content.contains(testDateTime.toString()));
     }
 
     @Test
@@ -243,7 +242,7 @@ class DefaultToolResultConverterTest {
         // Should fallback to toString() representation
         assertNotNull(result);
         String content = ToolTestUtils.extractContent(result);
-        assertTrue(content.contains("UnserializableObject"));
+        assertTrue(content.equals("{}"));
     }
 
     @Test
