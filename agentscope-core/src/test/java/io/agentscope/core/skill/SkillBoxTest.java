@@ -408,19 +408,6 @@ class SkillBoxTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when enabling code execution without toolkit")
-        void testEnableCodeExecutionWithoutToolkit() {
-            SkillBox skillBoxWithoutToolkit = new SkillBox();
-
-            IllegalStateException exception =
-                    assertThrows(
-                            IllegalStateException.class,
-                            () -> skillBoxWithoutToolkit.codeExecution().withShell().enable());
-            assertEquals(
-                    "Must bind toolkit before enabling code execution", exception.getMessage());
-        }
-
-        @Test
         @DisplayName("Should upload skill files to upload directory organized by skill ID")
         void testUploadSkillFilesToUploadDir() throws IOException {
             String workDir = tempDir.resolve("scripts").toString();
@@ -948,6 +935,138 @@ class SkillBoxTest {
                 .filter(block -> block instanceof TextBlock)
                 .map(block -> ((TextBlock) block).getText())
                 .anyMatch(text -> text != null && text.startsWith("Error:"));
+    }
+
+    @Nested
+    @DisplayName("Skill Prompt Code Execution Integration Tests")
+    class SkillPromptCodeExecutionTest {
+
+        @TempDir Path tempDir;
+
+        @Test
+        @DisplayName("Should not include code execution section in prompt before enabling")
+        void testPromptHasNoCodeExecutionSectionBeforeEnable() {
+            AgentSkill skill = new AgentSkill("data-analysis", "Analyze data", "# Content", null);
+            skillBox.registerSkill(skill);
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertFalse(prompt.contains("## Code Execution"));
+            assertFalse(prompt.contains("<code_execution>"));
+        }
+
+        @Test
+        @DisplayName("Should include code execution section with uploadDir after enable and upload")
+        void testPromptIncludesUploadDirAfterEnableAndUpload() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String expectedUploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains("## Code Execution"));
+            assertTrue(prompt.contains("<code_execution>"));
+            assertTrue(prompt.contains(expectedUploadDir));
+        }
+
+        @Test
+        @DisplayName("Should show skill-id based subdirectory pattern in code execution section")
+        void testPromptShowsSkillIdSubdirectoryPattern() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String uploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains(uploadDir + "/<skill-id>/scripts/"));
+            assertTrue(prompt.contains(uploadDir + "/<skill-id>/assets/"));
+        }
+
+        @Test
+        @DisplayName("Should instruct LLM to use existing scripts and absolute paths")
+        void testPromptInstructsAbsolutePathsAndExistingScripts() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+
+            assertTrue(prompt.contains("absolute paths"));
+            assertTrue(prompt.contains("existing script"));
+        }
+
+        @Test
+        @DisplayName("Should use custom code execution instruction via builder")
+        void testCustomCodeExecutionInstructionViaBuilder() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            String customInstruction = "## My Custom Section\nRoot: %s";
+            skillBox.codeExecution()
+                    .workDir(tempDir.toString())
+                    .codeExecutionInstruction(customInstruction)
+                    .withShell()
+                    .enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+            String expectedUploadDir = tempDir.resolve("skills").toAbsolutePath().toString();
+
+            assertTrue(prompt.contains("## My Custom Section"));
+            assertTrue(prompt.contains("Root: " + expectedUploadDir));
+            assertFalse(prompt.contains("## Code Execution"));
+        }
+
+        @Test
+        @DisplayName("Code execution section should appear after </available_skills> in prompt")
+        void testCodeExecutionSectionOrderInPrompt() {
+            AgentSkill skill =
+                    new AgentSkill(
+                            "data-analysis",
+                            "Analyze data",
+                            "# Content",
+                            Map.of("scripts/analyze.py", "print('hello')"));
+            skillBox.registerSkill(skill);
+
+            skillBox.codeExecution().workDir(tempDir.toString()).withShell().enable();
+            skillBox.uploadSkillFiles();
+
+            String prompt = skillBox.getSkillPrompt();
+
+            int availableSkillsEnd = prompt.indexOf("</available_skills>");
+            int codeExecutionStart = prompt.indexOf("## Code Execution");
+            assertTrue(availableSkillsEnd >= 0);
+            assertTrue(codeExecutionStart >= 0);
+            assertTrue(availableSkillsEnd < codeExecutionStart);
+        }
     }
 
     /**
