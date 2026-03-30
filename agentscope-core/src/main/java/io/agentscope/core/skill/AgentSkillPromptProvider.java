@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.skill;
 
+import java.nio.file.Path;
+
 /**
  * Generates skill system prompts for agents to understand available skills.
  *
@@ -31,6 +33,9 @@ public class AgentSkillPromptProvider {
     private final SkillRegistry skillRegistry;
     private final String instruction;
     private final String template;
+    private boolean codeExecutionEnabled;
+    private String uploadDir;
+    private String codeExecutionInstruction;
 
     public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
             """
@@ -44,11 +49,10 @@ public class AgentSkillPromptProvider {
             - The skill will be activated and its documentation loaded with detailed instructions
             - Additional resources (scripts, assets, references) can be loaded using the same tool with different paths
 
-            Path Information:
-            When you load a skill, the response will include:
-            - Exact paths to all skill resources
-            - Code examples for accessing skill files
-            - Usage instructions specific to that skill
+            Example:
+            1. User asks to analyze data → find a matching skill below (e.g. <skill-id>data-analysis_builtin</skill-id>)
+            2. Load it: load_skill_through_path(skillId="data-analysis_builtin", path="SKILL.md")
+            3. Follow the instructions returned by the skill
 
             Template fields explanation:
             - <name>: The skill's display name
@@ -58,6 +62,41 @@ public class AgentSkillPromptProvider {
 
             <available_skills>
 
+            """;
+
+    // Every %s placeholder in the template will be replaced with the uploadDir absolute path
+    public static final String DEFAULT_CODE_EXECUTION_INSTRUCTION =
+            """
+
+            ## Code Execution
+
+            <code_execution>
+            You have access to the execute_shell_command tool. When a task can be accomplished by running\s
+            a pre-deployed skill script, you MUST execute it yourself using execute_shell_command rather\s
+            than describing or suggesting commands to the user.
+
+            Skills root directory: %s
+            Each skill's files are located under a subdirectory named by its <skill-id>:
+              %s/<skill-id>/scripts/
+              %s/<skill-id>/assets/
+
+            Workflow:
+            1. After loading a skill, use ls to explore its directory structure and discover available scripts/assets
+            2. Once you find the right script, execute it immediately with its absolute path
+            3. If execution fails, diagnose and retry — do not fall back to describing the command
+
+            Rules:
+            - Always use absolute paths when executing scripts
+            - If a script exists for the task, run it directly — do not rewrite its logic inline
+            - If asset/data files exist for the task, read them directly — do not recreate them
+
+            Example:
+              # Explore what scripts are available for a skill
+              execute_shell_command(command="ls %s/data-analysis_builtin/scripts/")
+
+              # Run an existing script with absolute path
+              execute_shell_command(command="python3 %s/data-analysis_builtin/scripts/analyze.py")
+            </code_execution>
             """;
 
     // skillName, skillDescription, skillId
@@ -126,6 +165,50 @@ public class AgentSkillPromptProvider {
         // Close available_skills tag
         sb.append("</available_skills>");
 
+        // Conditionally append code execution instructions
+        if (codeExecutionEnabled && uploadDir != null) {
+            String template =
+                    codeExecutionInstruction != null
+                            ? codeExecutionInstruction
+                            : DEFAULT_CODE_EXECUTION_INSTRUCTION;
+            sb.append(template.replace("%s", uploadDir));
+        }
+
         return sb.toString();
+    }
+
+    /**
+     * Sets whether code execution instructions are included in the skill system prompt.
+     *
+     * @param codeExecutionEnabled {@code true} to append code execution instructions
+     */
+    public void setCodeExecutionEnable(boolean codeExecutionEnabled) {
+        this.codeExecutionEnabled = codeExecutionEnabled;
+    }
+
+    /**
+     * Sets the upload directory whose absolute path replaces every {@code %s}
+     * placeholder in the code execution instruction template.
+     *
+     * @param uploadDir the upload directory path, or {@code null} to disable path substitution
+     */
+    public void setUploadDir(Path uploadDir) {
+        this.uploadDir = uploadDir != null ? uploadDir.toAbsolutePath().toString() : null;
+    }
+
+    /**
+     * Sets a custom code execution instruction template.
+     *
+     * <p>Every {@code %s} placeholder in the template will be replaced with
+     * the {@code uploadDir} absolute path. Pass {@code null} or blank to
+     * fall back to {@link #DEFAULT_CODE_EXECUTION_INSTRUCTION}.
+     *
+     * @param codeExecutionInstruction the custom template, or {@code null}/blank for default
+     */
+    public void setCodeExecutionInstruction(String codeExecutionInstruction) {
+        this.codeExecutionInstruction =
+                codeExecutionInstruction == null || codeExecutionInstruction.isBlank()
+                        ? null
+                        : codeExecutionInstruction;
     }
 }
