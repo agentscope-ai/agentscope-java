@@ -698,6 +698,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .onErrorResume(
                         Exception.class,
                         error -> {
+                            // Preserve interruption signal for agent stop policy
+                            if (error instanceof InterruptedException) {
+                                return Mono.error(error);
+                            }
                             // Generate error tool results for all pending tool calls.
                             // Only catch Exception subclasses; critical JVM errors
                             // (e.g. OutOfMemoryError) are left to propagate.
