@@ -18,10 +18,12 @@ package io.agentscope.core.memory.mem0;
 /**
  * Enumeration of Mem0 API deployment types.
  *
- * <p>Mem0 provides two deployment options with different API endpoints:
+ * <p>Mem0 provides two deployment options with different API endpoints and authentication:
  * <ul>
- *   <li><b>PLATFORM</b>: Official cloud service with endpoints /v1/memories/ and /v2/memories/search/</li>
- *   <li><b>SELF_HOSTED</b>: Self-deployed service with endpoints /memories and /search</li>
+ *   <li><b>PLATFORM</b>: Official cloud service with endpoints /v1/memories/ and /v2/memories/search/,
+ *       using {@code Authorization: Token <apiKey>} header</li>
+ *   <li><b>SELF_HOSTED</b>: Self-deployed service with endpoints /memories and /search,
+ *       using {@code X-API-Key: <apiKey>} header</li>
  * </ul>
  */
 public enum Mem0ApiType {
