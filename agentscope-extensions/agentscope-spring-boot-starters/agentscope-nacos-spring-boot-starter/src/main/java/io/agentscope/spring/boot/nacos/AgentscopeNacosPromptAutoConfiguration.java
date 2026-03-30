@@ -16,8 +16,8 @@
 
 package io.agentscope.spring.boot.nacos;
 
-import com.alibaba.nacos.api.config.ConfigFactory;
-import com.alibaba.nacos.api.config.ConfigService;
+import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import io.agentscope.core.nacos.prompt.NacosPromptListener;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
@@ -57,22 +57,20 @@ import org.springframework.context.annotation.Bean;
         matchIfMissing = true)
 public class AgentscopeNacosPromptAutoConfiguration {
 
-    @Bean(name = "agentscopePromptConfigService")
-    @ConditionalOnMissingBean(name = "agentscopePromptConfigService")
-    public ConfigService agentscopePromptConfigService(
+    @Bean(name = "agentscopePromptAiService")
+    @ConditionalOnMissingBean(name = "agentscopePromptAiService")
+    public AiService agentscopePromptAiService(
             AgentScopeNacosProperties nacosProperties,
             AgentScopeNacosPromptProperties promptNacosProperties)
             throws NacosException {
-        // Start from the global Nacos configuration (with defaults)
         Properties result = nacosProperties.getNacosProperties();
-        // Only overlay explicitly configured prompt-specific fields (no defaults)
         result.putAll(promptNacosProperties.getExplicitNacosProperties());
-        return ConfigFactory.createConfigService(result);
+        return AiFactory.createAiService(result);
     }
 
     @Bean
     @ConditionalOnMissingBean(NacosPromptListener.class)
-    public NacosPromptListener nacosPromptListener(ConfigService agentscopePromptConfigService) {
-        return new NacosPromptListener(agentscopePromptConfigService);
+    public NacosPromptListener nacosPromptListener(AiService agentscopePromptAiService) {
+        return new NacosPromptListener(agentscopePromptAiService);
     }
 }

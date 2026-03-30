@@ -44,10 +44,16 @@
             <artifactId>redisson</artifactId>
         </dependency>
 
-        <!-- Jedis client for Redis-based session implementation -->
+        <!-- Jedis client -->
         <dependency>
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
+        </dependency>
+
+        <!-- Lettuce client -->
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
         </dependency>
 
     </dependencies>

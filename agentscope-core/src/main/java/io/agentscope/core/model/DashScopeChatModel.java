@@ -268,6 +268,15 @@ public class DashScopeChatModel extends ChatModelBase {
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
 
+        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
+        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
+            if (formatter instanceof DashScopeChatFormatter chatFmt) {
+                chatFmt.applyCacheControl(request.getInput().getMessages());
+            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
+                multiFmt.applyCacheControl(request.getInput().getMessages());
+            }
+        }
+
         // Set endpoint type for endpoint selection
         request.setEndpointType(endpointType);
 

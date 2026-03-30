@@ -51,6 +51,7 @@ header:
     - '**/*.handlers'
     - '**/*.schemas'
     - '**/*.nojekyll'
+    - '**/*.sql'    
     - '.git/'
     - '.github/**'
     - '**/.gitignore'

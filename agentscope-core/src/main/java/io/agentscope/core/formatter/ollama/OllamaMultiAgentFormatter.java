@@ -34,7 +34,9 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,7 +184,7 @@ public class OllamaMultiAgentFormatter
 
         // Find image paths in the format "image can be found at: ./path"
         Pattern pattern = Pattern.compile("can be found at: ([^\s\n]+)");
-        java.util.regex.Matcher matcher = pattern.matcher(content);
+        Matcher matcher = pattern.matcher(content);
 
         if (matcher.find()) {
             String imagePath = matcher.group(1);
@@ -205,7 +207,7 @@ public class OllamaMultiAgentFormatter
                                     + "- The image from '"
                                     + imagePath
                                     + "': \n</system-info>");
-                    imageMsg.setImages(java.util.Collections.singletonList(base64Image));
+                    imageMsg.setImages(Collections.singletonList(base64Image));
                     return imageMsg;
                 }
             } catch (Exception e) {

@@ -235,7 +235,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](../multi-agent/agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
 
 ## AgentTool Interface
 
@@ -370,3 +370,9 @@ boolean isExternal = toolkit.isExternalTool("query_database");  // true
 ```
 
 The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED` → external execution → provide result to resume.
+
+## Complete Examples
+
+- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

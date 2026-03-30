@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.openai.OpenAIBaseFormatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
@@ -142,6 +143,12 @@ public class OpenAIChatModel extends ChatModelBase {
             formatter.applyToolChoice(request, effectiveOptions.getToolChoice());
         }
 
+        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
+        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())
+                && formatter instanceof OpenAIBaseFormatter openAIFormatter) {
+            openAIFormatter.applyCacheControl(request.getMessages());
+        }
+
         // Make the API call
         if (stream) {
             // Streaming mode
@@ -199,7 +206,7 @@ public class OpenAIChatModel extends ChatModelBase {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private Boolean stream;
+        private boolean stream = true;
         private GenerateOptions defaultOptions;
         private String baseUrl;
         private String endpointPath;

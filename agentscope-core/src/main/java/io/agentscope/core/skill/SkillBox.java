@@ -54,18 +54,6 @@ public class SkillBox implements StateModule {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    /**
-     * Creates a SkillBox without a toolkit.
-     *
-     * <p>This constructor will be removed in the next release. A SkillBox must hold a
-     * {@link Toolkit} to operate correctly. Relying on automatic toolkit assignment makes
-     * behavior less explicit and harder to reason about.
-     */
-    @Deprecated
-    public SkillBox() {
-        this(null, null, null);
-    }
-
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null, null);
     }
@@ -717,6 +705,7 @@ public class SkillBox implements StateModule {
             }
         }
 
+        skillPromptProvider.setUploadDir(uploadDir);
         return uploadDir;
     }
 
@@ -855,6 +844,7 @@ public class SkillBox implements StateModule {
         private boolean withShellCalled = false;
         private boolean enableRead = false;
         private boolean enableWrite = false;
+        private String codeExecutionInstruction;
 
         CodeExecutionBuilder(SkillBox skillBox) {
             this.skillBox = skillBox;
@@ -994,6 +984,23 @@ public class SkillBox implements StateModule {
         }
 
         /**
+         * Set a custom code execution instruction for the system prompt.
+         *
+         * <p>The instruction is appended to the skill system prompt when code execution is enabled.
+         * Use {@code %s} as a placeholder for the upload directory absolute path — every
+         * occurrence will be replaced with the actual path.
+         *
+         * <p>Pass {@code null} or blank to use the default instruction.
+         *
+         * @param instruction Custom code execution instruction template
+         * @return This builder for chaining
+         */
+        public CodeExecutionBuilder codeExecutionInstruction(String instruction) {
+            this.codeExecutionInstruction = instruction;
+            return this;
+        }
+
+        /**
          * Apply the configuration and enable code execution.
          *
          * <p>This method:
@@ -1017,8 +1024,7 @@ public class SkillBox implements StateModule {
             }
 
             // Handle replacement: remove existing tool group if present
-            if (skillBox.toolkit != null
-                    && skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
+            if (skillBox.toolkit.getToolGroup("skill_code_execution_tool_group") != null) {
                 skillBox.toolkit.removeToolGroups(List.of("skill_code_execution_tool_group"));
                 logger.info("Replacing existing code execution configuration");
             }
@@ -1107,6 +1113,10 @@ public class SkillBox implements StateModule {
                     shellEnabled,
                     enableRead,
                     enableWrite);
+
+            boolean injectCodeExecutionPrompt = shellEnabled || codeExecutionInstruction != null;
+            skillBox.skillPromptProvider.setCodeExecutionEnable(injectCodeExecutionPrompt);
+            skillBox.skillPromptProvider.setCodeExecutionInstruction(codeExecutionInstruction);
         }
 
         /**
