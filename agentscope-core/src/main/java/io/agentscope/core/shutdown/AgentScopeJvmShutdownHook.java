@@ -16,6 +16,7 @@
 package io.agentscope.core.shutdown;
 
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,8 @@ public final class AgentScopeJvmShutdownHook {
     private static final Logger log = LoggerFactory.getLogger(AgentScopeJvmShutdownHook.class);
     private static final AtomicBoolean REGISTERED = new AtomicBoolean(false);
 
+    private static final Duration INTERRUPT_GRACE_PERIOD = Duration.ofSeconds(5);
+
     private AgentScopeJvmShutdownHook() {}
 
     public static void register(GracefulShutdownManager manager) {
@@ -47,8 +50,15 @@ public final class AgentScopeJvmShutdownHook {
                                 () -> {
                                     try {
                                         manager.performGracefulShutdown();
-                                        manager.awaitTermination(
-                                                manager.getConfig().shutdownTimeout());
+                                        Duration timeout = manager.getConfig().shutdownTimeout();
+                                        // Wait for shutdown timeout + an extra grace period,
+                                        // so agents have time to handle the interrupt and
+                                        // clean up before HTTP transports are closed.
+                                        Duration awaitTimeout =
+                                                timeout != null
+                                                        ? timeout.plus(INTERRUPT_GRACE_PERIOD)
+                                                        : null;
+                                        manager.awaitTermination(awaitTimeout);
                                     } catch (Exception e) {
                                         log.warn("Graceful shutdown hook failed", e);
                                     } finally {

@@ -400,9 +400,16 @@ public abstract class AgentBase implements StateModule, Agent {
         if (checkRunning && !running.compareAndSet(false, true)) {
             throw new IllegalStateException("Agent is still running, please wait for it to finish");
         }
-        resetInterruptFlag();
-        GracefulShutdownManager.getInstance().ensureAcceptingRequests();
-        GracefulShutdownManager.getInstance().registerRequest(this);
+        try {
+            resetInterruptFlag();
+            GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+            GracefulShutdownManager.getInstance().registerRequest(this);
+        } catch (RuntimeException ex) {
+            if (checkRunning) {
+                running.set(false);
+            }
+            throw ex;
+        }
         return this;
     }
 

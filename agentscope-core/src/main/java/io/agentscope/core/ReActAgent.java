@@ -235,6 +235,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
+        shutdownManager.bindSession(this, session, sessionKey);
         // Load memory if managed
         if (statePersistence.memoryManaged()) {
             memory.loadFrom(session, sessionKey);

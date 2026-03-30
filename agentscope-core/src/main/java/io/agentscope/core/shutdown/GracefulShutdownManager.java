@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -61,6 +62,7 @@ public final class GracefulShutdownManager {
                         return t;
                     });
     private final Object terminationLock = new Object();
+    private final AtomicReference<ScheduledFuture<?>> monitorFuture = new AtomicReference<>();
     private final AtomicReference<Sinks.Empty<Void>> shutdownTimeoutSignal =
             new AtomicReference<>(Sinks.empty());
 
@@ -220,7 +222,10 @@ public final class GracefulShutdownManager {
         if (!monitorStarted.compareAndSet(false, true)) {
             return;
         }
-        monitor.scheduleAtFixedRate(this::enforceTimeoutAndInterrupt, 0, 1, TimeUnit.SECONDS);
+        ScheduledFuture<?> future =
+                monitor.scheduleAtFixedRate(
+                        this::enforceTimeoutAndInterrupt, 0, 1, TimeUnit.SECONDS);
+        monitorFuture.set(future);
     }
 
     private void enforceTimeoutAndInterrupt() {
@@ -302,6 +307,10 @@ public final class GracefulShutdownManager {
      * Reset manager state. Intended for testing and demo purposes only.
      */
     public void resetForTesting() {
+        ScheduledFuture<?> future = monitorFuture.getAndSet(null);
+        if (future != null) {
+            future.cancel(false);
+        }
         state.set(ShutdownState.RUNNING);
         activeRequestsByAgentId.clear();
         sessionBindings.clear();
