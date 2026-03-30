@@ -501,7 +501,12 @@ public class A2aAgentTest {
             fail(
                     "interrupt operation should stop task running and stop agent running. But"
                             + " timeout");
-        } catch (InterruptedException | ExecutionException ignored) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupt operation verification was interrupted unexpectedly");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            fail("interrupt operation should finish without execution errors: " + cause, cause);
         } finally {
             // Force stop task
             stopFlag.set(true);

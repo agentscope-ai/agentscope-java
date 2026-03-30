@@ -309,7 +309,7 @@ public final class CompressionUtils {
 
     private static boolean checkBrotliAvailable() {
         try {
-            Class.forName("com.aayushatharva.brotli4j.Brotli4jLoader");
+            Class.forName(Brotli4jLoader.class.getName());
             // Try to initialize - this will be done in the holder class
             return true;
         } catch (ClassNotFoundException e) {
@@ -329,7 +329,7 @@ public final class CompressionUtils {
 
     private static boolean checkZstdAvailable() {
         try {
-            Class.forName("com.github.luben.zstd.Zstd");
+            Class.forName(Zstd.class.getName());
             return true;
         } catch (ClassNotFoundException e) {
             log.debug(

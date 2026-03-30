@@ -71,7 +71,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithTextBlock() {
+    void testParseMessageWithTextBlock() throws Exception {
         // Create mock Message with text content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -105,7 +105,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithToolUseBlock() {
+    void testParseMessageWithToolUseBlock() throws Exception {
         // Create mock Message with tool use content
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
         Message message = mock(Message.class);
@@ -143,7 +143,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithThinkingBlock() {
+    void testParseMessageWithThinkingBlock() throws Exception {
         // Create mock Message with thinking content
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -236,7 +236,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testParseMessageWithNullToolInput() {
+    void testParseMessageWithNullToolInput() throws Exception {
         // Create mock Message with null tool input
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -330,7 +330,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         ChatResponse response = invokeParseStreamEvent(event, startTime);
 
         assertNotNull(response);
-        assertNotNull(response.getId()); // Builder auto-generates UUID when id is null
+        assertNotNull(response.getId());
         assertFalse(response.getId().isEmpty());
         assertTrue(response.getContent().isEmpty());
         assertNull(response.getUsage());

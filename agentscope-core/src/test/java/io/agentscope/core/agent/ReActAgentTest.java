@@ -825,10 +825,7 @@ class ReActAgentTest {
                                         accumulated.getFirstContentBlock(ToolUseBlock.class);
                                 receivedByToolId
                                         .computeIfAbsent(
-                                                tub.getId(),
-                                                k ->
-                                                        new java.util.concurrent
-                                                                .CopyOnWriteArrayList<>())
+                                                tub.getId(), k -> new CopyOnWriteArrayList<>())
                                         .add(tub);
                             }
                         }

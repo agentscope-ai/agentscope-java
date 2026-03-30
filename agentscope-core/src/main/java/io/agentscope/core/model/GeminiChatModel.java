@@ -15,20 +15,21 @@
  */
 package io.agentscope.core.model;
 
-import com.google.auth.oauth2.GoogleCredentials;
-import com.google.genai.Client;
-import com.google.genai.ResponseStream;
-import com.google.genai.types.ClientOptions;
-import com.google.genai.types.Content;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -55,109 +56,99 @@ import reactor.core.scheduler.Schedulers;
 public class GeminiChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
+    private static final String DEFAULT_BASE_URL =
+            "https://generativelanguage.googleapis.com/v1beta/models/";
 
+    private final String baseUrl;
     private final String apiKey;
+    private final String accessToken;
     private final String modelName;
     private final boolean streamEnabled;
-    private final String project;
-    private final String location;
-    private final Boolean vertexAI;
-    private final HttpOptions httpOptions;
-    private final GoogleCredentials credentials;
-    private final ClientOptions clientOptions;
-    private final Client client;
     private final GenerateOptions defaultOptions;
-    private final Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
-            formatter;
+    private final Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter;
+    private final OkHttpClient httpClient;
+    private final JsonCodec jsonCodec;
+    private final GeminiStructuredOutputHandler structuredOutputHandler =
+            new GeminiStructuredOutputHandler();
+    private final GeminiThinkingPolicy thinkingPolicy = new GeminiThinkingPolicy();
+    private final GeminiTransport transport;
+    private final GeminiRequestAssembler requestAssembler;
+    private final GeminiResponseGuard responseGuard;
+    private final GeminiRetryPolicy retryPolicy;
 
     /**
      * Creates a new Gemini chat model instance.
      *
-     * @param apiKey         the API key for authentication (for Gemini API)
-     * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
-     *                       "gemini-1.5-pro")
+     * @param baseUrl        the base URL for the API (optional)
+     * @param apiKey         the API key for Gemini API (optional if accessToken
+     *                       provided)
+     * @param accessToken    the access token for Vertex AI (optional)
+     * @param modelName      the model name (e.g., "gemini-2.0-flash")
      * @param streamEnabled  whether streaming should be enabled
-     * @param project        the Google Cloud project ID (for Vertex AI)
-     * @param location       the Google Cloud location (for Vertex AI, e.g.,
-     *                       "us-central1")
-     * @param vertexAI       whether to use Vertex AI APIs (null for auto-detection)
-     * @param httpOptions    HTTP options for the client
-     * @param credentials    Google credentials (for Vertex AI)
-     * @param clientOptions  client options for the API client
      * @param defaultOptions default generation options
-     * @param formatter      the message formatter to use (null for default Gemini
-     *                       formatter)
+     * @param formatter      the message formatter to use
+     * @param timeout        read/connect timeout in seconds (default: 60)
+     * @param client         optional custom OkHttpClient
      */
     public GeminiChatModel(
+            String baseUrl,
             String apiKey,
+            String accessToken,
             String modelName,
             boolean streamEnabled,
-            String project,
-            String location,
-            Boolean vertexAI,
-            HttpOptions httpOptions,
-            GoogleCredentials credentials,
-            ClientOptions clientOptions,
             GenerateOptions defaultOptions,
-            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+            Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter,
+            Long timeout,
+            OkHttpClient client) {
+        if (apiKey == null && accessToken == null) {
+            throw new IllegalArgumentException("Either API Key or Access Token must be provided");
+        }
+        this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
         this.apiKey = apiKey;
+        this.accessToken = accessToken;
         this.modelName = Objects.requireNonNull(modelName, "Model name is required");
         this.streamEnabled = streamEnabled;
-        this.project = project;
-        this.location = location;
-        this.vertexAI = vertexAI;
-        this.httpOptions = httpOptions;
-        this.credentials = credentials;
-        this.clientOptions = clientOptions;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new GeminiChatFormatter();
 
-        // Initialize Gemini client
-        Client.Builder clientBuilder = Client.builder();
-
-        // Configure API key (for Gemini API)
-        if (apiKey != null) {
-            clientBuilder.apiKey(apiKey);
+        if (client != null) {
+            this.httpClient = client;
+        } else {
+            long timeoutVal = timeout != null ? timeout : 60L;
+            this.httpClient =
+                    new OkHttpClient.Builder()
+                            .protocols(Collections.singletonList(Protocol.HTTP_1_1))
+                            .connectTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .readTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .writeTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .build();
         }
 
-        // Configure Vertex AI parameters
-        if (project != null) {
-            clientBuilder.project(project);
-        }
-        if (location != null) {
-            clientBuilder.location(location);
-        }
-        if (vertexAI != null) {
-            clientBuilder.vertexAI(vertexAI);
-        }
-        if (credentials != null) {
-            clientBuilder.credentials(credentials);
-        }
-
-        // Configure HTTP and client options
-        if (httpOptions != null) {
-            clientBuilder.httpOptions(httpOptions);
-        }
-        if (clientOptions != null) {
-            clientBuilder.clientOptions(clientOptions);
-        }
-
-        this.client = clientBuilder.build();
+        this.jsonCodec = JsonUtils.getJsonCodec();
+        this.transport = new GeminiTransport(this.httpClient, this.jsonCodec, this.formatter);
+        this.requestAssembler =
+                new GeminiRequestAssembler(
+                        this.baseUrl,
+                        this.modelName,
+                        this.streamEnabled,
+                        this.apiKey,
+                        this.accessToken,
+                        this.defaultOptions,
+                        this.formatter,
+                        this.jsonCodec,
+                        this.thinkingPolicy,
+                        log);
+        this.responseGuard = new GeminiResponseGuard(this.modelName, log);
+        this.retryPolicy = new GeminiRetryPolicy(this.modelName, log);
     }
 
     /**
      * Stream chat completion responses from Gemini's API.
      *
-     * <p>
-     * This method internally handles message formatting using the configured
-     * formatter.
-     * When streaming is enabled, it returns incremental responses as they arrive.
-     * When streaming is disabled, it returns a single complete response.
-     *
      * @param messages AgentScope messages to send to the model
-     * @param tools    Optional list of tool schemas (null or empty if no tools)
-     * @param options  Optional generation options (null to use defaults)
+     * @param tools    Optional list of tool schemas
+     * @param options  Optional generation options
      * @return Flux stream of chat responses
      */
     @Override
@@ -174,79 +165,45 @@ public class GeminiChatModel extends ChatModelBase {
         return Flux.defer(
                         () -> {
                             try {
-                                // Build generate content config
-                                GenerateContentConfig.Builder configBuilder =
-                                        GenerateContentConfig.builder();
+                                GeminiRequestAssembler.PreparedRequest preparedRequest =
+                                        requestAssembler.assemble(messages, tools, options);
 
-                                // Use formatter to convert Msg to Gemini
-                                // Content
-                                List<Content> formattedMessages = formatter.format(messages);
-
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(configBuilder, tools);
-
-                                    // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
-                                        formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
-                                    }
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(configBuilder, options, defaultOptions);
-
-                                GenerateContentConfig config = configBuilder.build();
-
-                                // Choose API based on streaming flag
-                                if (streamEnabled) {
-                                    // Use streaming API
-                                    ResponseStream<GenerateContentResponse> responseStream =
-                                            client.models.generateContentStream(
-                                                    modelName, formattedMessages, config);
-
-                                    // Convert ResponseStream to Flux
-                                    return Flux.fromIterable(responseStream)
-                                            .subscribeOn(Schedulers.boundedElastic())
-                                            .map(
-                                                    response ->
-                                                            formatter.parseResponse(
-                                                                    response, startTime))
-                                            .doFinally(
-                                                    signalType -> {
-                                                        // Close the stream
-                                                        // when done
-                                                        try {
-                                                            responseStream.close();
-                                                        } catch (Exception e) {
-                                                            log.warn(
-                                                                    "Error closing"
-                                                                            + " response"
-                                                                            + " stream: {}",
-                                                                    e.getMessage());
-                                                        }
-                                                    });
+                                // 4. Send Request and Handle Response
+                                Flux<ChatResponse> responseFlux;
+                                if (preparedRequest.isStreamForRequest()) {
+                                    responseFlux =
+                                            transport.handleStreamResponse(
+                                                    preparedRequest.getHttpRequest(), startTime);
                                 } else {
-                                    // Use non-streaming API
-                                    GenerateContentResponse response =
-                                            client.models.generateContent(
-                                                    modelName, formattedMessages, config);
-
-                                    // Parse response using formatter
-                                    ChatResponse chatResponse =
-                                            formatter.parseResponse(response, startTime);
-
-                                    return Flux.just(chatResponse);
+                                    responseFlux =
+                                            transport.handleUnaryResponse(
+                                                    preparedRequest.getHttpRequest(), startTime);
                                 }
+
+                                // 5. Add fallback for structured output (JSON text -> Tool Call)
+                                return responseFlux.map(
+                                        response ->
+                                                responseGuard.ensureMeaningfulContent(
+                                                        structuredOutputHandler
+                                                                .ensureStructuredOutputMetadata(
+                                                                        structuredOutputHandler
+                                                                                .fixStructuredOutputResponse(
+                                                                                        response,
+                                                                                        options,
+                                                                                        tools))));
 
                             } catch (Exception e) {
-                                log.error("Gemini API call failed: {}", e.getMessage(), e);
+                                log.error(
+                                        "Failed to prepare Gemini request: {}", e.getMessage(), e);
                                 return Flux.error(
                                         new ModelException(
-                                                "Gemini API call failed: " + e.getMessage(), e));
+                                                "Failed to prepare Gemini request: "
+                                                        + e.getMessage(),
+                                                e));
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic())
+                .retryWhen(retryPolicy.build());
     }
 
     @Override
@@ -255,15 +212,12 @@ public class GeminiChatModel extends ChatModelBase {
     }
 
     /**
-     * Close the Gemini client.
+     * Close the HTTP client resources if needed.
      */
     public void close() {
-        try {
-            if (client != null) {
-                client.close();
-            }
-        } catch (Exception e) {
-            log.warn("Error closing Gemini client: {}", e.getMessage());
+        if (httpClient != null) {
+            httpClient.dispatcher().executorService().shutdown();
+            httpClient.connectionPool().evictAll();
         }
     }
 
@@ -280,160 +234,131 @@ public class GeminiChatModel extends ChatModelBase {
      * Builder for creating GeminiChatModel instances.
      */
     public static class Builder {
+        private String baseUrl;
         private String apiKey;
+        private String accessToken;
         private String modelName = "gemini-2.5-flash";
         private boolean streamEnabled = true;
+        private GenerateOptions defaultOptions;
+        private Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter;
+        private Long timeout;
+        private OkHttpClient httpClient;
+
+        private List<Protocol> protocols = Collections.singletonList(Protocol.HTTP_1_1);
         private String project;
         private String location;
         private Boolean vertexAI;
-        private HttpOptions httpOptions;
-        private GoogleCredentials credentials;
-        private ClientOptions clientOptions;
-        private GenerateOptions defaultOptions;
-        private Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
-                formatter;
 
-        /**
-         * Sets the API key (for Gemini API).
-         *
-         * @param apiKey the Gemini API key
-         * @return this builder
-         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+            return this;
+        }
+
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
             return this;
         }
 
-        /**
-         * Sets the model name.
-         *
-         * @param modelName the model name (default: "gemini-2.5-flash")
-         * @return this builder
-         */
+        public Builder accessToken(String accessToken) {
+            this.accessToken = accessToken;
+            return this;
+        }
+
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
         }
 
-        /**
-         * Sets whether streaming is enabled.
-         *
-         * @param streamEnabled true to enable streaming (default: false)
-         * @return this builder
-         */
         public Builder streamEnabled(boolean streamEnabled) {
             this.streamEnabled = streamEnabled;
             return this;
         }
 
-        /**
-         * Sets the Google Cloud project ID (for Vertex AI).
-         *
-         * @param project the project ID
-         * @return this builder
-         */
-        public Builder project(String project) {
-            this.project = project;
-            return this;
-        }
-
-        /**
-         * Sets the Google Cloud location (for Vertex AI).
-         *
-         * @param location the location (e.g., "us-central1")
-         * @return this builder
-         */
-        public Builder location(String location) {
-            this.location = location;
-            return this;
-        }
-
-        /**
-         * Sets whether to use Vertex AI APIs.
-         *
-         * @param vertexAI true to use Vertex AI, false for Gemini API
-         * @return this builder
-         */
-        public Builder vertexAI(boolean vertexAI) {
-            this.vertexAI = vertexAI;
-            return this;
-        }
-
-        /**
-         * Sets the HTTP options for the client.
-         *
-         * @param httpOptions the HTTP options
-         * @return this builder
-         */
-        public Builder httpOptions(HttpOptions httpOptions) {
-            this.httpOptions = httpOptions;
-            return this;
-        }
-
-        /**
-         * Sets the Google credentials (for Vertex AI).
-         *
-         * @param credentials the Google credentials
-         * @return this builder
-         */
-        public Builder credentials(GoogleCredentials credentials) {
-            this.credentials = credentials;
-            return this;
-        }
-
-        /**
-         * Sets the client options.
-         *
-         * @param clientOptions the client options
-         * @return this builder
-         */
-        public Builder clientOptions(ClientOptions clientOptions) {
-            this.clientOptions = clientOptions;
-            return this;
-        }
-
-        /**
-         * Sets the default generation options.
-         *
-         * @param defaultOptions the default options
-         * @return this builder
-         */
         public Builder defaultOptions(GenerateOptions defaultOptions) {
             this.defaultOptions = defaultOptions;
             return this;
         }
 
-        /**
-         * Sets the formatter.
-         *
-         * @param formatter the formatter to use
-         * @return this builder
-         */
         public Builder formatter(
-                Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
-                        formatter) {
+                Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter) {
             this.formatter = formatter;
             return this;
         }
 
-        /**
-         * Builds the GeminiChatModel instance.
-         *
-         * @return a new GeminiChatModel
-         */
+        public Builder timeout(Long timeout) {
+            this.timeout = timeout;
+            return this;
+        }
+
+        public Builder httpClient(OkHttpClient httpClient) {
+            this.httpClient = httpClient;
+            return this;
+        }
+
+        public Builder protocols(List<Protocol> protocols) {
+            this.protocols = protocols;
+            return this;
+        }
+
+        public Builder project(String project) {
+            this.project = project;
+            return this;
+        }
+
+        public Builder location(String location) {
+            this.location = location;
+            return this;
+        }
+
+        public Builder vertexAI(Boolean vertexAI) {
+            this.vertexAI = vertexAI;
+            return this;
+        }
+
         public GeminiChatModel build() {
+            OkHttpClient client = this.httpClient;
+            if (client == null) {
+                long timeoutVal = this.timeout != null ? this.timeout : 60L;
+                OkHttpClient.Builder clientBuilder =
+                        new OkHttpClient.Builder()
+                                .connectTimeout(timeoutVal, TimeUnit.SECONDS)
+                                .readTimeout(timeoutVal, TimeUnit.SECONDS)
+                                .writeTimeout(timeoutVal, TimeUnit.SECONDS);
+
+                if (this.protocols != null) {
+                    clientBuilder.protocols(this.protocols);
+                }
+                client = clientBuilder.build();
+            }
+
+            // Construct Vertex AI Base URL if needed
+            String finalBaseUrl = this.baseUrl;
+            if (finalBaseUrl == null
+                    && (Boolean.TRUE.equals(this.vertexAI)
+                            || (this.project != null && !this.project.isEmpty()))) {
+                String loc =
+                        this.location != null && !this.location.isEmpty()
+                                ? this.location
+                                : "us-central1";
+                if (this.project == null || this.project.isEmpty()) {
+                    throw new IllegalArgumentException("Project ID is required for Vertex AI");
+                }
+                finalBaseUrl =
+                        String.format(
+                                "https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/",
+                                loc, this.project, loc);
+            }
+
             return new GeminiChatModel(
+                    finalBaseUrl,
                     apiKey,
+                    accessToken,
                     modelName,
                     streamEnabled,
-                    project,
-                    location,
-                    vertexAI,
-                    httpOptions,
-                    credentials,
-                    clientOptions,
                     defaultOptions,
-                    formatter);
+                    formatter,
+                    timeout,
+                    client);
         }
     }
 }

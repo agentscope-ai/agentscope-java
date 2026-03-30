@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Blob;
-import com.google.genai.types.Part;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiBlob;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -64,7 +64,7 @@ public class GeminiMediaConverter {
      * @param block ImageBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(ImageBlock block) {
+    public GeminiPart convertToInlineDataPart(ImageBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "image");
     }
 
@@ -74,7 +74,7 @@ public class GeminiMediaConverter {
      * @param block AudioBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(AudioBlock block) {
+    public GeminiPart convertToInlineDataPart(AudioBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "audio");
     }
 
@@ -84,31 +84,39 @@ public class GeminiMediaConverter {
      * @param block VideoBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(VideoBlock block) {
+    public GeminiPart convertToInlineDataPart(VideoBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "video");
     }
 
     /**
      * Convert a media source to Gemini Part with inline data.
      *
-     * @param source Source object (Base64Source or URLSource)
+     * @param source    Source object (Base64Source or URLSource)
      * @param mediaType Media type string ("image", "audio", or "video")
      * @return Part object with inline data
      */
-    private Part convertMediaBlockToInlineDataPart(Source source, String mediaType) {
-        byte[] data;
+    private GeminiPart convertMediaBlockToInlineDataPart(Source source, String mediaType) {
+        String base64Data;
         String mimeType;
 
         if (source instanceof Base64Source base64Source) {
-            // Base64: decode and use directly
-            data = Base64.getDecoder().decode(base64Source.getData());
+            // Base64: validate and use directly
+            String data = base64Source.getData();
+            try {
+                // Validate that the data is valid base64
+                Base64.getDecoder().decode(data);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Base64Source data is not valid base64", e);
+            }
+            base64Data = data;
             mimeType = base64Source.getMediaType();
 
         } else if (source instanceof URLSource urlSource) {
             // URL: read file and get mime type
             String url = urlSource.getUrl();
             try {
-                data = readFileAsBytes(url);
+                byte[] data = readFileAsBytes(url);
+                base64Data = Base64.getEncoder().encodeToString(data);
                 mimeType = getMimeType(url, mediaType);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to read file: " + url, e);
@@ -120,9 +128,11 @@ public class GeminiMediaConverter {
         }
 
         // Create Blob and Part
-        Blob blob = Blob.builder().data(data).mimeType(mimeType).build();
+        GeminiBlob blob = new GeminiBlob(mimeType, base64Data);
+        GeminiPart part = new GeminiPart();
+        part.setInlineData(blob);
 
-        return Part.builder().inlineData(blob).build();
+        return part;
     }
 
     /**
@@ -158,7 +168,7 @@ public class GeminiMediaConverter {
     /**
      * Determine MIME type from file extension.
      *
-     * @param url File URL or path
+     * @param url       File URL or path
      * @param mediaType Media type category ("image", "audio", "video")
      * @return MIME type string (e.g., "image/png")
      */

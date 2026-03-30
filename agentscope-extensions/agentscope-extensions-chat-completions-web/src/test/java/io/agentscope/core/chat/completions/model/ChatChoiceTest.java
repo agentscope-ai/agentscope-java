@@ -159,7 +159,6 @@ class ChatChoiceTest {
             ChatChoice choice1 = new ChatChoice();
             choice1.setIndex(0);
             assertEquals(0, choice1.getIndex());
-
             ChatChoice choice2 = new ChatChoice();
             choice2.setIndex(1);
             assertEquals(1, choice2.getIndex());
