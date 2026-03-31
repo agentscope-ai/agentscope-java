@@ -542,9 +542,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with single list item")
         void testParseSingleListItem() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  - feature1";
+            String yaml = "name: test\n" + "tags:\n" + "  - feature1";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -555,11 +553,12 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with multiple list items")
         void testParseMultipleListItems() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  - feature1\n" +
-                    "  - feature2\n" +
-                    "  - feature3";
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - feature1\n"
+                            + "  - feature2\n"
+                            + "  - feature3";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -570,11 +569,12 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with list in the middle")
         void testParseListInMiddle() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  - feature1\n" +
-                    "  - feature2\n" +
-                    "description: A test skill";
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - feature1\n"
+                            + "  - feature2\n"
+                            + "description: A test skill";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -586,15 +586,16 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with multiple lists")
         void testParseMultipleLists() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  - tag1\n" +
-                    "  - tag2\n" +
-                    "description: A test skill\n" +
-                    "inputs:\n" +
-                    "  - input1\n" +
-                    "  - input2\n" +
-                    "  - input3";
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - tag1\n"
+                            + "  - tag2\n"
+                            + "description: A test skill\n"
+                            + "inputs:\n"
+                            + "  - input1\n"
+                            + "  - input2\n"
+                            + "  - input3";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -607,8 +608,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with list item without key should throw exception")
         void testParseListItemWithoutKey() {
-            String yaml = "- item1\n" +
-                    "- item2";
+            String yaml = "- item1\n" + "- item2";
 
             assertThrows(IllegalArgumentException.class, () -> parseYaml(yaml));
         }
@@ -616,9 +616,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with empty list")
         void testParseEmptyList() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "description: A test skill";
+            String yaml = "name: test\n" + "tags:\n" + "description: A test skill";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -629,10 +627,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing YAML with list containing spaces")
         void testParseListWithSpaces() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  -   feature1   \n" +
-                    "  - feature2";
+            String yaml = "name: test\n" + "tags:\n" + "  -   feature1   \n" + "  - feature2";
 
             Map<String, String> result = parseYaml(yaml);
 
@@ -643,16 +638,17 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing markdown with list in frontmatter")
         void testParseMarkdownWithListInFrontmatter() {
-            String markdown = "---\n" +
-                    "name: test_skill\n" +
-                    "tags:\n" +
-                    "  - ai\n" +
-                    "  - ml\n" +
-                    "  - deep-learning\n" +
-                    "version: 1.0.0\n" +
-                    "---\n" +
-                    "# Test Skill\n" +
-                    "This is a test skill description.";
+            String markdown =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "tags:\n"
+                            + "  - ai\n"
+                            + "  - ml\n"
+                            + "  - deep-learning\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Test Skill\n"
+                            + "This is a test skill description.";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -666,21 +662,22 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing markdown with multiple lists in frontmatter")
         void testParseMarkdownWithMultipleLists() {
-            String markdown = "---\n" +
-                    "name: vm_renew_skill\n" +
-                    "tags:\n" +
-                    "  - vm\n" +
-                    "  - renew\n" +
-                    "inputs:\n" +
-                    "  - vm_id\n" +
-                    "  - duration\n" +
-                    "outputs:\n" +
-                    "  - result\n" +
-                    "  - status\n" +
-                    "version: 2.0.0\n" +
-                    "---\n" +
-                    "# VM Renew Skill\n" +
-                    "This skill renews virtual machines.";
+            String markdown =
+                    "---\n"
+                            + "name: vm_renew_skill\n"
+                            + "tags:\n"
+                            + "  - vm\n"
+                            + "  - renew\n"
+                            + "inputs:\n"
+                            + "  - vm_id\n"
+                            + "  - duration\n"
+                            + "outputs:\n"
+                            + "  - result\n"
+                            + "  - status\n"
+                            + "version: 2.0.0\n"
+                            + "---\n"
+                            + "# VM Renew Skill\n"
+                            + "This skill renews virtual machines.";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
 
@@ -696,11 +693,11 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test generating markdown with list values")
         void testGenerateMarkdownWithList() {
-            Map<String, String> metadata = Map.of(
-                    "name", "test_skill",
-                    "tags", "ai,ml,deep-learning",
-                    "version", "1.0.0"
-            );
+            Map<String, String> metadata =
+                    Map.of(
+                            "name", "test_skill",
+                            "tags", "ai,ml,deep-learning",
+                            "version", "1.0.0");
             String content = "# Test Skill\nThis is content.";
 
             String generated = MarkdownSkillParser.generate(metadata, content);
@@ -714,27 +711,29 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test round-trip: parse and generate with list")
         void testRoundTripWithList() {
-            String original = "---\n" +
-                    "name: round_trip_test\n" +
-                    "tags:\n" +
-                    "  - tag1\n" +
-                    "  - tag2\n" +
-                    "  - tag3\n" +
-                    "version: 1.0.0\n" +
-                    "---\n" +
-                    "# Content";
+            String original =
+                    "---\n"
+                            + "name: round_trip_test\n"
+                            + "tags:\n"
+                            + "  - tag1\n"
+                            + "  - tag2\n"
+                            + "  - tag3\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Content";
 
             ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
-            String regenerated = MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+            String regenerated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
 
             // Parse again to verify round-trip
             ParsedMarkdown reparsed = MarkdownSkillParser.parse(regenerated);
 
             assertEquals(parsed.getMetadata().get("name"), reparsed.getMetadata().get("name"));
             assertEquals("tag1,tag2,tag3", reparsed.getMetadata().get("tags"));
-            assertEquals(parsed.getMetadata().get("version"), reparsed.getMetadata().get("version"));
+            assertEquals(
+                    parsed.getMetadata().get("version"), reparsed.getMetadata().get("version"));
         }
-
 
         @Test
         @DisplayName("Test parsing empty markdown")
@@ -771,18 +770,18 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Test parsing list with special characters in items")
         void testParseListWithSpecialCharacters() {
-            String yaml = "name: test\n" +
-                    "tags:\n" +
-                    "  - tag-with-dash\n" +
-                    "  - tag_with_underscore\n" +
-                    "  - tag123";
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - tag-with-dash\n"
+                            + "  - tag_with_underscore\n"
+                            + "  - tag123";
 
             Map<String, String> result = parseYaml(yaml);
 
             assertEquals("test", result.get("name"));
             assertEquals("tag-with-dash,tag_with_underscore,tag123", result.get("tags"));
         }
-
 
         private Map<String, String> parseYaml(String yaml) {
             String markdown = "---\n" + yaml + "\n---\n";
