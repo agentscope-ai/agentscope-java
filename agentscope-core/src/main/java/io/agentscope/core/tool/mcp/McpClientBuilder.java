@@ -329,7 +329,7 @@ public class McpClientBuilder {
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", "1.0.11-SNAPSHOT");
+                        "agentscope-java", "AgentScope Java Framework", "1.0.11");
 
         McpSchema.ClientCapabilities clientCapabilities =
                 McpSchema.ClientCapabilities.builder().build();
