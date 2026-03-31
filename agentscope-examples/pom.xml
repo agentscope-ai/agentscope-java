@@ -46,6 +46,7 @@
         <module>hitl-chat</module>
         <module>a2a</module>
         <module>chat-tts</module>
+        <module>graceful-shutdown</module>
         <module>multiagent-patterns/handoffs</module>
         <module>multiagent-patterns/routing</module>
         <module>multiagent-patterns/subagent</module>
