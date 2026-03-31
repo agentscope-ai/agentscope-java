@@ -17,8 +17,8 @@
 package io.agentscope.core.skill.util;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -172,7 +172,7 @@ public class MarkdownSkillParser {
             }
 
             String[] lines = yaml.split("[\\r\\n]+");
-            String curKey =  null;
+            String curKey = null;
             List<String> yamlList = new ArrayList<>();
 
             for (String line : lines) {
@@ -189,7 +189,7 @@ public class MarkdownSkillParser {
                 // Handle list items
                 if (line.trim().startsWith("-")) {
                     // Start with a list item but no key, throw it
-                    if (curKey ==  null) {
+                    if (curKey == null) {
                         throw new IllegalArgumentException(
                                 "List item without a preceding key: " + line);
                     }
