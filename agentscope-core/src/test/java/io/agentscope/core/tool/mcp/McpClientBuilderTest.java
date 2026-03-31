@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.Version;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.http.HttpClient;
@@ -382,7 +383,7 @@ class McpClientBuilderTest {
     void testSseTransport_WithCompleteConfiguration() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token");
-        headers.put("X-Client-Version", "1.0.11");
+        headers.put("X-Client-Version", Version.VERSION);
 
         McpClientBuilder builder =
                 McpClientBuilder.create("full-sse-client")
@@ -1134,7 +1135,7 @@ class McpClientBuilderTest {
     void testCompleteConfiguration_WithClientCustomization() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token123");
-        headers.put("X-Client-Version", "1.0.11");
+        headers.put("X-Client-Version", Version.VERSION);
 
         Map<String, String> queryParams = new HashMap<>();
         queryParams.put("tenant", "acme");
