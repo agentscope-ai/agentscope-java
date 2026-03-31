@@ -167,6 +167,7 @@ public final class GracefulShutdownManager {
         }
         activeRequestsByAgentId.remove(agent.getAgentId());
         sessionBindings.remove(agent.getAgentId());
+        updateTerminatedIfNoRequests();
     }
 
     private Optional<ActiveRequestContext> getActiveRequestByAgent(Agent agent) {
@@ -262,9 +263,6 @@ public final class GracefulShutdownManager {
                 }
             }
         }
-
-        // Always check if we can transition to TERMINATED (no active requests)
-        updateTerminatedIfNoRequests();
     }
 
     private void updateTerminatedIfNoRequests() {
@@ -284,6 +282,7 @@ public final class GracefulShutdownManager {
      * @return true if TERMINATED was reached, false if timed out
      */
     public boolean awaitTermination(Duration timeout) {
+        updateTerminatedIfNoRequests();
         long deadline =
                 timeout != null ? System.currentTimeMillis() + timeout.toMillis() : Long.MAX_VALUE;
         synchronized (terminationLock) {
