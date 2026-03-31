@@ -96,6 +96,14 @@ public class ProviderFactory {
         providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
         providers.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
 
+        // DashScope Compatible providers (Qwen3.5)
+        providers.add(new DashScopeCompatibleProvider.Qwen35PlusOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen35PlusMultiAgentOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen35FlashOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen35FlashMultiAgentOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen35_397bA17bOpenAI());
+        providers.add(new DashScopeCompatibleProvider.Qwen35_397bA17bMultiAgentOpenAI());
+
         // DashScope Native providers
         providers.add(new DashScopeProvider.QwenPlusDashScope());
         providers.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
@@ -103,6 +111,12 @@ public class ProviderFactory {
         providers.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope());
         providers.add(new DashScopeProvider.Qwen3VlPlusDashScope());
         providers.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+        providers.add(new DashScopeProvider.Qwen35PlusDashScope());
+        providers.add(new DashScopeProvider.Qwen35PlusMultiAgentDashScope());
+        providers.add(new DashScopeProvider.Qwen35FlashDashScope());
+        providers.add(new DashScopeProvider.Qwen35FlashMultiAgentDashScope());
+        providers.add(new DashScopeProvider.Qwen35_397bA17bDashScope());
+        providers.add(new DashScopeProvider.Qwen35_397bA17bMultiAgentDashScope());
 
         // Gemini providers
         providers.add(new GeminiProvider.Gemini25FlashGemini());
