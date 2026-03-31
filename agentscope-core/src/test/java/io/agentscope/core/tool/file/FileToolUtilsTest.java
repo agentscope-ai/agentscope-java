@@ -113,7 +113,7 @@ class FileToolUtilsTest {
     @Test
     @DisplayName("Should view entire file content")
     void testViewTextFile_EntireFile() {
-        String content = FileToolUtils.viewTextFile(testFile.toString(), 1, 10);
+        String content = FileToolUtils.viewTextFile(testFile, 1, 10);
 
         assertNotNull(content);
         assertTrue(content.contains("1: Line 1"), "Should contain line 1");
@@ -124,7 +124,7 @@ class FileToolUtilsTest {
     @Test
     @DisplayName("Should view specific range of file")
     void testViewTextFile_SpecificRange() {
-        String content = FileToolUtils.viewTextFile(testFile.toString(), 3, 5);
+        String content = FileToolUtils.viewTextFile(testFile, 3, 5);
 
         assertNotNull(content);
         assertTrue(content.contains("3: Line 3"), "Should contain line 3");
@@ -138,7 +138,7 @@ class FileToolUtilsTest {
     @Test
     @DisplayName("Should handle view range beyond file length")
     void testViewTextFile_RangeBeyondFile() {
-        String content = FileToolUtils.viewTextFile(testFile.toString(), 5, 20);
+        String content = FileToolUtils.viewTextFile(testFile, 5, 20);
 
         assertNotNull(content);
         assertTrue(content.contains("5: Line 5"), "Should contain line 5");
@@ -149,7 +149,7 @@ class FileToolUtilsTest {
     @Test
     @DisplayName("Should handle view with invalid start line")
     void testViewTextFile_InvalidStartLine() {
-        String content = FileToolUtils.viewTextFile(testFile.toString(), 0, 5);
+        String content = FileToolUtils.viewTextFile(testFile, 0, 5);
 
         assertNotNull(content);
         assertTrue(content.contains("1: Line 1"), "Should start from line 1");
@@ -159,7 +159,8 @@ class FileToolUtilsTest {
     @Test
     @DisplayName("Should handle non-existent file")
     void testViewTextFile_NonExistentFile() {
-        String content = FileToolUtils.viewTextFile("non_existent.txt", 1, 10);
+        String content =
+                FileToolUtils.viewTextFile(java.nio.file.Paths.get("non_existent.txt"), 1, 10);
 
         assertNotNull(content);
         assertTrue(content.contains("Error reading file"), "Should contain error message");
@@ -199,12 +200,11 @@ class FileToolUtilsTest {
     }
 
     @Test
-    @DisplayName("Should parse negative range")
+    @DisplayName("Should parse negative range (negative indices supported by ReadFileTool)")
     void testParseRanges_NegativeNumbers() {
+        // parseRanges 只做格式解析，不做语义校验；负数索引由上层工具（ReadFileTool）处理
         int[] range = FileToolUtils.parseRanges("-100,-1");
-
         assertNotNull(range);
-        assertEquals(2, range.length);
         assertEquals(-100, range[0]);
         assertEquals(-1, range[1]);
     }
