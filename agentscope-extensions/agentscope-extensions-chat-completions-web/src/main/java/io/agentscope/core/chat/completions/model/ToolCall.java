@@ -15,13 +15,15 @@
  */
 package io.agentscope.core.chat.completions.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * Represents a tool call in OpenAI-compatible format.
  *
  * <p>This DTO is used to serialize tool calls in the conversation context, allowing clients to
  * reconstruct the full conversation history including tool invocations.
  *
- * <p>Example JSON:
+ * <p>Example JSON (non-streaming):
  *
  * <pre>{@code
  * {
@@ -33,8 +35,25 @@ package io.agentscope.core.chat.completions.model;
  *   }
  * }
  * }</pre>
+ *
+ * <p>Example JSON (streaming with index):
+ *
+ * <pre>{@code
+ * {
+ *   "index": 0,
+ *   "id": "call_abc123",
+ *   "type": "function",
+ *   "function": {
+ *     "name": "get_weather",
+ *     "arguments": "{\"city\":\"Hangzhou\"}"
+ *   }
+ * }
+ * }</pre>
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ToolCall {
+
+    private Integer index;
 
     private String id;
 
@@ -56,6 +75,29 @@ public class ToolCall {
         this.id = id;
         this.type = "function";
         this.function = new FunctionCall(name, arguments);
+    }
+
+    /**
+     * Creates a new tool call with index (for streaming).
+     *
+     * @param index Index in the tool_calls array
+     * @param id Unique identifier for this tool call
+     * @param name Function name
+     * @param arguments JSON string of function arguments
+     */
+    public ToolCall(Integer index, String id, String name, String arguments) {
+        this.index = index;
+        this.id = id;
+        this.type = "function";
+        this.function = new FunctionCall(name, arguments);
+    }
+
+    public Integer getIndex() {
+        return index;
+    }
+
+    public void setIndex(Integer index) {
+        this.index = index;
     }
 
     public String getId() {

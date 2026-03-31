@@ -174,6 +174,45 @@ class ChatCompletionsRequestTest {
     }
 
     @Nested
+    @DisplayName("Tools Tests")
+    class ToolsTests {
+
+        @Test
+        @DisplayName("Should set and get tools")
+        void shouldSetAndGetTools() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            OpenAIToolFunction function = new OpenAIToolFunction();
+            function.setName("get_weather");
+            function.setDescription("Get weather");
+            OpenAITool tool = new OpenAITool(function);
+
+            request.setTools(List.of(tool));
+
+            assertNotNull(request.getTools());
+            assertEquals(1, request.getTools().size());
+            assertEquals("get_weather", request.getTools().get(0).getFunction().getName());
+        }
+
+        @Test
+        @DisplayName("Should handle null tools")
+        void shouldHandleNullTools() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+
+            assertNull(request.getTools());
+        }
+
+        @Test
+        @DisplayName("Should handle empty tools list")
+        void shouldHandleEmptyToolsList() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setTools(new ArrayList<>());
+
+            assertNotNull(request.getTools());
+            assertTrue(request.getTools().isEmpty());
+        }
+    }
+
+    @Nested
     @DisplayName("Complete Request Tests")
     class CompleteRequestTests {
 
@@ -191,6 +230,27 @@ class ChatCompletionsRequestTest {
             assertEquals("gpt-4", request.getModel());
             assertEquals(2, request.getMessages().size());
             assertFalse(request.getStream());
+        }
+
+        @Test
+        @DisplayName("Should build complete request with tools")
+        void shouldBuildCompleteRequestWithTools() {
+            ChatCompletionsRequest request = new ChatCompletionsRequest();
+            request.setModel("gpt-4");
+            request.setMessages(List.of(new ChatMessage("user", "Hello")));
+            request.setStream(false);
+
+            OpenAIToolFunction function = new OpenAIToolFunction();
+            function.setName("get_weather");
+            function.setDescription("Get weather");
+            OpenAITool tool = new OpenAITool(function);
+            request.setTools(List.of(tool));
+
+            assertEquals("gpt-4", request.getModel());
+            assertEquals(1, request.getMessages().size());
+            assertFalse(request.getStream());
+            assertNotNull(request.getTools());
+            assertEquals(1, request.getTools().size());
         }
     }
 }

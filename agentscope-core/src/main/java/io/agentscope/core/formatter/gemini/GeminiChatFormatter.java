@@ -29,6 +29,8 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Formatter for Gemini Content Generation API.
@@ -131,10 +133,10 @@ public class GeminiChatFormatter
      * Apply Float option with fallback logic.
      */
     private void applyFloatOption(
-            java.util.function.Function<GenerateOptions, Double> accessor,
+            Function<GenerateOptions, Double> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Float> setter) {
+            Consumer<Float> setter) {
 
         Double value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
@@ -146,10 +148,10 @@ public class GeminiChatFormatter
      * Apply Integer option with fallback logic.
      */
     private void applyIntegerOption(
-            java.util.function.Function<GenerateOptions, Integer> accessor,
+            Function<GenerateOptions, Integer> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
+            Consumer<Integer> setter) {
 
         Integer value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
@@ -161,10 +163,10 @@ public class GeminiChatFormatter
      * Apply Integer option as Float with fallback logic (for Gemini topK which requires Float).
      */
     private void applyIntegerAsFloatOption(
-            java.util.function.Function<GenerateOptions, Integer> accessor,
+            Function<GenerateOptions, Integer> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Float> setter) {
+            Consumer<Float> setter) {
 
         Integer value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
@@ -176,10 +178,10 @@ public class GeminiChatFormatter
      * Apply Long option as Integer with fallback logic (for Gemini seed which requires Integer).
      */
     private void applyLongAsIntOption(
-            java.util.function.Function<GenerateOptions, Long> accessor,
+            Function<GenerateOptions, Long> accessor,
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
+            Consumer<Integer> setter) {
 
         Long value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {

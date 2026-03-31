@@ -209,10 +209,32 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-nacos-skill</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-skill-git-repository</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-skill-mysql-repository</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-rocketmq</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
 
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
@@ -273,7 +295,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.1</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <goals>

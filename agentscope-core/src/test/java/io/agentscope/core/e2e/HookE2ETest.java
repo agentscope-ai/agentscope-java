@@ -262,11 +262,13 @@ class HookE2ETest {
                 };
 
         Toolkit toolkit = new Toolkit();
-        ReActAgent agent = provider.createAgent("PriorityAgent", toolkit);
-        // Add in random order
-        agent.getHooks().add(lowPriorityHook);
-        agent.getHooks().add(highPriorityHook);
-        agent.getHooks().add(mediumPriorityHook);
+        ReActAgent agent =
+                provider.createAgentBuilder("PriorityAgent", toolkit)
+                        // Add in random order
+                        .hook(lowPriorityHook)
+                        .hook(highPriorityHook)
+                        .hook(mediumPriorityHook)
+                        .build();
 
         Msg input = TestUtils.createUserMessage("User", "Hello");
         agent.call(input).block(TEST_TIMEOUT);

@@ -37,6 +37,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -138,6 +139,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
+    private final GenerateOptions generateOptions;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
@@ -159,6 +161,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
+        this.generateOptions = builder.generateOptions;
         this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.statePersistence =
@@ -512,8 +515,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return executeIteration(iter + 1);
         }
 
-        // Set chunk callback for streaming tool responses
-        toolkit.setChunkCallback((toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
+        // Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
+        toolkit.setInternalChunkCallback(
+                (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
         // Execute only pending tools (those without results in memory)
         return notifyPreActingHooks(pendingToolCalls)
@@ -648,7 +652,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                                     postEvent -> {
                                                                         Msg finalMsg =
                                                                                 postEvent
-                                                                                        .getSummaryMessage();
+                                                                                        .getSummaryMessage()
+                                                                                        .withGenerateReason(
+                                                                                                GenerateReason
+                                                                                                        .MAX_ITERATIONS);
                                                                         memory.addMessage(finalMsg);
                                                                         return finalMsg;
                                                                     }));
@@ -747,12 +754,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
 
         // No tool calls - finished
-        if (toolCalls.isEmpty()) {
-            return true;
-        }
-
-        // Has tool calls but none are in toolkit - finished
-        return toolCalls.stream().noneMatch(tc -> toolkit.getTool(tc.getName()) != null);
+        // If there are tool calls (even non-existent ones), continue to acting phase
+        // where ToolExecutor will return "Tool not found" error for the model to see
+        return toolCalls.isEmpty();
     }
 
     /**
@@ -786,11 +790,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected GenerateOptions buildGenerateOptions() {
-        GenerateOptions.Builder builder = GenerateOptions.builder();
+        // Start with user-configured generateOptions if available
+        GenerateOptions baseOptions = generateOptions;
+
+        // If modelExecutionConfig is set, merge it into the options
         if (modelExecutionConfig != null) {
-            builder.executionConfig(modelExecutionConfig);
+            GenerateOptions execConfigOptions =
+                    GenerateOptions.builder().executionConfig(modelExecutionConfig).build();
+            baseOptions = GenerateOptions.mergeOptions(execConfigOptions, baseOptions);
         }
-        return builder.build();
+
+        return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
     // ==================== Hook Notification Methods ====================
@@ -859,6 +869,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             this, model.getModelName(), null, chunkMsg, accumulated);
@@ -901,6 +916,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(
                             this, model.getModelName(), generateOptions, chunkMsg, accumulated);
@@ -962,6 +982,15 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return planNotebook;
     }
 
+    /**
+     * Gets the configured generation options for this agent.
+     *
+     * @return The generation options, or null if not configured
+     */
+    public GenerateOptions getGenerateOptions() {
+        return generateOptions;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -979,6 +1008,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private int maxIters = 10;
         private ExecutionConfig modelExecutionConfig;
         private ExecutionConfig toolExecutionConfig;
+        private GenerateOptions generateOptions;
         private final Set<Hook> hooks = new LinkedHashSet<>();
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
@@ -1153,6 +1183,39 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder toolExecutionConfig(ExecutionConfig toolExecutionConfig) {
             this.toolExecutionConfig = toolExecutionConfig;
+            return this;
+        }
+
+        /**
+         * Sets the generation options for model API calls.
+         *
+         * <p>This configuration controls LLM generation parameters such as temperature, topP,
+         * maxTokens, frequencyPenalty, presencePenalty, etc. These options are passed to the
+         * model during the reasoning phase.
+         *
+         * <p><b>Example usage:</b>
+         * <pre>{@code
+         * ReActAgent agent = ReActAgent.builder()
+         *     .name("assistant")
+         *     .model(model)
+         *     .generateOptions(GenerateOptions.builder()
+         *         .temperature(0.7)
+         *         .topP(0.9)
+         *         .maxTokens(1000)
+         *         .build())
+         *     .build();
+         * }</pre>
+         *
+         * <p><b>Note:</b> If both generateOptions and modelExecutionConfig are set,
+         * the modelExecutionConfig's executionConfig will be merged into the generateOptions,
+         * with modelExecutionConfig taking precedence for execution settings.
+         *
+         * @param generateOptions The generation options for model calls, can be null
+         * @return This builder instance for method chaining
+         * @see GenerateOptions
+         */
+        public Builder generateOptions(GenerateOptions generateOptions) {
+            this.generateOptions = generateOptions;
             return this;
         }
 
@@ -1438,7 +1501,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case AGENTIC -> {
                     // Register knowledge retrieval tools
                     KnowledgeRetrievalTools tools =
-                            new KnowledgeRetrievalTools(aggregatedKnowledge);
+                            new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig);
                     agentToolkit.registerTool(tools);
                 }
                 case NONE -> {

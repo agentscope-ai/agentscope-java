@@ -562,4 +562,214 @@ class McpToolTest {
         assertTrue(resultRequired.contains("param1"));
         assertTrue(resultRequired.contains("param2"));
     }
+
+    // ==================== Issue #893: $defs Support Tests ====================
+
+    @Test
+    void testConvertMcpSchemaToParameters_WithDefs() {
+        // Create Material definition in $defs
+        Map<String, Object> materialDef = new HashMap<>();
+        materialDef.put("type", "object");
+        materialDef.put(
+                "properties",
+                Map.of("key", Map.of("type", "string"), "value", Map.of("type", "string")));
+
+        Map<String, Object> defs = new HashMap<>();
+        defs.put("Material", materialDef);
+
+        // Create properties with $ref reference
+        Map<String, Object> materialProperty = new HashMap<>();
+        materialProperty.put("type", "object");
+        materialProperty.put(
+                "properties",
+                Map.of(
+                        "searchMaterialList",
+                        Map.of("type", "array", "items", Map.of("$ref", "#/$defs/Material"))));
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("request", materialProperty);
+
+        // Create MCP JsonSchema with defs
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", properties, List.of("request"), null, defs, null);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertEquals("object", result.get("type"));
+
+        // Verify $defs field is correctly copied
+        assertTrue(result.containsKey("$defs"), "$defs should be present in converted schema");
+        Map<?, ?> resultDefs = (Map<?, ?>) result.get("$defs");
+        assertTrue(
+                resultDefs.containsKey("Material"),
+                "Material definition should be present in $defs");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_WithDefinitions() {
+        // Create Material definition in definitions (legacy JSON Schema)
+        Map<String, Object> materialDef = new HashMap<>();
+        materialDef.put("type", "object");
+        materialDef.put("properties", Map.of("key", Map.of("type", "string")));
+
+        Map<String, Object> definitions = new HashMap<>();
+        definitions.put("Material", materialDef);
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", new HashMap<>(), new ArrayList<>(), null, null, definitions);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+
+        // Verify definitions field is correctly copied
+        assertTrue(
+                result.containsKey("definitions"),
+                "definitions should be present in converted schema");
+        Map<?, ?> resultDefinitions = (Map<?, ?>) result.get("definitions");
+        assertTrue(
+                resultDefinitions.containsKey("Material"),
+                "Material definition should be present in definitions");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_WithBothDefsAndDefinitions() {
+        Map<String, Object> defs = new HashMap<>();
+        defs.put("NewType", Map.of("type", "string"));
+
+        Map<String, Object> definitions = new HashMap<>();
+        definitions.put("OldType", Map.of("type", "integer"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", new HashMap<>(), new ArrayList<>(), null, defs, definitions);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertTrue(result.containsKey("$defs"), "$defs should be present");
+        assertTrue(result.containsKey("definitions"), "definitions should be present");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_WithEmptyDefsAndDefinitions() {
+        // Empty maps should not be added to result
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object",
+                        new HashMap<>(),
+                        new ArrayList<>(),
+                        null,
+                        new HashMap<>(),
+                        new HashMap<>());
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertFalse(result.containsKey("$defs"), "Empty $defs should not be present");
+        assertFalse(result.containsKey("definitions"), "Empty definitions should not be present");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_DefsWithMultipleDefinitions() {
+        // Test $defs with multiple type definitions
+        Map<String, Object> defs = new HashMap<>();
+        defs.put(
+                "Material",
+                Map.of("type", "object", "properties", Map.of("id", Map.of("type", "string"))));
+        defs.put("Category", Map.of("type", "string", "enum", List.of("A", "B", "C")));
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put(
+                "items", Map.of("type", "array", "items", Map.of("$ref", "#/$defs/Material")));
+        properties.put("category", Map.of("$ref", "#/$defs/Category"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema("object", properties, List.of("items"), null, defs, null);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertTrue(result.containsKey("$defs"));
+        Map<?, ?> resultDefs = (Map<?, ?>) result.get("$defs");
+        assertEquals(2, resultDefs.size(), "Should have 2 definitions");
+        assertTrue(resultDefs.containsKey("Material"));
+        assertTrue(resultDefs.containsKey("Category"));
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_DefsWithExcludeParams() {
+        // Test that $defs is preserved even when excludeParams is used
+        Map<String, Object> defs = new HashMap<>();
+        defs.put("ItemType", Map.of("type", "string"));
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("name", Map.of("type", "string"));
+        properties.put("hidden", Map.of("type", "string"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", properties, List.of("name", "hidden"), null, defs, null);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, Set.of("hidden"));
+
+        assertNotNull(result);
+        assertTrue(result.containsKey("$defs"), "$defs should be preserved with excludeParams");
+        assertFalse(
+                ((Map<?, ?>) result.get("properties")).containsKey("hidden"),
+                "hidden property should be excluded");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_WithNullDefsAndDefinitions() {
+        // When defs and definitions are null, they should not be added to result
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("name", Map.of("type", "string"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema("object", properties, List.of("name"), null, null, null);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertFalse(result.containsKey("$defs"), "null $defs should not be present");
+        assertFalse(result.containsKey("definitions"), "null definitions should not be present");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_OnlyDefsNull() {
+        // Test when only definitions is present, defs is null
+        Map<String, Object> definitions = new HashMap<>();
+        definitions.put("OldType", Map.of("type", "integer"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", new HashMap<>(), new ArrayList<>(), null, null, definitions);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertFalse(result.containsKey("$defs"), "null $defs should not be present");
+        assertTrue(result.containsKey("definitions"), "definitions should be present");
+    }
+
+    @Test
+    void testConvertMcpSchemaToParameters_OnlyDefinitionsNull() {
+        // Test when only defs is present, definitions is null
+        Map<String, Object> defs = new HashMap<>();
+        defs.put("NewType", Map.of("type", "string"));
+
+        McpSchema.JsonSchema schema =
+                new McpSchema.JsonSchema(
+                        "object", new HashMap<>(), new ArrayList<>(), null, defs, null);
+
+        Map<String, Object> result = McpTool.convertMcpSchemaToParameters(schema, null);
+
+        assertNotNull(result);
+        assertTrue(result.containsKey("$defs"), "$defs should be present");
+        assertFalse(result.containsKey("definitions"), "null definitions should not be present");
+    }
 }

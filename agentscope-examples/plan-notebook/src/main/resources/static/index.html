@@ -19,6 +19,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PlanNotebook - AgentScope Example</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" crossorigin="anonymous"></script>
     <style>
         * {
             margin: 0;
@@ -101,6 +103,7 @@
         /* Chat Panel */
         .chat-panel {
             flex: 0 0 55%;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             background: white;
@@ -109,6 +112,8 @@
 
         .chat-messages {
             flex: 1;
+            min-width: 0;
+            overflow-x: hidden;
             overflow-y: auto;
             padding: 20px;
         }
@@ -117,6 +122,8 @@
             margin-bottom: 16px;
             display: flex;
             flex-direction: column;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .message.user {
@@ -128,15 +135,18 @@
         }
 
         .message-content {
-            max-width: 80%;
+            max-width: min(100%, 44rem);
             padding: 12px 16px;
             border-radius: 16px;
             line-height: 1.5;
             white-space: pre-wrap;
+            overflow-wrap: anywhere;
             word-break: break-word;
+            box-sizing: border-box;
         }
 
         .message.user .message-content {
+            max-width: min(85%, 36rem);
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border-bottom-right-radius: 4px;
@@ -146,6 +156,440 @@
             background: #f3f4f6;
             color: #1f2937;
             border-bottom-left-radius: 4px;
+        }
+
+        /* Assistant: single column — 思考 / 工具 / 输出 按时间顺序交错 */
+        .assistant-bubble-wrap {
+            min-width: 0;
+            max-width: min(100%, 44rem);
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .assistant-stream {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+            width: 100%;
+        }
+
+        details.thinking-block {
+            margin: 0;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        details.thinking-block summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            color: #6b7280;
+            background: #eef0f4;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        details.thinking-block summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.thinking-block summary::before {
+            content: '▸';
+            font-size: 0.65rem;
+            color: #9ca3af;
+            transition: transform 0.15s ease;
+        }
+
+        details.thinking-block[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        details.thinking-block .thinking-summary-title {
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        details.thinking-block .thinking-summary-hint {
+            font-weight: 400;
+            color: #9ca3af;
+        }
+
+        details.thinking-block .thinking-body {
+            margin: 0;
+            padding: 10px 12px 12px;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: #9ca3af;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            border-top: 1px solid #e5e7eb;
+            background: #fafafa;
+        }
+
+        /* Tool results: collapsible (one block per tool call) */
+        details.tool-block {
+            margin: 0;
+            border-radius: 12px;
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        details.tool-block summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            color: #1e40af;
+            background: #dbeafe;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+        }
+
+        details.tool-block .tool-summary-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 6px 10px;
+        }
+
+        details.tool-block .tool-summary-snippet {
+            font-size: 0.72rem;
+            color: #475569;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        details.tool-block .tool-expanded {
+            border-top: 1px solid #bfdbfe;
+            background: #f8fafc;
+            padding: 0;
+        }
+
+        details.tool-block summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.tool-block summary::before {
+            content: '▸';
+            font-size: 0.65rem;
+            color: #3b82f6;
+            transition: transform 0.15s ease;
+        }
+
+        details.tool-block[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        details.tool-block .tool-summary-title {
+            font-weight: 600;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78rem;
+        }
+
+        details.tool-block .tool-input-label {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #64748b;
+        }
+
+        details.tool-block pre.tool-input-preview {
+            margin: 0;
+            padding: 6px 8px;
+            max-height: 10rem;
+            overflow: auto;
+            font-size: 0.72rem;
+            line-height: 1.4;
+            color: #334155;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #93c5fd;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        details.tool-block .tool-summary-hint {
+            font-weight: 400;
+            font-size: 0.68rem;
+            color: #3b82f6;
+        }
+
+        details.tool-block .tool-body-label {
+            margin: 0;
+            padding: 8px 12px 0;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #64748b;
+            background: transparent;
+        }
+
+        details.tool-block pre.tool-body {
+            margin: 0;
+            padding: 10px 12px 12px;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            color: #1e3a8a;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            background: #f1f5f9;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* Full model prompt / memory snapshot (per reasoning or summary call) */
+        details.ctx-block {
+            margin: 0;
+            border-radius: 12px;
+            border: 1px solid #d8b4fe;
+            background: #faf5ff;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        details.ctx-block summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 0.72rem;
+            color: #6b21a8;
+            background: #ede9fe;
+            user-select: none;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 12px;
+        }
+
+        details.ctx-block summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.ctx-block summary::before {
+            content: '▸';
+            font-size: 0.65rem;
+            color: #7c3aed;
+            transition: transform 0.15s ease;
+        }
+
+        details.ctx-block[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        details.ctx-block .ctx-title {
+            font-weight: 600;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        details.ctx-block .ctx-meta {
+            font-size: 0.68rem;
+            color: #7c3aed;
+            opacity: 0.9;
+        }
+
+        details.ctx-block .ctx-expanded {
+            border-top: 1px solid #e9d5ff;
+            padding: 8px 10px 10px;
+            background: #faf5ff;
+        }
+
+        details.ctx-sub {
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border: 1px solid #ddd6fe;
+            background: rgba(255, 255, 255, 0.7);
+            overflow: hidden;
+        }
+
+        details.ctx-sub > summary {
+            padding: 6px 10px;
+            font-size: 0.68rem;
+            color: #5b21b6;
+            background: #f3e8ff;
+            list-style: none;
+        }
+
+        details.ctx-sub > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.ctx-sub pre.ctx-diff,
+        details.ctx-sub pre.ctx-json,
+        details.ctx-sub pre.ctx-flat {
+            margin: 0;
+            padding: 8px 10px;
+            font-size: 0.72rem;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            max-height: 22rem;
+            overflow: auto;
+        }
+
+        pre.ctx-diff {
+            color: #1f2937;
+            background: #fefce8;
+            border-top: 1px solid #fde047;
+        }
+
+        pre.ctx-diff .ctx-diff-line {
+            display: block;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            padding: 1px 6px 1px 8px;
+            margin: 0 -6px;
+            border-radius: 2px;
+        }
+
+        pre.ctx-diff .ctx-diff-add {
+            background: rgba(34, 197, 94, 0.2);
+            color: #15803d;
+            border-left: 3px solid #22c55e;
+        }
+
+        pre.ctx-diff .ctx-diff-del {
+            background: rgba(239, 68, 68, 0.16);
+            color: #b91c1c;
+            border-left: 3px solid #ef4444;
+        }
+
+        pre.ctx-diff .ctx-diff-ctx {
+            color: #4b5563;
+            border-left: 3px solid transparent;
+        }
+
+        pre.ctx-json {
+            color: #334155;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        pre.ctx-flat {
+            color: #365314;
+            background: #f7fee7;
+            border-top: 1px solid #bef264;
+        }
+
+        /* Markdown (assistant bubbles) — stay within chat column, break long tokens */
+        .message-content.markdown-body {
+            white-space: normal;
+            max-width: min(100%, 44rem);
+            width: 100%;
+            overflow-wrap: anywhere;
+        }
+
+        .assistant-bubble-wrap .message-content.markdown-body {
+            max-width: 100%;
+        }
+
+        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4,
+        .markdown-body h5, .markdown-body h6 {
+            margin: 0.75em 0 0.35em;
+            font-weight: 600;
+            line-height: 1.25;
+            color: #111827;
+        }
+
+        .markdown-body h6 {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 4px;
+        }
+
+        .markdown-body p {
+            margin: 0.45em 0;
+        }
+
+        .markdown-body ul, .markdown-body ol {
+            margin: 0.45em 0;
+            padding-left: 1.35em;
+        }
+
+        .markdown-body blockquote {
+            margin: 0.5em 0;
+            padding: 6px 12px;
+            border-left: 4px solid #c7d2fe;
+            background: rgba(102, 126, 234, 0.06);
+            color: #374151;
+        }
+
+        .markdown-body pre {
+            margin: 0.6em 0;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: #1e293b;
+            color: #e2e8f0;
+            overflow-x: auto;
+            max-width: 100%;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .markdown-body pre code {
+            background: none;
+            padding: 0;
+            font-size: inherit;
+            color: inherit;
+        }
+
+        .markdown-body code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.88em;
+            background: rgba(0, 0, 0, 0.06);
+            padding: 2px 6px;
+            border-radius: 4px;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .markdown-body a {
+            color: #4f46e5;
+        }
+
+        .markdown-body table {
+            border-collapse: collapse;
+            margin: 0.6em 0;
+            font-size: 0.9em;
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        .markdown-body th, .markdown-body td {
+            border: 1px solid #e5e7eb;
+            padding: 6px 10px;
+        }
+
+        .markdown-body th {
+            background: #f3f4f6;
         }
 
         .message-label {
@@ -708,7 +1152,15 @@
             <div class="chat-messages" id="chatMessages">
                 <div class="message assistant">
                     <span class="message-label">Assistant</span>
-                    <div class="message-content">Hello! I'm a systematic assistant that can help you complete complex tasks. For multi-step tasks, I'll create a plan and execute it step by step. Try asking me something like "Calculate the area of the rectangle (length =10, width =5), then save the result to "result.txt" and verify it through readback. This is a multi-step task-please make a plan."</div>
+                    <div class="assistant-bubble-wrap">
+                        <div class="assistant-stream">
+                            <div class="message-content markdown-body stream-markdown">Hello! I'm a systematic assistant that can help you complete **complex tasks**. For multi-step tasks, I'll create a plan and execute it step by step.
+
+Try asking me something like:
+
+> Calculate the area of the rectangle (length = 10, width = 5), then save the result to `result.txt` and verify it through readback. This is a multi-step task — please make a plan.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="chat-input-container">
@@ -852,8 +1304,470 @@
         // Control button states: 'hidden', 'stop', 'waiting', 'continue'
         let controlState = 'hidden';
 
+        function flushMarkdown(contentDiv) {
+            if (!contentDiv || !contentDiv.classList.contains('markdown-body')) {
+                return;
+            }
+            if (contentDiv._mdRaf != null) {
+                return;
+            }
+            contentDiv._mdRaf = requestAnimationFrame(() => {
+                contentDiv._mdRaf = null;
+                const raw = contentDiv._md != null ? contentDiv._md : '';
+                const html = DOMPurify.sanitize(
+                    marked.parse(raw, { breaks: true, gfm: true }),
+                    { USE_PROFILES: { html: true } }
+                );
+                contentDiv.innerHTML = html;
+                scrollToBottomIfPinned();
+            });
+        }
+
+        function parseSseDataLine(data) {
+            const s = (data || '').trim();
+            if (!s) {
+                return null;
+            }
+            if (s === '[PAUSED]') {
+                return { t: 'paused' };
+            }
+            if (s.startsWith('{')) {
+                try {
+                    return JSON.parse(s);
+                } catch (_) {
+                    return { t: 'text', d: s };
+                }
+            }
+            return { t: 'text', d: s };
+        }
+
+        function getAssistantStream(assistantRoot) {
+            return assistantRoot && assistantRoot.querySelector('.assistant-stream');
+        }
+
+        /** Re-use the trailing markdown segment if it exists; otherwise append a new one (after tool/thinking). */
+        function appendMarkdownSegmentIfNeeded(assistantRoot) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return null;
+            }
+            const last = stream.lastElementChild;
+            if (last && last.classList.contains('stream-markdown')) {
+                return last;
+            }
+            const div = document.createElement('div');
+            div.className = 'message-content markdown-body stream-markdown';
+            div._md = '';
+            div._section = null;
+            stream.appendChild(div);
+            return div;
+        }
+
+        function appendThinkingDelta(assistantRoot, delta) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return;
+            }
+            const last = stream.lastElementChild;
+            let details = null;
+            if (last && last.tagName === 'DETAILS' && last.classList.contains('thinking-block')) {
+                details = last;
+            } else {
+                details = document.createElement('details');
+                details.className = 'thinking-block';
+                details.open = true;
+                details.innerHTML =
+                    '<summary><span class="thinking-summary-title">思考</span>'
+                    + '<span class="thinking-summary-hint">点击折叠</span></summary>'
+                    + '<div class="thinking-body"></div>';
+                stream.appendChild(details);
+            }
+            const body = details.querySelector('.thinking-body');
+            body._plain = (body._plain != null ? body._plain : '') + (delta || '');
+            body.textContent = body._plain;
+            scrollToBottomIfPinned();
+        }
+
+        function toolInputSnippetLine(toolInput) {
+            if (toolInput == null || typeof toolInput !== 'object') {
+                return '';
+            }
+            const keys = Object.keys(toolInput);
+            if (!keys.length) {
+                return '';
+            }
+            const parts = [];
+            for (let i = 0; i < Math.min(2, keys.length); i++) {
+                const k = keys[i];
+                let v = toolInput[k];
+                if (v == null) {
+                    v = '';
+                }
+                v = String(v);
+                if (v.length > 48) {
+                    v = v.slice(0, 45) + '…';
+                }
+                parts.push(k + ': ' + v);
+            }
+            return parts.join(' · ');
+        }
+
+        function formatToolInputForPreview(toolInput) {
+            if (toolInput == null || toolInput === '') {
+                return '';
+            }
+            if (typeof toolInput === 'object') {
+                try {
+                    return JSON.stringify(toolInput, null, 2);
+                } catch (_) {
+                    return String(toolInput);
+                }
+            }
+            return String(toolInput);
+        }
+
+        function appendToolBlock(assistantRoot, toolName, toolOutput, toolInput) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return;
+            }
+            const details = document.createElement('details');
+            details.className = 'tool-block';
+            details.open = false;
+
+            const summary = document.createElement('summary');
+            const row = document.createElement('div');
+            row.className = 'tool-summary-row';
+            const title = document.createElement('span');
+            title.className = 'tool-summary-title';
+            title.textContent = '工具 · ' + (toolName || 'tool');
+            row.appendChild(title);
+            const snippet = toolInputSnippetLine(toolInput);
+            if (snippet) {
+                const sn = document.createElement('span');
+                sn.className = 'tool-summary-snippet';
+                sn.textContent = snippet;
+                row.appendChild(sn);
+            }
+            const hint = document.createElement('span');
+            hint.className = 'tool-summary-hint';
+            hint.textContent = '点击展开入参与返回值';
+            summary.appendChild(row);
+            summary.appendChild(hint);
+
+            const expanded = document.createElement('div');
+            expanded.className = 'tool-expanded';
+            const inputLabel = document.createElement('div');
+            inputLabel.className = 'tool-input-label';
+            inputLabel.textContent = '入参';
+            const inputPre = document.createElement('pre');
+            inputPre.className = 'tool-input-preview';
+            const inputStr = formatToolInputForPreview(toolInput);
+            inputPre.textContent = inputStr && inputStr.trim() ? inputStr : '（无结构化入参）';
+            const outLabel = document.createElement('div');
+            outLabel.className = 'tool-body-label';
+            outLabel.textContent = '返回值';
+            const pre = document.createElement('pre');
+            pre.className = 'tool-body';
+            pre.textContent = toolOutput != null ? toolOutput : '';
+            expanded.appendChild(inputLabel);
+            expanded.appendChild(inputPre);
+            expanded.appendChild(outLabel);
+            expanded.appendChild(pre);
+
+            details.appendChild(summary);
+            details.appendChild(expanded);
+            stream.appendChild(details);
+            scrollToBottomIfPinned();
+        }
+
+        function finalizeAssistantStream(assistantRoot) {
+            if (!assistantRoot) {
+                return;
+            }
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return;
+            }
+            stream.querySelectorAll('details.thinking-block').forEach((d) => {
+                d.open = false;
+            });
+            stream.querySelectorAll('details.tool-block').forEach((d) => {
+                d.open = false;
+            });
+            stream.querySelectorAll('details.ctx-block').forEach((d) => {
+                d.open = false;
+            });
+        }
+
+        function streamHasSubstantiveContent(assistantRoot) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream || stream.children.length === 0) {
+                return false;
+            }
+            for (let i = 0; i < stream.children.length; i++) {
+                const ch = stream.children[i];
+                if (ch.classList.contains('stream-markdown')) {
+                    if (ch._md && String(ch._md).trim()) {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Myers-style line LCS diff (capped) for unified-style -/+/space output.
+         */
+        function buildLineDiffUnified(oldText, newText, maxLines) {
+            const cap = maxLines != null ? maxLines : 500;
+            let a = oldText === '' ? [] : oldText.split('\n');
+            let b = newText === '' ? [] : newText.split('\n');
+            let truncated = false;
+            if (a.length > cap || b.length > cap) {
+                truncated = true;
+                a = a.slice(0, cap);
+                b = b.slice(0, cap);
+            }
+            const n = a.length;
+            const m = b.length;
+            const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+            for (let i = n - 1; i >= 0; i--) {
+                for (let j = m - 1; j >= 0; j--) {
+                    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+                }
+            }
+            const out = [];
+            let i = 0;
+            let j = 0;
+            while (i < n && j < m) {
+                if (a[i] === b[j]) {
+                    out.push(' ' + a[i]);
+                    i++;
+                    j++;
+                } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+                    out.push('-' + a[i]);
+                    i++;
+                } else {
+                    out.push('+' + b[j]);
+                    j++;
+                }
+            }
+            while (i < n) {
+                out.push('-' + a[i++]);
+            }
+            while (j < m) {
+                out.push('+' + b[j++]);
+            }
+            if (truncated) {
+                out.push('...(diff truncated: more than ' + cap + ' lines per side)');
+            }
+            return out.join('\n');
+        }
+
+        /**
+         * Paint unified diff into a &lt;pre&gt; using DOM (no innerHTML / DOMPurify).
+         * Avoids sanitizer stripping +/-/text inside &lt;pre&gt;.
+         */
+        function fillUnifiedDiffPre(preEl, unified) {
+            preEl.replaceChildren();
+            const lines = unified.split('\n');
+            for (let k = 0; k < lines.length; k++) {
+                const line = lines[k];
+                const span = document.createElement('span');
+                span.classList.add('ctx-diff-line');
+                if (line.length === 0) {
+                    span.classList.add('ctx-diff-ctx');
+                    span.textContent = ' ';
+                } else {
+                    const c0 = line[0];
+                    const rest = line.slice(1);
+                    if (c0 === '+') {
+                        span.classList.add('ctx-diff-add');
+                        span.textContent = '+' + rest;
+                    } else if (c0 === '-') {
+                        span.classList.add('ctx-diff-del');
+                        span.textContent = '-' + rest;
+                    } else if (c0 === ' ') {
+                        span.classList.add('ctx-diff-ctx');
+                        span.textContent = ' ' + rest;
+                    } else {
+                        span.classList.add('ctx-diff-ctx');
+                        span.textContent = line;
+                    }
+                }
+                preEl.appendChild(span);
+            }
+        }
+
+        /** @param assistantRoot {HTMLElement} .message.assistant */
+        function appendContextBlock(assistantRoot, obj) {
+            const stream = getAssistantStream(assistantRoot);
+            if (!stream) {
+                return;
+            }
+            const phase = obj.phase || 'reasoning';
+            const seq = obj.seq != null ? obj.seq : '';
+            const model = obj.model || '';
+            const flat = typeof obj.flat === 'string' ? obj.flat : '';
+            const prev = assistantRoot.dataset.ctxFlatPrev || '';
+            assistantRoot.dataset.ctxFlatPrev = flat;
+
+            const details = document.createElement('details');
+            details.className = 'ctx-block';
+            details.open = false;
+
+            const summary = document.createElement('summary');
+            const title = document.createElement('span');
+            title.className = 'ctx-title';
+            title.textContent = '📋 Model input #' + seq;
+            const meta = document.createElement('span');
+            meta.className = 'ctx-meta';
+            meta.textContent = phase + ' · ' + model;
+            summary.appendChild(title);
+            summary.appendChild(meta);
+
+            const body = document.createElement('div');
+            body.className = 'ctx-expanded';
+
+            {
+                const diffDet = document.createElement('details');
+                diffDet.className = 'ctx-sub';
+                const diffSum = document.createElement('summary');
+                diffSum.textContent = 'Δ Line diff vs previous model call (same assistant reply)';
+                diffDet.appendChild(diffSum);
+                const diffPre = document.createElement('pre');
+                diffPre.className = 'ctx-diff';
+                if (prev && flat && prev !== flat) {
+                    fillUnifiedDiffPre(diffPre, buildLineDiffUnified(prev, flat, 500));
+                } else {
+                    const hint = document.createElement('span');
+                    hint.className = 'ctx-diff-line ctx-diff-ctx';
+                    hint.textContent =
+                        prev
+                            ? '(No changes vs previous model input in this reply.)'
+                            : '(First model call in this assistant message — nothing to diff yet; open again on the next “Model input” block.)';
+                    diffPre.appendChild(hint);
+                }
+                diffDet.appendChild(diffPre);
+                body.appendChild(diffDet);
+            }
+
+            const jsonDet = document.createElement('details');
+            jsonDet.className = 'ctx-sub';
+            const jsonSum = document.createElement('summary');
+            jsonSum.textContent = 'Structured messages (JSON)';
+            jsonDet.appendChild(jsonSum);
+            const jsonPre = document.createElement('pre');
+            jsonPre.className = 'ctx-json';
+            try {
+                jsonPre.textContent = JSON.stringify(
+                    { phase, seq, model, messages: obj.messages },
+                    null,
+                    2
+                );
+            } catch (e) {
+                jsonPre.textContent = String(e);
+            }
+            jsonDet.appendChild(jsonPre);
+            body.appendChild(jsonDet);
+
+            const flatDet = document.createElement('details');
+            flatDet.className = 'ctx-sub';
+            flatDet.open = true;
+            const flatSum = document.createElement('summary');
+            flatSum.textContent = 'Flat transcript (system + memory as sent to the model)';
+            flatDet.appendChild(flatSum);
+            const flatPre = document.createElement('pre');
+            flatPre.className = 'ctx-flat';
+            flatPre.textContent = flat;
+            flatDet.appendChild(flatPre);
+            body.appendChild(flatDet);
+
+            details.appendChild(summary);
+            details.appendChild(body);
+            stream.appendChild(details);
+            scrollToBottomIfPinned();
+        }
+
+        /** @param assistantRoot {HTMLElement} .message.assistant */
+        function appendStructuredChunk(assistantRoot, obj) {
+            if (!obj || !assistantRoot) {
+                return;
+            }
+
+            if (obj.t === 'ctx') {
+                appendContextBlock(assistantRoot, obj);
+                return;
+            }
+
+            if (obj.t === 'paused') {
+                isPaused = true;
+                stopRequested = false;
+                controlState = 'continue';
+                updateControlUI();
+                const contentDiv = appendMarkdownSegmentIfNeeded(assistantRoot);
+                if (!contentDiv) {
+                    return;
+                }
+                if (contentDiv._md == null) {
+                    contentDiv._md = '';
+                }
+                let md = contentDiv._md;
+                md += md.trim()
+                    ? '\n\n*（已暂停 — 请检查计划并点击 **Continue**）*\n\n'
+                    : '*（已暂停 — 请检查计划并点击 **Continue**）*\n\n';
+                contentDiv._section = null;
+                contentDiv._md = md;
+                flushMarkdown(contentDiv);
+                return;
+            }
+
+            if (obj.t === 'tool') {
+                const name = String(obj.n || 'tool').replace(/`/g, "'");
+                const body = obj.d || '';
+                const input = Object.prototype.hasOwnProperty.call(obj, 'i') ? obj.i : null;
+                appendToolBlock(assistantRoot, name, body, input);
+                return;
+            }
+
+            if (obj.t === 'think') {
+                appendThinkingDelta(assistantRoot, obj.d || '');
+                return;
+            }
+
+            if (obj.t === 'text') {
+                const contentDiv = appendMarkdownSegmentIfNeeded(assistantRoot);
+                if (!contentDiv) {
+                    return;
+                }
+                if (contentDiv._md == null) {
+                    contentDiv._md = '';
+                }
+                const d = obj.d || '';
+                contentDiv._md += d;
+                contentDiv._section = 'text';
+                flushMarkdown(contentDiv);
+                return;
+            }
+        }
+
+        function initStaticAssistantMarkdown() {
+            document.querySelectorAll('#chatMessages .message.assistant .markdown-body').forEach((el) => {
+                if (el._md == null) {
+                    el._md = el.textContent.trim();
+                    el._section = null;
+                    flushMarkdown(el);
+                }
+            });
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            marked.setOptions({ gfm: true, breaks: true });
+            initStaticAssistantMarkdown();
             connectPlanStream();
             fetchCurrentPlan();
             checkPausedState();
@@ -1098,43 +2012,53 @@
             return div.innerHTML;
         }
 
-        // Common function to process SSE stream response
-        async function processSSEStream(response, contentDiv, defaultMessage) {
+        // Process SSE stream: line-buffered JSON chunks (think / text / tool / paused)
+        /** @param assistantRoot {HTMLElement} .message.assistant */
+        async function processSSEStream(response, assistantRoot, defaultMessage) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let fullText = '';
+            let lineBuf = '';
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    lineBuf += decoder.decode(value || new Uint8Array(), { stream: !done });
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        const data = line.substring(5).trim();
-                        if (data) {
-                            if (data === '[PAUSED]') {
-                                isPaused = true;
-                                stopRequested = false;
-                                controlState = 'continue';
-                                updateControlUI();
-                                if (!fullText) {
-                                    fullText = '(Plan updated - Review and edit the plan, then Continue)';
-                                }
-                            } else {
-                                fullText += data;
-                            }
-                            contentDiv.textContent = fullText;
+                    let nl;
+                    while ((nl = lineBuf.indexOf('\n')) >= 0) {
+                        const line = lineBuf.slice(0, nl).replace(/\r$/, '');
+                        lineBuf = lineBuf.slice(nl + 1);
+                        if (!line.startsWith('data:')) {
+                            continue;
+                        }
+                        const payload = line.slice(5).trim();
+                        if (!payload) {
+                            continue;
+                        }
+                        const obj = parseSseDataLine(payload);
+                        if (obj) {
+                            appendStructuredChunk(assistantRoot, obj);
                         }
                     }
+
+                    if (done) {
+                        break;
+                    }
                 }
+            } finally {
+                finalizeAssistantStream(assistantRoot);
             }
 
-            if (!fullText) {
-                contentDiv.textContent = defaultMessage;
+            if (!streamHasSubstantiveContent(assistantRoot) && defaultMessage) {
+                const mdEl = appendMarkdownSegmentIfNeeded(assistantRoot);
+                if (mdEl) {
+                    mdEl._md = defaultMessage;
+                    flushMarkdown(mdEl);
+                }
             }
-            return fullText;
+            const mdNodes = assistantRoot && assistantRoot.querySelectorAll('.assistant-stream .stream-markdown');
+            const lastMd = mdNodes && mdNodes.length ? mdNodes[mdNodes.length - 1] : null;
+            return (lastMd && lastMd._md) || '';
         }
 
         // Send chat message
@@ -1158,22 +2082,24 @@
             appendMessage('user', message);
             input.value = '';
 
-            // Create assistant message container
             const assistantMsg = appendMessage('assistant', '');
-            const contentDiv = assistantMsg.querySelector('.message-content');
 
             try {
                 const response = await fetch(`/api/chat?message=${encodeURIComponent(message)}`);
-                await processSSEStream(response, contentDiv, '(No response)');
+                await processSSEStream(response, assistantMsg, '(No response)');
             } catch (error) {
-                contentDiv.textContent = 'Error: ' + error.message;
+                const contentDiv = appendMarkdownSegmentIfNeeded(assistantMsg);
+                if (contentDiv) {
+                    contentDiv._md = '**Error:** ' + String(error.message || error);
+                    flushMarkdown(contentDiv);
+                }
             } finally {
                 isProcessing = false;
                 if (!isPaused) {
                     controlState = 'hidden';
                 }
                 updateControlUI();
-                scrollToBottom();
+                scrollToBottomIfPinned();
             }
         }
 
@@ -1185,16 +2111,17 @@
             isPaused = false;
             updateControlUI();
 
-            // Create assistant message container for resume response
-            const assistantMsg = appendMessage('assistant', '');
-            const contentDiv = assistantMsg.querySelector('.message-content');
-            contentDiv.textContent = '(Continuing execution...)';
+            const assistantMsg = appendMessage('assistant', '*继续执行中…*\n\n');
 
             try {
                 const response = await fetch('/api/resume');
-                await processSSEStream(response, contentDiv, '(Execution completed)');
+                await processSSEStream(response, assistantMsg, '(Execution completed)');
             } catch (error) {
-                contentDiv.textContent = 'Error: ' + error.message;
+                const contentDiv = appendMarkdownSegmentIfNeeded(assistantMsg);
+                if (contentDiv) {
+                    contentDiv._md = '**Error:** ' + String(error.message || error);
+                    flushMarkdown(contentDiv);
+                }
                 isPaused = false;
             } finally {
                 isProcessing = false;
@@ -1202,27 +2129,65 @@
                     controlState = 'hidden';
                 }
                 updateControlUI();
-                scrollToBottom();
+                scrollToBottomIfPinned();
             }
         }
 
-        // Append message to chat
+        // Append message to chat — assistant stream = 思考 / 工具 / 输出 按顺序插入
         function appendMessage(role, text) {
             const container = document.getElementById('chatMessages');
             const div = document.createElement('div');
             div.className = `message ${role}`;
-            div.innerHTML = `
-                <span class="message-label">${role === 'user' ? 'You' : 'Assistant'}</span>
+            if (role === 'user') {
+                div.innerHTML = `
+                <span class="message-label">You</span>
                 <div class="message-content">${escapeHtml(text)}</div>
             `;
+            } else {
+                div.dataset.ctxFlatPrev = '';
+                div.innerHTML = `
+                <span class="message-label">Assistant</span>
+                <div class="assistant-bubble-wrap">
+                    <div class="assistant-stream"></div>
+                </div>
+            `;
+                if (text) {
+                    const mdEl = appendMarkdownSegmentIfNeeded(div);
+                    mdEl._md = text;
+                    mdEl._section = null;
+                    flushMarkdown(mdEl);
+                }
+            }
             container.appendChild(div);
             scrollToBottom();
             return div;
         }
 
-        // Scroll chat to bottom
+        /** Pixels from bottom within which we still auto-follow streaming output */
+        const CHAT_STICKY_BOTTOM_PX = 200;
+
+        function isChatPinnedToBottom() {
+            const container = document.getElementById('chatMessages');
+            if (!container) {
+                return true;
+            }
+            const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
+            return gap <= CHAT_STICKY_BOTTOM_PX;
+        }
+
+        /** During SSE: only scroll if user was already near the bottom (so they can scroll up to read) */
+        function scrollToBottomIfPinned() {
+            if (isChatPinnedToBottom()) {
+                scrollToBottom();
+            }
+        }
+
+        /** New message / explicit jump to latest */
         function scrollToBottom() {
             const container = document.getElementById('chatMessages');
+            if (!container) {
+                return;
+            }
             container.scrollTop = container.scrollHeight;
         }
 
@@ -1469,9 +2434,18 @@
                 chatMessages.innerHTML = `
                     <div class="message assistant">
                         <span class="message-label">Assistant</span>
-                        <div class="message-content">Hello! I'm a systematic assistant that can help you complete complex tasks. For multi-step tasks, I'll create a plan and execute it step by step. Try asking me something like "Calculate the area of the rectangle (length =10, width =5), then save the result to "result.txt" and verify it through readback. This is a multi-step task-please make a plan."</div>
+                        <div class="assistant-bubble-wrap">
+                            <div class="assistant-stream">
+                                <div class="message-content markdown-body stream-markdown">Hello! I'm a systematic assistant that can help you complete **complex tasks**. For multi-step tasks, I'll create a plan and execute it step by step.
+
+Try asking me something like:
+
+> Calculate the area of the rectangle (length = 10, width = 5), then save the result to \`result.txt\` and verify it through readback. This is a multi-step task — please make a plan.</div>
+                            </div>
+                        </div>
                     </div>
                 `;
+                initStaticAssistantMarkdown();
 
                 // Clear current plan immediately (force update to clear the display)
                 updatePlanUI(null, true);
