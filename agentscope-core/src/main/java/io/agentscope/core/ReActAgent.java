@@ -20,6 +20,7 @@ import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PendingToolRecoveryHook;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
@@ -273,18 +274,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return hasPendingToolUse() ? acting(0) : executeIteration(0);
         }
 
-        // User sent a new message without tool results -> auto-recover from orphaned pending state
-        log.warn(
-                "Pending tool calls detected without results, auto-generating error results."
-                        + " Pending IDs: {}",
-                pendingIds);
-        return generateAndAddErrorToolResults(pendingIds)
-                .then(
-                        Mono.defer(
-                                () -> {
-                                    addToMemory(msgs);
-                                    return executeIteration(0);
-                                }));
+        // If PendingToolRecoveryHook is enabled, pending state should have been
+        // patched during PreCallEvent. If we still reach here, the hook was disabled
+        // and the user did not provide tool results — this is an unrecoverable state.
+        throw new IllegalStateException(
+                "Pending tool calls exist without results. "
+                        + "Enable PendingToolRecoveryHook or provide tool results. "
+                        + "Pending IDs: "
+                        + pendingIds);
     }
 
     /**
@@ -299,49 +296,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .id(toolId)
                 .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
                 .build();
-    }
-
-    /**
-     * Generate error tool results for pending tool calls and emit them through the
-     * {@link PostActingEvent} hook pipeline before adding to memory. This ensures consistent
-     * tool-result lifecycle behavior (including StreamingHook's TOOL_RESULT emission and any
-     * hook-based sanitization/transform) for auto-recovered error results.
-     *
-     * @param pendingIds The set of pending tool use IDs
-     * @return Mono that completes when all error results have been processed through hooks and
-     *     added to memory
-     */
-    private Mono<Void> generateAndAddErrorToolResults(Set<String> pendingIds) {
-        Msg lastAssistant = findLastAssistantMsg();
-        if (lastAssistant == null) {
-            return Mono.empty();
-        }
-
-        List<ToolUseBlock> pendingToolCalls =
-                lastAssistant.getContentBlocks(ToolUseBlock.class).stream()
-                        .filter(toolUse -> pendingIds.contains(toolUse.getId()))
-                        .toList();
-
-        if (pendingToolCalls.isEmpty()) {
-            return Mono.empty();
-        }
-
-        return Flux.fromIterable(pendingToolCalls)
-                .concatMap(
-                        toolCall -> {
-                            ToolResultBlock errorResult =
-                                    buildErrorToolResult(
-                                            toolCall.getId(),
-                                            "Previous tool execution failed or was interrupted."
-                                                    + " Tool: "
-                                                    + toolCall.getName());
-                            log.info(
-                                    "Auto-generated error result for pending tool call: {} ({})",
-                                    toolCall.getName(),
-                                    toolCall.getId());
-                            return notifyPostActingHook(Map.entry(toolCall, errorResult));
-                        })
-                .then();
     }
 
     /**
@@ -1134,6 +1088,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private PlanNotebook planNotebook;
         private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
+        private boolean enablePendingToolRecovery = false;
 
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
@@ -1269,6 +1224,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder enableMetaTool(boolean enableMetaTool) {
             this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
+        /**
+         * Enables or disables automatic recovery from orphaned pending tool calls.
+         *
+         * <p>When enabled , a {@link PendingToolRecoveryHook} is automatically
+         * registered to detect and patch orphaned pending tool calls with synthetic error
+         * results before agent processing begins. This prevents {@link IllegalStateException}
+         * when tool execution fails, times out, or is interrupted.
+         *
+         * <p>Disable this if you prefer to handle pending tool calls manually, for example
+         * through HITL (Human-in-the-loop) mechanisms or custom error handling strategies.
+         *
+         * @param enable true to enable auto-recovery, false to disable
+         * @return This builder instance for method chaining
+         * @see PendingToolRecoveryHook
+         */
+        public Builder enablePendingToolRecovery(boolean enable) {
+            this.enablePendingToolRecovery = enable;
             return this;
         }
 
@@ -1538,6 +1513,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
+            }
+
+            // Register PendingToolRecoveryHook if enabled
+            if (enablePendingToolRecovery) {
+                hooks.add(new PendingToolRecoveryHook());
             }
 
             // Configure long-term memory if provided

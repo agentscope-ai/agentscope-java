@@ -365,6 +365,7 @@ class HookStopAgentTest {
                             .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
+                            .enablePendingToolRecovery(true)
                             .build();
 
             // First call - gets stopped
@@ -702,6 +703,7 @@ class HookStopAgentTest {
                             .memory(memory)
                             .checkRunning(false)
                             .hook(stopHook)
+                            .enablePendingToolRecovery(true)
                             .build();
 
             agent.call(createUserMsg("test")).block(TEST_TIMEOUT);
