@@ -170,6 +170,8 @@ public class MarkdownSkillParser {
             }
 
             String[] lines = yaml.split("[\\r\\n]+");
+            String curKey =  null;
+            List<String> yamlList = new ArrayList<>();
 
             for (String line : lines) {
                 // Skip empty lines
@@ -182,16 +184,39 @@ public class MarkdownSkillParser {
                     continue;
                 }
 
+                // Handle list items
+                if (line.trim().startsWith("-")) {
+                    // Start with a list item but no key, throw it
+                    if (curKey ==  null) {
+                        throw new IllegalArgumentException(
+                                "List item without a preceding key: " + line);
+                    }
+                    String yamlListItem = line.trim().substring(1).trim();
+                    yamlList.add(yamlListItem);
+                    continue;
+                }
+
+                // check if list item exists
+                if (curKey != null && !yamlList.isEmpty()) {
+                    result.put(curKey, String.join(",", yamlList));
+                    yamlList.clear();
+                }
+
                 Matcher matcher = KEY_VALUE_PATTERN.matcher(line.trim());
                 if (!matcher.matches()) {
                     throw new IllegalArgumentException(
                             "Invalid YAML line (expected 'key: value' format): " + line);
                 }
 
-                String key = matcher.group(1);
+                curKey = matcher.group(1);
                 String value = parseValue(matcher.group(2));
 
-                result.put(key, value);
+                result.put(curKey, value);
+            }
+
+            // when list in the end
+            if (curKey != null && !yamlList.isEmpty()) {
+                result.put(curKey, String.join(",", yamlList));
             }
 
             return result;
