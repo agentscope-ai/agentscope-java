@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,11 +28,13 @@ import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeSearchOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.OkHttpTransport;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -40,6 +43,7 @@ import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -63,15 +67,29 @@ class DashScopeChatModelTest {
 
     private DashScopeChatModel model;
     private String mockApiKey;
+    private MockWebServer mockServer;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
         mockApiKey = ModelTestUtils.createMockApiKey();
+
+        mockServer = new MockWebServer();
+        mockServer.start();
+        String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
 
         // Create model with builder
         model =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .baseUrl(baseUrl)
+                        .modelName("qwen-plus")
+                        .stream(false)
                         .build();
+    }
+
+    @AfterEach
+    void tearDown() throws IOException {
+        mockServer.shutdown();
     }
 
     @Test
@@ -955,6 +973,190 @@ class DashScopeChatModelTest {
                 "Request body should NOT contain cache_control when disabled: " + body);
 
         mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should enable web_extractor tool when set search_strategy to agent_max")
+    void testEnableWebExtractorTool() throws Exception {
+        DashScopeSearchOptions searchOptions =
+                DashScopeSearchOptions.builder()
+                        .searchStrategy(DashScopeSearchOptions.SearchStrategy.AGENT_MAX)
+                        .build();
+        DashScopeParameters parameters =
+                DashScopeParameters.builder().searchOptions(searchOptions).build();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .enableThinking(true)
+                        .enableSearch(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .additionalBodyParam("search_options", searchOptions)
+                                        .build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        assertNotNull(searchOptions);
+        assertNotNull(parameters);
+        assertSame(
+                DashScopeSearchOptions.SearchStrategy.AGENT_MAX,
+                parameters.getSearchOptions().getSearchStrategy());
+        assertTrue(
+                body.contains("\"search_options\""),
+                "Request body should contain search_options" + body);
+        assertTrue(
+                body.contains("\"search_strategy\":\"agent_max\""),
+                "Request body should contain search_strategy with agent_max" + body);
+    }
+
+    @Test
+    @DisplayName("Should enable code_interpreter tool when set enable_code_interpreter to true")
+    void testEnableCodeInterpreterTool() throws Exception {
+        DashScopeParameters parameters =
+                DashScopeParameters.builder().enableCodeInterpreter(true).build();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .defaultOptions(
+                                GenerateOptions.builder()
+                                        .additionalBodyParam("enable_code_interpreter", true)
+                                        .build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        assertNotNull(parameters);
+        assertTrue(parameters.getEnableCodeInterpreter());
+        assertTrue(
+                body.contains("\"enable_code_interpreter\":true"),
+                "Request body should contain enable_code_interpreter with true" + body);
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should enable parallel tool calls when set parallel_tool_calls to true")
+    void testEnableParallelToolCalls() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        ToolSchema tool1 =
+                ToolSchema.builder()
+                        .name("get_weather")
+                        .description("Get weather information")
+                        .build();
+        ToolSchema tool2 =
+                ToolSchema.builder().name("calculate").description("Perform calculations").build();
+
+        model.doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                "Get the weather of Shanghai and"
+                                                                        + " calculate 1+2+3.")
+                                                        .build())
+                                        .build()),
+                        List.of(tool1, tool2),
+                        GenerateOptions.builder().parallelToolCalls(true).build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        assertTrue(
+                body.contains("\"parallel_tool_calls\":true"),
+                "Request body should contain parallel_tool_calls with true" + body);
     }
 
     /**
