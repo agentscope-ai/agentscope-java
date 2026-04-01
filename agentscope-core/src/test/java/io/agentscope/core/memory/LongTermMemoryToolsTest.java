@@ -64,6 +64,7 @@ class LongTermMemoryToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testRecordToMemoryWithThinkingAndContent() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 
@@ -82,6 +83,7 @@ class LongTermMemoryToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testRecordToMemoryWithContentOnly() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 
@@ -99,6 +101,7 @@ class LongTermMemoryToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testRecordToMemoryWithEmptyThinking() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 
@@ -135,6 +138,7 @@ class LongTermMemoryToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testRecordToMemoryWithEmptyStringsInContent() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 
@@ -261,6 +265,7 @@ class LongTermMemoryToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testRecordToMemoryMessageRoles() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 

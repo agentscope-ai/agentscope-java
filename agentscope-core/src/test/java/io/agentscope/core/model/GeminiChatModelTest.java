@@ -18,12 +18,18 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
+import java.lang.reflect.Field;
 import java.util.List;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -62,6 +68,15 @@ class GeminiChatModelTest {
     }
 
     @Test
+    @DisplayName("Should fail when neither API key nor access token is provided")
+    void testMissingAuthentication() {
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class, () -> GeminiChatModel.builder().build());
+        assertEquals("Either API Key or Access Token must be provided", exception.getMessage());
+    }
+
+    @Test
     @DisplayName("Should use default model name when not specified")
     void testDefaultModelName() {
         GeminiChatModel model = GeminiChatModel.builder().apiKey(mockApiKey).build();
@@ -81,6 +96,21 @@ class GeminiChatModelTest {
                         .build();
 
         assertNotNull(model, "Gemini API model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with access token only")
+    void testAccessTokenConfiguration() throws Exception {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .accessToken("token_123")
+                        .modelName("gemini-2.0-flash")
+                        .streamEnabled(true)
+                        .build();
+
+        assertNotNull(model, "Access token model should be created");
+        assertNull(readPrivateField(model, "apiKey", String.class));
+        assertEquals("token_123", readPrivateField(model, "accessToken", String.class));
     }
 
     @Test
@@ -121,6 +151,57 @@ class GeminiChatModelTest {
                 List.of(ModelTestUtils.createSimpleToolSchema("test_tool", "A test tool"));
 
         assertNotNull(tools, "Tool schemas should be created");
+    }
+
+    @Test
+    @DisplayName("Should construct Vertex AI base URL with default location")
+    void testVertexAiDefaultLocationBaseUrl() throws Exception {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .accessToken("token_123")
+                        .vertexAI(true)
+                        .project("demo-project")
+                        .modelName("gemini-2.0-flash")
+                        .build();
+
+        String baseUrl = readPrivateField(model, "baseUrl", String.class);
+        assertEquals(
+                "https://us-central1-aiplatform.googleapis.com/v1/projects/demo-project/locations/us-central1/publishers/google/models/",
+                baseUrl);
+    }
+
+    @Test
+    @DisplayName("Should construct Vertex AI base URL with custom location")
+    void testVertexAiCustomLocationBaseUrl() throws Exception {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .accessToken("token_123")
+                        .vertexAI(true)
+                        .project("demo-project")
+                        .location("asia-southeast1")
+                        .modelName("gemini-2.0-flash")
+                        .build();
+
+        String baseUrl = readPrivateField(model, "baseUrl", String.class);
+        assertEquals(
+                "https://asia-southeast1-aiplatform.googleapis.com/v1/projects/demo-project/locations/asia-southeast1/publishers/google/models/",
+                baseUrl);
+    }
+
+    @Test
+    @DisplayName("Should require project ID when Vertex AI is enabled")
+    void testVertexAiRequiresProject() {
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                GeminiChatModel.builder()
+                                        .accessToken("token_123")
+                                        .vertexAI(true)
+                                        .modelName("gemini-2.0-flash")
+                                        .build());
+
+        assertEquals("Project ID is required for Vertex AI", exception.getMessage());
     }
 
     @Test
@@ -286,21 +367,6 @@ class GeminiChatModelTest {
     }
 
     @Test
-    @DisplayName("Should configure HTTP options")
-    void testHttpOptionsConfiguration() {
-        HttpOptions httpOptions = HttpOptions.builder().build();
-
-        GeminiChatModel modelWithHttpOptions =
-                GeminiChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("gemini-2.0-flash")
-                        .httpOptions(httpOptions)
-                        .build();
-
-        assertNotNull(modelWithHttpOptions);
-    }
-
-    @Test
     @DisplayName("Should handle all generation options")
     void testAllGenerateOptions() {
         GenerateOptions fullOptions =
@@ -335,8 +401,6 @@ class GeminiChatModelTest {
                         .presencePenalty(0.1)
                         .build();
 
-        HttpOptions httpOptions = HttpOptions.builder().build();
-
         GeminiChatModel completeModel =
                 GeminiChatModel.builder()
                         .apiKey(mockApiKey)
@@ -344,7 +408,6 @@ class GeminiChatModelTest {
                         .streamEnabled(true)
                         .defaultOptions(options)
                         .formatter(new GeminiChatFormatter())
-                        .httpOptions(httpOptions)
                         .build();
 
         assertNotNull(completeModel);
@@ -453,5 +516,57 @@ class GeminiChatModelTest {
 
         assertNotNull(model);
         // Should use default GeminiChatFormatter
+    }
+
+    @Test
+    @DisplayName("Should use provided custom HTTP client")
+    void testCustomHttpClientReuse() throws Exception {
+        OkHttpClient customClient = new OkHttpClient.Builder().build();
+
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .httpClient(customClient)
+                        .build();
+
+        OkHttpClient actualClient = readPrivateField(model, "httpClient", OkHttpClient.class);
+        assertSame(customClient, actualClient);
+    }
+
+    @Test
+    @DisplayName("Should apply custom protocols when building default HTTP client")
+    void testCustomProtocolsConfiguration() throws Exception {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .protocols(List.of(Protocol.HTTP_2, Protocol.HTTP_1_1))
+                        .build();
+
+        OkHttpClient actualClient = readPrivateField(model, "httpClient", OkHttpClient.class);
+        assertEquals(List.of(Protocol.HTTP_2, Protocol.HTTP_1_1), actualClient.protocols());
+    }
+
+    @Test
+    @DisplayName("Should fallback to default protocols when protocols are null")
+    void testNullProtocolsConfiguration() throws Exception {
+        GeminiChatModel model =
+                GeminiChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gemini-2.0-flash")
+                        .protocols(null)
+                        .build();
+
+        OkHttpClient actualClient = readPrivateField(model, "httpClient", OkHttpClient.class);
+        assertNotNull(actualClient);
+        assertTrue(!actualClient.protocols().isEmpty());
+    }
+
+    private static <T> T readPrivateField(Object target, String fieldName, Class<T> type)
+            throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return type.cast(field.get(target));
     }
 }

@@ -43,7 +43,6 @@ class JdkWebSocketTransportTest {
         @DisplayName("Should create client with default config")
         void shouldCreateClientWithDefaultConfig() {
             WebSocketTransport client = JdkWebSocketTransport.create();
-
             assertNotNull(client);
         }
 

@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -38,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 class HigressMcpClientWrapperTest {
@@ -288,7 +288,7 @@ class HigressMcpClientWrapperTest {
         when(mockDelegateClient.initialize()).thenReturn(Mono.empty());
         RuntimeException error = new RuntimeException("Close failed");
         // Mockito will throw the error when close() is called
-        Mockito.doThrow(error).when(mockDelegateClient).close();
+        doThrow(error).when(mockDelegateClient).close();
 
         HigressMcpClientWrapper wrapper = createWrapper(false, null, 10);
         wrapper.initialize().block();
