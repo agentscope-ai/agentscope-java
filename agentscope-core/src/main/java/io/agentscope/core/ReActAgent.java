@@ -186,22 +186,6 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     // ==================== New StateModule API ====================
 
     /**
-     * Binds the session regardless of whether it exists, then loads state if it does.
-     *
-     * @param session the session to bind and potentially load from
-     * @param sessionKey the session identifier
-     * @return true if the session existed and state was loaded, false otherwise
-     */
-    @Override
-    public boolean loadIfExists(Session session, SessionKey sessionKey) {
-        if (session.exists(sessionKey)) {
-            loadFrom(session, sessionKey);
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * Loads agent state from the session. When {@code resend} is {@code true}, restores from the
      * most recent anchor (snapshot taken before the last call) and returns the original input
      * messages, allowing the caller to re-execute with {@code agent.call(inputMsgs)}.
