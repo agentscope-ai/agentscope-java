@@ -44,22 +44,24 @@ import reactor.core.publisher.Mono;
 /**
  * Abstract base class for agents that support structured output generation.
  *
- * <p>This class provides the infrastructure for generating structured output using the
- * {@code generate_response} tool pattern combined with StructuredOutputHook for flow control.
+ * <p>This class provides the infrastructure for generating structured output using the {@code
+ * generate_response} tool pattern combined with StructuredOutputHook for flow control.
  *
  * <p><b>Key Features:</b>
+ *
  * <ul>
- *   <li>Automatic tool registration for structured output</li>
- *   <li>Schema validation before tool execution</li>
- *   <li>Memory compression after structured output completion</li>
- *   <li>Configurable reminder mode (TOOL_CHOICE or PROMPT)</li>
+ *   <li>Automatic tool registration for structured output
+ *   <li>Schema validation before tool execution
+ *   <li>Memory compression after structured output completion
+ *   <li>Configurable reminder mode (TOOL_CHOICE or PROMPT)
  * </ul>
  *
  * <p><b>Subclass Requirements:</b>
+ *
  * <ul>
- *   <li>Provide Toolkit via constructor</li>
- *   <li>Implement {@link #getMemory()} for memory access</li>
- *   <li>Implement {@link #buildGenerateOptions()} for model options</li>
+ *   <li>Provide Toolkit via constructor
+ *   <li>Implement {@link #getMemory()} for memory access
+ *   <li>Implement {@link #buildGenerateOptions()} for model options
  * </ul>
  */
 public abstract class StructuredOutputCapableAgent extends AgentBase {
@@ -72,9 +74,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
     protected final Toolkit toolkit;
     protected final StructuredOutputReminder structuredOutputReminder;
 
-    /**
-     * Constructor with default reminder mode (TOOL_CHOICE).
-     */
+    /** Constructor with default reminder mode (TOOL_CHOICE). */
     protected StructuredOutputCapableAgent(
             String name,
             String description,
@@ -84,9 +84,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         this(name, description, checkRunning, hooks, toolkit, StructuredOutputReminder.TOOL_CHOICE);
     }
 
-    /**
-     * Constructor with custom reminder mode.
-     */
+    /** Constructor with custom reminder mode. */
     protected StructuredOutputCapableAgent(
             String name,
             String description,
@@ -102,23 +100,15 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                         : StructuredOutputReminder.TOOL_CHOICE;
     }
 
-    /**
-     * Get the toolkit for tool operations.
-     */
+    /** Get the toolkit for tool operations. */
     public Toolkit getToolkit() {
         return toolkit;
     }
 
-    /**
-     * Get the memory for structured output hook.
-     * Subclasses must implement this.
-     */
+    /** Get the memory for structured output hook. Subclasses must implement this. */
     public abstract Memory getMemory();
 
-    /**
-     * Build generate options for model calls.
-     * Subclasses must implement this.
-     */
+    /** Build generate options for model calls. Subclasses must implement this. */
     protected abstract GenerateOptions buildGenerateOptions();
 
     // ==================== Structured Output Implementation ====================
@@ -133,9 +123,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         return executeWithStructuredOutput(msgs, null, outputSchema);
     }
 
-    /**
-     * Execute with structured output using StructuredOutputHook.
-     */
+    /** Execute with structured output using StructuredOutputHook. */
     private Mono<Msg> executeWithStructuredOutput(
             List<Msg> msgs, Class<?> targetClass, JsonNode schemaDesc) {
 
@@ -196,9 +184,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                 });
     }
 
-    /**
-     * Create the structured output tool with validation.
-     */
+    /** Create the structured output tool with validation. */
     private AgentTool createStructuredOutputTool(
             Map<String, Object> schema, Class<?> targetClass, JsonNode schemaDesc) {
         return new AgentTool() {
@@ -244,7 +230,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                             // Create response message
                             Msg responseMsg =
                                     Msg.builder()
-                                            .name(getName())
+                                            .name(param.getAgent().getName())
                                             .role(MsgRole.ASSISTANT)
                                             .content(TextBlock.builder().text(contentText).build())
                                             .metadata(
@@ -268,9 +254,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         };
     }
 
-    /**
-     * Extract structured result from tool result message.
-     */
+    /** Extract structured result from tool result message. */
     private Msg extractStructuredResult(Msg hookResultMsg) {
         if (hookResultMsg == null) {
             return null;
@@ -310,9 +294,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
         return responseMsg;
     }
 
-    /**
-     * Merge collected metadata (ChatUsage and ThinkingBlock) into the message.
-     */
+    /** Merge collected metadata (ChatUsage and ThinkingBlock) into the message. */
     private Msg mergeCollectedMetadata(Msg msg, ChatUsage chatUsage, ThinkingBlock thinking) {
         // Merge ChatUsage into metadata
         Map<String, Object> metadata =

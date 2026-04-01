@@ -17,11 +17,10 @@ package io.agentscope.examples.werewolf.web;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-/**
- * Represents a game event to be sent to the web frontend.
- */
+/** Represents a game event to be sent to the web frontend. */
 public class GameEvent {
 
     private final GameEventType type;
@@ -115,8 +114,7 @@ public class GameEvent {
     }
 
     /**
-     * Create a player role assignment event.
-     * This tells the human player their assigned role.
+     * Create a player role assignment event. This tells the human player their assigned role.
      *
      * @param playerName The human player's name
      * @param role The assigned role (e.g., "WEREWOLF", "SEER")
@@ -135,8 +133,7 @@ public class GameEvent {
     }
 
     /**
-     * Create a wait user input event.
-     * This prompts the human player to provide input.
+     * Create a wait user input event. This prompts the human player to provide input.
      *
      * @param inputType The type of input required (e.g., "SPEAK", "VOTE", "WITCH_HEAL")
      * @param prompt The prompt message to display
@@ -165,6 +162,155 @@ public class GameEvent {
         return new GameEvent(
                 GameEventType.USER_INPUT_RECEIVED,
                 Map.of("inputType", inputType, "content", content));
+    }
+
+    /**
+     * Create a sheriff registration event.
+     *
+     * @param playerName player name
+     * @param registered whether player registered for sheriff
+     * @param reason reason for decision
+     * @return The event
+     */
+    public static GameEvent sheriffRegistration(
+            String playerName, boolean registered, String reason) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("playerName", playerName);
+        data.put("registered", registered);
+        data.put("reason", reason != null ? reason : "");
+        return new GameEvent(GameEventType.SHERIFF_REGISTRATION, data);
+    }
+
+    /**
+     * Create a sheriff candidates announced event.
+     *
+     * @param candidateNames list of candidate names
+     * @return The event
+     */
+    public static GameEvent sheriffCandidatesAnnounced(List<String> candidateNames) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("candidates", candidateNames);
+        return new GameEvent(GameEventType.SHERIFF_CANDIDATES_ANNOUNCED, data);
+    }
+
+    /**
+     * Create a sheriff campaign speech event.
+     *
+     * @param playerName candidate name
+     * @param speech campaign speech
+     * @param checkResult seer's check result (if seer)
+     * @param nextCheckTarget next target to check (if seer)
+     * @return The event
+     */
+    public static GameEvent sheriffCampaign(
+            String playerName, String speech, String checkResult, String nextCheckTarget) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("playerName", playerName);
+        data.put("speech", speech != null ? speech : "");
+        data.put("checkResult", checkResult);
+        data.put("nextCheckTarget", nextCheckTarget);
+        return new GameEvent(GameEventType.SHERIFF_CAMPAIGN, data);
+    }
+
+    /**
+     * Create a sheriff vote event.
+     *
+     * @param voter voter name
+     * @param target target candidate name
+     * @param reason reason for voting
+     * @return The event
+     */
+    public static GameEvent sheriffVote(String voter, String target, String reason) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("voter", voter);
+        data.put("target", target != null ? target : "");
+        data.put("reason", reason != null ? reason : "");
+        return new GameEvent(GameEventType.SHERIFF_VOTE, data);
+    }
+
+    /**
+     * Create a sheriff elected event.
+     *
+     * @param sheriffName elected sheriff name (null if badge is lost)
+     * @param voteCount number of votes received
+     * @return The event
+     */
+    public static GameEvent sheriffElected(
+            String sheriffName, int voteCount, Map<String, Object> voteDetails) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("sheriffName", sheriffName);
+        data.put("voteCount", voteCount);
+        data.put("voteDetails", voteDetails);
+        return new GameEvent(GameEventType.SHERIFF_ELECTED, data);
+    }
+
+    /**
+     * Create a sheriff badge transfer event.
+     *
+     * @param fromPlayer previous sheriff name
+     * @param toPlayer new sheriff name (null if no transfer)
+     * @param checkInfo information revealed (for seer)
+     * @param reason reason for transfer
+     * @return The event
+     */
+    public static GameEvent sheriffTransfer(
+            String fromPlayer, String toPlayer, String checkInfo, String reason) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("fromPlayer", fromPlayer);
+        data.put("toPlayer", toPlayer);
+        data.put("checkInfo", checkInfo);
+        data.put("reason", reason != null ? reason : "");
+        return new GameEvent(GameEventType.SHERIFF_TRANSFER, data);
+    }
+
+    /**
+     * Create a werewolf kill result popup event.
+     *
+     * @param victimName the player killed by werewolves
+     * @return The event
+     */
+    public static GameEvent nightActionWerewolfKill(String victimName) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("victimName", victimName);
+        return new GameEvent(GameEventType.NIGHT_ACTION_WEREWOLF_KILL, data);
+    }
+
+    /**
+     * Create a witch heal result popup event.
+     *
+     * @param victimName the player healed by witch
+     * @return The event
+     */
+    public static GameEvent nightActionWitchHeal(String victimName) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("victimName", victimName);
+        return new GameEvent(GameEventType.NIGHT_ACTION_WITCH_HEAL, data);
+    }
+
+    /**
+     * Create a witch poison result popup event.
+     *
+     * @param targetName the player poisoned by witch
+     * @return The event
+     */
+    public static GameEvent nightActionWitchPoison(String targetName) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("targetName", targetName);
+        return new GameEvent(GameEventType.NIGHT_ACTION_WITCH_POISON, data);
+    }
+
+    /**
+     * Create a seer check result popup event.
+     *
+     * @param targetName the player checked by seer
+     * @param isWerewolf true if the checked player is a werewolf
+     * @return The event
+     */
+    public static GameEvent nightActionSeerCheck(String targetName, boolean isWerewolf) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("targetName", targetName);
+        data.put("isWerewolf", isWerewolf);
+        return new GameEvent(GameEventType.NIGHT_ACTION_SEER_CHECK, data);
     }
 
     /**
