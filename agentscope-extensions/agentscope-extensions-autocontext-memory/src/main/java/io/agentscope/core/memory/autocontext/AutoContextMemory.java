@@ -798,8 +798,8 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
         // Create a compressed message
         return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("assistant")
+                .role(MsgRole.USER)
+                .name("user")
                 .content(
                         TextBlock.builder()
                                 .text((block != null ? block.getTextContent() : "") + offloadHint)
