@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -38,6 +39,7 @@ import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -716,6 +718,194 @@ class AutoContextMemoryTest {
     }
 
     @Test
+    @DisplayName("Should skip timed out current round compression without hanging")
+    void testCurrentRoundCompressionTimeoutDoesNotHang() {
+        NeverCompletingModel neverCompletingModel = new NeverCompletingModel();
+        AutoContextConfig timeoutConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .compressionTimeoutMillis(50)
+                        .build();
+        AutoContextMemory timeoutMemory =
+                new AutoContextMemory(timeoutConfig, neverCompletingModel);
+
+        for (int i = 0; i < 8; i++) {
+            timeoutMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        timeoutMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
+        for (int i = 0; i < 2; i++) {
+            timeoutMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            timeoutMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        boolean compressed =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        timeoutMemory::compressIfNeeded,
+                        "Timed out compression should not block the caller indefinitely");
+
+        assertFalse(compressed, "Compression should be skipped after timeout");
+        assertEquals(1, neverCompletingModel.getCallCount(), "Should attempt compression once");
+        assertEquals(
+                13,
+                timeoutMemory.getMessages().size(),
+                "Working memory should remain unchanged after timeout");
+        assertTrue(
+                timeoutMemory.getOffloadContext().isEmpty(),
+                "Timed out compression should clean up temporary offloaded messages");
+    }
+
+    @Test
+    @DisplayName("Should skip timed out current round large message summary without leaks")
+    void testCurrentRoundLargeMessageTimeoutDoesNotLeaveOffloadedMessages() {
+        NeverCompletingModel neverCompletingModel = new NeverCompletingModel();
+        AutoContextConfig timeoutConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(100)
+                        .minCompressionTokenThreshold(0)
+                        .compressionTimeoutMillis(50)
+                        .build();
+        AutoContextMemory timeoutMemory =
+                new AutoContextMemory(timeoutConfig, neverCompletingModel);
+
+        List<Msg> rawMessages = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            rawMessages.add(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+        rawMessages.add(createTextMessage("User query with large response", MsgRole.USER));
+        rawMessages.add(createTextMessage("x".repeat(200), MsgRole.ASSISTANT));
+
+        boolean summarized =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        () ->
+                                invokePrivateBooleanMethod(
+                                        timeoutMemory,
+                                        "summaryCurrentRoundLargeMessages",
+                                        new Class<?>[] {List.class},
+                                        rawMessages),
+                        "Timed out large-message compression should not block the caller");
+
+        assertFalse(summarized, "Large message summary should be skipped after timeout");
+        assertEquals(1, neverCompletingModel.getCallCount(), "Should attempt summary once");
+        assertEquals(10, rawMessages.size(), "Raw messages should remain unchanged after timeout");
+        assertTrue(
+                timeoutMemory.getOffloadContext().isEmpty(),
+                "Timed out large-message summary should clean up temporary offloaded messages");
+    }
+
+    @Test
+    @DisplayName("Should skip timed out tool compression without leaving offloaded messages")
+    void testToolCompressionTimeoutDoesNotLeaveOffloadedMessages() {
+        NeverCompletingModel neverCompletingModel = new NeverCompletingModel();
+        AutoContextConfig timeoutConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(3)
+                        .minCompressionTokenThreshold(0)
+                        .compressionTimeoutMillis(50)
+                        .build();
+        AutoContextMemory timeoutMemory =
+                new AutoContextMemory(timeoutConfig, neverCompletingModel);
+
+        List<Msg> rawMessages = new ArrayList<>();
+        rawMessages.add(createTextMessage("User query", MsgRole.USER));
+        for (int i = 0; i < 5; i++) {
+            rawMessages.add(createToolUseMessage("test_tool", "call_" + i));
+            rawMessages.add(createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+        rawMessages.add(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        boolean compressed =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        () ->
+                                invokePrivateBooleanMethod(
+                                        timeoutMemory,
+                                        "summaryToolsMessages",
+                                        new Class<?>[] {List.class, Pair.class},
+                                        rawMessages,
+                                        new Pair<>(1, 10)),
+                        "Timed out tool compression should not block the caller");
+
+        assertFalse(compressed, "Tool compression should be skipped after timeout");
+        assertEquals(
+                1, neverCompletingModel.getCallCount(), "Should attempt tool compression once");
+        assertEquals(12, rawMessages.size(), "Tool messages should remain unchanged after timeout");
+        assertTrue(
+                timeoutMemory.getOffloadContext().isEmpty(),
+                "Timed out tool compression should clean up temporary offloaded messages");
+    }
+
+    @Test
+    @DisplayName(
+            "Should skip timed out previous round summaries without leaving offloaded messages")
+    void testPreviousRoundSummaryTimeoutDoesNotLeaveOffloadedMessages() {
+        NeverCompletingModel neverCompletingModel = new NeverCompletingModel();
+        AutoContextConfig timeoutConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .compressionTimeoutMillis(50)
+                        .build();
+        AutoContextMemory timeoutMemory =
+                new AutoContextMemory(timeoutConfig, neverCompletingModel);
+
+        List<Msg> rawMessages = new ArrayList<>();
+        for (int round = 0; round < 5; round++) {
+            rawMessages.add(createTextMessage("User query round " + round, MsgRole.USER));
+            rawMessages.add(createToolUseMessage("tool_" + round, "call_" + round));
+            rawMessages.add(
+                    createToolResultMessage("tool_" + round, "call_" + round, "Result " + round));
+            rawMessages.add(
+                    createTextMessage("Assistant response round " + round, MsgRole.ASSISTANT));
+        }
+        rawMessages.add(createTextMessage("Final user query", MsgRole.USER));
+
+        boolean summarized =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(1),
+                        () ->
+                                invokePrivateBooleanMethod(
+                                        timeoutMemory,
+                                        "summaryPreviousRoundMessages",
+                                        new Class<?>[] {List.class},
+                                        rawMessages),
+                        "Timed out previous-round summaries should not block the caller");
+
+        assertFalse(summarized, "Previous round summaries should be skipped after timeout");
+        assertEquals(
+                4,
+                neverCompletingModel.getCallCount(),
+                "Should attempt each eligible previous round summary");
+        assertEquals(21, rawMessages.size(), "Previous-round messages should remain unchanged");
+        assertTrue(
+                timeoutMemory.getOffloadContext().isEmpty(),
+                "Timed out previous-round summaries should clean up temporary offloaded messages");
+    }
+
+    @Test
     @DisplayName(
             "Should skip tool message compression when token count is below"
                     + " minCompressionTokenThreshold")
@@ -968,6 +1158,20 @@ class AutoContextMemoryTest {
 
     // Helper methods
 
+    private boolean invokePrivateBooleanMethod(
+            AutoContextMemory target,
+            String methodName,
+            Class<?>[] parameterTypes,
+            Object... args) {
+        try {
+            Method method = AutoContextMemory.class.getDeclaredMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return (boolean) method.invoke(target, args);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private Msg createTextMessage(String text, MsgRole role) {
         return Msg.builder()
                 .role(role)
@@ -1036,6 +1240,26 @@ class AutoContextMemoryTest {
 
         void reset() {
             callCount = 0;
+        }
+    }
+
+    private static class NeverCompletingModel implements Model {
+        private int callCount = 0;
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            callCount++;
+            return Flux.never();
+        }
+
+        @Override
+        public String getModelName() {
+            return "never-completing-model";
+        }
+
+        int getCallCount() {
+            return callCount;
         }
     }
 
