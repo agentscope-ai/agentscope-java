@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.tool.multimodal;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -36,6 +35,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * OpenAI multimodal tool.

@@ -25,7 +25,7 @@ import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
-import io.modelcontextprotocol.json.McpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.net.URI;
@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Builder for creating MCP client wrappers with fluent configuration.
@@ -380,7 +381,7 @@ public class McpClientBuilder {
             }
 
             ServerParameters params = paramsBuilder.build();
-            return new StdioClientTransport(params, McpJsonMapper.getDefault());
+            return new StdioClientTransport(params, new JacksonMcpJsonMapper(JsonMapper.shared()));
         }
     }
 

@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -42,6 +41,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -227,7 +227,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msgs Input messages
-     * @param schema com.fasterxml.jackson.databind.JsonNode instance defining the structure of the output
+     * @param schema JsonNode instance defining the structure of the output
      * @return Response message with structured data in metadata
      */
     @Override
@@ -280,7 +280,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * Default implementation throws UnsupportedOperationException.
      *
      * @param msgs Input messages
-     * @param outputSchema com.fasterxml.jackson.databind.JsonNode instance defining the structure
+     * @param outputSchema JsonNode instance defining the structure
      * @return Response message with structured data in metadata
      */
     protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {

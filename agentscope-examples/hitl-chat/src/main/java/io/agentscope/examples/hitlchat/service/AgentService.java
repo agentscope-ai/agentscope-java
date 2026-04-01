@@ -15,8 +15,6 @@
  */
 package io.agentscope.examples.hitlchat.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
@@ -50,6 +48,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Service for managing agents and chat sessions.
@@ -61,7 +61,7 @@ import reactor.core.publisher.Flux;
 @Service
 public class AgentService {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.shared();
 
     @Value("${dashscope.api-key:${DASHSCOPE_API_KEY:}}")
     private String apiKey;
@@ -345,7 +345,7 @@ public class AgentService {
             return (Map<String, Object>) input;
         }
         try {
-            return OBJECT_MAPPER.convertValue(input, new TypeReference<Map<String, Object>>() {});
+            return JSON_MAPPER.convertValue(input, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return Map.of("value", input.toString());
         }

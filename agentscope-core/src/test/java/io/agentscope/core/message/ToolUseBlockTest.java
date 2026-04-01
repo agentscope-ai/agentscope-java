@@ -20,10 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Unit tests for {@link ToolUseBlock} class, focusing on JSON serialization and deserialization
@@ -31,10 +30,10 @@ import org.junit.jupiter.api.Test;
  */
 class ToolUseBlockTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.shared();
 
     @Test
-    void testJsonSerializationWithAllFields() throws JsonProcessingException {
+    void testJsonSerializationWithAllFields() {
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("tool-123")
@@ -44,7 +43,7 @@ class ToolUseBlockTest {
                         .metadata(Map.of(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, "signature123"))
                         .build();
 
-        String json = objectMapper.writeValueAsString(toolUseBlock);
+        String json = jsonMapper.writeValueAsString(toolUseBlock);
         assertNotNull(json);
         assertTrue(json.contains("\"id\":\"tool-123\""));
         assertTrue(json.contains("\"name\":\"calculator\""));
@@ -52,7 +51,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testJsonDeserializationWithAllFields() throws JsonProcessingException {
+    void testJsonDeserializationWithAllFields() {
         String json =
                 """
                 {
@@ -65,7 +64,7 @@ class ToolUseBlockTest {
                 }
                 """;
 
-        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        ToolUseBlock toolUseBlock = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals("tool-123", toolUseBlock.getId());
         assertEquals("calculator", toolUseBlock.getName());
@@ -80,7 +79,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testJsonDeserializationWithoutContent() throws JsonProcessingException {
+    void testJsonDeserializationWithoutContent() {
         String json =
                 """
                 {
@@ -92,7 +91,7 @@ class ToolUseBlockTest {
                 }
                 """;
 
-        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        ToolUseBlock toolUseBlock = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals("tool-456", toolUseBlock.getId());
         assertEquals("search", toolUseBlock.getName());
@@ -104,7 +103,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testJsonDeserializationWithoutMetadata() throws JsonProcessingException {
+    void testJsonDeserializationWithoutMetadata() {
         String json =
                 """
                 {
@@ -115,7 +114,7 @@ class ToolUseBlockTest {
                 }
                 """;
 
-        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        ToolUseBlock toolUseBlock = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals("tool-789", toolUseBlock.getId());
         assertEquals("validator", toolUseBlock.getName());
@@ -125,7 +124,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testJsonDeserializationWithEmptyInput() throws JsonProcessingException {
+    void testJsonDeserializationWithEmptyInput() {
         String json =
                 """
                 {
@@ -136,7 +135,7 @@ class ToolUseBlockTest {
                 }
                 """;
 
-        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        ToolUseBlock toolUseBlock = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals("tool-999", toolUseBlock.getId());
         assertEquals("no-input-tool", toolUseBlock.getName());
@@ -144,7 +143,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testJsonDeserializationWithNullContent() throws JsonProcessingException {
+    void testJsonDeserializationWithNullContent() {
         String json =
                 """
                 {
@@ -156,7 +155,7 @@ class ToolUseBlockTest {
                 }
                 """;
 
-        ToolUseBlock toolUseBlock = objectMapper.readValue(json, ToolUseBlock.class);
+        ToolUseBlock toolUseBlock = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals("tool-111", toolUseBlock.getId());
         assertEquals("test-tool", toolUseBlock.getName());
@@ -165,7 +164,7 @@ class ToolUseBlockTest {
     }
 
     @Test
-    void testRoundTripSerialization() throws JsonProcessingException {
+    void testRoundTripSerialization() {
         ToolUseBlock original =
                 ToolUseBlock.builder()
                         .id("tool-222")
@@ -175,8 +174,8 @@ class ToolUseBlockTest {
                         .metadata(Map.of("timestamp", "2024-01-01", "version", "1.0"))
                         .build();
 
-        String json = objectMapper.writeValueAsString(original);
-        ToolUseBlock deserialized = objectMapper.readValue(json, ToolUseBlock.class);
+        String json = jsonMapper.writeValueAsString(original);
+        ToolUseBlock deserialized = jsonMapper.readValue(json, ToolUseBlock.class);
 
         assertEquals(original.getId(), deserialized.getId());
         assertEquals(original.getName(), deserialized.getName());
