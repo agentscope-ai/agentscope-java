@@ -60,6 +60,7 @@ import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.state.AgentMetaState;
 import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -67,6 +68,7 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -141,11 +143,13 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
     private final PlanNotebook planNotebook;
+    private final SkillBox skillBox;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
+    private List<Msg> anchorInputMsgs;
+    private List<String> anchorActiveGroups;
 
     // ==================== Constructor ====================
-
     private ReActAgent(Builder builder, Toolkit agentToolkit) {
         super(
                 builder.name,
@@ -163,6 +167,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
         this.planNotebook = builder.planNotebook;
+        this.skillBox = builder.skillBox;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.statePersistence =
                 builder.statePersistence != null
@@ -171,6 +176,89 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     // ==================== New StateModule API ====================
+
+    /**
+     * Binds the session regardless of whether it exists, then loads state if it does.
+     *
+     * @param session the session to bind and potentially load from
+     * @param sessionKey the session identifier
+     * @return true if the session existed and state was loaded, false otherwise
+     */
+    @Override
+    public boolean loadIfExists(Session session, SessionKey sessionKey) {
+        if (session.exists(sessionKey)) {
+            loadFrom(session, sessionKey);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Loads agent state from the session. When {@code resend} is {@code true}, restores from the
+     * most recent anchor (snapshot taken before the last call) and returns the original input
+     * messages, allowing the caller to re-execute with {@code agent.call(inputMsgs)}.
+     *
+     * @param session the session to load from
+     * @param sessionKey the session key
+     * @param resend if {@code true}, restore from anchor instead of current state
+     * @return the original input messages from the anchor when resend is true; empty list otherwise
+     * @throws IllegalStateException if resend is true but no anchor exists
+     */
+    public List<Msg> loadIfExists(Session session, SessionKey sessionKey, boolean resend) {
+        if (session.exists(sessionKey)) {
+            loadFrom(session, sessionKey);
+        }
+        if (resend) {
+            if (anchorInputMsgs == null || anchorInputMsgs.isEmpty()) {
+                throw new IllegalStateException(
+                        "No resend anchor found for the given session key. "
+                                + "An anchor is automatically saved before each call().");
+            }
+            // Restore all components from their in-memory anchors
+            if (statePersistence.memoryManaged()) {
+                // Restore memory by finding the first resend input message and
+                // truncating from that point, instead of using a separate anchor copy.
+                List<Msg> currentMessages = memory.getMessages();
+                String firstInputId = anchorInputMsgs.get(0).getId();
+                int cutIndex = -1;
+                for (int i = 0; i < currentMessages.size(); i++) {
+                    if (currentMessages.get(i).getId().equals(firstInputId)) {
+                        cutIndex = i;
+                        break;
+                    }
+                }
+                if (cutIndex >= 0) {
+                    memory.deleteMessagesFrom(cutIndex);
+                }
+            }
+            if (statePersistence.planNotebookManaged() && planNotebook != null) {
+                planNotebook.restoreAnchor();
+            }
+            if (statePersistence.skillBoxManaged() && skillBox != null) {
+                skillBox.restoreAnchor();
+            }
+            if (statePersistence.toolkitManaged()
+                    && toolkit != null
+                    && anchorActiveGroups != null) {
+                toolkit.setActiveGroups(anchorActiveGroups);
+            }
+            return new ArrayList<>(anchorInputMsgs);
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Loads agent state from the session using a string session ID.
+     *
+     * @param session the session to load from
+     * @param sessionId the session identifier as a string
+     * @param resend if {@code true}, restore from anchor instead of current state
+     * @return the original input messages from the anchor when resend is true; empty list otherwise
+     * @throws IllegalStateException if resend is true but no anchor exists
+     */
+    public List<Msg> loadIfExists(Session session, String sessionId, boolean resend) {
+        return loadIfExists(session, SimpleSessionKey.of(sessionId), resend);
+    }
 
     /**
      * Save agent state to the session using the new API.
@@ -213,6 +301,22 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (statePersistence.planNotebookManaged() && planNotebook != null) {
             planNotebook.saveTo(session, sessionKey);
         }
+
+        // Save SkillBox if managed
+        if (statePersistence.skillBoxManaged() && skillBox != null) {
+            skillBox.saveTo(session, sessionKey);
+        }
+
+        // Save resend anchor data
+        if (anchorInputMsgs != null) {
+            session.save(sessionKey, "resend_input_msgs", anchorInputMsgs);
+        }
+        if (anchorActiveGroups != null) {
+            session.save(
+                    sessionKey,
+                    "toolkit_activeGroups_anchor",
+                    new ToolkitState(anchorActiveGroups));
+        }
     }
 
     /**
@@ -241,6 +345,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (statePersistence.planNotebookManaged() && planNotebook != null) {
             planNotebook.loadFrom(session, sessionKey);
         }
+
+        // Load SkillBox if managed
+        if (statePersistence.skillBoxManaged() && skillBox != null) {
+            skillBox.loadFrom(session, sessionKey);
+        }
+
+        // Load resend anchor data
+        List<Msg> loadedAnchor = session.getList(sessionKey, "resend_input_msgs", Msg.class);
+        anchorInputMsgs = loadedAnchor.isEmpty() ? null : new ArrayList<>(loadedAnchor);
+        session.get(sessionKey, "toolkit_activeGroups_anchor", ToolkitState.class)
+                .ifPresent(state -> anchorActiveGroups = new ArrayList<>(state.activeGroups()));
     }
 
     // ==================== Protected API ====================
@@ -251,6 +366,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         // No pending tools -> normal processing
         if (pendingIds.isEmpty()) {
+            saveResendAnchor(msgs);
             addToMemory(msgs);
             return executeIteration(0);
         }
@@ -720,6 +836,29 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     // ==================== Helper Methods ====================
+
+    /**
+     * Save a snapshot anchor of all stateful components before each call.
+     * The snapshot is saved to the agent's bound Session, so it persists
+     * regardless of the Session implementation (InMemory, Json, MySQL, etc.)
+     *
+     * @param inputMsgs the input messages from this call
+     */
+    private void saveResendAnchor(List<Msg> inputMsgs) {
+        this.anchorInputMsgs = new ArrayList<>(inputMsgs);
+        if (statePersistence.memoryManaged()) {
+            memory.saveAnchor();
+        }
+        if (statePersistence.planNotebookManaged() && planNotebook != null) {
+            planNotebook.saveAnchor();
+        }
+        if (statePersistence.skillBoxManaged() && skillBox != null) {
+            skillBox.saveAnchor();
+        }
+        if (statePersistence.toolkitManaged() && toolkit != null) {
+            anchorActiveGroups = new ArrayList<>(toolkit.getActiveGroups());
+        }
+    }
 
     /**
      * Prepare messages for model input.

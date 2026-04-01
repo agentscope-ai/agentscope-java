@@ -34,6 +34,8 @@ public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
 
+    private List<Msg> anchorMessages;
+
     /** Key prefix for storage. */
     private static final String KEY_PREFIX = "memory";
 
@@ -123,5 +125,54 @@ public class InMemoryMemory implements Memory {
     @Override
     public void clear() {
         messages.clear();
+    }
+
+    /**
+     * Deletes all messages from the specified index (inclusive) to the end.
+     *
+     * <p>This implementation uses {@link List#subList} for efficient bulk removal,
+     * avoiding per-element deletion overhead. If {@code fromIndex} is out of bounds
+     * (negative or >= size), this operation is a no-op (no exception thrown).
+     *
+     * @param fromIndex The start index (inclusive, 0-based)
+     */
+    @Override
+    public void deleteMessagesFrom(int fromIndex) {
+        int size = messages.size();
+        if (fromIndex < 0 || fromIndex >= size) {
+            return;
+        }
+        messages.subList(fromIndex, size).clear();
+    }
+
+    // ==================== Anchor Implementation ====================
+
+    /**
+     * Saves the current message list as an anchor point.
+     */
+    @Override
+    public void saveAnchor() {
+        anchorMessages = new ArrayList<>(messages);
+    }
+
+    /**
+     * Restores messages to the previously saved anchor point.
+     */
+    @Override
+    public void restoreAnchor() {
+        if (anchorMessages != null) {
+            messages.clear();
+            messages.addAll(anchorMessages);
+        }
+    }
+
+    /**
+     * Returns whether an anchor point has been saved.
+     *
+     * @return true if an anchor exists, false otherwise
+     */
+    @Override
+    public boolean hasAnchor() {
+        return anchorMessages != null;
     }
 }

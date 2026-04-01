@@ -64,6 +64,7 @@ package io.agentscope.core.state;
  * @param toolkitManaged whether to manage Toolkit activeGroups state
  * @param planNotebookManaged whether to manage PlanNotebook state
  * @param statefulToolsManaged whether to manage stateful Tool states
+ * @param skillBoxManaged whether to manage SkillBox state
  * @see StateModule
  * @see io.agentscope.core.ReActAgent
  */
@@ -71,21 +72,22 @@ public record StatePersistence(
         boolean memoryManaged,
         boolean toolkitManaged,
         boolean planNotebookManaged,
-        boolean statefulToolsManaged) {
+        boolean statefulToolsManaged,
+        boolean skillBoxManaged) {
 
     /** Default configuration: manage all components. */
     public static StatePersistence all() {
-        return new StatePersistence(true, true, true, true);
+        return new StatePersistence(true, true, true, true, true);
     }
 
     /** Don't manage any components (user fully controls). */
     public static StatePersistence none() {
-        return new StatePersistence(false, false, false, false);
+        return new StatePersistence(false, false, false, false, false);
     }
 
     /** Only manage Memory component. */
     public static StatePersistence memoryOnly() {
-        return new StatePersistence(true, false, false, false);
+        return new StatePersistence(true, false, false, false, false);
     }
 
     /**
@@ -104,6 +106,7 @@ public record StatePersistence(
         private boolean toolkitManaged = true;
         private boolean planNotebookManaged = true;
         private boolean statefulToolsManaged = true;
+        private boolean skillBoxManaged = true;
 
         /**
          * Sets whether to manage Memory component state.
@@ -150,13 +153,28 @@ public record StatePersistence(
         }
 
         /**
+         * Sets whether to manage SkillBox state.
+         *
+         * @param managed true to manage SkillBox state, false to let user manage
+         * @return This builder for method chaining
+         */
+        public Builder skillBoxManaged(boolean managed) {
+            this.skillBoxManaged = managed;
+            return this;
+        }
+
+        /**
          * Builds a new StatePersistence with the configured settings.
          *
          * @return A new StatePersistence instance
          */
         public StatePersistence build() {
             return new StatePersistence(
-                    memoryManaged, toolkitManaged, planNotebookManaged, statefulToolsManaged);
+                    memoryManaged,
+                    toolkitManaged,
+                    planNotebookManaged,
+                    statefulToolsManaged,
+                    skillBoxManaged);
         }
     }
 }

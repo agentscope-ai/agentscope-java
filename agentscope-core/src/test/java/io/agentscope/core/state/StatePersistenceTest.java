@@ -39,6 +39,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -49,6 +50,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
 
         @Test
@@ -59,6 +61,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
     }
 
@@ -74,6 +77,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -84,6 +88,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -94,6 +99,7 @@ class StatePersistenceTest {
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -105,6 +111,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertTrue(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -116,6 +123,7 @@ class StatePersistenceTest {
             assertTrue(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
 
         @Test
@@ -127,11 +135,13 @@ class StatePersistenceTest {
                             .toolkitManaged(false)
                             .planNotebookManaged(false)
                             .statefulToolsManaged(false)
+                            .skillBoxManaged(false)
                             .build();
             assertFalse(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertFalse(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertFalse(persistence.skillBoxManaged());
         }
 
         @Test
@@ -143,11 +153,13 @@ class StatePersistenceTest {
                             .toolkitManaged(false)
                             .planNotebookManaged(true)
                             .statefulToolsManaged(false)
+                            .skillBoxManaged(true)
                             .build();
             assertTrue(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
     }
 
@@ -167,11 +179,12 @@ class StatePersistenceTest {
         @Test
         @DisplayName("Constructor should accept all boolean values")
         void testConstructor() {
-            StatePersistence persistence = new StatePersistence(true, false, true, false);
+            StatePersistence persistence = new StatePersistence(true, false, true, false, true);
             assertTrue(persistence.memoryManaged());
             assertFalse(persistence.toolkitManaged());
             assertTrue(persistence.planNotebookManaged());
             assertFalse(persistence.statefulToolsManaged());
+            assertTrue(persistence.skillBoxManaged());
         }
     }
 }
