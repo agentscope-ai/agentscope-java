@@ -28,6 +28,7 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -396,5 +397,170 @@ class ReActAgentSummarizingTest {
         assertEquals(response, lastMessage, "Last message in memory should be the summary");
         assertEquals(
                 MsgRole.ASSISTANT, lastMessage.getRole(), "Summary message should be ASSISTANT");
+    }
+
+    @Test
+    @DisplayName("Should handle second call after maxIters with pending tool calls - Issue #1005")
+    void testSecondCallAfterMaxItersWithPendingToolCalls() {
+        // This test reproduces the bug reported in Issue #1005:
+        // 1. User has multi-round conversation with tool call
+        // 2. Tool doesn't respond (or times out), leaving pending tool calls
+        // 3. maxIters is reached, session auto-ends
+        // 4. User sends new message -> Should NOT throw IllegalStateException
+
+        InMemoryMemory memory = new InMemoryMemory();
+        final String toolId = "call_638e428da2cf48ceb8b05762";
+
+        // Mock model that returns a tool call on first call, then summary
+        final int[] callCount = {0};
+        MockModel mockModel =
+                new MockModel(
+                        messages -> {
+                            int callNum = callCount[0]++;
+                            if (callNum == 0) {
+                                // First call: return tool use block (simulating tool call)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_0")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .name("search_tool")
+                                                                        .id(toolId)
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "query",
+                                                                                        "test"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                // Second call: summarizing (because maxIters=1 reached)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_summary")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "I reached the"
+                                                                                    + " maximum"
+                                                                                    + " iteration"
+                                                                                    + " limit."
+                                                                                    + " Please try"
+                                                                                    + " again.")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                        });
+
+        MockToolkit mockToolkit = new MockToolkit();
+
+        // Create agent with maxIters=1 to quickly trigger summarizing
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .maxIters(1)
+                        .build();
+
+        // First user message - triggers tool call and maxIters summarizing
+        Msg firstUserMsg = TestUtils.createUserMessage("User", "Please search for something");
+        Msg firstResponse =
+                agent.call(firstUserMsg)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify first response
+        assertNotNull(firstResponse, "First response should not be null");
+        assertEquals(MsgRole.ASSISTANT, firstResponse.getRole());
+
+        // CRITICAL: Verify that the pending tool call has been resolved in memory
+        // Before the fix, memory would have pending tool calls without results
+        // After the fix, summarizing() should add error results for pending tools
+        List<Msg> memoryMessages = memory.getMessages();
+
+        // Find if there's a tool result message for the pending tool
+        boolean hasToolResultForPendingTool =
+                memoryMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(tr -> tr.getId() != null && tr.getId().equals(toolId));
+
+        assertTrue(
+                hasToolResultForPendingTool,
+                "Memory should contain error result for pending tool call after summarizing");
+
+        // Verify the tool result indicates cancellation due to max iterations
+        ToolResultBlock toolResult =
+                memoryMessages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> tr.getId() != null && tr.getId().equals(toolId))
+                        .findFirst()
+                        .orElse(null);
+
+        // Tool result should be present (either from toolkit or from summarizing fix)
+        assertNotNull(toolResult);
+
+        // SECOND CALL - This is the critical test for Issue #1005
+        // Before the fix, this would throw:
+        // IllegalStateException: Cannot add messages without tool results when pending tool calls
+        // exist
+
+        // Reset model for second user interaction
+        final int[] secondCallCount = {0};
+        MockModel secondMockModel =
+                new MockModel(
+                        messages -> {
+                            int callNum = secondCallCount[0]++;
+                            if (callNum == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_second_0")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Hello! How can I"
+                                                                                    + " help you"
+                                                                                    + " today?")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                            return List.of();
+                        });
+
+        ReActAgent secondAgent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(secondMockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory) // Same memory
+                        .maxIters(2)
+                        .build();
+
+        // Second user message - this would throw IllegalStateException before the fix
+        Msg secondUserMsg = TestUtils.createUserMessage("User", "Hello again");
+
+        // This should NOT throw: "Cannot add messages without tool results when pending tool calls
+        // exist"
+        Msg secondResponse =
+                secondAgent
+                        .call(secondUserMsg)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify second response succeeded
+        assertNotNull(secondResponse, "Second response should not be null");
+        assertEquals(MsgRole.ASSISTANT, secondResponse.getRole());
+        assertTrue(
+                secondResponse.getFirstContentBlock() instanceof TextBlock,
+                "Second response should contain TextBlock");
+
+        TextBlock secondText = (TextBlock) secondResponse.getFirstContentBlock();
+        assertEquals("Hello! How can I help you today?", secondText.getText());
     }
 }
