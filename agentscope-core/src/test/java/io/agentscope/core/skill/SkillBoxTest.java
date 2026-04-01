@@ -258,6 +258,52 @@ class SkillBoxTest {
             assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
             assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
         }
+
+        @Test
+        @DisplayName("Should update skill active state and require explicit sync")
+        void testSetSkillActiveRequiresExplicitSync() {
+            AgentSkill skill =
+                    new AgentSkill("test_active_skill", "Test Active Skill", "# Content", null);
+            AgentTool testTool = createTestTool("active_test_tool");
+
+            skillBox.registration().skill(skill).agentTool(testTool).apply();
+
+            String toolsGroupName = skill.getSkillId() + "_skill_tools";
+
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill should be inactive initially");
+            assertNotNull(toolkit.getToolGroup(toolsGroupName), "ToolGroup should be created");
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be inactive initially");
+
+            skillBox.setSkillActive(skill.getSkillId(), true);
+            skillBox.syncToolGroupStates();
+            assertTrue(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be active now");
+            assertTrue(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be active after sync");
+
+            skillBox.setSkillActive(skill.getSkillId(), false);
+
+            // The physical state (Toolkit) has not changed yet (the framework will not
+            // automatically synchronize for you)
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill logical state should be inactive");
+            assertTrue(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should STILL be active before explicit sync");
+
+            skillBox.syncToolGroupStates();
+
+            assertFalse(
+                    toolkit.getToolGroup(toolsGroupName).isActive(),
+                    "ToolGroup should be inactive after sync");
+        }
     }
 
     @Nested

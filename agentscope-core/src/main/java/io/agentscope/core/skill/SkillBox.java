@@ -279,6 +279,29 @@ public class SkillBox implements StateModule {
     }
 
     /**
+     * Sets the logical activation state of a specific skill.
+     *
+     * <p>When a skill is set to inactive, it is marked for deactivation. However,
+     * its associated tool group will <b>not</b> be immediately disabled in the underlying
+     * toolkit.
+     *
+     * <p><b>Important:</b> You must explicitly call {@link #syncToolGroupStates()} after
+     * modifying skill states to synchronize these changes with the bound toolkit. Only then
+     * will the agent be prevented from accessing the tools of inactive skills.
+     *
+     * @param skillId The ID of the skill to modify
+     * @param active  true to mark the skill as active, false to mark as inactive
+     * @throws IllegalArgumentException if skillId is null
+     */
+    public void setSkillActive(String skillId, boolean active) {
+        if (skillId == null) {
+            throw new IllegalArgumentException("Skill ID cannot be null");
+        }
+        skillRegistry.setSkillActive(skillId, active);
+        logger.debug("Skill '{}' active state set to {}", skillId, active);
+    }
+
+    /**
      * Deactivates all skills.
      *
      * <p>This method sets all registered skills to inactive state, which means their associated
