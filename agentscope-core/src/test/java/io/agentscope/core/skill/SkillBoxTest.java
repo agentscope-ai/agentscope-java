@@ -28,6 +28,8 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.session.InMemorySession;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -1066,6 +1068,185 @@ class SkillBoxTest {
             assertTrue(availableSkillsEnd >= 0);
             assertTrue(codeExecutionStart >= 0);
             assertTrue(availableSkillsEnd < codeExecutionStart);
+        }
+    }
+
+    @Nested
+    @DisplayName("SkillBox Anchor Tests")
+    class SkillBoxAnchorTest {
+
+        @Test
+        @DisplayName("hasAnchor should return false before saveAnchor is called")
+        void testHasAnchorReturnsFalseInitially() {
+            assertFalse(skillBox.hasAnchor(), "hasAnchor should be false before saveAnchor");
+        }
+
+        @Test
+        @DisplayName("saveAnchor should capture current skill activation states")
+        void testSaveAnchorCapturesSkillStates() {
+            AgentSkill skill1 = new AgentSkill("anchor_skill_1", "Skill 1", "# Content", null);
+            AgentSkill skill2 = new AgentSkill("anchor_skill_2", "Skill 2", "# Content", null);
+            skillBox.registerSkill(skill1);
+            skillBox.registerSkill(skill2);
+
+            // saveAnchor should succeed without throwing
+            assertDoesNotThrow(() -> skillBox.saveAnchor());
+            assertTrue(skillBox.hasAnchor(), "hasAnchor should be true after saveAnchor");
+        }
+
+        @Test
+        @DisplayName("restoreAnchor should restore skill activation states")
+        void testRestoreAnchorRestoresSkillStates() {
+            skillBox.registerSkillLoadTool();
+            AgentSkill skill = new AgentSkill("anchor_skill", "Anchor Skill", "# Content", null);
+            AgentTool tool = createTestTool("anchor_tool");
+            skillBox.registration().skill(skill).agentTool(tool).apply();
+
+            // Activate skill via load tool
+            Map<String, Object> loadInput =
+                    Map.of("skillId", skill.getSkillId(), "path", "SKILL.md");
+            ToolUseBlock loadCall =
+                    ToolUseBlock.builder()
+                            .id("anchor-load")
+                            .name("load_skill_through_path")
+                            .input(loadInput)
+                            .content(
+                                    "{\"skillId\":\""
+                                            + skill.getSkillId()
+                                            + "\",\"path\":\"SKILL.md\"}")
+                            .build();
+            toolkit.callTool(
+                            ToolCallParam.builder().toolUseBlock(loadCall).input(loadInput).build())
+                    .block();
+
+            assertTrue(skillBox.isSkillActive(skill.getSkillId()), "Skill should be active");
+
+            // Save anchor while skill is active
+            skillBox.saveAnchor();
+
+            // Deactivate the skill
+            skillBox.deactivateAllSkills();
+            skillBox.syncToolGroupStates();
+            assertFalse(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill should be inactive after deactivation");
+
+            // Restore from anchor - skill should be active again
+            skillBox.restoreAnchor();
+            assertTrue(
+                    skillBox.isSkillActive(skill.getSkillId()),
+                    "Skill should be active again after restoreAnchor");
+        }
+
+        @Test
+        @DisplayName("restoreAnchor should do nothing when no anchor exists")
+        void testRestoreAnchorNoOpWhenNoAnchor() {
+            AgentSkill skill = new AgentSkill("no_anchor_skill", "No Anchor Skill", "# C", null);
+            skillBox.registerSkill(skill);
+
+            // restoreAnchor with no anchor should not throw and not change state
+            assertDoesNotThrow(() -> skillBox.restoreAnchor());
+            assertFalse(skillBox.isSkillActive(skill.getSkillId()));
+        }
+
+        @Test
+        @DisplayName("hasAnchor changes from false to true after saveAnchor")
+        void testHasAnchorTransition() {
+            AgentSkill skill = new AgentSkill("has_anchor_skill", "HA Skill", "# C", null);
+            skillBox.registerSkill(skill);
+
+            assertFalse(skillBox.hasAnchor());
+            skillBox.saveAnchor();
+            assertTrue(skillBox.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("saveTo should persist anchor state under skillbox_state_anchor key")
+        void testSaveToIncludesAnchorState() {
+            AgentSkill skill = new AgentSkill("persist_skill", "Persist Skill", "# C", null);
+            skillBox.registerSkill(skill);
+
+            skillBox.saveAnchor();
+
+            InMemorySession session = new InMemorySession();
+            SimpleSessionKey key = SimpleSessionKey.of("test-anchor-session");
+            skillBox.saveTo(session, key);
+
+            // Anchor state should be persisted
+            assertTrue(
+                    session.get(
+                                    key,
+                                    "skillbox_state_anchor",
+                                    io.agentscope.core.state.SkillBoxState.class)
+                            .isPresent(),
+                    "skillbox_state_anchor should be saved in session");
+        }
+
+        @Test
+        @DisplayName("saveTo should not persist anchor state when no anchor exists")
+        void testSaveToDoesNotIncludeAnchorWhenNone() {
+            AgentSkill skill = new AgentSkill("no_persist_skill", "No Persist", "# C", null);
+            skillBox.registerSkill(skill);
+
+            InMemorySession session = new InMemorySession();
+            SimpleSessionKey key = SimpleSessionKey.of("test-no-anchor-session");
+            skillBox.saveTo(session, key);
+
+            // Anchor state should NOT be persisted when saveAnchor was never called
+            assertFalse(
+                    session.get(
+                                    key,
+                                    "skillbox_state_anchor",
+                                    io.agentscope.core.state.SkillBoxState.class)
+                            .isPresent(),
+                    "skillbox_state_anchor should not be saved when no anchor exists");
+        }
+
+        @Test
+        @DisplayName("loadFrom should restore anchor from session")
+        void testLoadFromRestoresAnchorState() {
+            AgentSkill skill = new AgentSkill("load_anchor_skill", "Load Anchor", "# C", null);
+            skillBox.registerSkill(skill);
+
+            // Save state with anchor
+            skillBox.saveAnchor();
+            InMemorySession session = new InMemorySession();
+            SimpleSessionKey key = SimpleSessionKey.of("test-load-anchor");
+            skillBox.saveTo(session, key);
+
+            // Create a new skillBox and load from session
+            Toolkit newToolkit = new Toolkit();
+            SkillBox newSkillBox = new SkillBox(newToolkit);
+            newToolkit.registerTool(newSkillBox);
+            newSkillBox.registerSkill(skill);
+
+            assertFalse(newSkillBox.hasAnchor(), "New skillBox should have no anchor");
+            newSkillBox.loadFrom(session, key);
+            assertTrue(newSkillBox.hasAnchor(), "Anchor should be restored after loadFrom");
+        }
+
+        @Test
+        @DisplayName("loadFrom should clear anchor when session has no anchor data")
+        void testLoadFromClearsAnchorWhenNotInSession() {
+            AgentSkill skill = new AgentSkill("clear_anchor_skill", "Clear Anchor", "# C", null);
+            skillBox.registerSkill(skill);
+
+            // Set an anchor
+            skillBox.saveAnchor();
+            assertTrue(skillBox.hasAnchor());
+
+            // Save state WITHOUT anchor (use a new skillBox that has no anchor)
+            Toolkit otherToolkit = new Toolkit();
+            SkillBox otherBox = new SkillBox(otherToolkit);
+            otherBox.registerSkill(skill);
+            InMemorySession session = new InMemorySession();
+            SimpleSessionKey key = SimpleSessionKey.of("no-anchor-key");
+            otherBox.saveTo(session, key);
+
+            // Load from session that has no anchor - should clear existing anchor
+            skillBox.loadFrom(session, key);
+            assertFalse(
+                    skillBox.hasAnchor(), "Anchor should be cleared after loadFrom with no anchor");
         }
     }
 
