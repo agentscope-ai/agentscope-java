@@ -19,6 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
@@ -324,6 +325,7 @@ class ToolExecutor {
         execution = applyScheduling(execution);
         execution = applyTimeout(execution, executionConfig, toolCall);
         execution = applyRetry(execution, executionConfig, toolCall);
+        execution = applyShutdownGuard(execution);
 
         // Add tool metadata and error handling
         return execution
@@ -396,5 +398,22 @@ class ToolExecutor {
                 toolCall.getName());
 
         return execution.retryWhen(retrySpec);
+    }
+
+    /**
+     * Race tool execution against the global shutdown timeout signal.
+     * When the signal fires, the tool Mono is cancelled and an error is emitted,
+     * which flows through {@code onErrorResume} into a normal {@code ToolResultBlock.error}.
+     */
+    private Mono<ToolResultBlock> applyShutdownGuard(Mono<ToolResultBlock> execution) {
+        Mono<ToolResultBlock> shutdownGuard =
+                GracefulShutdownManager.getInstance()
+                        .getShutdownTimeoutSignal()
+                        .then(
+                                Mono.error(
+                                        new RuntimeException(
+                                                "Tool execution timeout due to system graceful"
+                                                        + " shutdown.")));
+        return Mono.firstWithSignal(execution, shutdownGuard);
     }
 }
