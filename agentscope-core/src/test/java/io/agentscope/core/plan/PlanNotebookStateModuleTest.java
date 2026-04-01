@@ -16,6 +16,7 @@
 package io.agentscope.core.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -220,6 +221,205 @@ class PlanNotebookStateModuleTest {
             freshLoad.loadFrom(session, sessionKey);
 
             assertEquals("Modified Plan", freshLoad.getCurrentPlan().getName());
+        }
+    }
+
+    // ==================== Anchor Tests ====================
+
+    @Nested
+    @DisplayName("Anchor (saveAnchor / restoreAnchor / hasAnchor)")
+    class AnchorTests {
+
+        @Test
+        @DisplayName("hasAnchor() returns false before saveAnchor() is called")
+        void testHasAnchorFalseInitially() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            assertFalse(notebook.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("hasAnchor() returns true after saveAnchor() is called")
+        void testHasAnchorTrueAfterSave() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Plan", "Desc", "Outcome", List.of(new SubTask("T", "D", "O")))
+                    .block();
+            notebook.saveAnchor();
+            assertTrue(notebook.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("saveAnchor() with no plan and restoreAnchor() sets currentPlan to null")
+        void testSaveAnchorNullPlanRestoresClear() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.saveAnchor(); // anchor = null plan
+
+            // Create a plan
+            notebook.createPlanWithSubTasks(
+                            "New Plan", "Desc", "Outcome", List.of(new SubTask("T", "D", "O")))
+                    .block();
+            assertNotNull(notebook.getCurrentPlan());
+
+            notebook.restoreAnchor();
+            assertNull(notebook.getCurrentPlan());
+        }
+
+        @Test
+        @DisplayName("saveAnchor() snapshots currentPlan, restoreAnchor() restores it")
+        void testSaveAndRestoreAnchorWithPlan() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Anchor Plan",
+                            "Desc",
+                            "Outcome",
+                            List.of(new SubTask("Task 1", "D1", "O1")))
+                    .block();
+            notebook.saveAnchor();
+
+            // Replace with new plan
+            notebook.createPlanWithSubTasks(
+                            "New Plan",
+                            "New Desc",
+                            "New Outcome",
+                            List.of(
+                                    new SubTask("Task A", "DA", "OA"),
+                                    new SubTask("Task B", "DB", "OB")))
+                    .block();
+            assertEquals("New Plan", notebook.getCurrentPlan().getName());
+
+            notebook.restoreAnchor();
+            assertEquals("Anchor Plan", notebook.getCurrentPlan().getName());
+            assertEquals(1, notebook.getCurrentPlan().getSubtasks().size());
+        }
+
+        @Test
+        @DisplayName("restoreAnchor() is a no-op when no anchor has been saved")
+        void testRestoreAnchorNoOpWhenNoAnchor() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Plan", "Desc", "Outcome", List.of(new SubTask("T", "D", "O")))
+                    .block();
+            // No saveAnchor called
+            notebook.restoreAnchor();
+            // Plan should still be there
+            assertNotNull(notebook.getCurrentPlan());
+            assertEquals("Plan", notebook.getCurrentPlan().getName());
+        }
+    }
+
+    // ==================== Anchor Persistence Tests ====================
+
+    @Nested
+    @DisplayName("Anchor persistence via saveTo/loadFrom")
+    class AnchorPersistenceTests {
+
+        @Test
+        @DisplayName("saveTo persists anchor; loadFrom restores hasAnchor=true and anchorPlan")
+        void testAnchorPersistedAndLoadedWithPlan() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Current Plan",
+                            "Desc",
+                            "Outcome",
+                            List.of(new SubTask("T1", "D1", "O1")))
+                    .block();
+            notebook.saveAnchor(); // anchor = Current Plan
+
+            // Advance to new plan
+            notebook.createPlanWithSubTasks(
+                            "Advanced Plan",
+                            "Desc",
+                            "Outcome",
+                            List.of(new SubTask("T2", "D2", "O2")))
+                    .block();
+
+            notebook.saveTo(session, sessionKey);
+
+            // Load into a fresh notebook
+            PlanNotebook loaded = PlanNotebook.builder().build();
+            loaded.loadFrom(session, sessionKey);
+
+            assertTrue(loaded.hasAnchor());
+            assertEquals("Advanced Plan", loaded.getCurrentPlan().getName());
+
+            loaded.restoreAnchor();
+            assertEquals("Current Plan", loaded.getCurrentPlan().getName());
+        }
+
+        @Test
+        @DisplayName(
+                "saveTo without saveAnchor does not persist anchor; loadFrom has hasAnchor=false")
+        void testNoAnchorNotPersisted() {
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Plan", "Desc", "Outcome", List.of(new SubTask("T", "D", "O")))
+                    .block();
+            // No saveAnchor
+            notebook.saveTo(session, sessionKey);
+
+            PlanNotebook loaded = PlanNotebook.builder().build();
+            loaded.loadFrom(session, sessionKey);
+
+            assertFalse(loaded.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("Anchor with custom keyPrefix uses correct storage key")
+        void testAnchorWithCustomKeyPrefix() {
+            PlanNotebook notebook = PlanNotebook.builder().keyPrefix("myPlan").build();
+            notebook.createPlanWithSubTasks(
+                            "Custom Prefix Plan",
+                            "Desc",
+                            "Outcome",
+                            List.of(new SubTask("T", "D", "O")))
+                    .block();
+            notebook.saveAnchor();
+            notebook.saveTo(session, sessionKey);
+
+            // Load with same prefix
+            PlanNotebook loaded = PlanNotebook.builder().keyPrefix("myPlan").build();
+            loaded.loadFrom(session, sessionKey);
+            assertTrue(loaded.hasAnchor());
+
+            // Load with different prefix — no anchor
+            PlanNotebook otherLoaded = PlanNotebook.builder().keyPrefix("otherPlan").build();
+            otherLoaded.loadFrom(session, sessionKey);
+            assertFalse(otherLoaded.hasAnchor());
+        }
+
+        @Test
+        @DisplayName("loadFrom clears existing in-memory anchor before loading from session")
+        void testLoadFromClearsInMemoryAnchor() {
+            // Set up: save a notebook with anchor
+            PlanNotebook notebook = PlanNotebook.builder().build();
+            notebook.createPlanWithSubTasks(
+                            "Plan A", "Desc", "Outcome", List.of(new SubTask("T", "D", "O")))
+                    .block();
+            notebook.saveAnchor();
+            notebook.saveTo(session, sessionKey);
+
+            // Create a second notebook that already has a local anchor, then loadFrom
+            PlanNotebook loaded = PlanNotebook.builder().build();
+            loaded.createPlanWithSubTasks(
+                            "Local Plan", "Desc", "Outcome", List.of(new SubTask("LT", "LD", "LO")))
+                    .block();
+            // Simulate a pre-existing local anchor (no anchor in session for this plan)
+            // Use a separate session key that has no anchor stored
+            SessionKey otherKey = SimpleSessionKey.of("other_session");
+
+            // Save without anchor to otherKey
+            PlanNotebook cleanNotebook = PlanNotebook.builder().build();
+            cleanNotebook
+                    .createPlanWithSubTasks(
+                            "Clean Plan", "Desc", "Outcome", List.of(new SubTask("CT", "CD", "CO")))
+                    .block();
+            cleanNotebook.saveTo(session, otherKey);
+
+            // loaded has local state; after loadFrom(otherKey), anchor should be cleared
+            loaded.saveAnchor(); // give it a local anchor
+            assertTrue(loaded.hasAnchor());
+            loaded.loadFrom(session, otherKey);
+            assertFalse(loaded.hasAnchor()); // local anchor should be overwritten to false
         }
     }
 }

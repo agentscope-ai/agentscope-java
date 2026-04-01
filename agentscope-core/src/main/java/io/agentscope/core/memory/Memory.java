@@ -59,4 +59,20 @@ public interface Memory extends StateModule {
      * is typically irreversible unless state has been persisted.
      */
     void clear();
+
+    /**
+     * Deletes all messages from the specified index (inclusive) to the end.
+     *
+     * <p>If the index is out of bounds (negative or >= size), this operation should be a no-op
+     * rather than throwing an exception.
+     *
+     * @param fromIndex The start index (inclusive, 0-based)
+     */
+    default void deleteMessagesFrom(int fromIndex) {
+        List<Msg> messages = getMessages();
+        int size = messages.size();
+        for (int i = size - 1; i >= fromIndex && i >= 0; i--) {
+            deleteMessage(i);
+        }
+    }
 }

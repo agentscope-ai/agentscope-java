@@ -117,4 +117,35 @@ public interface StateModule {
     default boolean loadIfExists(Session session, String sessionId) {
         return loadIfExists(session, SimpleSessionKey.of(sessionId));
     }
+
+    /**
+     * Saves the current state as an in-memory anchor (snapshot).
+     *
+     * <p>This anchor can later be restored via {@link #restoreAnchor()}. Each call overwrites
+     * the previous anchor. The anchor is purely in-memory; to persist it across restarts,
+     * implementations should include anchor data in their {@link #saveTo(Session, SessionKey)}
+     * output.
+     */
+    default void saveAnchor() {
+        // Default no-op. Subclasses should override to snapshot their current state.
+    }
+
+    /**
+     * Restores the state from the most recent in-memory anchor saved by {@link #saveAnchor()}.
+     *
+     * <p>After this call, the component's state should match what it was when
+     * {@link #saveAnchor()} was last called.
+     */
+    default void restoreAnchor() {
+        // Default no-op. Subclasses should override to restore from their snapshot.
+    }
+
+    /**
+     * Checks whether an in-memory anchor exists.
+     *
+     * @return {@code true} if {@link #saveAnchor()} has been called and an anchor is available
+     */
+    default boolean hasAnchor() {
+        return false;
+    }
 }

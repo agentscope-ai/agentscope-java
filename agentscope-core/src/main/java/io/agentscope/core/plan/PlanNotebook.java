@@ -114,6 +114,8 @@ public class PlanNotebook implements StateModule {
                     + "'finish_plan' function.";
 
     private Plan currentPlan;
+    private Plan anchorPlan;
+    private boolean hasAnchorFlag;
     private final PlanToHint planToHint;
     private final PlanStorage storage;
     private final Integer maxSubtasks;
@@ -158,6 +160,10 @@ public class PlanNotebook implements StateModule {
     public void saveTo(Session session, SessionKey sessionKey) {
         // Always save, even when null, to ensure cleared state is persisted
         session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
+        if (hasAnchorFlag) {
+            session.save(
+                    sessionKey, keyPrefix + "_state_anchor", new PlanNotebookState(anchorPlan));
+        }
     }
 
     /**
@@ -172,6 +178,32 @@ public class PlanNotebook implements StateModule {
         this.currentPlan = null;
         session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
+        hasAnchorFlag = false;
+        anchorPlan = null;
+        session.get(sessionKey, keyPrefix + "_state_anchor", PlanNotebookState.class)
+                .ifPresent(
+                        state -> {
+                            anchorPlan = state.currentPlan();
+                            hasAnchorFlag = true;
+                        });
+    }
+
+    @Override
+    public void saveAnchor() {
+        anchorPlan = currentPlan;
+        hasAnchorFlag = true;
+    }
+
+    @Override
+    public void restoreAnchor() {
+        if (hasAnchorFlag) {
+            currentPlan = anchorPlan;
+        }
+    }
+
+    @Override
+    public boolean hasAnchor() {
+        return hasAnchorFlag;
     }
 
     /** Builder for constructing PlanNotebook instances with customizable settings. */

@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.session.Session;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SkillBoxState;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
@@ -34,6 +37,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +50,7 @@ public class SkillBox implements StateModule {
     private static final String BASE64_PREFIX = "base64:";
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
+    private Map<String, Boolean> anchorSkillStates;
     private final AgentSkillPromptProvider skillPromptProvider;
     private final SkillToolFactory skillToolFactory;
     private Toolkit toolkit;
@@ -290,6 +295,105 @@ public class SkillBox implements StateModule {
     public void deactivateAllSkills() {
         skillRegistry.setAllSkillsActive(false);
         logger.debug("Deactivated all skills");
+    }
+
+    /**
+     * Save SkillBox state to the session.
+     *
+     * <p>Saves the current activation state of all registered skills.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        Map<String, Boolean> skillActivationStates = new HashMap<>();
+        for (Map.Entry<String, RegisteredSkill> entry :
+                skillRegistry.getAllRegisteredSkills().entrySet()) {
+            skillActivationStates.put(entry.getKey(), entry.getValue().isActive());
+        }
+        session.save(sessionKey, "skillbox_state", new SkillBoxState(skillActivationStates));
+        if (anchorSkillStates != null) {
+            session.save(sessionKey, "skillbox_state_anchor", new SkillBoxState(anchorSkillStates));
+        }
+    }
+
+    /**
+     * Load SkillBox state from the session.
+     *
+     * <p>Restores skill activation states. Only restores states for skills
+     * that are currently registered.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        session.get(sessionKey, "skillbox_state", SkillBoxState.class)
+                .ifPresent(
+                        state -> {
+                            if (state.skillActivationStates() != null) {
+                                for (Map.Entry<String, Boolean> entry :
+                                        state.skillActivationStates().entrySet()) {
+                                    RegisteredSkill skill =
+                                            skillRegistry.getRegisteredSkill(entry.getKey());
+                                    if (skill != null) {
+                                        skill.setActive(entry.getValue());
+                                    }
+                                }
+                                syncToolGroupStates();
+                            }
+                        });
+        anchorSkillStates = null;
+        session.get(sessionKey, "skillbox_state_anchor", SkillBoxState.class)
+                .ifPresent(
+                        state -> {
+                            if (state.skillActivationStates() != null) {
+                                anchorSkillStates = new HashMap<>(state.skillActivationStates());
+                            }
+                        });
+    }
+
+    /**
+     * Saves a snapshot of the current skill activation states as an anchor.
+     *
+     * <p>The anchor can later be restored via {@link #restoreAnchor()}.
+     */
+    @Override
+    public void saveAnchor() {
+        anchorSkillStates = new HashMap<>();
+        for (Map.Entry<String, RegisteredSkill> entry :
+                skillRegistry.getAllRegisteredSkills().entrySet()) {
+            anchorSkillStates.put(entry.getKey(), entry.getValue().isActive());
+        }
+    }
+
+    /**
+     * Restores the skill activation states from the previously saved anchor.
+     *
+     * <p>If no anchor has been saved, this method does nothing.
+     */
+    @Override
+    public void restoreAnchor() {
+        if (anchorSkillStates != null) {
+            for (Map.Entry<String, Boolean> entry : anchorSkillStates.entrySet()) {
+                RegisteredSkill skill = skillRegistry.getRegisteredSkill(entry.getKey());
+                if (skill != null) {
+                    skill.setActive(entry.getValue());
+                }
+            }
+            syncToolGroupStates();
+        }
+    }
+
+    /**
+     * Returns whether an anchor has been saved.
+     *
+     * @return true if an anchor exists, false otherwise
+     */
+    @Override
+    public boolean hasAnchor() {
+        return anchorSkillStates != null;
     }
 
     /**
