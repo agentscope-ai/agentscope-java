@@ -20,6 +20,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -145,22 +148,19 @@ public class MarkdownSkillParser {
     }
 
     /**
-     * Simple YAML parser for flat key-value structures.
-     * Only supports String:String mappings.
+     * YAML parser that tolerates standard frontmatter syntax while exposing only top-level scalar
+     * metadata values to the rest of the skill system.
      */
     private static class SimpleYamlParser {
-
-        // Pattern to match key: value format
-        // Captures: group(1) = key, group(2) = value (may include quotes)
-        private static final Pattern KEY_VALUE_PATTERN =
-                Pattern.compile("^([a-zA-Z_][a-zA-Z0-9_-]*)\\s*:\\s*(.*)$");
+        private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
 
         /**
          * Parse YAML string into a map of key-value pairs.
          *
          * @param yaml YAML content to parse
          * @return Map of key-value pairs
-         * @throws IllegalArgumentException if YAML syntax is invalid
+         * @throws IllegalArgumentException if YAML syntax is invalid or the top-level value is not a
+         *     mapping
          */
         static Map<String, String> parse(String yaml) {
             Map<String, String> result = new LinkedHashMap<>();
@@ -169,116 +169,54 @@ public class MarkdownSkillParser {
                 return result;
             }
 
-            String[] lines = yaml.split("[\\r\\n]+");
-
-            for (String line : lines) {
-                // Skip empty lines
-                if (line.trim().isEmpty()) {
-                    continue;
-                }
-
-                // Skip comments
-                if (line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                Matcher matcher = KEY_VALUE_PATTERN.matcher(line.trim());
-                if (!matcher.matches()) {
-                    throw new IllegalArgumentException(
-                            "Invalid YAML line (expected 'key: value' format): " + line);
-                }
-
-                String key = matcher.group(1);
-                String value = parseValue(matcher.group(2));
-
-                result.put(key, value);
+            Object parsed = YAML.load(yaml);
+            if (parsed == null) {
+                return result;
             }
 
+            if (!(parsed instanceof Map<?, ?> parsedMap)) {
+                throw new IllegalArgumentException(
+                        "Invalid YAML frontmatter: expected a top-level mapping");
+            }
+
+            for (Map.Entry<?, ?> entry : parsedMap.entrySet()) {
+                Object rawKey = entry.getKey();
+                if (rawKey == null) {
+                    continue;
+                }
+
+                Object value = entry.getValue();
+                if (isScalarValue(value)) {
+                    result.put(String.valueOf(rawKey), scalarToString(value));
+                }
+            }
             return result;
         }
 
         /**
-         * Parse a YAML value, handling quoted strings.
+         * Check whether a parsed YAML value should be exposed as metadata.
          *
-         * @param rawValue Raw value string from YAML
-         * @return Parsed value with quotes removed if present
+         * @param value Parsed YAML value
+         * @return true if the value is a scalar that can be represented as a string
          */
-        private static String parseValue(String rawValue) {
-            if (rawValue == null) {
-                return "";
-            }
-
-            String value = rawValue.trim();
-
-            if (value.isEmpty()) {
-                return "";
-            }
-
-            // Handle double-quoted strings
-            if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
-                return unescapeString(value.substring(1, value.length() - 1));
-            }
-
-            // Handle single-quoted strings
-            if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
-                // Single-quoted strings don't process escapes, except '' for '
-                return value.substring(1, value.length() - 1).replace("''", "'");
-            }
-
-            return value;
+        private static boolean isScalarValue(Object value) {
+            return value == null
+                    || value instanceof String
+                    || value instanceof Number
+                    || value instanceof Boolean
+                    || value instanceof Character
+                    || value instanceof Enum<?>;
         }
 
         /**
-         * Unescape a double-quoted YAML string.
+         * Convert a parsed YAML scalar value into the string representation expected by
+         * ParsedMarkdown metadata.
          *
-         * @param str String content without surrounding quotes
-         * @return Unescaped string
+         * @param value Parsed YAML scalar
+         * @return Metadata string value
          */
-        private static String unescapeString(String str) {
-            if (str == null || str.isEmpty()) {
-                return str;
-            }
-
-            StringBuilder result = new StringBuilder();
-            boolean escape = false;
-
-            for (int i = 0; i < str.length(); i++) {
-                char c = str.charAt(i);
-
-                if (escape) {
-                    switch (c) {
-                        case 'n':
-                            result.append('\n');
-                            break;
-                        case 't':
-                            result.append('\t');
-                            break;
-                        case 'r':
-                            result.append('\r');
-                            break;
-                        case '\\':
-                            result.append('\\');
-                            break;
-                        case '"':
-                            result.append('"');
-                            break;
-                        default:
-                            result.append('\\').append(c);
-                    }
-                    escape = false;
-                } else if (c == '\\') {
-                    escape = true;
-                } else {
-                    result.append(c);
-                }
-            }
-
-            // Handle trailing backslash
-            if (escape) {
-                result.append('\\');
-            }
-
-            return result.toString();
+        private static String scalarToString(Object value) {
+            return value == null ? "" : String.valueOf(value);
         }
 
         /**
