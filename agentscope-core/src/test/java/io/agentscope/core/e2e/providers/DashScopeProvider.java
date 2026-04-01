@@ -222,4 +222,127 @@ public class DashScopeProvider extends BaseModelProvider {
             return "DashScope (Multi-Agent)";
         }
     }
+
+    /**
+     * Qwen3.5-Plus - Native multimodal model (image, video).
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35PlusDashScope extends DashScopeProvider {
+        public Qwen35PlusDashScope() {
+            super("qwen3.5-plus", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
+        }
+    }
+
+    /**
+     * Qwen3.5-Plus with multi-agent formatter.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35PlusMultiAgentDashScope extends DashScopeProvider {
+        public Qwen35PlusMultiAgentDashScope() {
+            super("qwen3.5-plus", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope (Multi-Agent)";
+        }
+    }
+
+    /**
+     * Qwen3.5-Flash - Native multimodal model (image, video).
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35FlashDashScope extends DashScopeProvider {
+        public Qwen35FlashDashScope() {
+            super("qwen3.5-flash", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
+        }
+    }
+
+    /**
+     * Qwen3.5-Flash with multi-agent formatter.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35FlashMultiAgentDashScope extends DashScopeProvider {
+        public Qwen35FlashMultiAgentDashScope() {
+            super("qwen3.5-flash", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope (Multi-Agent)";
+        }
+    }
+
+    /**
+     * Qwen3.5-397B-A17B - Native multimodal MoE model (image, video).
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO
+    })
+    public static class Qwen35_397bA17bDashScope extends DashScopeProvider {
+        public Qwen35_397bA17bDashScope() {
+            super("qwen3.5-397b-a17b", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
+        }
+    }
+
+    /**
+     * Qwen3.5-397B-A17B with multi-agent formatter.
+     */
+    @ModelCapabilities({
+        ModelCapability.BASIC,
+        ModelCapability.TOOL_CALLING,
+        ModelCapability.IMAGE,
+        ModelCapability.VIDEO,
+        ModelCapability.MULTI_AGENT_FORMATTER
+    })
+    public static class Qwen35_397bA17bMultiAgentDashScope extends DashScopeProvider {
+        public Qwen35_397bA17bMultiAgentDashScope() {
+            super("qwen3.5-397b-a17b", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope (Multi-Agent)";
+        }
+    }
 }
