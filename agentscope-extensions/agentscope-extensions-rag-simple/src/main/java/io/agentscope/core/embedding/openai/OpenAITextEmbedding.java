@@ -132,10 +132,13 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
                                         OpenAIClient client = clientBuilder.build();
 
-                                        EmbeddingCreateParams.Builder paramsBuilder = EmbeddingCreateParams.builder()
-                                                .model(modelName)
-                                                .encodingFormat(EmbeddingCreateParams.EncodingFormat.FLOAT)
-                                                .inputOfArrayOfStrings(List.of(text));
+                                        EmbeddingCreateParams.Builder paramsBuilder =
+                                                EmbeddingCreateParams.builder()
+                                                        .model(modelName)
+                                                        .encodingFormat(
+                                                                EmbeddingCreateParams.EncodingFormat
+                                                                        .FLOAT)
+                                                        .inputOfArrayOfStrings(List.of(text));
 
                                         if (dimensions != null && dimensions > 0) {
                                             paramsBuilder.dimensions(dimensions);
@@ -183,9 +186,13 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                         embeddingValues);
 
                                         // Validate dimension
-                                        if (dimensions != null && embeddingArray.length != dimensions) {
-                                            log.warn("Embedding dimension mismatch: expected={}, actual={}",
-                                                    dimensions, embeddingArray.length);
+                                        if (dimensions != null
+                                                && embeddingArray.length != dimensions) {
+                                            log.warn(
+                                                    "Embedding dimension mismatch: expected={},"
+                                                            + " actual={}",
+                                                    dimensions,
+                                                    embeddingArray.length);
                                         }
 
                                         return embeddingArray;
@@ -310,7 +317,8 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                         "modelName is required and cannot be null or empty");
             }
             if (dimensions != null && dimensions <= 0) {
-                throw new IllegalStateException("dimensions must be positive if provided, got: " + dimensions);
+                throw new IllegalStateException(
+                        "dimensions must be positive if provided, got: " + dimensions);
             }
 
             ExecutionConfig effectiveConfig =
