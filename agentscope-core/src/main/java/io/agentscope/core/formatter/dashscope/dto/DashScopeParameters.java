@@ -64,6 +64,12 @@ public class DashScopeParameters {
     @JsonProperty("enable_search")
     private Boolean enableSearch;
 
+    /**
+     *  Whether to stitch the reasoning_content of the assistant message in the conversation history to the model input.
+     */
+    @JsonProperty("preserve_thinking")
+    private Boolean preserveThinking;
+
     /** Token budget for thinking. */
     @JsonProperty("thinking_budget")
     private Integer thinkingBudget;
@@ -163,6 +169,14 @@ public class DashScopeParameters {
 
     public void setEnableThinking(Boolean enableThinking) {
         this.enableThinking = enableThinking;
+    }
+
+    public Boolean getPreserveThinking() {
+        return preserveThinking;
+    }
+
+    public void setPreserveThinking(Boolean preserveThinking) {
+        this.preserveThinking = preserveThinking;
     }
 
     public Integer getThinkingBudget() {
@@ -281,6 +295,11 @@ public class DashScopeParameters {
 
         public Builder enableThinking(Boolean enableThinking) {
             params.setEnableThinking(enableThinking);
+            return this;
+        }
+
+        public Builder preserveThinking(Boolean preserveThinking) {
+            params.setPreserveThinking(preserveThinking);
             return this;
         }
 
