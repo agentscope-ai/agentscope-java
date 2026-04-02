@@ -342,6 +342,7 @@ class DashScopeDtoSerializationTest {
                         .topP(0.95)
                         .maxTokens(2048)
                         .enableThinking(true)
+                        .preserveThinking(true)
                         .thinkingBudget(500)
                         .seed(42)
                         .frequencyPenalty(0.5)
@@ -354,6 +355,7 @@ class DashScopeDtoSerializationTest {
         assertEquals(0.95, params.getTopP());
         assertEquals(2048, params.getMaxTokens());
         assertTrue(params.getEnableThinking());
+        assertTrue(params.getPreserveThinking());
         assertEquals(500, params.getThinkingBudget());
         assertEquals(42, params.getSeed());
         assertEquals(0.5, params.getFrequencyPenalty());
