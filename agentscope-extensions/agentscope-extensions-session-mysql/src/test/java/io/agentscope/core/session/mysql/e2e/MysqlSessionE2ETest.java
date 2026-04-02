@@ -24,13 +24,16 @@ import io.agentscope.core.session.mysql.MysqlSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
+import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -160,6 +163,45 @@ class MysqlSessionE2ETest {
     }
 
     @Test
+    @DisplayName(
+            "Writes should persist when DataSource connections start with auto-commit disabled")
+    void testWritesPersistWhenAutoCommitDisabled() {
+        System.out.println("\n=== Test: Writes Persist With Auto-Commit Disabled ===");
+
+        dataSource = new AutoCommitDisabledDataSource(createH2DataSource());
+        String schemaName = generateSafeIdentifier("AGENTSCOPE_E2E").toUpperCase();
+        String tableName = generateSafeIdentifier("AGENTSCOPE_SESSIONS").toUpperCase();
+        createdSchemaName = schemaName;
+
+        initSchemaAndTable(dataSource, schemaName, tableName);
+        MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
+        SessionKey sessionKey = SimpleSessionKey.of("auto_commit_off_" + UUID.randomUUID());
+
+        session.save(sessionKey, "moduleA", new TestState("hello", 1));
+        Optional<TestState> singleState = session.get(sessionKey, "moduleA", TestState.class);
+        assertTrue(singleState.isPresent());
+        assertEquals("hello", singleState.get().value());
+
+        List<TestState> initialStates =
+                List.of(new TestState("item1", 1), new TestState("item2", 2));
+        session.save(sessionKey, "stateList", initialStates);
+
+        List<TestState> appendedStates =
+                List.of(
+                        new TestState("item1", 1),
+                        new TestState("item2", 2),
+                        new TestState("item3", 3));
+        session.save(sessionKey, "stateList", appendedStates);
+
+        List<TestState> loadedStates = session.getList(sessionKey, "stateList", TestState.class);
+        assertEquals(3, loadedStates.size());
+        assertEquals("item3", loadedStates.get(2).value());
+
+        session.delete(sessionKey);
+        assertFalse(session.exists(sessionKey));
+    }
+
+    @Test
     @DisplayName("Session does not exist should return false")
     void testSessionNotExists() {
         System.out.println("\n=== Test: Session Not Exists ===");
@@ -206,6 +248,64 @@ class MysqlSessionE2ETest {
         assertThrows(
                 IllegalStateException.class,
                 () -> new MysqlSession(dataSource, schemaName, tableName, false));
+    }
+
+    private static final class AutoCommitDisabledDataSource implements DataSource {
+
+        private final DataSource delegate;
+
+        private AutoCommitDisabledDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            Connection connection = delegate.getConnection();
+            connection.setAutoCommit(false);
+            return connection;
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws SQLException {
+            Connection connection = delegate.getConnection(username, password);
+            connection.setAutoCommit(false);
+            return connection;
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) throws SQLException {
+            return delegate.unwrap(iface);
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) throws SQLException {
+            return delegate.isWrapperFor(iface);
+        }
+
+        @Override
+        public PrintWriter getLogWriter() throws SQLException {
+            return delegate.getLogWriter();
+        }
+
+        @Override
+        public void setLogWriter(PrintWriter out) throws SQLException {
+            delegate.setLogWriter(out);
+        }
+
+        @Override
+        public void setLoginTimeout(int seconds) throws SQLException {
+            delegate.setLoginTimeout(seconds);
+        }
+
+        @Override
+        public int getLoginTimeout() throws SQLException {
+            return delegate.getLoginTimeout();
+        }
+
+        @Override
+        public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+            return delegate.getParentLogger();
+        }
     }
 
     private static DataSource createH2DataSource() {
