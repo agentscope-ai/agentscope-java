@@ -49,7 +49,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     private final String apiKey;
     private final String modelName;
-    private final int dimensions;
+    private final Integer dimensions;
     private final ExecutionConfig defaultExecutionConfig;
 
     private final String baseUrl;
@@ -66,7 +66,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     public OpenAITextEmbedding(
             String apiKey,
             String modelName,
-            int dimensions,
+            Integer dimensions,
             ExecutionConfig defaultExecutionConfig,
             String baseUrl) {
         this.apiKey = apiKey;
@@ -132,15 +132,19 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
                                         OpenAIClient client = clientBuilder.build();
 
-                                        EmbeddingCreateParams createParams =
+                                        EmbeddingCreateParams.Builder paramsBuilder =
                                                 EmbeddingCreateParams.builder()
                                                         .model(modelName)
-                                                        .dimensions(dimensions)
                                                         .encodingFormat(
                                                                 EmbeddingCreateParams.EncodingFormat
                                                                         .FLOAT)
-                                                        .inputOfArrayOfStrings(List.of(text))
-                                                        .build();
+                                                        .inputOfArrayOfStrings(List.of(text));
+
+                                        if (dimensions != null && dimensions > 0) {
+                                            paramsBuilder.dimensions(dimensions);
+                                        }
+
+                                        EmbeddingCreateParams createParams = paramsBuilder.build();
 
                                         log.debug(
                                                 "OpenAI embedding call: model={},"
@@ -182,7 +186,8 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                         embeddingValues);
 
                                         // Validate dimension
-                                        if (embeddingArray.length != dimensions) {
+                                        if (dimensions != null
+                                                && embeddingArray.length != dimensions) {
                                             log.warn(
                                                     "Embedding dimension mismatch: expected={},"
                                                             + " actual={}",
@@ -225,7 +230,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
 
     @Override
     public int getDimensions() {
-        return dimensions;
+        return dimensions != null ? dimensions : 0;
     }
 
     /**
@@ -234,7 +239,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private int dimensions = 1536;
+        private Integer dimensions;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 
@@ -266,7 +271,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
          * @param dimensions the dimension
          * @return this builder instance
          */
-        public Builder dimensions(int dimensions) {
+        public Builder dimensions(Integer dimensions) {
             this.dimensions = dimensions;
             return this;
         }
@@ -311,8 +316,9 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                 throw new IllegalStateException(
                         "modelName is required and cannot be null or empty");
             }
-            if (dimensions <= 0) {
-                throw new IllegalStateException("dimensions must be positive, got: " + dimensions);
+            if (dimensions != null && dimensions <= 0) {
+                throw new IllegalStateException(
+                        "dimensions must be positive if provided, got: " + dimensions);
             }
 
             ExecutionConfig effectiveConfig =

@@ -260,4 +260,19 @@ class OpenAITextEmbeddingTest {
                                 .dimensions(-1)
                                 .build());
     }
+
+    @Test
+    @DisplayName("Should support optional dimensions in builder")
+    void testOptionalDimensions() {
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals(TEST_MODEL_NAME, model.getModelName());
+
+        assertEquals(0, model.getDimensions());
+    }
 }
