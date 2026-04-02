@@ -602,6 +602,21 @@ public class Toolkit {
     }
 
     /**
+     * Atomically remove a tool only if the registered instance is the expected one.
+     *
+     * @param toolName Name of the tool to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    public boolean removeToolIfSame(String toolName, AgentTool expected) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return false;
+        }
+        return toolRegistry.removeToolIfSame(toolName, expected);
+    }
+
+    /**
      * Remove tool groups and all tools within them.
      *
      * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning

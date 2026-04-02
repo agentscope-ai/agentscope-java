@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.11-SNAPSHOT</revision>
+        <revision>1.0.12-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -266,6 +266,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-quarkus-extension-deployment</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope RocketMQ Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-rocketmq</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

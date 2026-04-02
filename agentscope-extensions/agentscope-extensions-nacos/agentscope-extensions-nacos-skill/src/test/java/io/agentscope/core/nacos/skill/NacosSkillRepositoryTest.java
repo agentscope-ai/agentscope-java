@@ -21,16 +21,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.alibaba.nacos.api.ai.AiService;
-import com.alibaba.nacos.api.ai.model.skills.Skill;
 import com.alibaba.nacos.api.exception.NacosException;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Properties;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,9 +94,9 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should throw when skill not found (loadSkill returns null)")
-    void testGetSkillWhenLoadSkillReturnsNull() throws NacosException {
-        when(aiService.loadSkill("missing-skill")).thenReturn(null);
+    @DisplayName("Should throw when skill not found (downloadSkillZip returns null)")
+    void testGetSkillWhenDownloadSkillZipReturnsNull() throws NacosException {
+        when(aiService.downloadSkillZip("missing-skill")).thenReturn(null);
 
         IllegalArgumentException e =
                 assertThrows(
@@ -102,7 +108,7 @@ class NacosSkillRepositoryTest {
     @DisplayName("Should throw IllegalArgumentException when NacosException is NOT_FOUND")
     void testGetSkillWhenNacosExceptionNotFound() throws NacosException {
         NacosException nacosEx = new NacosException(NacosException.NOT_FOUND, "not found");
-        when(aiService.loadSkill("missing-skill")).thenThrow(nacosEx);
+        when(aiService.downloadSkillZip("missing-skill")).thenThrow(nacosEx);
 
         IllegalArgumentException e =
                 assertThrows(
@@ -115,7 +121,7 @@ class NacosSkillRepositoryTest {
     @DisplayName("Should throw RuntimeException for other NacosException")
     void testGetSkillWhenOtherNacosException() throws NacosException {
         NacosException nacosEx = new NacosException(500, "server error");
-        when(aiService.loadSkill("my-skill")).thenThrow(nacosEx);
+        when(aiService.downloadSkillZip("my-skill")).thenThrow(nacosEx);
 
         RuntimeException e =
                 assertThrows(RuntimeException.class, () -> repository.getSkill("my-skill"));
@@ -125,9 +131,15 @@ class NacosSkillRepositoryTest {
 
     @Test
     @DisplayName("Should return AgentSkill when skill is found")
-    void testGetSkillSuccess() throws NacosException {
-        Skill nacosSkill = mockNacosSkill("test-skill", "A test skill", "Do something");
-        when(aiService.loadSkill("test-skill")).thenReturn(nacosSkill);
+    void testGetSkillSuccess() throws NacosException, IOException {
+        when(aiService.downloadSkillZip("test-skill"))
+                .thenReturn(
+                        createSkillZip(
+                                "test-skill",
+                                "A test skill",
+                                "Do something",
+                                "data.txt",
+                                "sample resource"));
 
         AgentSkill result = repository.getSkill("test-skill");
 
@@ -139,14 +151,176 @@ class NacosSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should trim skill name when calling loadSkill")
-    void testGetSkillTrimsName() throws NacosException {
-        Skill nacosSkill = mockNacosSkill("trimmed", "Desc", "Content");
-        when(aiService.loadSkill("trimmed")).thenReturn(nacosSkill);
+    @DisplayName("Should keep binary resource entry when loading from zip")
+    void testGetSkillWithBinaryResource() throws NacosException, IOException {
+        byte[] pngLikeBytes =
+                new byte[] {
+                    (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, (byte) 0xFF
+                };
+        when(aiService.downloadSkillZip("binary-skill"))
+                .thenReturn(
+                        createSkillZip(
+                                "binary-skill",
+                                "Binary skill",
+                                "Use binary assets",
+                                "assets/logo.png",
+                                pngLikeBytes));
+
+        AgentSkill result = repository.getSkill("binary-skill");
+        String resource = result.getResource("assets/logo.png");
+
+        assertNotNull(resource);
+        assertEquals(new String(pngLikeBytes, StandardCharsets.UTF_8), resource);
+    }
+
+    @Test
+    @DisplayName("Should trim skill name when calling downloadSkillZip")
+    void testGetSkillTrimsName() throws NacosException, IOException {
+        when(aiService.downloadSkillZip("trimmed"))
+                .thenReturn(createSkillZip("trimmed", "Desc", "Content", null, (String) null));
 
         repository.getSkill("  trimmed  ");
 
-        verify(aiService).loadSkill("trimmed");
+        verify(aiService).downloadSkillZip("trimmed");
+    }
+
+    @Test
+    @DisplayName(
+            "Should use downloadSkillZipByVersion when version is set in application Properties")
+    void testGetSkillUsesByVersionWhenConfigured() throws NacosException, IOException {
+        Properties props = new Properties();
+        props.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "v1");
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        when(aiService.downloadSkillZipByVersion("my-skill", "v1"))
+                .thenReturn(createSkillZip("my-skill", "Desc", "Content", null, (String) null));
+
+        AgentSkill skill = repo.getSkill("my-skill");
+
+        assertNotNull(skill);
+        verify(aiService).downloadSkillZipByVersion("my-skill", "v1");
+        verify(aiService, never()).downloadSkillZipByLabel(anyString(), anyString());
+        verify(aiService, never()).downloadSkillZip(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "Should use downloadSkillZipByLabel when only label is set in application Properties")
+    void testGetSkillUsesByLabelWhenConfigured() throws NacosException, IOException {
+        Properties props = new Properties();
+        props.setProperty(NacosSkillRepository.SKILL_LABEL_PATH, "stable");
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        when(aiService.downloadSkillZipByLabel("my-skill", "stable"))
+                .thenReturn(createSkillZip("my-skill", "Desc", "Content", null, (String) null));
+
+        AgentSkill skill = repo.getSkill("my-skill");
+
+        assertNotNull(skill);
+        verify(aiService).downloadSkillZipByLabel("my-skill", "stable");
+        verify(aiService, never()).downloadSkillZip(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "Should prefer downloadSkillZipByVersion when both version and label are configured")
+    void testGetSkillVersionTakesPrecedenceOverLabel() throws NacosException, IOException {
+        Properties props = new Properties();
+        props.setProperty(NacosSkillRepository.SKILL_VERSION_PATH, "2.0");
+        props.setProperty(NacosSkillRepository.SKILL_LABEL_PATH, "stable");
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        when(aiService.downloadSkillZipByVersion("s", "2.0"))
+                .thenReturn(createSkillZip("s", "D", "C", null, (String) null));
+
+        repo.getSkill("s");
+
+        verify(aiService).downloadSkillZipByVersion("s", "2.0");
+        verify(aiService, never()).downloadSkillZipByLabel(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Should use JVM system property for version when Properties are absent")
+    void testVersionResolvedFromJvmProperty() throws NacosException, IOException {
+        String key = NacosSkillRepository.SKILL_VERSION_PATH;
+        String previous = System.getProperty(key);
+        try {
+            System.setProperty(key, "from-jvm");
+            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public");
+            when(aiService.downloadSkillZipByVersion("n", "from-jvm"))
+                    .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
+
+            repo.getSkill("n");
+
+            verify(aiService).downloadSkillZipByVersion("n", "from-jvm");
+        } finally {
+            if (previous == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, previous);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should prefer application Properties over JVM system property for version")
+    void testApplicationVersionOverridesJvm() throws NacosException, IOException {
+        String key = NacosSkillRepository.SKILL_VERSION_PATH;
+        String previous = System.getProperty(key);
+        try {
+            System.setProperty(key, "jvm-ver");
+            Properties props = new Properties();
+            props.setProperty(key, "app-ver");
+            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+            when(aiService.downloadSkillZipByVersion("n", "app-ver"))
+                    .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
+
+            repo.getSkill("n");
+
+            verify(aiService).downloadSkillZipByVersion("n", "app-ver");
+        } finally {
+            if (previous == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, previous);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should read version from application Properties before JVM system property")
+    void testApplicationPropertiesVersionBeforeJvm() throws NacosException, IOException {
+        String key = NacosSkillRepository.SKILL_VERSION_PATH;
+        String previous = System.getProperty(key);
+        try {
+            System.setProperty(key, "jvm-should-lose");
+            Properties props = new Properties();
+            props.setProperty(key, "from-properties-file");
+            NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+            when(aiService.downloadSkillZipByVersion("n", "from-properties-file"))
+                    .thenReturn(createSkillZip("n", "D", "C", null, (String) null));
+
+            repo.getSkill("n");
+
+            verify(aiService).downloadSkillZipByVersion("n", "from-properties-file");
+        } finally {
+            if (previous == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, previous);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should read label from application Properties")
+    void testLabelFromApplicationProperties() throws NacosException, IOException {
+        Properties props = new Properties();
+        props.setProperty(NacosSkillRepository.SKILL_LABEL_PATH, "prod");
+        NacosSkillRepository repo = new NacosSkillRepository(aiService, "public", props);
+        when(aiService.downloadSkillZipByLabel("x", "prod"))
+                .thenReturn(createSkillZip("x", "D", "C", null, (String) null));
+
+        repo.getSkill("x");
+
+        verify(aiService).downloadSkillZipByLabel("x", "prod");
     }
 
     @Test
@@ -164,7 +338,7 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName("Should return true when skill exists")
     void testSkillExistsWhenFound() throws NacosException {
-        when(aiService.loadSkill("exists")).thenReturn(mock(Skill.class));
+        when(aiService.downloadSkillZip("exists")).thenReturn(new byte[] {1});
 
         assertTrue(repository.skillExists("exists"));
     }
@@ -172,7 +346,7 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName("Should return false when skill not found")
     void testSkillExistsWhenNotFound() throws NacosException {
-        when(aiService.loadSkill("missing")).thenReturn(null);
+        when(aiService.downloadSkillZip("missing")).thenReturn(null);
 
         assertFalse(repository.skillExists("missing"));
     }
@@ -180,7 +354,7 @@ class NacosSkillRepositoryTest {
     @Test
     @DisplayName("Should return false when NacosException NOT_FOUND")
     void testSkillExistsWhenNacosNotFound() throws NacosException {
-        when(aiService.loadSkill("missing"))
+        when(aiService.downloadSkillZip("missing"))
                 .thenThrow(new NacosException(NacosException.NOT_FOUND, "not found"));
 
         assertFalse(repository.skillExists("missing"));
@@ -244,12 +418,51 @@ class NacosSkillRepositoryTest {
         assertFalse(repository.delete("any-skill"));
     }
 
-    private static Skill mockNacosSkill(String name, String description, String instruction) {
-        Skill skill = mock(Skill.class);
-        when(skill.getName()).thenReturn(name);
-        when(skill.getDescription()).thenReturn(description);
-        when(skill.getInstruction()).thenReturn(instruction);
-        when(skill.getResource()).thenReturn(null);
-        return skill;
+    private static byte[] createSkillZip(
+            String name,
+            String description,
+            String skillContent,
+            String resourcePath,
+            String resourceContent)
+            throws IOException {
+        return createSkillZip(
+                name,
+                description,
+                skillContent,
+                resourcePath,
+                resourceContent == null ? null : resourceContent.getBytes());
+    }
+
+    private static byte[] createSkillZip(
+            String name,
+            String description,
+            String skillContent,
+            String resourcePath,
+            byte[] resourceBytes)
+            throws IOException {
+        String root = "skill-package";
+        String skillMd =
+                "---\n"
+                        + "name: "
+                        + name
+                        + "\n"
+                        + "description: "
+                        + description
+                        + "\n"
+                        + "---\n"
+                        + skillContent;
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ZipOutputStream zos = new ZipOutputStream(baos)) {
+            zos.putNextEntry(new ZipEntry(root + "/SKILL.md"));
+            zos.write(skillMd.getBytes());
+            zos.closeEntry();
+            if (resourcePath != null && resourceBytes != null) {
+                zos.putNextEntry(new ZipEntry(root + "/" + resourcePath));
+                zos.write(resourceBytes);
+                zos.closeEntry();
+            }
+            zos.finish();
+            return baos.toByteArray();
+        }
     }
 }
