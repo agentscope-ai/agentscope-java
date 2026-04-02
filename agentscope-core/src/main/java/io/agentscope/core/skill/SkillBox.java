@@ -54,6 +54,8 @@ public class SkillBox implements StateModule {
     private Path uploadDir;
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
+    
+    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null, null);
