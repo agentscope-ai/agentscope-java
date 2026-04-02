@@ -157,9 +157,9 @@ String groupName = "filesystem";
 toolkit.createToolGroup(groupName, "Tools for operating system files", true);
 
 // 将 MCP 工具注册到组中
-toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
+toolkit.registration().mcpClient(mcpClient).group(groupName).apply();
 
-// 创建仅使用特定组的智能体
+// 创建使用工具包的智能体（仅 active 组中的工具可用）
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
@@ -222,7 +222,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
-> **注意**：Query 参数仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被忽略。
+> **注意**：Query 参数和 HTTP 头仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被静默忽略。
 
 ### 同步 vs 异步客户端
 
