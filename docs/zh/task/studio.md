@@ -29,7 +29,7 @@ npm安装
 npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
-Studio 将运行在 http://localhost:5173
+Studio 将运行在 http://localhost:5173（前端开发服务器）
 ![Studio Server 页面](../../imgs/studioServer.png)
 
 

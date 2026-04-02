@@ -48,7 +48,6 @@ ReActAgent agent = ReActAgent.builder()
             .limit(3)
             .scoreThreshold(0.3)
             .build())
-    .enableOnlyForUserQueries(true)  // 仅为用户消息检索
     .build();
 ```
 
