@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import java.util.Map;
 
 /**
  * Complete agent interface combining all capabilities.
@@ -62,6 +63,13 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
     default String getDescription() {
         return "Agent(" + getAgentId() + ") " + getName();
     }
+
+    /**
+     * Get the agent context for passing custom data across hooks and the execution lifecycle.
+     *
+     * @return Mutable context map
+     */
+    Map<String, Object> getContext();
 
     /**
      * Interrupt the current agent execution.
