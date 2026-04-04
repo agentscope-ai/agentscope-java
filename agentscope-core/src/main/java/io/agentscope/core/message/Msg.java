@@ -421,11 +421,12 @@ public class Msg implements State {
         if (usage instanceof Map) {
             @SuppressWarnings("unchecked")
             Map<String, Object> map = (Map<String, Object>) usage;
-            ChatUsage chatUsage = ChatUsage.builder()
-                    .inputTokens(toInt(map.get("inputTokens")))
-                    .outputTokens(toInt(map.get("outputTokens")))
-                    .time(toDouble(map.get("time")))
-                    .build();
+            ChatUsage chatUsage =
+                    ChatUsage.builder()
+                            .inputTokens(toInt(map.get("inputTokens")))
+                            .outputTokens(toInt(map.get("outputTokens")))
+                            .time(toDouble(map.get("time")))
+                            .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
             return chatUsage;
         }
