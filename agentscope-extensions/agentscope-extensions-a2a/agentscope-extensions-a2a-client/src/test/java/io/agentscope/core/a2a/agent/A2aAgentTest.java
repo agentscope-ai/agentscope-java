@@ -433,7 +433,7 @@ public class A2aAgentTest {
     @DisplayName("Should preserve and pass modified events through the hook chain during streaming")
     void testHookChainModificationsArePreserved() {
         final AtomicBoolean modificationPreserved = new AtomicBoolean(false);
-        // Simulate whether audioCallBack is triggered
+        // Simulate whether audioCallback is triggered
         final AtomicBoolean sideEffectTriggered = new AtomicBoolean(false);
 
         // Simulate TtsHook (priority 100, execute first): Intercept Chunk and modify content
@@ -444,7 +444,6 @@ public class A2aAgentTest {
                     public <T extends HookEvent> Mono<T> onEvent(T event) {
                         if (event instanceof ReasoningChunkEvent chunkEvent) {
                             Msg originalIncremental = chunkEvent.getIncrementalChunk();
-                            Msg originalAccumulated = chunkEvent.getAccumulated();
 
                             Msg modifiedIncremental =
                                     Msg.builder()
