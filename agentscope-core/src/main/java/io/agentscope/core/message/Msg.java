@@ -414,8 +414,71 @@ public class Msg implements State {
         if (metadata == null) {
             return null;
         }
+
         Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
-        return usage instanceof ChatUsage ? (ChatUsage) usage : null;
+        if (usage == null) {
+            return null;
+        }
+
+        // Return immediately if it's already the expected object
+        if (usage instanceof ChatUsage) {
+            return (ChatUsage) usage;
+        }
+
+        // Handle Map resulting from JSON Jackson deserialization
+        if (usage instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> usageMap = (Map<String, Object>) usage;
+
+            ChatUsage chatUsage =
+                    ChatUsage.builder()
+                            .inputTokens(safeNumberToInt(usageMap.get("inputTokens")))
+                            .outputTokens(safeNumberToInt(usageMap.get("outputTokens")))
+                            .time(safeNumberToDouble(usageMap.get("time")))
+                            .build();
+
+            // Cache the converted object back into the metadata map
+            // This avoids paying the conversion penalty on repeated calls
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+
+            return chatUsage;
+        }
+
+        return null;
+    }
+
+    /**
+     * Safely extracts an integer from an object to prevent ClassCastException and NullPointerException.
+     */
+    private int safeNumberToInt(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Safely extracts a double from an object to prevent ClassCastException and NullPointerException.
+     */
+    private double safeNumberToDouble(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                return 0.0;
+            }
+        }
+        return 0.0;
     }
 
     /**
