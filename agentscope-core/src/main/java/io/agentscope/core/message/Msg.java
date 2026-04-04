@@ -434,7 +434,6 @@ public class Msg implements State {
                     ChatUsage.builder()
                             .inputTokens(safeNumberToInt(usageMap.get("inputTokens")))
                             .outputTokens(safeNumberToInt(usageMap.get("outputTokens")))
-                            .totalTokens(safeNumberToInt(usageMap.get("totalTokens")))
                             .time(safeNumberToDouble(usageMap.get("time")))
                             .build();
 
