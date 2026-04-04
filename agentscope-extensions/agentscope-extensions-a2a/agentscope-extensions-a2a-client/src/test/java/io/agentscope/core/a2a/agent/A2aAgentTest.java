@@ -456,13 +456,13 @@ public class A2aAgentTest {
                                             .build();
 
                             return Mono.just(
-                                    (T)
-                                            new ReasoningChunkEvent(
-                                                    chunkEvent.getAgent(),
-                                                    chunkEvent.getModelName(),
-                                                    chunkEvent.getGenerateOptions(),
-                                                    modifiedIncremental,
-                                                    chunkEvent.getAccumulated()))
+                                            (T)
+                                                    new ReasoningChunkEvent(
+                                                            chunkEvent.getAgent(),
+                                                            chunkEvent.getModelName(),
+                                                            chunkEvent.getGenerateOptions(),
+                                                            modifiedIncremental,
+                                                            chunkEvent.getAccumulated()))
                                     .doOnNext(e -> sideEffectTriggered.set(true));
                         }
                         return Mono.just(event);
