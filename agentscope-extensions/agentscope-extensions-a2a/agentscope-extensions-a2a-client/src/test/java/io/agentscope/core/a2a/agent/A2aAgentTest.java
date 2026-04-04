@@ -59,6 +59,7 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -426,6 +427,143 @@ public class A2aAgentTest {
         assertNotNull(result);
         assertEquals("mock success.", result.getTextContent());
         assertEquals(3, agent.getMemory().getMessages().size());
+    }
+
+    @Test
+    @DisplayName("Should preserve and pass modified events through the hook chain during streaming")
+    void testHookChainModificationsArePreserved() {
+        final AtomicBoolean modificationPreserved = new AtomicBoolean(false);
+        // Simulate whether audioCallback is triggered
+        final AtomicBoolean sideEffectTriggered = new AtomicBoolean(false);
+
+        // Simulate TtsHook (priority 100, execute first): Intercept Chunk and modify content
+        Hook mockTtsHook =
+                new Hook() {
+                    @Override
+                    @SuppressWarnings("unchecked")
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
+                            Msg originalIncremental = chunkEvent.getIncrementalChunk();
+
+                            Msg modifiedIncremental =
+                                    Msg.builder()
+                                            .name(originalIncremental.getName())
+                                            .role(originalIncremental.getRole())
+                                            .textContent(
+                                                    originalIncremental.getTextContent()
+                                                            + " [TTS_AUDIO]")
+                                            .build();
+
+                            return Mono.just(
+                                            (T)
+                                                    new ReasoningChunkEvent(
+                                                            chunkEvent.getAgent(),
+                                                            chunkEvent.getModelName(),
+                                                            chunkEvent.getGenerateOptions(),
+                                                            modifiedIncremental,
+                                                            chunkEvent.getAccumulated()))
+                                    .doOnNext(e -> sideEffectTriggered.set(true));
+                        }
+                        return Mono.just(event);
+                    }
+
+                    @Override
+                    public int priority() {
+                        return 100;
+                    }
+                };
+
+        // Validate Hook (priority 200, execute later)
+        Hook assertionHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
+                            if (chunkEvent
+                                    .getIncrementalChunk()
+                                    .getTextContent()
+                                    .contains("[TTS_AUDIO]")) {
+                                modificationPreserved.set(true);
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+
+                    @Override
+                    public int priority() {
+                        return 200;
+                    }
+                };
+
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .hook(new ReplaceA2aClientHook())
+                        .hook(mockTtsHook) // Inject hooks to modify data
+                        .hook(assertionHook) // Inject hooks to verify data
+                        .build();
+
+        Answer<Void> mockTaskResponse =
+                invocationOnMock -> {
+                    @SuppressWarnings("unchecked")
+                    List<BiConsumer<ClientEvent, AgentCard>> a2aEventConsumer =
+                            invocationOnMock.getArgument(1, List.class);
+
+                    Task task =
+                            new Task.Builder()
+                                    .id("taskId")
+                                    .contextId("contextId")
+                                    .status(new TaskStatus(TaskState.WORKING))
+                                    .build();
+                    TaskEvent taskEvent = new TaskEvent(task);
+                    a2aEventConsumer.forEach(consumer -> consumer.accept(taskEvent, agentCard));
+
+                    // Stream Chunk data
+                    TaskUpdateEvent chunkUpdateEvent =
+                            new TaskUpdateEvent(
+                                    task,
+                                    new TaskStatusUpdateEvent(
+                                            "taskId",
+                                            new TaskStatus(
+                                                    TaskState.WORKING,
+                                                    A2A.toAgentMessage("streaming chunk data"),
+                                                    null),
+                                            "contextId",
+                                            false,
+                                            Map.of()));
+                    a2aEventConsumer.forEach(
+                            consumer -> consumer.accept(chunkUpdateEvent, agentCard));
+
+                    task =
+                            new Task.Builder()
+                                    .id("taskId")
+                                    .contextId("contextId")
+                                    .status(new TaskStatus(TaskState.COMPLETED))
+                                    .build();
+                    TaskStatusUpdateEvent statusUpdateEvent =
+                            new TaskStatusUpdateEvent(
+                                    "taskId",
+                                    new TaskStatus(TaskState.COMPLETED),
+                                    "contextId",
+                                    true,
+                                    Map.of());
+                    TaskUpdateEvent completedTaskUpdateEvent =
+                            new TaskUpdateEvent(task, statusUpdateEvent);
+                    a2aEventConsumer.forEach(
+                            consumer -> consumer.accept(completedTaskUpdateEvent, agentCard));
+
+                    return null;
+                };
+
+        doAnswer(mockTaskResponse)
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        agent.stream(Msg.builder().textContent("test").build()).collectList().block();
+
+        assertTrue(modificationPreserved.get());
+        assertTrue(sideEffectTriggered.get());
     }
 
     private Answer<Void> mockSuccessMessage() {
