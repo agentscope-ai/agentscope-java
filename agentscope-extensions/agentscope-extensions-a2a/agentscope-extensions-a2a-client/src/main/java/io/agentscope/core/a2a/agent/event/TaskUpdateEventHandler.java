@@ -23,6 +23,8 @@ import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.UpdateEvent;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.HashMap;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 /**
  * Handler for {@link TaskUpdateEvent}.
@@ -114,9 +117,14 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                 LoggerUtil.debug(
                         log, "[{}] A2aAgent task status updated with messages: ", currentRequestId);
                 LoggerUtil.logTextMsgDetail(log, List.of(msg));
-                ReasoningChunkEvent chunkEvent =
-                        new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg);
-                context.getHooks().forEach(hook -> hook.onEvent(chunkEvent).block());
+
+                Mono<HookEvent> eventMono =
+                        Mono.just(
+                                new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg));
+                for (Hook hook : context.getHooks()) {
+                    eventMono = eventMono.flatMap(hook::onEvent);
+                }
+                eventMono.block();
             }
         }
     }
@@ -136,9 +144,13 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
             LoggerUtil.debug(
                     log, "[{}] A2aAgent artifact append with messages: ", currentRequestTaskId);
             LoggerUtil.logTextMsgDetail(log, List.of(msg));
-            ReasoningChunkEvent chunkEvent =
-                    new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg);
-            context.getHooks().forEach(hook -> hook.onEvent(chunkEvent).block());
+
+            Mono<HookEvent> eventMono =
+                    Mono.just(new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg));
+            for (Hook hook : context.getHooks()) {
+                eventMono = eventMono.flatMap(hook::onEvent);
+            }
+            eventMono.block();
         }
     }
 }
