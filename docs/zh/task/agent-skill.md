@@ -198,7 +198,7 @@ ReActAgent agent = ReActAgent.builder()
 
 ### 功能 2: 代码执行能力
 
-为 Skill 提供隔离的代码执行文件夹,支持 Shell 命令、文件读写等操作。使用 Builder 模式灵活配置所需工具。
+为 Skill 提供隔离的代码执行环境,支持 Shell 命令、文件读写等操作。使用 Builder 模式按需组合工具和配置。
 
 **基础用法**:
 
@@ -213,35 +213,41 @@ skillBox.codeExecution()
     .enable();
 ```
 
+**配置说明**:
+
+- **工具选择**: 按需组合 `withShell()`、`withRead()`、`withWrite()`,仅注册显式启用的工具
+- **`workDir`**: 所有工具共享的工作目录。指定时自动创建;未指定时延迟创建临时目录 `agentscope-code-execution-*`,JVM 退出自动清理
+- **`uploadDir`**: Skill 资源文件的上传位置,默认为 `workDir/skills`
+- **文件过滤**: 控制允许上传的资源文件类型,默认接受 `scripts/`、`assets/` 目录及 `.py`、`.js`、`.sh` 扩展名。可通过 `includeFolders()`/`includeExtensions()` 调整,或用 `fileFilter()` 完全自定义(两种方式互斥)
+- **自定义 Shell**: `withShell(customShellTool)` 支持传入自定义工具,其 `baseDir` 会被自动覆盖为 `workDir`,安全策略保持不变
+
 **自定义配置**:
 
 ```java
-// 自定义工作目录和 Shell 命令白名单
+// 指定目录 + 自定义 Shell + 文件过滤
 ShellCommandTool customShell = new ShellCommandTool(
-    null,  // baseDir 会被自动设置为 workDir
+    null,  // baseDir 会被自动覆盖为 workDir
     Set.of("python3", "node", "npm"),
-    command -> askUserApproval(command)  // 可选的命令审批回调
+    command -> askUserApproval(command)
 );
 
 skillBox.codeExecution()
-    .workDir("/path/to/workdir")  // 指定工作目录
-    .withShell(customShell)       // 使用自定义 Shell 工具
-    .withRead()                   // 启用文件读取
-    .withWrite()                  // 启用文件写入
+    .workDir("/data/agent-workspace")              // 工作目录
+    .uploadDir("/data/agent-workspace/my-skills")  // 可选,默认 workDir/skills
+    .includeFolders(Set.of("scripts/", "data/"))   // 可选,自定义上传文件夹
+    .includeExtensions(Set.of(".py", ".json"))      // 可选,自定义上传扩展名
+    .withShell(customShell)
+    .withRead()
+    .withWrite()
     .enable();
 
-// 或仅启用文件操作,不启用 Shell
+// 或使用完全自定义的文件过滤器(与 includeFolders/includeExtensions 互斥)
 skillBox.codeExecution()
+    .fileFilter(path -> path.endsWith(".py"))  // 或 SkillFileFilter.acceptAll()
     .withRead()
     .withWrite()
     .enable();
 ```
-
-**核心特性**:
-- **统一工作目录**: 所有工具共享同一 `workDir`,确保文件隔离
-- **选择性启用**: 根据需求灵活组合 Shell、读文件、写文件工具
-- **灵活配置**: 支持自定义 ShellCommandTool, 满足定制化的ShellCommandTool需求
-- **自动管理**: 未指定 `workDir` 时自动创建临时目录,程序退出时自动清理
 
 ### 功能 3: Skill 持久化存储
 
@@ -326,6 +332,46 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 ```
 
 > 注意: 需引入 `agentscope-extensions-nacos-skill` 依赖
+
+### 功能 4: 自定义 Skill 提示词
+
+SkillBox 在注入给 Agent 的系统提示词中,会为每个已注册的 Skill 生成描述信息,供 LLM 判断何时加载哪个 Skill。通过构造函数可自定义提示词的两个组成部分:
+
+- **`instruction`**: 提示词头部,说明 Skill 的使用方式(如何加载、路径约定等)。默认包含 `load_skill_through_path` 的调用说明
+- **`template`**: 每个 Skill 条目的格式模板,包含三个 `%s` 占位符,依次对应 `name`、`description`、`skillId`
+
+开启代码执行后,还可通过 `.codeExecutionInstruction()` 自定义追加在 `</available_skills>` 之后的代码执行说明段落:
+
+- **`codeExecutionInstruction`**: 代码执行说明模板,所有 `%s` 占位符都会被替换为 `uploadDir` 的绝对路径。传 `null` 或空字符串时使用内置默认值
+
+三者传 `null` 或空字符串时均使用内置默认值。
+
+**示例代码**:
+
+```java
+// 自定义 instruction 和 template
+String customInstruction = """
+    ## 可用技能
+    当任务匹配某个技能时,使用 load_skill_through_path 加载它。
+    """;
+
+String customTemplate = """
+    - **%s**: %s (id: %s)
+    """;
+
+SkillBox skillBox = new SkillBox(toolkit, customInstruction, customTemplate);
+
+// 自定义代码执行说明(开启代码执行后生效)
+skillBox.codeExecution()
+    .workDir("/data/workspace")
+    .codeExecutionInstruction("""
+        ## 脚本执行
+        技能脚本根目录: %s
+        执行时请使用绝对路径。
+        """)
+    .withShell()
+    .enable();
+```
 
 ### 性能优化建议
 
