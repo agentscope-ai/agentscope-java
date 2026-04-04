@@ -145,6 +145,29 @@ public class StructuredOutputHook implements Hook {
 
         boolean hasCall = !msg.getContentBlocks(ToolUseBlock.class).isEmpty();
 
+        // Capture metadata from reasoning message (including _chat_usage)
+        // This ensures metadata is preserved even when generate_response is called
+        if (hasCall) {
+            ChatUsage usage = msg.getChatUsage();
+            if (usage != null) {
+                // Aggregate usage from all reasoning rounds
+                if (this.aggregatedUsage == null) {
+                    this.aggregatedUsage = usage;
+                } else {
+                    this.aggregatedUsage = ChatUsage.builder()
+                            .inputTokens(this.aggregatedUsage.getInputTokens() + usage.getInputTokens())
+                            .outputTokens(this.aggregatedUsage.getOutputTokens() + usage.getOutputTokens())
+                            .time(this.aggregatedUsage.getTime() + usage.getTime())
+                            .build();
+                }
+            }
+            // Capture ThinkingBlock (keep the last one)
+            ThinkingBlock thinking = msg.getFirstContentBlock(ThinkingBlock.class);
+            if (thinking != null) {
+                this.aggregatedThinking = thinking;
+            }
+        }
+
         if (!hasCall && retryCount < MAX_RETRIES) {
             retryCount++;
             log.debug(
