@@ -71,7 +71,7 @@ class SubAgentToolTest {
 
         SubAgentTool tool = new SubAgentTool(() -> mockAgent, null);
 
-        assertEquals("call_research_agent", tool.getName());
+        assertTrue(tool.getName().startsWith("call_research_agent"));
     }
 
     @Test
@@ -426,6 +426,57 @@ class SubAgentToolTest {
 
         // Verify stream was called with custom options
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
+    }
+
+    @Test
+    @DisplayName("Should generate deterministic hash for Chinese names to avoid collision")
+    void testToolNameGenerationWithChinese() {
+        Agent mathTeacher = createMockAgent("数学老师", "处理数学问题");
+        Agent chineseTeacher = createMockAgent("语文老师", "处理语文问题");
+
+        SubAgentTool mathTool = new SubAgentTool(() -> mathTeacher, null);
+        SubAgentTool chineseTool = new SubAgentTool(() -> chineseTeacher, null);
+
+        String mathToolName = mathTool.getName();
+        String chineseToolName = chineseTool.getName();
+
+        assertTrue(mathToolName.startsWith("call_agent_"));
+        assertTrue(chineseToolName.startsWith("call_agent_"));
+
+        // "call_agent_".length(11) + 8 (hash) = 19
+        assertEquals(19, mathToolName.length());
+
+        assertFalse(mathToolName.equals(chineseToolName), "Names should not collide due to hash");
+
+        Agent mathTeacherAgain = createMockAgent("数学老师", "处理数学问题");
+        SubAgentTool mathToolAgain = new SubAgentTool(() -> mathTeacherAgain, null);
+        assertEquals(
+                mathToolName,
+                mathToolAgain.getName(),
+                "Hash should be deterministic for the same name");
+    }
+
+    @Test
+    @DisplayName("Should truncate safely when generated tool name exceeds 64 characters")
+    void testToolNameGenerationTruncation() {
+        // An extremely lengthy English name
+        String incrediblyLongName =
+                "Very Long Agent Name That Simply Keeps Going On And On Without Any End In Sight"
+                        + " Because We Need To Test Limits";
+        Agent longNameAgent = createMockAgent(incrediblyLongName, "Test truncation");
+
+        SubAgentTool tool = new SubAgentTool(() -> longNameAgent, null);
+        String generatedName = tool.getName();
+
+        assertTrue(generatedName.length() <= 64);
+
+        assertTrue(generatedName.startsWith("call_"));
+
+        assertTrue(
+                generatedName.matches(".*_[0-9a-f]{8}$"),
+                "Truncated name must end with an underscore and an 8-character hash");
+
+        assertFalse(generatedName.contains("__"));
     }
 
     // Helper methods
