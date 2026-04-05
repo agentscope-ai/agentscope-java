@@ -34,9 +34,11 @@
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
+        <jmh.version>1.37</jmh.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M13</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <maven-surefire-plugin.version>3.1.2</maven-surefire-plugin.version>
         <maven-deploy-plugin.version>3.1.1</maven-deploy-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
@@ -44,6 +46,10 @@
         <maven-javadoc-plugin.version>3.5.0</maven-javadoc-plugin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <argLine>-Xms512m -Xmx1024m</argLine>
+        <benchmark.include>.*Benchmark.*</benchmark.include>
+        <benchmark.warmupIterations>2</benchmark.warmupIterations>
+        <benchmark.measurementIterations>3</benchmark.measurementIterations>
+        <benchmark.forks>1</benchmark.forks>
 
         <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
     </properties>
@@ -140,5 +146,69 @@
             <groupId>com.networknt</groupId>
             <artifactId>json-schema-validator</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${jmh.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-generator-annprocess</artifactId>
+            <version>${jmh.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <testAnnotationProcessorPaths>
+                        <path>
+                            <groupId>org.openjdk.jmh</groupId>
+                            <artifactId>jmh-generator-annprocess</artifactId>
+                            <version>${jmh.version}</version>
+                        </path>
+                    </testAnnotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <configuration>
+                    <classpathScope>test</classpathScope>
+                    <longClasspath>true</longClasspath>
+                    <executable>java</executable>
+                    <arguments>
+                        <argument>-Dbenchmark.include=${benchmark.include}</argument>
+                        <argument>-Dbenchmark.warmupIterations=${benchmark.warmupIterations}</argument>
+                        <argument>-Dbenchmark.measurementIterations=${benchmark.measurementIterations}</argument>
+                        <argument>-Dbenchmark.forks=${benchmark.forks}</argument>
+                        <argument>-cp</argument>
+                        <classpath/>
+                        <argument>io.agentscope.core.benchmark.BenchmarkLauncher</argument>
+                    </arguments>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>run-benchmarks</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
+
+
+
+
+
