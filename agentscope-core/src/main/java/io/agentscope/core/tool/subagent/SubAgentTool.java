@@ -420,12 +420,13 @@ public class SubAgentTool implements AgentTool {
      * @return A sanitized, safe-to-use tool name.
      */
     private String sanitizeName(String prefix, String originalName) {
-        // Keep the underline, replace other illegal characters with underscores uniformly,
+        // Keep the underscore, replace other illegal characters with underscores uniformly,
         // merge consecutive underscores, and remove the first and last underscores
         String safePart =
                 originalName
                         .toLowerCase()
                         .replaceAll("[^a-z0-9_-]+", "_")
+                        .replaceAll("_+", "_")
                         .replaceAll("^_+|_+$", "");
 
         if (safePart.isEmpty()) {
@@ -444,9 +445,10 @@ public class SubAgentTool implements AgentTool {
             String suffix = "_" + shortHash;
 
             logger.warn(
-                    "Agent name '{}' contains non-ASCII characters or is too long. Appended hash"
-                            + " '{}' to prevent collisions. Recommended to configure an explicit"
-                            + " English 'toolName' via SubAgentConfig.",
+                    "Agent name '{}' contains unsupported characters or is too long. Appended hash"
+                        + " '{}' to prevent collisions. Only alphanumeric characters, underscores,"
+                        + " and hyphens are supported in generated names. Recommended to configure"
+                        + " an explicit English 'toolName' via SubAgentConfig.",
                     originalName,
                     shortHash);
 
