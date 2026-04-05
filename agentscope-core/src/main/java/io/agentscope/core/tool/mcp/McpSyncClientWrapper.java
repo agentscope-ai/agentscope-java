@@ -94,9 +94,16 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                             return null;
                         })
                 .subscribeOn(Schedulers.boundedElastic())
-                .doOnError(e -> logger.error("Failed to initialize MCP client: {}", name, e))
+                .doOnError(e -> 
+                {
+                    initialized = false;
+                    logger.error("Failed to initialize MCP client: {}", name, e);
+                    })
+                .onErrorResume(e -> Mono.error(
+                new RuntimeException("MCP initialization failed for client: " + name, e)
+                    ))
                 .then();
-    }
+                }
 
     /**
      * Lists all tools available from the MCP server.
