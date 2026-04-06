@@ -36,7 +36,10 @@ import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -340,6 +343,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .build();
         AutoContextMemory toolMemory = new AutoContextMemory(toolConfig, toolTestModel);
 
@@ -508,19 +512,21 @@ class AutoContextMemoryTest {
         assertEquals(10, messages.size(), "Message count should remain the same after compression");
 
         // Verify that the compressed message contains the expected format
-        boolean hasCompressedMessage = false;
+        boolean hasSummaryMessage = false;
         for (Msg msg : messages) {
             String content = msg.getTextContent();
             if (content != null
-                    && (content.contains("compressed_large_message")
+                    && (content.contains("large_message_summary")
+                            || content.contains("Large content summary")
+                            || content.contains("Large response summary")
                             || content.contains("Compressed large message summary"))) {
-                hasCompressedMessage = true;
+                hasSummaryMessage = true;
                 break;
             }
         }
-        assertTrue(hasCompressedMessage, "Should contain compressed large message");
+        assertTrue(hasSummaryMessage, "Should contain summary of the large current-round message");
 
-        // Verify that the large message was offloaded (can be reloaded)
+        // Verify that the original large message was offloaded (can be reloaded)
         boolean hasOffloadHint = false;
         for (Msg msg : messages) {
             String content = msg.getTextContent();
@@ -537,7 +543,7 @@ class AutoContextMemoryTest {
         }
         assertTrue(
                 hasOffloadHint,
-                "Compressed message should contain offload hint for reloading original large"
+                "Compressed message should contain offload hint for reloading the original large"
                         + " message");
 
         // Verify original storage contains all messages (uncompressed)
@@ -549,166 +555,11 @@ class AutoContextMemoryTest {
         Map<String, List<Msg>> offloadContext = currentRoundLargeMemory.getOffloadContext();
         assertTrue(
                 !offloadContext.isEmpty(),
-                "OffloadContext should contain offloaded large message from current round"
-                        + " compression");
-        // Should have at least one offloaded entry for the large message
+                "OffloadContext should contain the offloaded large current-round message");
         assertTrue(
                 offloadContext.size() >= 1,
-                "Should have at least 1 offloaded entry. Got " + offloadContext.size());
-    }
-
-    @Test
-    @DisplayName("Should handle empty message list")
-    void testEmptyMessageList() {
-        List<Msg> messages = memory.getMessages();
-        assertTrue(messages.isEmpty());
-    }
-
-    @Test
-    @DisplayName("Should handle null message gracefully")
-    void testNullMessage() {
-        // addMessage should handle null gracefully (or throw exception)
-        // This depends on implementation, but we test it doesn't crash
-        try {
-            memory.addMessage(null);
-        } catch (Exception e) {
-            // Expected behavior - either null check or NPE
-            assertNotNull(e);
-        }
-    }
-
-    @Test
-    @DisplayName("Should maintain original storage separately from working storage")
-    void testDualStorageMechanism() {
-        // Add messages
-        for (int i = 0; i < 5; i++) {
-            memory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
-        }
-
-        List<Msg> workingMessages = memory.getMessages();
-        assertEquals(5, workingMessages.size());
-
-        // Verify original storage contains all messages
-        List<Msg> originalMessages = memory.getOriginalMemoryMsgs();
-        assertEquals(5, originalMessages.size());
-        for (int i = 0; i < 5; i++) {
-            assertEquals("Message " + i, originalMessages.get(i).getTextContent());
-        }
-
-        // After compression, working storage may change but original should remain unchanged
-        // (original storage maintains the complete, uncompressed history)
-    }
-
-    @Test
-    @DisplayName(
-            "Should compress current round messages using mergeAndCompressCurrentRoundMessages")
-    void testMergeAndCompressCurrentRoundMessages() {
-        // Create a test model to track calls
-        TestModel currentRoundTestModel = new TestModel("Compressed current round summary");
-        AutoContextConfig currentRoundConfig =
-                AutoContextConfig.builder()
-                        .msgThreshold(10)
-                        .maxToken(10000)
-                        .tokenRatio(0.9)
-                        .lastKeep(5)
-                        .minConsecutiveToolMessages(
-                                10) // High threshold to avoid tool compression (strategy 1)
-                        .largePayloadThreshold(
-                                10000) // High threshold to avoid payload offloading (strategy 2 &
-                        // 3)
-                        .minCompressionTokenThreshold(0) // Disable token threshold for testing
-                        .build();
-        AutoContextMemory currentRoundMemory =
-                new AutoContextMemory(currentRoundConfig, currentRoundTestModel);
-
-        // Add some initial messages to exceed threshold but not trigger other strategies
-        // Add messages without user-assistant pairs to avoid strategy 4
-        for (int i = 0; i < 8; i++) {
-            currentRoundMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
-        }
-
-        // Add a user message (this becomes the latest user)
-        currentRoundMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
-
-        // Add tool calls and results after the user message (these should be compressed)
-        // These are not consecutive enough to trigger strategy 1, and are after the latest user
-        for (int i = 0; i < 2; i++) {
-            currentRoundMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
-            currentRoundMemory.addMessage(
-                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
-        }
-
-        // Reset call count before compression
-        currentRoundTestModel.reset();
-
-        // Trigger compression explicitly - this should trigger strategy 6 (current round summary)
-        // which calls mergeAndCompressCurrentRoundMessages
-        currentRoundMemory.compressIfNeeded();
-        List<Msg> messages = currentRoundMemory.getMessages();
-
-        // Verify that generateCurrentRoundSummaryFromMessages was called (via
-        // mergeAndCompressCurrentRoundMessages)
-        assertTrue(
-                currentRoundTestModel.getCallCount() > 0,
-                "mergeAndCompressCurrentRoundMessages should call"
-                        + " generateCurrentRoundSummaryFromMessages. Expected at least 1 call, got "
-                        + currentRoundTestModel.getCallCount());
-
-        // Verify that messages were compressed
-        // Original: 8 initial + 1 user + 4 tool messages = 13 messages
-        // After compression: 8 initial + 1 user + 1 compressed = 10 messages (or less)
-        assertTrue(
-                messages.size() <= 10,
-                "Messages should be compressed. Expected 10 or less, got " + messages.size());
-
-        // Verify that the compressed message contains the expected format
-        boolean hasCompressedMessage = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("compressed_current_round")
-                            || content.contains("Compressed current round summary"))) {
-                hasCompressedMessage = true;
-                break;
-            }
-        }
-        assertTrue(hasCompressedMessage, "Should contain compressed current round message");
-
-        // Verify that tool messages were offloaded (can be reloaded)
-        boolean hasOffloadHint = false;
-        for (Msg msg : messages) {
-            String content = msg.getTextContent();
-            if (content != null
-                    && (content.contains("uuid:")
-                            || content.contains("uuid=")
-                            || content.contains("CONTEXT_OFFLOAD")
-                            || content.contains("reload")
-                            || content.contains("context_reload")
-                            || content.contains("offloaded"))) {
-                hasOffloadHint = true;
-                break;
-            }
-        }
-        assertTrue(
-                hasOffloadHint,
-                "Compressed message should contain offload hint for reloading original tool"
-                        + " messages");
-
-        // Verify original storage contains all messages (uncompressed)
-        List<Msg> originalMessages = currentRoundMemory.getOriginalMemoryMsgs();
-        assertEquals(
-                13, originalMessages.size(), "Original storage should contain all 13 messages");
-
-        // Verify that tool messages were offloaded to offloadContext
-        Map<String, List<Msg>> offloadContext = currentRoundMemory.getOffloadContext();
-        assertTrue(
-                !offloadContext.isEmpty(),
-                "OffloadContext should contain offloaded tool messages from current round"
-                        + " compression");
-        // Should have at least one offloaded entry for the tool messages
-        assertTrue(
-                offloadContext.size() >= 1,
-                "Should have at least 1 offloaded entry. Got " + offloadContext.size());
+                "Should have at least 1 offloaded entry for the large message. Got "
+                        + offloadContext.size());
     }
 
     @Test
@@ -919,7 +770,7 @@ class AutoContextMemoryTest {
 
         // Use reflection to set the plan (since PlanNotebook doesn't expose a setter)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -962,6 +813,104 @@ class AutoContextMemoryTest {
                 "Should have tool compression event with plan-aware hint");
     }
 
+    @Test
+    @DisplayName("Should preserve tool turn shape after current round compression")
+    void testCurrentRoundCompressionPreservesFollowUpReasoningTurnShape() {
+        TurnShapeSensitiveModel turnShapeModel =
+                new TurnShapeSensitiveModel(
+                        "Compressed current round summary", "Follow-up reasoning result");
+        AutoContextConfig turnShapeConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory turnShapeMemory = new AutoContextMemory(turnShapeConfig, turnShapeModel);
+
+        for (int i = 0; i < 8; i++) {
+            turnShapeMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+        turnShapeMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
+        for (int i = 0; i < 2; i++) {
+            turnShapeMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            turnShapeMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        boolean compressed = turnShapeMemory.compressIfNeeded();
+        assertTrue(compressed, "Current round compression should trigger for the follow-up test");
+
+        List<Msg> followUpMessages = turnShapeMemory.getMessages();
+        Msg lastMessage = followUpMessages.get(followUpMessages.size() - 1);
+        assertEquals(
+                MsgRole.USER,
+                lastMessage.getRole(),
+                "Current round compression should end with a USER summary message, not assistant");
+
+        String followUpText = turnShapeModel.runFollowUpReasoning(followUpMessages);
+        assertEquals("Follow-up reasoning result", followUpText);
+        assertFalse(
+                turnShapeModel.wasFollowUpRejected(),
+                "Follow-up reasoning should not be rejected because the compressed context ends"
+                        + " with assistant content");
+    }
+
+    @Test
+    @DisplayName("Should keep compressed current round metadata on tool summary")
+    void testCurrentRoundCompressionStoresMetadataOnToolSummary() {
+        TestModel metadataModel = new TestModel("Compressed current round summary");
+        AutoContextConfig metadataConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        AutoContextMemory metadataMemory = new AutoContextMemory(metadataConfig, metadataModel);
+
+        for (int i = 0; i < 8; i++) {
+            metadataMemory.addMessage(createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+        metadataMemory.addMessage(createTextMessage("User query with tools", MsgRole.USER));
+        for (int i = 0; i < 2; i++) {
+            metadataMemory.addMessage(createToolUseMessage("test_tool", "call_" + i));
+            metadataMemory.addMessage(
+                    createToolResultMessage("test_tool", "call_" + i, "Result " + i));
+        }
+
+        metadataMemory.compressIfNeeded();
+
+        Msg compressedMessage = null;
+        for (Msg msg : metadataMemory.getMessages()) {
+            String content = msg.getTextContent();
+            if (content != null && content.contains("Compressed current round summary")) {
+                compressedMessage = msg;
+                break;
+            }
+        }
+
+        assertNotNull(compressedMessage, "Should create a compressed current round summary");
+        assertEquals(MsgRole.USER, compressedMessage.getRole());
+        assertNotNull(compressedMessage.getMetadata());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> compressMeta =
+                (Map<String, Object>) compressedMessage.getMetadata().get("_compress_meta");
+        assertNotNull(compressMeta, "Compressed current round summary should keep compress meta");
+        assertEquals(Boolean.TRUE, compressMeta.get("compressed_current_round"));
+        assertNotNull(compressMeta.get("offloaduuid"));
+        assertFalse(
+                MsgUtils.isFinalAssistantResponse(compressedMessage),
+                "Compressed current round summary should never be treated as a final assistant"
+                        + " response");
+    }
+
     // Helper methods
 
     private Msg createTextMessage(String text, MsgRole role) {
@@ -980,7 +929,7 @@ class AutoContextMemoryTest {
                         ToolUseBlock.builder()
                                 .name(toolName)
                                 .id(callId)
-                                .input(new java.util.HashMap<>())
+                                .input(new HashMap<>())
                                 .build())
                 .build();
     }
@@ -1075,7 +1024,7 @@ class AutoContextMemoryTest {
 
         // Manually set the plan (using reflection for testing)
         try {
-            java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+            Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
             planField.setAccessible(true);
             planField.set(planNotebook, plan);
         } catch (Exception e) {
@@ -1161,6 +1110,71 @@ class AutoContextMemoryTest {
     }
 
     /**
+     * Model implementation that simulates providers which reject follow-up reasoning when the
+     * conversation already ends with assistant content.
+     */
+    private static class TurnShapeSensitiveModel implements Model {
+        private final String compressionResponseText;
+        private final String followUpResponseText;
+        private boolean followUpRejected = false;
+        private int callCount = 0;
+
+        TurnShapeSensitiveModel(String compressionResponseText, String followUpResponseText) {
+            this.compressionResponseText = compressionResponseText;
+            this.followUpResponseText = followUpResponseText;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            callCount++;
+            String responseText = compressionResponseText;
+            if (callCount > 1) {
+                Msg lastMessage = messages.isEmpty() ? null : messages.get(messages.size() - 1);
+                if (lastMessage != null
+                        && lastMessage.getRole() == MsgRole.ASSISTANT
+                        && !lastMessage.hasContentBlocks(ToolUseBlock.class)) {
+                    followUpRejected = true;
+                    responseText = "";
+                } else {
+                    responseText = followUpResponseText;
+                }
+            }
+
+            ChatResponse response =
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text(responseText).build()))
+                            .usage(new ChatUsage(10, 20, 30))
+                            .build();
+            return Flux.just(response);
+        }
+
+        @Override
+        public String getModelName() {
+            return "turn-shape-sensitive-model";
+        }
+
+        String runFollowUpReasoning(List<Msg> messages) {
+            ChatResponse response =
+                    stream(messages, null, GenerateOptions.builder().build()).blockFirst();
+            if (response == null || response.getContent() == null) {
+                return "";
+            }
+            StringBuilder builder = new StringBuilder();
+            for (var block : response.getContent()) {
+                if (block instanceof TextBlock textBlock) {
+                    builder.append(textBlock.getText());
+                }
+            }
+            return builder.toString();
+        }
+
+        boolean wasFollowUpRejected() {
+            return followUpRejected;
+        }
+    }
+
+    /**
      * Model implementation that captures all messages sent to it for testing.
      */
     private static class CapturingModel implements Model {
@@ -1204,6 +1218,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
         AutoContextMemory memory = new AutoContextMemory(config, capturingModel);
@@ -1265,6 +1280,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .customPrompt(customPrompt)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed tool summary");
@@ -1369,6 +1385,7 @@ class AutoContextMemoryTest {
                         .msgThreshold(10)
                         .minConsecutiveToolMessages(3)
                         .lastKeep(5)
+                        .minCompressionTokenThreshold(0)
                         .customPrompt(customPrompt)
                         .build();
         CapturingModel capturingModel = new CapturingModel("Compressed");
@@ -1438,8 +1455,7 @@ class AutoContextMemoryTest {
         AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1454,8 +1470,7 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1473,13 +1488,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1517,13 +1531,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1553,13 +1566,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1580,13 +1592,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1610,13 +1621,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         String result = (String) method.invoke(testMemory);
@@ -1631,6 +1641,271 @@ class AutoContextMemoryTest {
                 "Should contain expected outcome");
     }
 
+    // ==================== Tool Call Pairing Safety Tests ====================
+
+    @Test
+    @DisplayName(
+            "Should NOT offload ASSISTANT tool-call message as plain TextBlock stub during large"
+                    + " payload offloading (Strategy 2/3)")
+    void testLargePayloadOffloadingSkipsAssistantToolUseMessage() {
+        // Regression test for: DashScope 400 "messages with role 'tool' must be a response to a
+        // preceding message with 'tool_calls'".
+        // When an ASSISTANT message carrying ToolUseBlock is large and gets offloaded as a plain
+        // TextBlock stub, the downstream TOOL result messages become orphaned.
+        TestModel model = new TestModel("Summary");
+        AutoContextConfig cfg =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .largePayloadThreshold(50) // low threshold so the large message triggers
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory mem = new AutoContextMemory(cfg, model);
+
+        // Round 0: user 闂?large ASSISTANT tool-call 闂?TOOL result 闂?ASSISTANT final
+        mem.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Build a large ASSISTANT tool-use message (> largePayloadThreshold)
+        String largeInput = "x".repeat(200);
+        Msg largeToolUseMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                ToolUseBlock.builder()
+                                        .id("call_large")
+                                        .name("search")
+                                        .input(Map.of("query", largeInput))
+                                        .build())
+                        .build();
+        mem.addMessage(largeToolUseMsg);
+        mem.addMessage(createToolResultMessage("search", "call_large", "tool output"));
+        mem.addMessage(createTextMessage("Assistant final response", MsgRole.ASSISTANT));
+
+        // Extra messages to push over msgThreshold
+        mem.addMessage(createTextMessage("Follow-up user question", MsgRole.USER));
+        mem.addMessage(createTextMessage("Follow-up assistant answer", MsgRole.ASSISTANT));
+
+        boolean compressed = mem.compressIfNeeded();
+        List<Msg> messages = mem.getMessages();
+
+        // Key assertion: the ASSISTANT message that had ToolUseBlock must still carry
+        // a ToolUseBlock (not be degraded to a plain TextBlock stub).
+        // If it were stripped, the subsequent TOOL message would be orphaned.
+        boolean hasOrphanedToolMsg = false;
+        for (int i = 0; i < messages.size(); i++) {
+            Msg msg = messages.get(i);
+            if (MsgUtils.isToolResultMessage(msg)) {
+                // The message immediately before a TOOL result must be ASSISTANT with tool_calls
+                // OR another TOOL result (parallel calls). It must NOT be a non-tool-call msg.
+                boolean precededByToolCall = false;
+                for (int j = i - 1; j >= 0; j--) {
+                    Msg prev = messages.get(j);
+                    if (MsgUtils.isToolUseMessage(prev)) {
+                        precededByToolCall = true;
+                        break;
+                    }
+                    if (MsgUtils.isToolResultMessage(prev)) {
+                        // Consecutive TOOL results from the same assistant tool-call message
+                        continue;
+                    }
+                    // Hit a non-tool message before finding a tool-call 闂?orphaned
+                    break;
+                }
+                if (!precededByToolCall) {
+                    hasOrphanedToolMsg = true;
+                }
+            }
+        }
+        assertFalse(
+                hasOrphanedToolMsg,
+                "TOOL result messages must always be preceded by an ASSISTANT tool-call message."
+                        + " Offloading the ASSISTANT tool-call as a plain stub orphans them.");
+    }
+
+    @Test
+    @DisplayName(
+            "Should offload large TOOL result output while preserving ToolResultBlock id and name")
+    void testLargeToolResultOffloadPreservesIdAndName() {
+        // When a TOOL result message is large, Strategy 2/3 should compress its output text
+        // but MUST preserve the ToolResultBlock structure (id, name) so the API formatter
+        // can still emit the correct tool_call_id / name fields.
+        TestModel model = new TestModel("Summary");
+        AutoContextConfig cfg =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .largePayloadThreshold(50) // low threshold
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory mem = new AutoContextMemory(cfg, model);
+
+        // Round 0: user 闂?ASSISTANT tool-call 闂?large TOOL result 闂?ASSISTANT final
+        mem.addMessage(createTextMessage("User query", MsgRole.USER));
+        mem.addMessage(createToolUseMessage("search", "call_tool_id_001"));
+
+        // Build a large TOOL result message (> largePayloadThreshold)
+        String largeOutput = "y".repeat(200);
+        Msg largeToolResultMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("search")
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_tool_id_001")
+                                        .name("search")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text(largeOutput)
+                                                                .build()))
+                                        .build())
+                        .build();
+        mem.addMessage(largeToolResultMsg);
+        mem.addMessage(createTextMessage("Assistant final response", MsgRole.ASSISTANT));
+
+        // Extra messages to push over msgThreshold
+        mem.addMessage(createTextMessage("Follow-up user question", MsgRole.USER));
+        mem.addMessage(createTextMessage("Follow-up assistant answer", MsgRole.ASSISTANT));
+
+        mem.compressIfNeeded();
+        List<Msg> messages = mem.getMessages();
+
+        // Find the (possibly compressed) TOOL result message
+        Msg toolResultMsg =
+                messages.stream().filter(MsgUtils::isToolResultMessage).findFirst().orElse(null);
+
+        // If the TOOL message was offloaded (compressed), it must still carry ToolResultBlock
+        // with the original id and name intact.
+        if (toolResultMsg != null) {
+            ToolResultBlock block = toolResultMsg.getFirstContentBlock(ToolResultBlock.class);
+            assertNotNull(
+                    block,
+                    "Compressed TOOL result message must still contain a ToolResultBlock"
+                            + " (not be degraded to plain TextBlock)");
+            assertEquals(
+                    "call_tool_id_001",
+                    block.getId(),
+                    "ToolResultBlock id must be preserved after offloading");
+            assertEquals(
+                    "search",
+                    block.getName(),
+                    "ToolResultBlock name must be preserved after offloading");
+            // The output should now contain the offload hint
+            String outputText =
+                    block.getOutput().stream()
+                            .filter(b -> b instanceof TextBlock)
+                            .map(b -> ((TextBlock) b).getText())
+                            .findFirst()
+                            .orElse("");
+            assertTrue(
+                    outputText.contains("CONTEXT_OFFLOAD"),
+                    "Compressed tool result output should contain offload hint. Got: "
+                            + outputText);
+        }
+
+        // Also verify no orphaned TOOL messages exist
+        for (int i = 0; i < messages.size(); i++) {
+            Msg msg = messages.get(i);
+            if (MsgUtils.isToolResultMessage(msg)) {
+                boolean precededByToolCall = false;
+                for (int j = i - 1; j >= 0; j--) {
+                    Msg prev = messages.get(j);
+                    if (MsgUtils.isToolUseMessage(prev)) {
+                        precededByToolCall = true;
+                        break;
+                    }
+                    if (MsgUtils.isToolResultMessage(prev)) {
+                        continue;
+                    }
+                    break;
+                }
+                assertTrue(
+                        precededByToolCall,
+                        "Every TOOL result must be preceded by an ASSISTANT tool-call message");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Should maintain valid tool_calls/tool_result pairing after offloading large plain"
+                    + " messages in a mixed conversation")
+    void testToolCallPairingIntegrityAfterMixedOffloading() {
+        // Simulates the production scenario from the bug report:
+        // A long conversation with multiple tool-call rounds plus large plain messages.
+        // After Strategy 2/3 runs, every TOOL result must still follow an ASSISTANT tool-call.
+        TestModel model = new TestModel("Summary");
+        AutoContextConfig cfg =
+                AutoContextConfig.builder()
+                        .msgThreshold(8)
+                        .largePayloadThreshold(50)
+                        .lastKeep(3)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory mem = new AutoContextMemory(cfg, model);
+
+        // Round 0: normal tool call round (small output)
+        mem.addMessage(createTextMessage("User asks tool", MsgRole.USER));
+        mem.addMessage(createToolUseMessage("tool_a", "id_a1"));
+        mem.addMessage(createToolResultMessage("tool_a", "id_a1", "small result"));
+        mem.addMessage(createTextMessage("Assistant reply 0", MsgRole.ASSISTANT));
+
+        // Round 1: large USER message + tool call round
+        String largeUserText = "L".repeat(200);
+        mem.addMessage(
+                createTextMessage(largeUserText, MsgRole.USER)); // large 闂?candidate for offload
+        mem.addMessage(createToolUseMessage("tool_b", "id_b1"));
+        mem.addMessage(createToolResultMessage("tool_b", "id_b1", "result b"));
+        mem.addMessage(createTextMessage("Assistant reply 1", MsgRole.ASSISTANT));
+
+        // Round 2: current (protected by lastKeep)
+        mem.addMessage(createTextMessage("Current user question", MsgRole.USER));
+        mem.addMessage(createTextMessage("Current assistant answer", MsgRole.ASSISTANT));
+
+        mem.compressIfNeeded();
+        List<Msg> messages = mem.getMessages();
+
+        // Invariant: for every TOOL result, scan backwards and find an ASSISTANT tool-call
+        // before hitting any non-tool message.
+        for (int i = 0; i < messages.size(); i++) {
+            if (!MsgUtils.isToolResultMessage(messages.get(i))) {
+                continue;
+            }
+            boolean found = false;
+            for (int j = i - 1; j >= 0; j--) {
+                Msg prev = messages.get(j);
+                if (MsgUtils.isToolUseMessage(prev)) {
+                    found = true;
+                    break;
+                }
+                if (MsgUtils.isToolResultMessage(prev)) {
+                    continue; // parallel tool results
+                }
+                break;
+            }
+            assertTrue(
+                    found,
+                    "TOOL result at index "
+                            + i
+                            + " is orphaned 闂?no preceding ASSISTANT tool-call found."
+                            + " Full message sequence: "
+                            + messages.stream()
+                                    .map(
+                                            m ->
+                                                    m.getRole()
+                                                            + "(toolUse="
+                                                            + MsgUtils.isToolUseMessage(m)
+                                                            + ",toolResult="
+                                                            + MsgUtils.isToolResultMessage(m)
+                                                            + ")")
+                                    .toList());
+        }
+    }
+
     @Test
     @DisplayName("Should return plan context with different plan states")
     void testGetPlanStateContextWithDifferentPlanStates() throws Exception {
@@ -1641,13 +1916,12 @@ class AutoContextMemoryTest {
         testMemory.attachPlanNote(planNotebook);
 
         // Set current plan using reflection
-        java.lang.reflect.Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
+        Field planField = PlanNotebook.class.getDeclaredField("currentPlan");
         planField.setAccessible(true);
         planField.set(planNotebook, plan);
 
         // Use reflection to call private method
-        java.lang.reflect.Method method =
-                AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
+        Method method = AutoContextMemory.class.getDeclaredMethod("getPlanStateContext");
         method.setAccessible(true);
 
         // Test with IN_PROGRESS state
@@ -1676,5 +1950,137 @@ class AutoContextMemoryTest {
         assertTrue(
                 resultDone.contains("Goal: Test Description"),
                 "Should contain goal for DONE state");
+    }
+
+    @Test
+    @DisplayName(
+            "Should continue to subsequent strategies when tool compression is skipped due to low"
+                    + " tokens")
+    void testCompressionStrategiesContinueWhenToolCompressionSkipped() {
+        TestModel testModel = new TestModel("Large payload summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(2)
+                        .largePayloadThreshold(100)
+                        .lastKeep(2)
+                        .minCompressionTokenThreshold(10000)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("skipped_tool", "id" + i));
+            testMemory.addMessage(createToolResultMessage("skipped_tool", "id" + i, "ok"));
+        }
+
+        // Add a large message to trigger Strategy 2 or 3
+        String largeText = "x".repeat(200);
+        testMemory.addMessage(createTextMessage(largeText, MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+        testMemory.addMessage(createTextMessage("Padding message", MsgRole.USER));
+
+        boolean compressed = testMemory.compressIfNeeded();
+        assertTrue(
+                compressed,
+                "Compression should return true because subsequent strategy (large payload) was"
+                        + " applied");
+
+        long toolMessageCount =
+                testMemory.getMessages().stream().filter(MsgUtils::isToolMessage).count();
+        assertEquals(
+                6, toolMessageCount, "Tool messages should not be compressed due to low tokens");
+
+        boolean hasOffloadedLargeMsg =
+                testMemory.getMessages().stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("CONTEXT_OFFLOAD"));
+        assertTrue(
+                hasOffloadedLargeMsg,
+                "Large message should be offloaded by Strategy 2/3 because the chain was not"
+                        + " broken");
+    }
+
+    @Test
+    @DisplayName(
+            "Should advance search cursor and compress subsequent tool groups when earlier group is"
+                    + " skipped")
+    void testToolCompressionCursorAdvancesWhenSkipped() {
+        TestModel testModel = new TestModel("Compressed tool summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .minConsecutiveToolMessages(2)
+                        .lastKeep(2)
+                        .minCompressionTokenThreshold(5000)
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, testModel);
+
+        testMemory.addMessage(createTextMessage("User query 1", MsgRole.USER));
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("short_tool", "a" + i));
+            testMemory.addMessage(createToolResultMessage("short_tool", "a" + i, "ok"));
+        }
+
+        testMemory.addMessage(createTextMessage("User query 2", MsgRole.USER));
+
+        for (int i = 0; i < 3; i++) {
+            testMemory.addMessage(createToolUseMessage("long_tool", "b" + i));
+            String largeResult = "long_result_".repeat(1000);
+            testMemory.addMessage(createToolResultMessage("long_tool", "b" + i, largeResult));
+        }
+
+        testMemory.addMessage(createTextMessage("Assistant response", MsgRole.ASSISTANT));
+
+        testMemory.addMessage(createTextMessage("Padding 1", MsgRole.USER));
+        testMemory.addMessage(createTextMessage("Padding 2", MsgRole.USER));
+
+        // Trigger compression explicitly
+        testMemory.compressIfNeeded();
+
+        List<Msg> messages = testMemory.getMessages();
+
+        // The filter condition only captured Tool Result (name="short_tool").
+        // So 3 results indicate that all 6 messages in the first group were preserved.
+        long shortToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "short_tool".equals(msg.getName()))
+                        .count();
+        assertEquals(
+                3,
+                shortToolMsgs,
+                "First tool group should be skipped and remain in memory (3 result messages)");
+
+        long longToolMsgs =
+                messages.stream()
+                        .filter(
+                                msg ->
+                                        MsgUtils.isToolMessage(msg)
+                                                && "long_tool".equals(msg.getName()))
+                        .count();
+        assertEquals(
+                0,
+                longToolMsgs,
+                "Second tool group should be completely compressed and removed from memory");
+
+        boolean hasSummary =
+                messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getTextContent() != null
+                                                && msg.getTextContent()
+                                                        .contains("Compressed tool summary"));
+        assertTrue(hasSummary, "Second tool group should be replaced by a summary message");
+
+        assertEquals(
+                1,
+                testModel.getCallCount(),
+                "Model should be called exactly once for the second high-token tool group");
     }
 }

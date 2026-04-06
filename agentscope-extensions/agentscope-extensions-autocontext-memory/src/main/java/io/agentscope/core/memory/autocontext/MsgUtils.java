@@ -331,6 +331,37 @@ public class MsgUtils {
     }
 
     /**
+     * Check whether a message is the synthetic current-round summary inserted by AutoContextMemory.
+     */
+    public static boolean isCompressedCurrentRoundSummary(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata == null) {
+            return false;
+        }
+
+        Object compressMeta = metadata.get("_compress_meta");
+        if (!(compressMeta instanceof Map<?, ?> compressMetaMap)) {
+            return false;
+        }
+
+        return Boolean.TRUE.equals(compressMetaMap.get("compressed_current_round"));
+    }
+
+    /**
+     * Check whether a message is a real user-authored USER turn rather than a synthetic
+     * current-round summary.
+     */
+    public static boolean isRealUserMessage(Msg msg) {
+        return msg != null
+                && msg.getRole() == MsgRole.USER
+                && !isCompressedCurrentRoundSummary(msg);
+    }
+
+    /**
      * Check if an ASSISTANT message is a final response to the user (not a tool call).
      *
      * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
