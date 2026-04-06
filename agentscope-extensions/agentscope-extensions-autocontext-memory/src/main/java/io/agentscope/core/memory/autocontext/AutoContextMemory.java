@@ -582,7 +582,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                 TextBlock.builder()
                                         .text(
                                                 PromptProvider.getCurrentRoundLargeMessagePrompt(
-                                                        customPrompt))
+                                                        customPrompt, List.of(message)))
                                         .build())
                         .build());
         newMessages.add(message);
@@ -730,7 +730,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                 TextBlock.builder()
                                         .text(
                                                 PromptProvider.getCurrentRoundCompressPrompt(
-                                                        customPrompt))
+                                                        customPrompt, filteredMessages))
                                         .build())
                         .build());
         newMessages.addAll(filteredMessages);
@@ -1095,7 +1095,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                 TextBlock.builder()
                                         .text(
                                                 PromptProvider.getPreviousRoundSummaryPrompt(
-                                                        customPrompt))
+                                                        customPrompt, filteredMessages))
                                         .build())
                         .build());
         newMessages.addAll(filteredMessages);
@@ -1599,7 +1599,7 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                 TextBlock.builder()
                                         .text(
                                                 PromptProvider.getPreviousRoundToolCompressPrompt(
-                                                        customPrompt))
+                                                        customPrompt, filteredMessages))
                                         .build())
                         .build());
         newMessages.addAll(filteredMessages);
