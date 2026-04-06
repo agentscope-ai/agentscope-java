@@ -17,7 +17,12 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -214,5 +219,37 @@ class PromptProviderTest {
         assertEquals(
                 Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT,
                 PromptProvider.getCurrentRoundCompressPrompt(customPrompt));
+    }
+
+    @Test
+    @DisplayName("Should append Chinese language hint for previous round summary prompt")
+    void testPreviousRoundSummaryPromptWithChineseLanguageHint() {
+        String prompt =
+                PromptProvider.getPreviousRoundSummaryPrompt(
+                        null, List.of(msg(MsgRole.USER, "请继续用中文总结刚才的内容")));
+
+        assertTrue(prompt.startsWith(Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT));
+        assertTrue(prompt.contains("LANGUAGE REQUIREMENT"));
+        assertTrue(prompt.contains("primarily in Chinese"));
+    }
+
+    @Test
+    @DisplayName("Should append English language hint for current round prompt")
+    void testCurrentRoundCompressPromptWithEnglishLanguageHint() {
+        String prompt =
+                PromptProvider.getCurrentRoundCompressPrompt(
+                        null, List.of(msg(MsgRole.USER, "Please keep the summary in English.")));
+
+        assertTrue(prompt.startsWith(Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT));
+        assertTrue(prompt.contains("LANGUAGE REQUIREMENT"));
+        assertTrue(prompt.contains("primarily in English"));
+    }
+
+    private static Msg msg(MsgRole role, String text) {
+        return Msg.builder()
+                .role(role)
+                .name(role.name().toLowerCase())
+                .content(TextBlock.builder().text(text).build())
+                .build();
     }
 }
