@@ -106,8 +106,8 @@ public final class JsonUtils {
             return false;
         }
         try {
-            codec.fromJson(str, Map.class);
-            return true;
+            Map<String, Object> parsed = codec.fromJson(str, Map.class);
+            return parsed != null;
         } catch (Exception e) {
             return false;
         }
