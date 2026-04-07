@@ -330,23 +330,7 @@ public class OpenAIMessageConverter {
                     continue;
                 }
 
-                // Prioritize using content field (raw arguments string), fallback to input map
-                // serialization
-                String argsJson;
-                if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
-                    argsJson = toolUse.getContent();
-                } else {
-                    try {
-                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                    } catch (Exception e) {
-                        String errorMsg =
-                                e.getMessage() != null
-                                        ? e.getMessage()
-                                        : e.getClass().getSimpleName();
-                        log.warn("Failed to serialize tool call arguments: {}", errorMsg);
-                        argsJson = "{}";
-                    }
-                }
+                String argsJson = resolveArgsJson(toolUse);
 
                 // Add thought signature if present in metadata (required for Gemini)
                 String signature = null;
@@ -490,6 +474,41 @@ public class OpenAIMessageConverter {
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
             result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+        }
+    }
+
+    /**
+     * Resolve the arguments JSON string from a ToolUseBlock, with validation
+     * to prevent sending malformed JSON (e.g. from interrupted streaming).
+     */
+    private String resolveArgsJson(ToolUseBlock toolUse) {
+        String content = toolUse.getContent();
+        if (content != null && !content.isEmpty()) {
+            if (isValidJson(content)) {
+                return content;
+            }
+            log.warn(
+                    "Invalid JSON in tool call content for '{}', falling back to input"
+                            + " serialization",
+                    toolUse.getName());
+        }
+
+        try {
+            return JsonUtils.getJsonCodec().toJson(toolUse.getInput());
+        } catch (Exception e) {
+            String errorMsg =
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            log.warn("Failed to serialize tool call arguments: {}", errorMsg);
+            return "{}";
+        }
+    }
+
+    private boolean isValidJson(String str) {
+        try {
+            JsonUtils.getJsonCodec().fromJson(str, Object.class);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 }

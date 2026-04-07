@@ -86,6 +86,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         ToolUseBlock build() {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
+            boolean rawContentParsed = false;
 
             // If no parsed arguments but has raw JSON content, try to parse
             if (finalArgs.isEmpty() && rawContentStr.length() > 0) {
@@ -95,19 +96,44 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                             JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
                     if (parsed != null) {
                         finalArgs.putAll(parsed);
+                        rawContentParsed = true;
                     }
                 } catch (Exception ignored) {
                     // Parsing failed, keep empty args
                 }
             }
 
+            // Use raw content only if it was successfully parsed or args were
+            // already populated (meaning the content matches the parsed input).
+            // Otherwise fall back to "{}" to avoid sending malformed JSON
+            // (e.g. when streaming was interrupted mid-arguments).
+            String contentStr;
+            if (rawContentStr.isEmpty()) {
+                contentStr = "{}";
+            } else if (!finalArgs.isEmpty() || rawContentParsed) {
+                contentStr = rawContentStr;
+            } else if (isValidJson(rawContentStr)) {
+                contentStr = rawContentStr;
+            } else {
+                contentStr = "{}";
+            }
+
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
-                    .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
+                    .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
+        }
+
+        private boolean isValidJson(String str) {
+            try {
+                JsonUtils.getJsonCodec().fromJson(str, Object.class);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
         }
 
         private boolean isPlaceholder(String name) {
