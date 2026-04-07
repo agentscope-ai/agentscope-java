@@ -29,7 +29,7 @@ import java.util.Objects;
  * <p><b>Context:</b>
  * <ul>
  *   <li>{@link #getAgent()} - The agent instance</li>
- *   <li>{@link #getMemory()} - Agent's memory (includes input messages already added)</li>
+ *   <li>{@link #getMemory()} - Agent's existing memory or conversation history prior to processing this call</li>
  *   <li>{@link #getInputMessages()} - Messages input to the agent (modifiable)</li>
  * </ul>
  *
@@ -38,7 +38,7 @@ import java.util.Objects;
  *   <li>Log the start of agent execution</li>
  *   <li>Initialize execution-specific resources</li>
  *   <li>Track agent invocation metrics</li>
- * <li>Filter or modify input messages before agent processing</li>
+ *   <li>Filter or modify input messages before agent processing</li>
  * </ul>
  */
 public final class PreCallEvent extends HookEvent {
