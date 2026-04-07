@@ -44,7 +44,7 @@ public class MessageEventHandler implements ClientEventHandler<MessageEvent> {
                         event.getMessage(), context.getAgent().getName());
 
         // Automatically trigger PreReasoningEvent and PostReasoningEvent
-        context.publishPostReasoning(msg);
+        msg = context.publishPostReasoning(msg);
 
         context.getSink().success(msg);
         LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);

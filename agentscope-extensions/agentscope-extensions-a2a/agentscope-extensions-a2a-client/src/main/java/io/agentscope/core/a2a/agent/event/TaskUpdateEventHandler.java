@@ -93,7 +93,7 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         MessageConvertUtil.convertFromArtifact(
                                 context.getTask().getArtifacts(), context.getAgent().getName());
 
-                context.publishPostReasoning(msg);
+                msg = context.publishPostReasoning(msg);
 
                 context.getSink().success(msg);
                 LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
