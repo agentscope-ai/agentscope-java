@@ -23,7 +23,6 @@ import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.UpdateEvent;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
-import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.HashMap;
 import java.util.List;
@@ -93,6 +92,9 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                 Msg msg =
                         MessageConvertUtil.convertFromArtifact(
                                 context.getTask().getArtifacts(), context.getAgent().getName());
+
+                context.publishPostReasoning(msg);
+
                 context.getSink().success(msg);
                 LoggerUtil.info(log, "[{}] A2aAgent complete call.", currentRequestId);
                 LoggerUtil.debug(
@@ -114,9 +116,8 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                 LoggerUtil.debug(
                         log, "[{}] A2aAgent task status updated with messages: ", currentRequestId);
                 LoggerUtil.logTextMsgDetail(log, List.of(msg));
-                ReasoningChunkEvent chunkEvent =
-                        new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg);
-                context.getHooks().forEach(hook -> hook.onEvent(chunkEvent).block());
+
+                context.publishReasoningChunk(msg);
             }
         }
     }
@@ -136,9 +137,8 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
             LoggerUtil.debug(
                     log, "[{}] A2aAgent artifact append with messages: ", currentRequestTaskId);
             LoggerUtil.logTextMsgDetail(log, List.of(msg));
-            ReasoningChunkEvent chunkEvent =
-                    new ReasoningChunkEvent(context.getAgent(), "A2A", null, msg, msg);
-            context.getHooks().forEach(hook -> hook.onEvent(chunkEvent).block());
+
+            context.publishReasoningChunk(msg);
         }
     }
 }
