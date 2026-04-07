@@ -27,6 +27,7 @@
 - [A2A (Agent2Agent)](https://java.agentscope.io/_sources/en/task/a2a.md)
 - [MsgHub](https://java.agentscope.io/_sources/en/task/msghub.md)
 - [Coding with AI](https://java.agentscope.io/_sources/en/task/ai-coding.md)
+- [AgentScope Training Extension](https://java.agentscope.io/_sources/en/task/online-training.md)
 - [Multi-Agent Overview](https://java.agentscope.io/_sources/en/multi-agent/overview.md)
 - [Pipeline](https://java.agentscope.io/_sources/en/multi-agent/pipeline.md)
 - [Custom Workflow](https://java.agentscope.io/_sources/en/multi-agent/workflow.md)
