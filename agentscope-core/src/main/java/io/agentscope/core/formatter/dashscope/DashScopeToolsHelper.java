@@ -236,7 +236,7 @@ public class DashScopeToolsHelper {
                 continue;
             }
 
-            String argsJson = resolveArgsJson(toolUse);
+            String argsJson = JsonUtils.resolveToolCallArgsJson(toolUse);
 
             DashScopeFunction function = DashScopeFunction.of(toolUse.getName(), argsJson);
             DashScopeToolCall toolCall =
@@ -319,38 +319,5 @@ public class DashScopeToolsHelper {
         }
 
         return result.isEmpty() ? null : result;
-    }
-
-    /**
-     * Resolve the arguments JSON string from a ToolUseBlock, with validation
-     * to prevent sending malformed JSON (e.g. from interrupted streaming).
-     */
-    private String resolveArgsJson(ToolUseBlock toolUse) {
-        String content = toolUse.getContent();
-        if (content != null && !content.isEmpty()) {
-            if (isValidJson(content)) {
-                return content;
-            }
-            log.warn(
-                    "Invalid JSON in tool call content for '{}', falling back to input"
-                            + " serialization",
-                    toolUse.getName());
-        }
-
-        try {
-            return JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-        } catch (Exception e) {
-            log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
-            return "{}";
-        }
-    }
-
-    private boolean isValidJson(String str) {
-        try {
-            JsonUtils.getJsonCodec().fromJson(str, Object.class);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
     }
 }
