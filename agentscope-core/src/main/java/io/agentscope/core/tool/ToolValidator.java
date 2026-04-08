@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.tool;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.Error;
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
@@ -43,6 +47,7 @@ public final class ToolValidator {
 
     private static final SchemaRegistry SCHEMA_REGISTRY =
             SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private ToolValidator() {
         // Utility class
@@ -80,8 +85,10 @@ public final class ToolValidator {
             // Create Schema from the schema string
             Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
+            String normalizedInput = normalizeOptionalNullFields(input);
+
             // Validate
-            List<Error> errors = jsonSchema.validate(input, InputFormat.JSON);
+            List<Error> errors = jsonSchema.validate(normalizedInput, InputFormat.JSON);
 
             if (errors.isEmpty()) {
                 return null; // Validation passed
@@ -92,6 +99,52 @@ public final class ToolValidator {
 
         } catch (Exception e) {
             return "Schema validation error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Removes null-valued object properties before schema validation.
+     *
+     * <p>This treats explicit nulls the same as omitted optional fields, while still allowing
+     * required-field validation to fail naturally after the null-valued property is removed.
+     */
+    private static String normalizeOptionalNullFields(String input) throws Exception {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+
+        JsonNode root = OBJECT_MAPPER.readTree(input);
+        pruneNullObjectFields(root);
+        return OBJECT_MAPPER.writeValueAsString(root);
+    }
+
+    private static void pruneNullObjectFields(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+
+        if (node.isObject()) {
+            ObjectNode objectNode = (ObjectNode) node;
+            List<String> nullFieldNames = new java.util.ArrayList<>();
+            objectNode
+                    .fields()
+                    .forEachRemaining(
+                            entry -> {
+                                if (entry.getValue().isNull()) {
+                                    nullFieldNames.add(entry.getKey());
+                                } else {
+                                    pruneNullObjectFields(entry.getValue());
+                                }
+                            });
+            nullFieldNames.forEach(objectNode::remove);
+            return;
+        }
+
+        if (node.isArray()) {
+            ArrayNode arrayNode = (ArrayNode) node;
+            for (JsonNode item : arrayNode) {
+                pruneNullObjectFields(item);
+            }
         }
     }
 
