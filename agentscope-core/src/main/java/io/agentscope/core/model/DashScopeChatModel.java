@@ -57,6 +57,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final boolean stream;
     private final Boolean enableThinking; // nullable
     private final Boolean enableSearch; // nullable
+    private final Boolean preserveThinking; // nullable
     private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
@@ -70,18 +71,20 @@ public class DashScopeChatModel extends ChatModelBase {
      * <p>This constructor maintains backward compatibility. API type defaults to AUTO,
      * which detects the endpoint based on model name.
      *
-     * @param apiKey the API key for DashScope authentication
-     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param apiKey         the API key for DashScope authentication
+     * @param modelName      the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream         whether streaming should be enabled (ignored if enableThinking is true)
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
-     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param enableSearch   whether search enhancement should be enabled (null for disabled)
      * @param defaultOptions default generation options (null for defaults)
-     * @param baseUrl custom base URL for DashScope API (null for default)
-     * @param formatter the message formatter to use (null for default DashScope formatter)
-     * @param httpTransport custom HTTP transport (null for default from factory)
-     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
-     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param baseUrl        custom base URL for DashScope API (null for default)
+     * @param formatter      the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport  custom HTTP transport (null for default from factory)
+     * @param publicKeyId    the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey      the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @deprecated Use {@link #builder()} instead.
      */
+    @Deprecated(since = "1.0.12", forRemoval = true)
     public DashScopeChatModel(
             String apiKey,
             String modelName,
@@ -112,25 +115,74 @@ public class DashScopeChatModel extends ChatModelBase {
     /**
      * Creates a new DashScope chat model instance with explicit API type.
      *
-     * @param apiKey the API key for DashScope authentication
-     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param apiKey         the API key for DashScope authentication
+     * @param modelName      the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream         whether streaming should be enabled (ignored if enableThinking is true)
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
-     * @param enableSearch whether search enhancement should be enabled (null for disabled)
-     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param enableSearch   whether search enhancement should be enabled (null for disabled)
+     * @param endpointType   the endpoint type to use (null for AUTO detection)
      * @param defaultOptions default generation options (null for defaults)
-     * @param baseUrl custom base URL for DashScope API (null for default)
-     * @param formatter the message formatter to use (null for default DashScope formatter)
-     * @param httpTransport custom HTTP transport (null for default from factory)
-     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
-     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param baseUrl        custom base URL for DashScope API (null for default)
+     * @param formatter      the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport  custom HTTP transport (null for default from factory)
+     * @param publicKeyId    the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey      the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @deprecated Use {@link #builder()} instead.
      */
+    @Deprecated(since = "1.0.12", forRemoval = true)
     public DashScopeChatModel(
             String apiKey,
             String modelName,
             boolean stream,
             Boolean enableThinking,
             Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                null,
+                null,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type.
+     *
+     * @param apiKey           the API key for DashScope authentication
+     * @param modelName        the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream           whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking   whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch     whether search enhancement should be enabled (null for disabled)
+     * @param preserveThinking whether to append reasoning_content (null for disabled)
+     * @param endpointType     the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions   default generation options (null for defaults)
+     * @param baseUrl          custom base URL for DashScope API (null for default)
+     * @param formatter        the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport    custom HTTP transport (null for default from factory)
+     * @param publicKeyId      the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey        the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     */
+    protected DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            Boolean preserveThinking,
             EndpointType endpointType,
             GenerateOptions defaultOptions,
             String baseUrl,
@@ -148,6 +200,7 @@ public class DashScopeChatModel extends ChatModelBase {
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
+        this.preserveThinking = preserveThinking;
         this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
@@ -187,8 +240,8 @@ public class DashScopeChatModel extends ChatModelBase {
      * <p>Supports timeout and retry configuration through GenerateOptions.
      *
      * @param messages AgentScope messages to send to the model
-     * @param tools Optional list of tool schemas
-     * @param options Optional generation options (null to use defaults)
+     * @param tools    Optional list of tool schemas
+     * @param options  Optional generation options (null to use defaults)
      * @return Flux stream of chat responses
      */
     @Override
@@ -337,6 +390,10 @@ public class DashScopeChatModel extends ChatModelBase {
             request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
+        if (Boolean.TRUE.equals(enableThinking) && preserveThinking != null) {
+            request.getParameters().setPreserveThinking(preserveThinking);
+        }
+
         // Model-specific settings for search mode
         if (enableSearch != null) {
             // Explicitly assign value for search mode
@@ -359,6 +416,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private String modelName;
         private boolean stream = true;
         private Boolean enableThinking;
+        private Boolean preserveThinking;
         private Boolean enableSearch;
         private EndpointType endpointType;
         private GenerateOptions defaultOptions = null;
@@ -417,6 +475,19 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableThinking(Boolean enableThinking) {
             this.enableThinking = enableThinking;
+            return this;
+        }
+
+        /**
+         * Sets whether to append the reasoning_content of the assistant message in the conversation history to the model input.
+         *
+         * <p>When enabled, this reasoning_content will be appended to the model input.
+         *
+         * @param preserveThinking true to append reasoning_content, false to disable, null for default (disabled)
+         * @return this builder instance
+         */
+        public Builder preserveThinking(Boolean preserveThinking) {
+            this.preserveThinking = preserveThinking;
             return this;
         }
 
@@ -533,7 +604,7 @@ public class DashScopeChatModel extends ChatModelBase {
          * }</pre>
          *
          * @param enableEncrypt true to enable encryption (will fetch public key automatically),
-         *     false to disable encryption
+         *                      false to disable encryption
          * @return this builder instance
          */
         public Builder enableEncrypt(boolean enableEncrypt) {
@@ -552,7 +623,7 @@ public class DashScopeChatModel extends ChatModelBase {
          *
          * @return configured DashScopeChatModel instance
          * @throws DashScopeHttpClient.DashScopeHttpException if encryption is enabled and
-         *     public key fetching fails
+         *                                                    public key fetching fails
          */
         public DashScopeChatModel build() {
             GenerateOptions effectiveOptions =
@@ -576,6 +647,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     stream,
                     enableThinking,
                     enableSearch,
+                    preserveThinking,
                     endpointType,
                     effectiveOptions,
                     baseUrl,

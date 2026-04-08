@@ -196,6 +196,13 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testIsMultimodalModelIncludesQwen36Family() {
+        // Qwen 3.6 family is entirely multimodal (prefix-based matching)
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.6-plus-2026-04-02"));
+    }
+
+    @Test
     void testIsMultimodalModelPatterns() {
         // qvq prefix
         assertTrue(DashScopeHttpClient.isMultimodalModel("qvq-72b"));

@@ -383,7 +383,8 @@ public class DashScopeHttpClient {
         return lowerModelName.startsWith("qvq")
                 || lowerModelName.contains("-vl")
                 || lowerModelName.contains("-asr")
-                || lowerModelName.startsWith("qwen3.5");
+                || lowerModelName.startsWith("qwen3.5")
+                || lowerModelName.startsWith("qwen3.6");
     }
 
     /**
@@ -484,7 +485,7 @@ public class DashScopeHttpClient {
      * @param publicKeyId the public key ID
      * @param publicKey the Base64-encoded public key
      */
-    public static record PublicKeyResult(String publicKeyId, String publicKey) {}
+    public record PublicKeyResult(String publicKeyId, String publicKey) {}
 
     private Map<String, String> buildHeaders(
             boolean streaming, Map<String, String> additionalHeaders, EncryptionContext context) {
