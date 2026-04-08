@@ -109,8 +109,16 @@ jobs:
 
       - name: Build and Test with Coverage [Linux]
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           export PATH="$HOME/.mvnd/bin:$PATH"
+          if ! command -v mvnd >/dev/null 2>&1; then
+            echo "mvnd not found, installing..."
+            curl -fsSL https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64.tar.gz | tar xz
+            mkdir -p ~/.mvnd
+            mv maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64/* ~/.mvnd/
+            export PATH="$HOME/.mvnd/bin:$PATH"
+          fi
           # -T1: single-threaded build so reactor order is respected and agentscope-core
           # is installed before modules (e.g. subagent) that resolve it from the reactor.
           mvnd -B -T1 clean verify
