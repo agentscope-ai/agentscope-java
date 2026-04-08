@@ -38,8 +38,6 @@ import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.properties.JSONRPCProperties;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -73,8 +71,6 @@ import org.springframework.core.env.Environment;
         matchIfMissing = true)
 public class AgentscopeA2aAutoConfiguration {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentscopeA2aAutoConfiguration.class);
-
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(ReActAgent.class)
@@ -102,17 +98,6 @@ public class AgentscopeA2aAutoConfiguration {
         ConfigurableAgentCard configurableAgentCard =
                 buildConfigurableAgentCard(agentCardProperties);
         DeploymentProperties deploymentProperties = buildDeploymentProperties(environment);
-        log.info(
-                "A2A auto config input: card.url={}, card.preferredTransport={},"
-                        + " card.additionalInterfaces={}",
-                configurableAgentCard.getUrl(),
-                configurableAgentCard.getPreferredTransport(),
-                configurableAgentCard.getAdditionalInterfaces());
-        log.info(
-                "A2A auto config input: deployment.host={}, deployment.port={}, deployment.path={}",
-                deploymentProperties.host(),
-                deploymentProperties.port(),
-                deploymentProperties.path());
         builder.agentCard(configurableAgentCard);
         builder.deploymentProperties(deploymentProperties);
         builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
@@ -207,12 +192,6 @@ public class AgentscopeA2aAutoConfiguration {
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
         String defaultServerExportContextPath =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_CONTEXT_PATH);
-        log.info(
-                "defaultServerExportAddress={}, defaultServerExportPort={},"
-                        + " defaultServerExportContextPath={}",
-                defaultServerExportAddress,
-                defaultServerExportPort,
-                defaultServerExportContextPath);
         result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);

@@ -70,51 +70,33 @@ public class AgentScopeAgentCardConverter {
             ConfigurableAgentCard agentCard,
             AgentRunner agentRunner,
             Set<TransportProperties> availableTransports) {
-        log.info(
-                "createAgentCard input: configurable.url={}, configurable.preferredTransport={},"
-                        + " configurable.additionalInterfaces={}",
-                agentCard.getUrl(),
-                agentCard.getPreferredTransport(),
-                agentCard.getAdditionalInterfaces());
-        log.info("createAgentCard input: availableTransports={}", availableTransports);
         AgentCapabilities capabilities = createDefaultCapabilities();
         List<AgentInterface> additionalInterfaces =
                 createAdditionalInterfaces(agentCard, availableTransports);
         AgentInterface preferredTransportInterface =
                 getPreferredTransport(agentCard, additionalInterfaces);
-        log.info("createAgentCard intermediate: additionalInterfaces={}", additionalInterfaces);
-        log.info(
-                "createAgentCard intermediate: preferredTransportInterface={}",
-                preferredTransportInterface);
         AgentCard.Builder agentCardBuilder = new AgentCard.Builder();
         if (null != preferredTransportInterface) {
             agentCardBuilder.preferredTransport(preferredTransportInterface.transport());
             agentCardBuilder.url(preferredTransportInterface.url());
         }
-        AgentCard result =
-                agentCardBuilder
-                        .name(getName(agentCard, agentRunner))
-                        .description(getDescription(agentCard, agentRunner))
-                        .provider(agentCard.getProvider())
-                        .version(getVersion(agentCard))
-                        .documentationUrl(agentCard.getDocumentationUrl())
-                        .capabilities(capabilities)
-                        .defaultInputModes(getModes(agentCard.getDefaultInputModes()))
-                        .defaultOutputModes(getModes(agentCard.getDefaultOutputModes()))
-                        .skills(null != agentCard.getSkills() ? agentCard.getSkills() : List.of())
-                        .supportsAuthenticatedExtendedCard(false)
-                        .securitySchemes(agentCard.getSecuritySchemes())
-                        .security(agentCard.getSecurity())
-                        .iconUrl(agentCard.getIconUrl())
-                        .additionalInterfaces(additionalInterfaces)
-                        .protocolVersion("0.3.0")
-                        .build();
-        log.info(
-                "createAgentCard output: preferredTransport={}, url={}, additionalInterfaces={}",
-                result.preferredTransport(),
-                result.url(),
-                result.additionalInterfaces());
-        return result;
+        return agentCardBuilder
+                .name(getName(agentCard, agentRunner))
+                .description(getDescription(agentCard, agentRunner))
+                .provider(agentCard.getProvider())
+                .version(getVersion(agentCard))
+                .documentationUrl(agentCard.getDocumentationUrl())
+                .capabilities(capabilities)
+                .defaultInputModes(getModes(agentCard.getDefaultInputModes()))
+                .defaultOutputModes(getModes(agentCard.getDefaultOutputModes()))
+                .skills(null != agentCard.getSkills() ? agentCard.getSkills() : List.of())
+                .supportsAuthenticatedExtendedCard(false)
+                .securitySchemes(agentCard.getSecuritySchemes())
+                .security(agentCard.getSecurity())
+                .iconUrl(agentCard.getIconUrl())
+                .additionalInterfaces(additionalInterfaces)
+                .protocolVersion("0.3.0")
+                .build();
     }
 
     private AgentCapabilities createDefaultCapabilities() {

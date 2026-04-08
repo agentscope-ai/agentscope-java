@@ -233,13 +233,6 @@ public class AgentScopeA2aServer {
          * @return builder instance of {@link AgentScopeA2aServer}
          */
         public Builder withTransport(TransportProperties transportProperties) {
-            log.info(
-                    "withTransport called: transportProperties={}, callerStack={}",
-                    transportProperties,
-                    java.util.Arrays.stream(Thread.currentThread().getStackTrace())
-                            .skip(2)
-                            .limit(12)
-                            .toList());
             supportedTransports.add(transportProperties);
             return this;
         }
@@ -390,11 +383,6 @@ public class AgentScopeA2aServer {
             if (null == agentCard) {
                 agentCard = new ConfigurableAgentCard.Builder().build();
             }
-            log.info(
-                    "Builder before default transport: supportedTransports.size={},"
-                            + " deploymentProperties={}",
-                    supportedTransports.size(),
-                    deploymentProperties);
             if (supportedTransports.isEmpty()) {
                 log.warn("Not found input supportedTransports, use default transport: `JSONRPC`");
                 if (null == deploymentProperties) {
@@ -410,21 +398,14 @@ public class AgentScopeA2aServer {
                                 .path(deploymentProperties.path())
                                 .build());
             }
-            log.info("Builder supportedTransports={}", supportedTransports);
             Map<String, TransportWrapperBuilder> allBuilders = loadTransportBuilders();
             Set<TransportProperties> availableTransports = getAvailableTransports(allBuilders);
-            log.info("Builder availableTransports={}", availableTransports);
             if (availableTransports.isEmpty()) {
                 throw new IllegalArgumentException("No one available transport found.");
             }
             AgentCard a2aAgentCard =
                     new AgentScopeAgentCardConverter()
                             .createAgentCard(agentCard, agentRunner, availableTransports);
-            log.info(
-                    "Built agent card: preferredTransport={}, url={}, additionalInterfaces={}",
-                    a2aAgentCard.preferredTransport(),
-                    a2aAgentCard.url(),
-                    a2aAgentCard.additionalInterfaces());
             Map<String, TransportWrapper> transportWrappers =
                     buildTransportWrappers(
                             requestHandler, availableTransports, allBuilders, a2aAgentCard);
