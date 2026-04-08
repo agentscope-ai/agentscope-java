@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-26T09:08:54+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent as Tool" href="agent-as-tool.html"><link rel="prev" title="Tool" href="tool.html">
+    <meta property="article:modified_time" content="2026-04-08T02:47:00+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent as Tool" href="agent-as-tool.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/mcp.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -697,6 +697,43 @@
 </pre></div>
 </div>
 </section>
+<section id="elicitation-support">
+<h3>elicitation support<a class="headerlink" href="#elicitation-support" title="Link to this heading">¶</a></h3>
+<p>The elicitation feature in MCP enables interactive information collection during the invocation of MCP server-side tools.</p>
+<p>Asynchronous client example</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-async&quot;</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<span class="p">.</span><span class="na">asyncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="c1">// Handle elicitation request</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="w">        </span><span class="c1">// Return Mono&lt;ElicitResult&gt;</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span>
+<span class="w">            </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="p">);</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Synchronous client example</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp-sync&quot;</span><span class="p">)</span>
+<span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;python&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p">)</span>
+<span class="p">.</span><span class="na">syncElicitation</span><span class="p">(</span><span class="n">request</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="c1">// Handle elicitation request</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Received elicit request: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">request</span><span class="p">.</span><span class="na">message</span><span class="p">());</span>
+<span class="w">        </span><span class="c1">// return ElicitResult directly</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">action</span><span class="p">(</span><span class="n">ElicitResult</span><span class="p">.</span><span class="na">Action</span><span class="p">.</span><span class="na">ACCEPT</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;response&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user input&quot;</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">buildSync</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="managing-mcp-clients">
 <h2>Managing MCP Clients<a class="headerlink" href="#managing-mcp-clients" title="Link to this heading">¶</a></h2>
@@ -836,7 +873,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-26</div>
+              Last updated on 2026-04-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -898,6 +935,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <li><a class="reference internal" href="#http-headers">HTTP Headers</a></li>
 <li><a class="reference internal" href="#query-parameters">Query Parameters</a></li>
 <li><a class="reference internal" href="#synchronous-vs-asynchronous-clients">Synchronous vs Asynchronous Clients</a></li>
+<li><a class="reference internal" href="#elicitation-support">elicitation support</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#managing-mcp-clients">Managing MCP Clients</a><ul>
