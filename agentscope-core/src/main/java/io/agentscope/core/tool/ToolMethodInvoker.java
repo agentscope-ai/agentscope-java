@@ -25,8 +25,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -105,6 +107,9 @@ class ToolMethodInvoker {
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
+        } else if (returnType == Flux.class) {
+            return invokeFlux(toolObject, method, input, agent, context, emitter, converter);
+
         } else {
             // Sync method: wrap in Mono.fromCallable
             return Mono.fromCallable(
@@ -117,6 +122,101 @@ class ToolMethodInvoker {
                             })
                     .onErrorResume(this::handleError);
         }
+    }
+
+    private Mono<ToolResultBlock> invokeFlux(
+            Object toolObject,
+            Method method,
+            Map<String, Object> input,
+            Agent agent,
+            ToolExecutionContext context,
+            ToolEmitter emitter,
+            ToolResultConverter converter) {
+        Type itemType = extractGenericType(method);
+
+        return Mono.fromCallable(
+                        () -> {
+                            method.setAccessible(true);
+                            Object[] args =
+                                    convertParameters(method, input, agent, context, emitter);
+                            @SuppressWarnings("unchecked")
+                            Flux<Object> flux = (Flux<Object>) method.invoke(toolObject, args);
+                            return flux != null ? flux : Flux.empty();
+                        })
+                .flatMap(
+                        flux ->
+                                flux.doOnNext(
+                                                item ->
+                                                        emitFluxChunk(
+                                                                emitter, converter, item, itemType))
+                                        .collectList()
+                                        .map(
+                                                items ->
+                                                        converter.convert(
+                                                                aggregateFluxItems(items, itemType),
+                                                                resolveFluxAggregateType(
+                                                                        items, itemType)))
+                                        .onErrorResume(this::handleError))
+                .onErrorResume(this::handleError);
+    }
+
+    private void emitFluxChunk(
+            ToolEmitter emitter, ToolResultConverter converter, Object item, Type itemType) {
+        if (item == null) {
+            return;
+        }
+        emitter.emit(toStreamingChunk(item, itemType, converter));
+    }
+
+    private ToolResultBlock toStreamingChunk(
+            Object item, Type itemType, ToolResultConverter converter) {
+        if (item instanceof ToolResultBlock) {
+            return (ToolResultBlock) item;
+        }
+        if (item instanceof CharSequence
+                || item instanceof Number
+                || item instanceof Boolean
+                || item instanceof Character) {
+            return ToolResultBlock.text(String.valueOf(item));
+        }
+        return converter.convert(item, itemType);
+    }
+
+    private Object aggregateFluxItems(List<Object> items, Type itemType) {
+        if (shouldConcatenateFluxItems(items, itemType)) {
+            StringBuilder aggregated = new StringBuilder();
+            for (Object item : items) {
+                if (item != null) {
+                    aggregated.append(item);
+                }
+            }
+            return aggregated.toString();
+        }
+        if (items.isEmpty()) {
+            return null;
+        }
+        if (items.size() == 1) {
+            return items.get(0);
+        }
+        return items;
+    }
+
+    private Type resolveFluxAggregateType(List<Object> items, Type itemType) {
+        if (shouldConcatenateFluxItems(items, itemType)) {
+            return String.class;
+        }
+        if (items.size() == 1) {
+            return itemType;
+        }
+        return List.class;
+    }
+
+    private boolean shouldConcatenateFluxItems(List<Object> items, Type itemType) {
+        if (itemType == String.class || itemType == CharSequence.class) {
+            return true;
+        }
+        return !items.isEmpty()
+                && items.stream().allMatch(item -> item == null || item instanceof CharSequence);
     }
 
     /**
@@ -363,7 +463,7 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Extract generic type from method return type (for CompletableFuture<T> or Mono<T>).
+     * Extract generic type from method return type (for CompletableFuture<T>, Mono<T>, or Flux<T>).
      *
      * @param method the method
      * @return the generic type, or null if not found

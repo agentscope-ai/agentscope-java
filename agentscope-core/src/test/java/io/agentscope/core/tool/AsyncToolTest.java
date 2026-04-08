@@ -26,6 +26,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +35,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for async tool execution with CompletableFuture and Mono return types.
+ * Tests for async tool execution with CompletableFuture, Mono, and Flux return types.
  */
 @Tag("unit")
 @DisplayName("Async Tool Tests")
@@ -88,6 +89,56 @@ class AsyncToolTest {
 
         assertNotNull(response, "Response should not be null");
         assertEquals("\"HelloWorld\"", extractFirstText(response));
+    }
+
+    @Test
+    @DisplayName("Should execute Flux async tool")
+    void shouldExecuteFluxAsyncTool() {
+        Map<String, Object> input = Map.of("str1", "Hello", "str2", "World");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-async-flux")
+                        .name("async_flux_concat")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals("\"HelloWorld\"", extractFirstText(response));
+    }
+
+    @Test
+    @DisplayName("Should emit Flux chunks while aggregating final tool result")
+    void shouldEmitFluxChunksWhileAggregatingFinalToolResult() {
+        List<String> chunkToolIds = new ArrayList<>();
+        List<String> chunkTexts = new ArrayList<>();
+        toolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    chunkToolIds.add(toolUse.getId());
+                    chunkTexts.add(extractFirstText(chunk));
+                });
+
+        Map<String, Object> input = Map.of("str1", "Alpha", "str2", "Beta");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-async-flux-chunk")
+                        .name("async_flux_concat")
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response, "Response should not be null");
+        assertEquals(List.of("call-async-flux-chunk", "call-async-flux-chunk"), chunkToolIds);
+        assertEquals(List.of("Alpha", "Beta"), chunkTexts);
+        assertEquals("\"AlphaBeta\"", extractFirstText(response));
     }
 
     @Test

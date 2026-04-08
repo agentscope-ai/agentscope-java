@@ -19,6 +19,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -130,6 +131,18 @@ public class SampleTools {
             @ToolParam(name = "str1", description = "First string") String str1,
             @ToolParam(name = "str2", description = "Second string") String str2) {
         return Mono.fromCallable(() -> str1 + str2);
+    }
+
+    /**
+     * Async tool using Flux that streams string chunks.
+     */
+    @Tool(
+            name = "async_flux_concat",
+            description = "Asynchronously stream and concatenate two strings")
+    public Flux<String> asyncFluxConcat(
+            @ToolParam(name = "str1", description = "First string") String str1,
+            @ToolParam(name = "str2", description = "Second string") String str2) {
+        return Flux.just(str1, str2).delayElements(Duration.ofMillis(25));
     }
 
     /**
