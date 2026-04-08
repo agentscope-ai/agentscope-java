@@ -33,6 +33,9 @@ import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
 import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -60,6 +63,8 @@ import org.springframework.core.env.Environment;
         havingValue = "true",
         matchIfMissing = true)
 public class AgentscopeA2aAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentscopeA2aAutoConfiguration.class);
 
     @Bean
     @ConditionalOnMissingBean
@@ -145,6 +150,7 @@ public class AgentscopeA2aAutoConfiguration {
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
         String defaultServerExportContextPath =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_CONTEXT_PATH);
+        log.info("defaultServerExportContextPath, {}", defaultServerExportContextPath);
         result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);
