@@ -138,13 +138,13 @@ class StaticLongTermMemoryHookTest {
                         resultEvent -> {
                             List<Msg> messages = resultEvent.getInputMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
                             assertTrue(
-                                    messages.get(1)
+                                    messages.get(0)
                                             .getTextContent()
                                             .contains("<long_term_memory>"));
                             assertTrue(
-                                    messages.get(1)
+                                    messages.get(0)
                                             .getTextContent()
                                             .contains("User prefers dark mode"));
                         })
