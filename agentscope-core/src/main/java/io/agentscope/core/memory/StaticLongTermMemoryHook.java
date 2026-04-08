@@ -156,8 +156,8 @@ public class StaticLongTermMemoryHook implements Hook {
 
                             // Inject memory message at the beginning
                             List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.addAll(inputMessages);
                             enhancedMessages.add(memoryMsg);
+                            enhancedMessages.addAll(inputMessages);
                             event.setInputMessages(enhancedMessages);
 
                             return Mono.just(event);

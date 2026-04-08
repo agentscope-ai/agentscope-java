@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +34,7 @@ class ToolGroupManager {
 
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
-    private List<String> activeGroups = new ArrayList<>();
+    private final List<String> activeGroups = new CopyOnWriteArrayList<>();
 
     /**
      * Create tool groups and record them in the manager.
@@ -324,7 +325,8 @@ class ToolGroupManager {
      * @param activeGroups List of group names to mark as active
      */
     public void setActiveGroups(List<String> activeGroups) {
-        this.activeGroups = new ArrayList<>(activeGroups);
+        this.activeGroups.clear();
+        this.activeGroups.addAll(activeGroups);
 
         // Mark corresponding groups as active
         for (String groupName : activeGroups) {
@@ -374,7 +376,8 @@ class ToolGroupManager {
         }
 
         // Copy activeGroups list
-        target.activeGroups = new ArrayList<>(this.activeGroups);
+        target.activeGroups.clear();
+        target.activeGroups.addAll(this.activeGroups);
     }
 
     private boolean removeGroupFromToolIndex(String toolName, String groupName) {
