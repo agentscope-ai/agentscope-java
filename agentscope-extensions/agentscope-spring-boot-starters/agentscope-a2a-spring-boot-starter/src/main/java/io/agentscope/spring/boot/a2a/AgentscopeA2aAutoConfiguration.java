@@ -143,9 +143,14 @@ public class AgentscopeA2aAutoConfiguration {
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class, 8080);
         String defaultServerExportAddress =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
+        String defaultServerExportContextPath =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_CONTEXT_PATH);
         result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);
+        }
+        if (null != defaultServerExportContextPath) {
+            result.path(defaultServerExportContextPath);
         }
         return result.build();
     }
