@@ -64,6 +64,8 @@ parts:
     title: MsgHub
   - file: en/task/ai-coding
     title: Coding with AI
+  - file: en/task/online-training.md
+    title: Online Training
 
 - caption: Multi Agent
   chapters:
@@ -108,7 +110,7 @@ parts:
   - file: zh/task/agent-as-tool
     title: Agent as Tool
   - file: zh/task/agent-skill
-    title: 智能体技能
+    title: Agent Skill
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
@@ -137,6 +139,8 @@ parts:
     title: MsgHub
   - file: zh/task/ai-coding
     title: 使用 AI 编程
+  - file: zh/task/online-training.md
+    title: 在线训练
 
 - caption: 多智能体
   chapters:

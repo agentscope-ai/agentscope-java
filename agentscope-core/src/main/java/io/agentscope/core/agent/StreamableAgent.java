@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -99,6 +100,18 @@ public interface StreamableAgent {
     }
 
     /**
+     * Stream execution events for a single message with JSON schema support.
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @param schema JSON schema defining the structure
+     * @return Flux of events emitted during execution
+     */
+    default Flux<Event> stream(Msg msg, StreamOptions options, JsonNode schema) {
+        return stream(List.of(msg), options, schema);
+    }
+
+    /**
      * Stream execution events for multiple messages with default options.
      *
      * @param msgs Input messages
@@ -126,4 +139,14 @@ public interface StreamableAgent {
      * @return Flux of events emitted during execution
      */
     Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel);
+
+    /**
+     * Stream execution events with JSON schema support.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param schema JSON schema defining the structure
+     * @return Flux of events emitted during execution
+     */
+    Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema);
 }

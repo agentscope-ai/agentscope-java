@@ -45,12 +45,14 @@ class ToolSchemaGenerator {
      *                      be null or empty)
      * @return JSON Schema map in OpenAI format
      */
+    @SuppressWarnings("unchecked")
     Map<String, Object> generateParameterSchema(Method method, Set<String> excludeParams) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
 
         Map<String, Object> properties = new HashMap<>();
         List<String> required = new ArrayList<>();
+        Map<String, Object> allDefs = new HashMap<>();
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
@@ -67,6 +69,11 @@ class ToolSchemaGenerator {
                 continue;
             }
 
+            // Hoist $defs from per-parameter schema to the root level so that
+            // $ref pointers like "#/$defs/TypeName" resolve against the document root.
+            hoistDefs(info.schema, "$defs", allDefs);
+            hoistDefs(info.schema, "definitions", allDefs);
+
             properties.put(info.name, info.schema);
             if (info.required) {
                 required.add(info.name);
@@ -77,8 +84,23 @@ class ToolSchemaGenerator {
         if (!required.isEmpty()) {
             schema.put("required", required);
         }
+        if (!allDefs.isEmpty()) {
+            schema.put("$defs", allDefs);
+        }
 
         return schema;
+    }
+
+    // TODO: putAll silently overwrites when different parameters define the same def key
+    //  (e.g. different classes with the same simple name under PLAIN_DEFINITION_KEYS).
+    //  Add value-equality check and fail-fast on true conflicts in a follow-up.
+    @SuppressWarnings("unchecked")
+    private void hoistDefs(
+            Map<String, Object> paramSchema, String key, Map<String, Object> target) {
+        Object raw = paramSchema.remove(key);
+        if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            target.putAll((Map<String, Object>) defs);
+        }
     }
 
     /**

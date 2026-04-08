@@ -39,12 +39,15 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.quartz.CronScheduleBuilder;
+import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.Trigger.TriggerState;
+import org.quartz.TriggerBuilder;
 import org.quartz.UnableToInterruptJobException;
 
 /** Unit tests for {@link QuartzAgentScheduler}. */
@@ -70,7 +73,7 @@ class QuartzAgentSchedulerTest {
 
         // Mock JobDetail
         JobDetail jobDetail =
-                org.quartz.JobBuilder.newJob(AgentQuartzJob.class)
+                JobBuilder.newJob(AgentQuartzJob.class)
                         .withIdentity(jobKey)
                         .storeDurably(true)
                         .usingJobData("schedulerId", "test-id")
@@ -80,9 +83,9 @@ class QuartzAgentSchedulerTest {
 
         // Mock Trigger (Cron)
         Trigger trigger =
-                org.quartz.TriggerBuilder.newTrigger()
+                TriggerBuilder.newTrigger()
                         .withIdentity("trigger", "agentscope-quartz")
-                        .withSchedule(org.quartz.CronScheduleBuilder.cronSchedule("0 0 8 * * ?"))
+                        .withSchedule(CronScheduleBuilder.cronSchedule("0 0 8 * * ?"))
                         .build();
         // Since getTriggersOfJob returns List<? extends Trigger>, we need to be careful with
         // generics

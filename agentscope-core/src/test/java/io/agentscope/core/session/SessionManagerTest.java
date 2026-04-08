@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.State;
 import io.agentscope.core.state.StateModule;
@@ -84,13 +87,10 @@ public class SessionManagerTest {
 
         // Add some data to components
         memory.addMessage(
-                io.agentscope.core.message.Msg.builder()
+                Msg.builder()
                         .name("user")
-                        .role(io.agentscope.core.message.MsgRole.USER)
-                        .content(
-                                io.agentscope.core.message.TextBlock.builder()
-                                        .text("Test message")
-                                        .build())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Test message").build())
                         .build());
 
         customModule.setValue("test_value");

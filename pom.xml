@@ -27,13 +27,13 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.11-SNAPSHOT</revision>
+        <revision>1.0.12-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
-        <spotless.version>3.3.0</spotless.version>
+        <spotless.version>3.4.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
@@ -211,6 +211,7 @@
                 <version>${maven-javadoc-plugin.version}</version>
                 <configuration>
                     <doclint>all,-missing</doclint>
+                    <source>17</source>
                 </configuration>
                 <executions>
                     <execution>
@@ -374,6 +375,17 @@
                                 <artifact>quickstart</artifact>
                                 <artifact>werewolf</artifact>
                                 <artifact>werewolf-hitl</artifact>
+                                <artifact>a2a-rocketmq</artifact>
+                                <artifact>agentscope-client</artifact>
+                                <artifact>agentscope-server</artifact>
+                                <artifact>graceful-shutdown</artifact>
+                                <artifact>handoffs</artifact>
+                                <artifact>pipeline</artifact>
+                                <artifact>routing</artifact>
+                                <artifact>skills</artifact>
+                                <artifact>subagent</artifact>
+                                <artifact>supervisor</artifact>
+                                <artifact>workflow</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

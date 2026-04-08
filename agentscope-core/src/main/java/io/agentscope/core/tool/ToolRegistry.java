@@ -50,6 +50,9 @@ class ToolRegistry {
      * @param registered RegisteredToolFunction wrapper with metadata
      */
     void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.put(toolName, tool);
         registeredTools.put(toolName, registered);
     }
@@ -61,6 +64,9 @@ class ToolRegistry {
      * @return AgentTool or null if not found
      */
     AgentTool getTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return tools.get(name);
     }
 
@@ -71,6 +77,9 @@ class ToolRegistry {
      * @return RegisteredToolFunction or null if not found
      */
     RegisteredToolFunction getRegisteredTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return registeredTools.get(name);
     }
 
@@ -98,8 +107,27 @@ class ToolRegistry {
      * @param toolName Tool name to remove
      */
     void removeTool(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.remove(toolName);
         registeredTools.remove(toolName);
+    }
+
+    /**
+     * Atomically remove a tool only if the current instance matches the expected one.
+     * Uses {@link ConcurrentHashMap#remove(Object, Object)} to avoid TOCTOU races.
+     *
+     * @param toolName Tool name to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    boolean removeToolIfSame(String toolName, AgentTool expected) {
+        boolean removed = tools.remove(toolName, expected);
+        if (removed) {
+            registeredTools.remove(toolName);
+        }
+        return removed;
     }
 
     /**
