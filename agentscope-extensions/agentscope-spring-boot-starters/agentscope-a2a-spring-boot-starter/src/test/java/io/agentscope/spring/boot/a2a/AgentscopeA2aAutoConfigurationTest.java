@@ -32,6 +32,8 @@ import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.time.Duration;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -46,6 +48,8 @@ import org.springframework.web.context.ConfigurableWebApplicationContext;
  */
 class AgentscopeA2aAutoConfigurationTest {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(AgentscopeA2aAutoConfigurationTest.class);
     private final WebApplicationContextRunner contextRunner =
             new WebApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
@@ -183,11 +187,13 @@ class AgentscopeA2aAutoConfigurationTest {
                                 "server.address=192.168.1.100",
                                 "server.port=8081",
                                 "server.servlet.context-path=/api");
+        log.info("192.168.1.100/api");
         contextRunner.run(
                 context -> {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
+                    log.info("agentCard {}", agentCard.url());
                     Assertions.assertEquals("http://192.168.1.100:8081/api", agentCard.url());
                     // Verify additional interfaces also contain the context-path
                     assertThat(agentCard.additionalInterfaces()).isNotEmpty();
@@ -206,11 +212,13 @@ class AgentscopeA2aAutoConfigurationTest {
                                 ReActAgent.class,
                                 () -> ReActAgent.builder().name("mockAgent").build())
                         .withPropertyValues("server.servlet.context-path=/myapp/v1");
+        log.info("server.servlet.context-path=/myapp/v1");
         contextRunner.run(
                 context -> {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
+                    log.info(agentCard.url());
                     // URL should contain the context-path
                     assertThat(agentCard.url()).contains("/myapp/v1");
                 });
