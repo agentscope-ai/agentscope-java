@@ -33,7 +33,6 @@ import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import io.agentscope.spring.boot.a2a.properties.Constants;
 import io.agentscope.spring.boot.a2a.runner.ReActAgentWithStarterRunner;
 import java.util.List;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
