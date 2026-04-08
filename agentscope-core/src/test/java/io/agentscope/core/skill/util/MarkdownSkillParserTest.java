@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
-import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -291,8 +290,7 @@ class MarkdownSkillParserTest {
                     assertThrows(
                             IllegalArgumentException.class,
                             () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
-            assertTrue(exception.getMessage().contains("expected 'key: value' format"));
+            assertTrue(exception.getMessage().contains("Invalid YAML frontmatter"));
         }
 
         @Test
@@ -304,7 +302,48 @@ class MarkdownSkillParserTest {
                     assertThrows(
                             IllegalArgumentException.class,
                             () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
+            assertTrue(exception.getMessage().contains("top-level mapping"));
+        }
+
+        @Test
+        @DisplayName("Should tolerate nested YAML fields and keep scalar metadata")
+        void testNestedYamlFields() {
+            String markdown =
+                    "---\n"
+                            + "name: test-skill\n"
+                            + "description: Simple description\n"
+                            + "references:\n"
+                            + "  - https://example.com/spec\n"
+                            + "metadata:\n"
+                            + "  owner: platform\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test-skill", parsed.getMetadata().get("name"));
+            assertEquals("Simple description", parsed.getMetadata().get("description"));
+            assertFalse(parsed.getMetadata().containsKey("references"));
+            assertFalse(parsed.getMetadata().containsKey("metadata"));
+        }
+
+        @Test
+        @DisplayName("Should parse multiline scalar values")
+        void testMultilineScalarValues() {
+            String markdown =
+                    "---\n"
+                            + "name: test-skill\n"
+                            + "description: |\n"
+                            + "  First line\n"
+                            + "  Second line\n"
+                            + "---\n"
+                            + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test-skill", parsed.getMetadata().get("name"));
+            assertTrue(parsed.getMetadata().get("description").contains("First line"));
+            assertTrue(parsed.getMetadata().get("description").contains("Second line"));
         }
     }
 
@@ -498,7 +537,7 @@ class MarkdownSkillParserTest {
         @Test
         @DisplayName("Should maintain immutability")
         void testImmutability() {
-            Map<String, String> originalMetadata = new HashMap<>();
+            Map<String, String> originalMetadata = new java.util.HashMap<>();
             originalMetadata.put("key", "value");
 
             ParsedMarkdown parsed = new ParsedMarkdown(originalMetadata, "content");
