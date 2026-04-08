@@ -239,7 +239,7 @@ McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
         .buildSync();
 ```
 
-### elicitation 支持
+### elicitation support
 
 The elicitation feature in MCP enables interactive information collection during the invocation of MCP server-side tools.
 
