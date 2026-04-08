@@ -44,7 +44,7 @@
             <dependency>
                 <groupId>co.elastic.clients</groupId>
                 <artifactId>elasticsearch-java</artifactId>
-                <version>9.3.2</version>
+                <version>9.3.3</version>
             </dependency>
 
             <!-- Spring Boot BOM -->

@@ -20,6 +20,7 @@ import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PendingToolRecoveryHook;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
@@ -29,6 +30,7 @@ import io.agentscope.core.hook.PreSummaryEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryMode;
@@ -37,6 +39,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -55,6 +58,9 @@ import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.shutdown.AgentShuttingDownException;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.shutdown.PartialReasoningPolicy;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.state.AgentMetaState;
@@ -64,6 +70,7 @@ import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -129,6 +136,8 @@ import reactor.core.publisher.Mono;
 public class ReActAgent extends StructuredOutputCapableAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
+    private static final GracefulShutdownManager shutdownManager =
+            GracefulShutdownManager.getInstance();
 
     // ==================== Core Dependencies ====================
 
@@ -138,6 +147,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
+    private final GenerateOptions generateOptions;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
@@ -159,6 +169,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
+        this.generateOptions = builder.generateOptions;
         this.planNotebook = builder.planNotebook;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.statePersistence =
@@ -222,7 +233,14 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @param sessionKey the session identifier
      */
     @Override
+    public boolean loadIfExists(Session session, SessionKey sessionKey) {
+        shutdownManager.bindSession(this, session, sessionKey);
+        return super.loadIfExists(session, sessionKey);
+    }
+
+    @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
+        shutdownManager.bindSession(this, session, sessionKey);
         // Load memory if managed
         if (statePersistence.memoryManaged()) {
             memory.loadFrom(session, sessionKey);
@@ -252,9 +270,45 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             return executeIteration(0);
         }
 
-        // Has pending tools -> validate and add tool results
-        validateAndAddToolResults(msgs, pendingIds);
-        return hasPendingToolUse() ? acting(0) : executeIteration(0);
+        // Has pending tools but no input -> resume (execute pending tools directly)
+        if (msgs == null || msgs.isEmpty()) {
+            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+        }
+
+        // Has pending tools + input -> check if user provided tool results
+        List<ToolResultBlock> providedResults =
+                msgs.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .toList();
+
+        if (!providedResults.isEmpty()) {
+            // User provided tool results -> validate and add
+            validateAndAddToolResults(msgs, pendingIds);
+            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+        }
+
+        // If PendingToolRecoveryHook is enabled, pending state should have been
+        // patched during PreCallEvent. If we still reach here, the hook was disabled
+        // and the user did not provide tool results — this is an unrecoverable state.
+        throw new IllegalStateException(
+                "Pending tool calls exist without results. "
+                        + "Enable PendingToolRecoveryHook or provide tool results. "
+                        + "Pending IDs: "
+                        + pendingIds);
+    }
+
+    /**
+     * Build a {@link ToolResultBlock} representing a tool execution error.
+     *
+     * @param toolId the id of the tool call that failed
+     * @param errorMessage the human-readable error description
+     * @return a {@link ToolResultBlock} containing the formatted error message
+     */
+    private static ToolResultBlock buildErrorToolResult(String toolId, String errorMessage) {
+        return ToolResultBlock.builder()
+                .id(toolId)
+                .output(List.of(TextBlock.builder().text("[ERROR] " + errorMessage).build()))
+                .build();
     }
 
     /**
@@ -437,10 +491,19 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 .onErrorResume(
                         InterruptedException.class,
                         error -> {
-                            // Save accumulated message before propagating interrupt
                             Msg msg = context.buildFinalMessage();
                             if (msg != null) {
-                                memory.addMessage(msg);
+                                boolean discard =
+                                        getInterruptSource() == InterruptSource.SYSTEM
+                                                && shutdownManager
+                                                                .getConfig()
+                                                                .partialReasoningPolicy()
+                                                        == PartialReasoningPolicy.DISCARD;
+                                // Manually interruption will save the msg, while system
+                                // interruption will discard on specific config
+                                if (!discard) {
+                                    memory.addMessage(msg);
+                                }
                             }
                             return Mono.error(error);
                         })
@@ -593,6 +656,10 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     /**
      * Execute tool calls and return paired results.
      *
+     * <p>If tool execution fails (timeout, error, etc.), this method generates error tool results
+     * for all pending tool calls instead of propagating the error. This ensures the agent can
+     * continue processing and the model receives proper error feedback.
+     *
      * @param toolCalls The list of tool calls (potentially modified by PreActingEvent hooks)
      * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
      */
@@ -603,7 +670,37 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                         results ->
                                 IntStream.range(0, toolCalls.size())
                                         .mapToObj(i -> Map.entry(toolCalls.get(i), results.get(i)))
-                                        .toList());
+                                        .toList())
+                .onErrorResume(
+                        Exception.class,
+                        error -> {
+                            // Preserve interruption signal for agent stop policy
+                            if (error instanceof InterruptedException) {
+                                return Mono.error(error);
+                            }
+                            // Generate error tool results for all pending tool calls.
+                            // Only catch Exception subclasses; critical JVM errors
+                            // (e.g. OutOfMemoryError) are left to propagate.
+                            String errorMsg = ExceptionUtils.getErrorMessage(error);
+                            log.error(
+                                    "Tool execution failed, generating error results for {} tool"
+                                            + " calls",
+                                    toolCalls.size(),
+                                    error);
+                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> errorResults =
+                                    toolCalls.stream()
+                                            .map(
+                                                    toolCall -> {
+                                                        ToolResultBlock errorResult =
+                                                                buildErrorToolResult(
+                                                                        toolCall.getId(),
+                                                                        "Tool execution failed: "
+                                                                                + errorMsg);
+                                                        return Map.entry(toolCall, errorResult);
+                                                    })
+                                            .toList();
+                            return Mono.just(errorResults);
+                        });
     }
 
     /**
@@ -787,11 +884,17 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected GenerateOptions buildGenerateOptions() {
-        GenerateOptions.Builder builder = GenerateOptions.builder();
+        // Start with user-configured generateOptions if available
+        GenerateOptions baseOptions = generateOptions;
+
+        // If modelExecutionConfig is set, merge it into the options
         if (modelExecutionConfig != null) {
-            builder.executionConfig(modelExecutionConfig);
+            GenerateOptions execConfigOptions =
+                    GenerateOptions.builder().executionConfig(modelExecutionConfig).build();
+            baseOptions = GenerateOptions.mergeOptions(execConfigOptions, baseOptions);
         }
-        return builder.build();
+
+        return baseOptions != null ? baseOptions : GenerateOptions.builder().build();
     }
 
     // ==================== Hook Notification Methods ====================
@@ -860,6 +963,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             this, model.getModelName(), null, chunkMsg, accumulated);
@@ -902,6 +1010,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             .role(chunkMsg.getRole())
                             .content(accumulatedContent)
                             .build();
+            if (context.getChatUsage() != null) {
+                accumulated
+                        .getMetadata()
+                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+            }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(
                             this, model.getModelName(), generateOptions, chunkMsg, accumulated);
@@ -913,6 +1026,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        if (context.getSource() == InterruptSource.SYSTEM) {
+            shutdownManager.saveOnInterruptObserved(this);
+            return Mono.error(new AgentShuttingDownException());
+        }
+
         String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
 
         Msg recoveryMsg =
@@ -963,6 +1081,15 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         return planNotebook;
     }
 
+    /**
+     * Gets the configured generation options for this agent.
+     *
+     * @return The generation options, or null if not configured
+     */
+    public GenerateOptions getGenerateOptions() {
+        return generateOptions;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -980,6 +1107,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private int maxIters = 10;
         private ExecutionConfig modelExecutionConfig;
         private ExecutionConfig toolExecutionConfig;
+        private GenerateOptions generateOptions;
         private final Set<Hook> hooks = new LinkedHashSet<>();
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
@@ -987,6 +1115,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private PlanNotebook planNotebook;
         private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
+        private boolean enablePendingToolRecovery = false;
 
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
@@ -1126,6 +1255,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         }
 
         /**
+         * Enables or disables automatic recovery from orphaned pending tool calls.
+         *
+         * <p>When enabled , a {@link PendingToolRecoveryHook} is automatically
+         * registered to detect and patch orphaned pending tool calls with synthetic error
+         * results before agent processing begins. This prevents {@link IllegalStateException}
+         * when tool execution fails, times out, or is interrupted.
+         *
+         * <p>Disable this if you prefer to handle pending tool calls manually, for example
+         * through HITL (Human-in-the-loop) mechanisms or custom error handling strategies.
+         *
+         * @param enable true to enable auto-recovery, false to disable
+         * @return This builder instance for method chaining
+         * @see PendingToolRecoveryHook
+         */
+        public Builder enablePendingToolRecovery(boolean enable) {
+            this.enablePendingToolRecovery = enable;
+            return this;
+        }
+
+        /**
          * Sets the execution configuration for model API calls.
          *
          * <p>This configuration controls timeout, retry behavior, and backoff strategy for
@@ -1154,6 +1303,39 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          */
         public Builder toolExecutionConfig(ExecutionConfig toolExecutionConfig) {
             this.toolExecutionConfig = toolExecutionConfig;
+            return this;
+        }
+
+        /**
+         * Sets the generation options for model API calls.
+         *
+         * <p>This configuration controls LLM generation parameters such as temperature, topP,
+         * maxTokens, frequencyPenalty, presencePenalty, etc. These options are passed to the
+         * model during the reasoning phase.
+         *
+         * <p><b>Example usage:</b>
+         * <pre>{@code
+         * ReActAgent agent = ReActAgent.builder()
+         *     .name("assistant")
+         *     .model(model)
+         *     .generateOptions(GenerateOptions.builder()
+         *         .temperature(0.7)
+         *         .topP(0.9)
+         *         .maxTokens(1000)
+         *         .build())
+         *     .build();
+         * }</pre>
+         *
+         * <p><b>Note:</b> If both generateOptions and modelExecutionConfig are set,
+         * the modelExecutionConfig's executionConfig will be merged into the generateOptions,
+         * with modelExecutionConfig taking precedence for execution settings.
+         *
+         * @param generateOptions The generation options for model calls, can be null
+         * @return This builder instance for method chaining
+         * @see GenerateOptions
+         */
+        public Builder generateOptions(GenerateOptions generateOptions) {
+            this.generateOptions = generateOptions;
             return this;
         }
 
@@ -1360,6 +1542,11 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 agentToolkit.registerMetaTool();
             }
 
+            // Register PendingToolRecoveryHook if enabled
+            if (enablePendingToolRecovery) {
+                hooks.add(new PendingToolRecoveryHook());
+            }
+
             // Configure long-term memory if provided
             if (longTermMemory != null) {
                 configureLongTermMemory(agentToolkit);
@@ -1439,7 +1626,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 case AGENTIC -> {
                     // Register knowledge retrieval tools
                     KnowledgeRetrievalTools tools =
-                            new KnowledgeRetrievalTools(aggregatedKnowledge);
+                            new KnowledgeRetrievalTools(aggregatedKnowledge, retrieveConfig);
                     agentToolkit.registerTool(tools);
                 }
                 case NONE -> {

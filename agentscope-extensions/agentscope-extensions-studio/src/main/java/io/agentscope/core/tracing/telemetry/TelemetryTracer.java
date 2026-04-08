@@ -269,7 +269,7 @@ public class TelemetryTracer implements Tracer {
          * @return This builder
          */
         public Builder headers(Map<String, String> headers) {
-            this.headers = new java.util.HashMap<>(headers);
+            this.headers = new HashMap<>(headers);
             return this;
         }
 

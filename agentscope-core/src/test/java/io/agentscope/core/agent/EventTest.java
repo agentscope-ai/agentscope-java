@@ -24,6 +24,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -232,5 +233,30 @@ class EventTest {
         // All events should have the same message ID
         assertEquals(event1.getMessageId(), event2.getMessageId());
         assertEquals(event2.getMessageId(), event3.getMessageId());
+    }
+
+    @Test
+    void testEventJsonSerializationIsLastFieldName() {
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Test").build()))
+                        .build();
+
+        Event event = new Event(EventType.REASONING, msg, false);
+        String json = JsonUtils.getJsonCodec().toJson(event);
+
+        // BUG: Jackson serializes boolean field "isLast" as "last" because
+        // the getter isLast() follows JavaBeans convention for boolean (is-prefix stripped).
+        // The @JsonProperty("isLast") on the constructor only affects deserialization.
+        assertTrue(
+                json.contains("\"isLast\""), "JSON should contain 'isLast' key, but got: " + json);
+        assertFalse(
+                json.contains("\"last\""), "JSON should NOT contain 'last' key, but got: " + json);
+
+        // Verify round-trip: deserialize back should preserve isLast value
+        Event deserialized = JsonUtils.getJsonCodec().fromJson(json, Event.class);
+        assertEquals(event.isLast(), deserialized.isLast());
     }
 }
