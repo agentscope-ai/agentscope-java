@@ -88,8 +88,22 @@ public class AgentscopeA2aAutoConfiguration {
             Environment environment,
             List<AgentRegistry> agentRegistries) {
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
-        builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
-        builder.deploymentProperties(buildDeploymentProperties(environment));
+        ConfigurableAgentCard configurableAgentCard =
+                buildConfigurableAgentCard(agentCardProperties);
+        DeploymentProperties deploymentProperties = buildDeploymentProperties(environment);
+        log.info(
+                "A2A auto config input: card.url={}, card.preferredTransport={},"
+                        + " card.additionalInterfaces={}",
+                configurableAgentCard.getUrl(),
+                configurableAgentCard.getPreferredTransport(),
+                configurableAgentCard.getAdditionalInterfaces());
+        log.info(
+                "A2A auto config input: deployment.host={}, deployment.port={}, deployment.path={}",
+                deploymentProperties.host(),
+                deploymentProperties.port(),
+                deploymentProperties.path());
+        builder.agentCard(configurableAgentCard);
+        builder.deploymentProperties(deploymentProperties);
         builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
         agentRegistries.forEach(builder::withAgentRegistry);
         return builder.build();
@@ -149,7 +163,12 @@ public class AgentscopeA2aAutoConfiguration {
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
         String defaultServerExportContextPath =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_CONTEXT_PATH);
-        log.info("defaultServerExportContextPath, {}", defaultServerExportContextPath);
+        log.info(
+                "defaultServerExportAddress={}, defaultServerExportPort={},"
+                        + " defaultServerExportContextPath={}",
+                defaultServerExportAddress,
+                defaultServerExportPort,
+                defaultServerExportContextPath);
         result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);

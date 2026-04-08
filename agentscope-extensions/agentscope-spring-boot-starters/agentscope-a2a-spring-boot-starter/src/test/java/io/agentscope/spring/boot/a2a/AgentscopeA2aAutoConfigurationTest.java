@@ -193,6 +193,9 @@ class AgentscopeA2aAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
                     AgentCard agentCard = server.getAgentCard();
+                    log.info("preferredTransport={}", agentCard.preferredTransport());
+                    log.info("interfaces={}", agentCard.additionalInterfaces());
+                    log.info("finalUrl={}", agentCard.url());
                     log.info("agentCard {}", agentCard.url());
                     Assertions.assertEquals("http://192.168.1.100:8081/api", agentCard.url());
                     // Verify additional interfaces also contain the context-path
