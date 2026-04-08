@@ -585,7 +585,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                                                         customPrompt))
                                         .build())
                         .build());
-        newMessages.add(message);
+
+        // Convert tool-related messages to text format to avoid triggering tool call/tool result
+        // detection in the compression context, which would cause model errors
+        Msg messageForCompression = convertToolMessageToText(message);
+        newMessages.add(messageForCompression);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -638,6 +642,85 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 .name(message.getName())
                 .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
+                .build();
+    }
+
+    /**
+     * Convert tool-related messages (ToolUse or ToolResult) to plain text format.
+     *
+     * <p>This is necessary because when large messages are placed in the compression context,
+     * tool call/tool result structures may trigger the model's tool detection mechanism,
+     * causing errors. Converting them to plain text avoids this issue.
+     *
+     * @param message the message to convert
+     * @return a text-formatted message if the original was a tool message, otherwise the original
+     *         message unchanged
+     */
+    private Msg convertToolMessageToText(Msg message) {
+        if (message == null) {
+            return message;
+        }
+
+        // Only convert tool-related messages
+        if (!MsgUtils.isToolMessage(message)) {
+            return message;
+        }
+
+        StringBuilder textContent = new StringBuilder();
+
+        // Handle ToolUseBlock messages
+        if (message.hasContentBlocks(ToolUseBlock.class)) {
+            textContent.append("[Tool Call]\n");
+            for (var block : message.getContent()) {
+                if (block instanceof ToolUseBlock) {
+                    ToolUseBlock toolUse = (ToolUseBlock) block;
+                    textContent.append("Tool: ").append(toolUse.getName()).append("\n");
+                    if (toolUse.getId() != null) {
+                        textContent.append("ID: ").append(toolUse.getId()).append("\n");
+                    }
+                    if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
+                        textContent.append("Arguments: ").append(toolUse.getContent()).append("\n");
+                    }
+                }
+            }
+        }
+
+        // Handle ToolResultBlock messages
+        if (message.hasContentBlocks(ToolResultBlock.class) || message.getRole() == MsgRole.TOOL) {
+            textContent.append("[Tool Result]\n");
+            for (var block : message.getContent()) {
+                if (block instanceof ToolResultBlock) {
+                    ToolResultBlock toolResult = (ToolResultBlock) block;
+                    textContent.append("Tool: ").append(toolResult.getName()).append("\n");
+                    if (toolResult.getId() != null) {
+                        textContent.append("ID: ").append(toolResult.getId()).append("\n");
+                    }
+                    // Extract text content from output
+                    if (toolResult.getOutput() != null) {
+                        for (var outputBlock : toolResult.getOutput()) {
+                            if (outputBlock instanceof TextBlock) {
+                                String text = ((TextBlock) outputBlock).getText();
+                                if (text != null) {
+                                    textContent.append("Output: ").append(text).append("\n");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no content was extracted, use a fallback message
+        if (textContent.length() == 0) {
+            textContent.append("[Tool message with no extractable content]");
+        }
+
+        // Return as ASSISTANT role with text content to avoid tool detection
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name(message.getName())
+                .content(TextBlock.builder().text(textContent.toString().trim()).build())
+                .metadata(message.getMetadata())
                 .build();
     }
 
