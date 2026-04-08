@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (检索增强生成)" href="rag.html">
+    <meta property="article:modified_time" content="2026-04-08T07:03:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (检索增强生成)" href="rag.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/hook.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -690,6 +690,44 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </pre></div>
 </div>
 </section>
+<section id="jsonl">
+<h2>内置 JSONL 跟踪导出器<a class="headerlink" href="#jsonl" title="Link to this heading">¶</a></h2>
+<p>为了便于本地调试和离线排障，AgentScope Java 提供了一个内置的 JSONL 导出器：</p>
+<blockquote>
+<div><p><strong>警告</strong>：JSONL 跟踪导出器会将完整的 prompt、消息、工具输入以及错误堆栈
+写入本地文件。这些记录可能包含敏感用户数据、凭据或其他机密信息，
+因此只能在受信任的环境中启用，并应将输出文件按敏感数据处理。</p>
+</div></blockquote>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.recorder.JsonlTraceExporter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.io.IOException</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">JsonlTraceExample</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">IOException</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">JsonlTraceExporter</span><span class="w"> </span><span class="n">exporter</span><span class="w"> </span><span class="o">=</span>
+<span class="w">                </span><span class="n">JsonlTraceExporter</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;logs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope-trace.jsonl&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">includeReasoningChunks</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// 可选</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">includeActingChunks</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">    </span><span class="c1">// 可选</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">exporter</span><span class="p">))</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="c1">// 在 exporter 关闭前使用 agent</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -745,7 +783,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-04-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -796,6 +834,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ul>
 </li>
 <li><a class="reference internal" href="#id11">完整示例</a></li>
+<li><a class="reference internal" href="#jsonl">内置 JSONL 跟踪导出器</a></li>
 </ul>
 </li>
 </ul>

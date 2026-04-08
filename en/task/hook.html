@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (Retrieval-Augmented Generation)" href="rag.html">
+    <meta property="article:modified_time" content="2026-04-08T07:03:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (Retrieval-Augmented Generation)" href="rag.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/hook.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -613,6 +613,44 @@
 </div>
 <p>Hooks are immutable after agent construction.</p>
 </section>
+<section id="built-in-jsonl-trace-exporter">
+<h2>Built-in JSONL Trace Exporter<a class="headerlink" href="#built-in-jsonl-trace-exporter" title="Link to this heading">¶</a></h2>
+<p>For local debugging and offline troubleshooting, AgentScope Java provides a built-in JSONL exporter:</p>
+<blockquote>
+<div><p>Warning: the JSONL trace exporter writes full prompts, messages, tool inputs, and error stack
+traces to local files. These records may contain sensitive user data, credentials, or other
+secrets, so only enable it in trusted environments and handle the output file as sensitive data.</p>
+</div></blockquote>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.recorder.JsonlTraceExporter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.Model</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.io.IOException</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">JsonlTraceExample</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">Model</span><span class="w"> </span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">IOException</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">(</span><span class="n">JsonlTraceExporter</span><span class="w"> </span><span class="n">exporter</span><span class="w"> </span><span class="o">=</span>
+<span class="w">                </span><span class="n">JsonlTraceExporter</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;logs&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;agentscope-trace.jsonl&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">includeReasoningChunks</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// optional</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">includeActingChunks</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">    </span><span class="c1">// optional</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">exporter</span><span class="p">))</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="c1">// Use the agent while the exporter is still open</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
 <section id="hook-examples">
 <h2>Hook Examples<a class="headerlink" href="#hook-examples" title="Link to this heading">¶</a></h2>
 <section id="monitoring-tool-execution">
@@ -745,7 +783,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-04-08</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -790,6 +828,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ul>
 </li>
 <li><a class="reference internal" href="#configure-hooks-in-agent">Configure Hooks in Agent</a></li>
+<li><a class="reference internal" href="#built-in-jsonl-trace-exporter">Built-in JSONL Trace Exporter</a></li>
 <li><a class="reference internal" href="#hook-examples">Hook Examples</a><ul>
 <li><a class="reference internal" href="#monitoring-tool-execution">Monitoring Tool Execution</a></li>
 <li><a class="reference internal" href="#monitoring-errors">Monitoring Errors</a></li>
