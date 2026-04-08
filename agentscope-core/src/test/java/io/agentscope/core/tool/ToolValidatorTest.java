@@ -41,7 +41,10 @@ import org.junit.jupiter.api.Test;
 class ToolValidatorTest {
 
     static class BeanPayload {
+        @ToolParam(name = "requiredField", description = "required field", required = true)
         private String requiredField;
+
+        @ToolParam(name = "optionalField", description = "optional field", required = false)
         private String optionalField;
 
         public String getRequiredField() {
@@ -683,6 +686,36 @@ class ToolValidatorTest {
 
             String result = ToolValidator.validateInput(input, toolSchema);
             assertNull(result, "Explicit null optional nested field should be accepted");
+        }
+
+        @Test
+        @DisplayName("Should reject explicit null required nested bean field")
+        void testGeneratedBeanSchema_ExplicitNullRequiredField() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+
+            String input = "{\"payload\":{\"requiredField\":null}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNotNull(result, "Explicit null required nested field should be rejected");
+        }
+
+        @Test
+        @DisplayName("Should preserve unknown null field for additionalProperties validation")
+        void testGeneratedBeanSchema_UnknownNullFieldStillFails() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payloadSchema =
+                    (Map<String, Object>)
+                            ((Map<String, Object>) toolSchema.get("properties")).get("payload");
+            payloadSchema.put("additionalProperties", false);
+
+            String input = "{\"payload\":{\"requiredField\":\"value\",\"unknownField\":null}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNotNull(result, "Unknown null field should still be rejected");
+            assertTrue(
+                    result.toLowerCase().contains("additional") || result.contains("unknownField"),
+                    "Error should indicate unknown/additional property, but got: " + result);
         }
     }
 

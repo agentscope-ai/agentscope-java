@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -85,7 +86,7 @@ public final class ToolValidator {
             // Create Schema from the schema string
             Schema jsonSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
 
-            String normalizedInput = normalizeOptionalNullFields(input);
+            String normalizedInput = normalizeOptionalNullFields(input, schemaJson);
 
             // Validate
             List<Error> errors = jsonSchema.validate(normalizedInput, InputFormat.JSON);
@@ -108,44 +109,96 @@ public final class ToolValidator {
      * <p>This treats explicit nulls the same as omitted optional fields, while still allowing
      * required-field validation to fail naturally after the null-valued property is removed.
      */
-    private static String normalizeOptionalNullFields(String input) throws Exception {
+    private static String normalizeOptionalNullFields(String input, String schemaJson)
+            throws Exception {
         if (input == null || input.isBlank()) {
             return input;
         }
 
         JsonNode root = OBJECT_MAPPER.readTree(input);
-        pruneNullObjectFields(root);
+        JsonNode schemaRoot = OBJECT_MAPPER.readTree(schemaJson);
+        pruneOptionalNullObjectFields(root, schemaRoot, schemaRoot);
         return OBJECT_MAPPER.writeValueAsString(root);
     }
 
-    private static void pruneNullObjectFields(JsonNode node) {
-        if (node == null) {
+    private static void pruneOptionalNullObjectFields(
+            JsonNode inputNode, JsonNode schemaNode, JsonNode schemaRoot) {
+        if (inputNode == null || schemaNode == null) {
             return;
         }
 
-        if (node.isObject()) {
-            ObjectNode objectNode = (ObjectNode) node;
-            List<String> nullFieldNames = new java.util.ArrayList<>();
+        JsonNode resolvedSchema = resolveSchemaNode(schemaNode, schemaRoot);
+        if (resolvedSchema == null) {
+            return;
+        }
+
+        if (inputNode.isObject()) {
+            ObjectNode objectNode = (ObjectNode) inputNode;
+            JsonNode propertiesNode = resolvedSchema.get("properties");
+            Set<String> requiredFields = getRequiredFields(resolvedSchema);
+            JsonNode additionalPropertiesNode = resolvedSchema.get("additionalProperties");
+            List<String> nullFieldNames = new ArrayList<>();
             objectNode
                     .fields()
                     .forEachRemaining(
                             entry -> {
-                                if (entry.getValue().isNull()) {
+                                JsonNode propertySchema =
+                                        propertiesNode != null
+                                                ? propertiesNode.get(entry.getKey())
+                                                : null;
+                                if (entry.getValue().isNull()
+                                        && propertySchema != null
+                                        && !requiredFields.contains(entry.getKey())) {
                                     nullFieldNames.add(entry.getKey());
                                 } else {
-                                    pruneNullObjectFields(entry.getValue());
+                                    JsonNode childSchema = propertySchema;
+                                    if (childSchema == null
+                                            && additionalPropertiesNode != null
+                                            && additionalPropertiesNode.isObject()) {
+                                        childSchema = additionalPropertiesNode;
+                                    }
+                                    if (childSchema != null) {
+                                        pruneOptionalNullObjectFields(
+                                                entry.getValue(), childSchema, schemaRoot);
+                                    }
                                 }
                             });
             nullFieldNames.forEach(objectNode::remove);
             return;
         }
 
-        if (node.isArray()) {
-            ArrayNode arrayNode = (ArrayNode) node;
+        if (inputNode.isArray()) {
+            ArrayNode arrayNode = (ArrayNode) inputNode;
+            JsonNode itemsSchema = resolvedSchema.get("items");
             for (JsonNode item : arrayNode) {
-                pruneNullObjectFields(item);
+                if (itemsSchema != null) {
+                    pruneOptionalNullObjectFields(item, itemsSchema, schemaRoot);
+                }
             }
         }
+    }
+
+    private static JsonNode resolveSchemaNode(JsonNode schemaNode, JsonNode schemaRoot) {
+        JsonNode current = schemaNode;
+        while (current != null && current.has("$ref")) {
+            String ref = current.get("$ref").asText();
+            if (!ref.startsWith("#/")) {
+                return current;
+            }
+            current = schemaRoot.at(ref.substring(1));
+        }
+        return current;
+    }
+
+    private static Set<String> getRequiredFields(JsonNode schemaNode) {
+        JsonNode requiredNode = schemaNode.get("required");
+        if (requiredNode == null || !requiredNode.isArray()) {
+            return Set.of();
+        }
+
+        Set<String> requiredFields = new HashSet<>();
+        requiredNode.forEach(item -> requiredFields.add(item.asText()));
+        return requiredFields;
     }
 
     // ==================== HITL Validation ====================
