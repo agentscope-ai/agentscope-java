@@ -74,11 +74,7 @@ class DeploymentPropertiesTest {
             String path = "/api";
 
             DeploymentProperties deploymentProperties =
-                    new DeploymentProperties.Builder()
-                            .host(host)
-                            .port(port)
-                            .path(path)
-                            .build();
+                    new DeploymentProperties.Builder().host(host).port(port).path(path).build();
 
             assertNotNull(deploymentProperties);
             assertEquals(host, deploymentProperties.host());
@@ -174,8 +170,7 @@ class DeploymentPropertiesTest {
             Integer port = 8080;
             String path = "/api";
 
-            DeploymentProperties deploymentProperties =
-                    new DeploymentProperties(host, port, path);
+            DeploymentProperties deploymentProperties = new DeploymentProperties(host, port, path);
 
             assertNotNull(deploymentProperties);
             assertEquals(host, deploymentProperties.host());
@@ -189,8 +184,7 @@ class DeploymentPropertiesTest {
             String host = "localhost";
             Integer port = 8080;
 
-            DeploymentProperties deploymentProperties =
-                    new DeploymentProperties(host, port, null);
+            DeploymentProperties deploymentProperties = new DeploymentProperties(host, port, null);
 
             assertNotNull(deploymentProperties);
             assertEquals(host, deploymentProperties.host());
@@ -205,10 +199,8 @@ class DeploymentPropertiesTest {
             int port = 8080;
             String path = "/api";
 
-            DeploymentProperties deploymentProperties1 =
-                    new DeploymentProperties(host, port, path);
-            DeploymentProperties deploymentProperties2 =
-                    new DeploymentProperties(host, port, path);
+            DeploymentProperties deploymentProperties1 = new DeploymentProperties(host, port, path);
+            DeploymentProperties deploymentProperties2 = new DeploymentProperties(host, port, path);
 
             assertEquals(deploymentProperties1, deploymentProperties2);
             assertEquals(deploymentProperties1.hashCode(), deploymentProperties2.hashCode());
@@ -221,8 +213,7 @@ class DeploymentPropertiesTest {
             int port = 8080;
             String path = "/api";
 
-            DeploymentProperties deploymentProperties =
-                    new DeploymentProperties(host, port, path);
+            DeploymentProperties deploymentProperties = new DeploymentProperties(host, port, path);
 
             String toStringResult = deploymentProperties.toString();
             assertNotNull(toStringResult);
