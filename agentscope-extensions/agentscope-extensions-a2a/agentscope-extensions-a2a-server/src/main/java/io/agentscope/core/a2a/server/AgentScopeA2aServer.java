@@ -233,6 +233,13 @@ public class AgentScopeA2aServer {
          * @return builder instance of {@link AgentScopeA2aServer}
          */
         public Builder withTransport(TransportProperties transportProperties) {
+            log.info(
+                    "withTransport called: transportProperties={}, callerStack={}",
+                    transportProperties,
+                    java.util.Arrays.stream(Thread.currentThread().getStackTrace())
+                            .skip(2)
+                            .limit(12)
+                            .toList());
             supportedTransports.add(transportProperties);
             return this;
         }
