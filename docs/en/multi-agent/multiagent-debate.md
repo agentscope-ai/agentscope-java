@@ -362,6 +362,8 @@ Msg finalAnswer = synthesizer.call(summaryMessage).block();
 
 ## Related Documentation
 
-- [MsgHub](./msghub.md) - Message broadcasting for multi-agent conversations
+- [MsgHub](../task/msghub.md) - Message broadcasting for multi-agent conversations
 - [Pipeline](./pipeline.md) - Sequential and parallel agent execution
+- [Handoffs](./handoffs.md) - State-driven routing and transfer between agents
+- [Routing](./routing.md) - Classify and route to specialist agents
 - [Structured Output](../task/structured-output.md) - Extracting structured data from agent responses

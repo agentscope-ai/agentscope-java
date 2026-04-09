@@ -23,19 +23,29 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeInput;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.formatter.openai.dto.JsonSchema;
+import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import okhttp3.mockwebserver.Dispatcher;
@@ -113,6 +123,148 @@ class DashScopeHttpClientTest {
     @Test
     void testSelectEndpointForNullModel() {
         assertEquals(DashScopeHttpClient.TEXT_GENERATION_ENDPOINT, client.selectEndpoint(null));
+    }
+
+    // ========== EndpointType Routing Tests ==========
+
+    @Test
+    void testSelectEndpointWithExplicitText() {
+        // Explicit TEXT forces text endpoint regardless of model name
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-vl-plus", EndpointType.TEXT));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qvq-72b", EndpointType.TEXT));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.TEXT));
+    }
+
+    @Test
+    void testSelectEndpointWithExplicitMultimodal() {
+        // Explicit MULTIMODAL forces multimodal endpoint regardless of model name
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-plus", EndpointType.MULTIMODAL));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-max", EndpointType.MULTIMODAL));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.MULTIMODAL));
+    }
+
+    @Test
+    void testSelectEndpointWithAutoFallsBackToModelNameDetection() {
+        // AUTO uses model name detection
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen-vl-plus", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qvq-72b", EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint("qwen3.5-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testRequiresMultimodalApiWithEndpointType() {
+        // Explicit MULTIMODAL always returns true
+        assertTrue(client.requiresMultimodalApi("qwen-plus", EndpointType.MULTIMODAL));
+        // Explicit TEXT always returns false
+        assertFalse(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.TEXT));
+        // AUTO falls back to model name detection
+        assertFalse(client.requiresMultimodalApi("qwen-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen-vl-plus", EndpointType.AUTO));
+        assertTrue(client.requiresMultimodalApi("qwen3.5-plus", EndpointType.AUTO));
+    }
+
+    @Test
+    void testIsMultimodalModelIncludesQwen35Family() {
+        // Qwen 3.5 family is entirely multimodal (prefix-based matching)
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-plus-2026-02-15"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-flash"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3.5-397b-a17b"));
+        // qwen-3.5-plus (with hyphen before 3.5) does not match
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.5-plus"));
+    }
+
+    @Test
+    void testIsMultimodalModelPatterns() {
+        // qvq prefix
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qvq-72b"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("QVQ-MAX"));
+        // -vl pattern
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen-vl-plus"));
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-vl-max"));
+        // -asr pattern
+        assertTrue(DashScopeHttpClient.isMultimodalModel("qwen3-asr-flash"));
+        // Not multimodal
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-plus"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-max"));
+        assertFalse(DashScopeHttpClient.isMultimodalModel(null));
+        assertFalse(DashScopeHttpClient.isMultimodalModel(""));
+    }
+
+    @Test
+    void testRequestEndpointTypePassedToEndpointSelection() throws Exception {
+        // Verify that endpointType in DashScopeRequest is used for endpoint routing
+        String responseJson =
+                """
+                {
+                  "request_id": "test",
+                  "output": {
+                    "choices": [{
+                      "message": { "role": "assistant", "content": "ok" },
+                      "finish_reason": "stop"
+                    }]
+                  }
+                }
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeMessage userMsg = DashScopeMessage.builder().role("user").content("Hello").build();
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-plus")
+                        .input(new DashScopeInput(List.of(userMsg)))
+                        .parameters(new DashScopeParameters())
+                        .endpointType(EndpointType.MULTIMODAL)
+                        .build();
+
+        assertEquals(EndpointType.MULTIMODAL, request.getEndpointType());
+
+        DashScopeResponse response = client.call(request, null, null, null);
+        assertNotNull(response);
+
+        // Verify the request was sent to the multimodal endpoint
+        var recorded = mockServer.takeRequest();
+        assertTrue(
+                recorded.getPath().contains(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT),
+                "Request should be sent to multimodal endpoint, but was: " + recorded.getPath());
+    }
+
+    @Test
+    void testRequestEndpointTypeDefaultsToAuto() {
+        DashScopeRequest request = new DashScopeRequest();
+        assertEquals(EndpointType.AUTO, request.getEndpointType());
+
+        DashScopeRequest request2 =
+                new DashScopeRequest("qwen-plus", new DashScopeInput(List.of()), null);
+        assertEquals(EndpointType.AUTO, request2.getEndpointType());
+
+        DashScopeRequest request3 = DashScopeRequest.builder().model("qwen-plus").build();
+        assertEquals(EndpointType.AUTO, request3.getEndpointType());
     }
 
     @Test
@@ -957,7 +1109,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponse() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1013,12 +1165,11 @@ class DashScopeHttpClientTest {
     @Test
     void testBuildEncryptionHeader() throws Exception {
         // Generate RSA key pair for testing
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
-        java.security.KeyPair keyPair = keyGen.generateKeyPair();
-        java.security.PublicKey publicKey = keyPair.getPublic();
-        String publicKeyBase64 =
-                java.util.Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        KeyPair keyPair = keyGen.generateKeyPair();
+        PublicKey publicKey = keyPair.getPublic();
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         // Create encrypted client
         DashScopeHttpClient encryptedClient =
@@ -1087,7 +1238,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testCallWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1139,7 +1290,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testStreamWithEncryptionFullFlow() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1249,8 +1400,55 @@ class DashScopeHttpClientTest {
     }
 
     @Test
+    void testBuildRequestBodyWithAdditionalBodyParams() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromType(User.class);
+        ResponseFormat responseFormat =
+                ResponseFormat.jsonSchema(
+                        JsonSchema.builder()
+                                .name("user_info")
+                                .description("The user information")
+                                .strict(true)
+                                .schema(schema)
+                                .build());
+
+        Map<String, Object> additionalBodyParams = new HashMap<>();
+        additionalBodyParams.put("enable_search", true);
+        additionalBodyParams.put("response_format", responseFormat);
+
+        client.call(request, null, additionalBodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        DashScopeRequest dashScopeRequest =
+                JsonUtils.getJsonCodec().fromJson(body, DashScopeRequest.class);
+        assertNotNull(dashScopeRequest);
+        assertNotNull(dashScopeRequest.getParameters());
+        assertTrue(dashScopeRequest.getParameters().getEnableSearch());
+        ResponseFormat format = dashScopeRequest.getParameters().getResponseFormat();
+        assertNotNull(format);
+        assertEquals("json_schema", format.getType());
+        assertEquals("user_info", format.getJsonSchema().getName());
+        assertEquals("The user information", format.getJsonSchema().getDescription());
+        assertTrue(format.getJsonSchema().getStrict());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties =
+                (Map<String, Object>) format.getJsonSchema().getSchema().get("properties");
+        assertTrue(properties.containsKey("name"));
+        assertTrue(properties.containsKey("age"));
+    }
+
+    @Test
     void testEncryptionHeaderAbsentWhenNoInput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1292,7 +1490,7 @@ class DashScopeHttpClientTest {
         // This test now validates: if there is no encryption context for this request,
         // encrypted output will be left as-is and deserialized as null output (graceful behavior).
 
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1306,7 +1504,7 @@ class DashScopeHttpClientTest {
 
         // Server returns an encrypted output string, but request has no input -> client has no
         // context
-        javax.crypto.SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
+        SecretKey testAesKey = DashScopeEncryptionUtils.generateAesSecretKey();
         byte[] testIv = DashScopeEncryptionUtils.generateIv();
         String originalOutputJson = "{\"choices\":[]}";
         String encryptedOutput =
@@ -1340,7 +1538,7 @@ class DashScopeHttpClientTest {
 
     @Test
     void testDecryptResponseWithNonStringOutput() throws Exception {
-        java.security.KeyPair keyPair = generateRsaKeyPair();
+        KeyPair keyPair = generateRsaKeyPair();
         String publicKeyBase64 =
                 Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
 
@@ -1414,8 +1612,8 @@ class DashScopeHttpClientTest {
                 .build();
     }
 
-    private java.security.KeyPair generateRsaKeyPair() throws Exception {
-        java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+    private KeyPair generateRsaKeyPair() throws Exception {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         return keyGen.generateKeyPair();
     }
@@ -1425,14 +1623,14 @@ class DashScopeHttpClientTest {
         return Base64.getDecoder().decode(headerMap.get("iv"));
     }
 
-    private SecretKey extractAesKeyFromRequest(
-            RecordedRequest request, java.security.PrivateKey privateKey) throws Exception {
+    private SecretKey extractAesKeyFromRequest(RecordedRequest request, PrivateKey privateKey)
+            throws Exception {
         Map<String, String> headerMap = parseEncryptionHeader(request);
         String encryptedKeyBase64 = headerMap.get("encrypt_key");
         byte[] encryptedKeyBytes = Base64.getDecoder().decode(encryptedKeyBase64);
 
-        javax.crypto.Cipher rsaCipher = javax.crypto.Cipher.getInstance("RSA");
-        rsaCipher.init(javax.crypto.Cipher.DECRYPT_MODE, privateKey);
+        Cipher rsaCipher = Cipher.getInstance("RSA");
+        rsaCipher.init(Cipher.DECRYPT_MODE, privateKey);
         byte[] decrypted = rsaCipher.doFinal(encryptedKeyBytes);
 
         String base64AesKey = new String(decrypted, StandardCharsets.UTF_8);
@@ -1446,4 +1644,12 @@ class DashScopeHttpClientTest {
         return JsonUtils.getJsonCodec()
                 .fromJson(encryptionHeader, new TypeReference<Map<String, String>>() {});
     }
+
+    private record User(
+            @JsonPropertyDescription("The user name") @JsonProperty(value = "name", required = true)
+                    String name,
+            @JsonPropertyDescription("The user age") @JsonProperty(value = "age", required = true)
+                    int age,
+            @JsonPropertyDescription("The user email address") @JsonProperty("email")
+                    String email) {}
 }

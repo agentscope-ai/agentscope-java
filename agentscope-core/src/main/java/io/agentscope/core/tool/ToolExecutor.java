@@ -19,6 +19,8 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
 import java.util.HashMap;
@@ -56,46 +58,101 @@ class ToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
 
+    private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
     private final ToolkitConfig config;
-    private final ToolMethodInvoker methodInvoker;
     private final ExecutorService executorService;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> userChunkCallback;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> internalChunkCallback;
 
     /**
      * Create a tool executor with Reactor Schedulers (recommended).
      */
     ToolExecutor(
+            Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
-            ToolkitConfig config,
-            ToolMethodInvoker methodInvoker) {
-        this(toolRegistry, groupManager, config, methodInvoker, null);
+            ToolkitConfig config) {
+        this(toolkit, toolRegistry, groupManager, config, null);
     }
 
     /**
      * Create a tool executor with custom executor service.
      */
     ToolExecutor(
+            Toolkit toolkit,
             ToolRegistry toolRegistry,
             ToolGroupManager groupManager,
             ToolkitConfig config,
-            ToolMethodInvoker methodInvoker,
             ExecutorService executorService) {
+        this.toolkit = toolkit;
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;
         this.config = config;
-        this.methodInvoker = methodInvoker;
         this.executorService = executorService;
     }
 
     /**
-     * Set chunk callback for streaming tool responses.
+     * Set the user-defined chunk callback for streaming tool responses.
      */
     void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
-        methodInvoker.setChunkCallback(callback);
+        this.userChunkCallback = callback;
+    }
+
+    /**
+     * Set the framework-internal chunk callback used by ReActAgent hooks.
+     */
+    void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        this.internalChunkCallback = callback;
+    }
+
+    /**
+     * Get the user-defined chunk callback.
+     * Used by Toolkit.copy() to preserve user callbacks during deep copy.
+     */
+    BiConsumer<ToolUseBlock, ToolResultBlock> getChunkCallback() {
+        return this.userChunkCallback;
+    }
+
+    /**
+     * Combine the user-defined and internal chunk callbacks.
+     */
+    private BiConsumer<ToolUseBlock, ToolResultBlock> getEffectiveChunkCallback() {
+        if (internalChunkCallback == null) {
+            return userChunkCallback != null
+                    ? (toolUse, chunk) ->
+                            invokeChunkCallback("user", userChunkCallback, toolUse, chunk)
+                    : null;
+        }
+        if (userChunkCallback == null) {
+            return (toolUse, chunk) ->
+                    invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+        }
+        return (toolUse, chunk) -> {
+            invokeChunkCallback("internal", internalChunkCallback, toolUse, chunk);
+            invokeChunkCallback("user", userChunkCallback, toolUse, chunk);
+        };
+    }
+
+    /**
+     * Invoke a chunk callback without allowing it to block other callbacks.
+     */
+    private void invokeChunkCallback(
+            String callbackType,
+            BiConsumer<ToolUseBlock, ToolResultBlock> callback,
+            ToolUseBlock toolUse,
+            ToolResultBlock chunk) {
+        try {
+            callback.accept(toolUse, chunk);
+        } catch (Exception e) {
+            logger.warn(
+                    "Chunk callback '{}' failed for tool '{}': {}",
+                    callbackType,
+                    toolUse.getName(),
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+                    e);
+        }
     }
 
     // ==================== Single Tool Execution ====================
@@ -107,7 +164,7 @@ class ToolExecutor {
      * @return Mono containing execution result
      */
     Mono<ToolResultBlock> execute(ToolCallParam param) {
-        return executeCore(param);
+        return TracerRegistry.get().callTool(this.toolkit, param, () -> executeCore(param));
     }
 
     /**
@@ -131,18 +188,14 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
-        // Check group activation
+        // Check tool activation
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null) {
-            String groupName = registered.getGroupName();
-            if (!groupManager.isInActiveGroup(groupName)) {
-                String errorMsg =
-                        String.format(
-                                "Unauthorized tool call: '%s' is not available",
-                                toolCall.getName());
-                logger.warn(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
+        if (registered != null && !groupManager.isActiveTool(toolCall.getName())) {
+            String errorMsg =
+                    String.format(
+                            "Unauthorized tool call: '%s' is not available", toolCall.getName());
+            logger.warn(errorMsg);
+            return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
         // Validate input against schema
@@ -164,7 +217,7 @@ class ToolExecutor {
                 ToolExecutionContext.merge(param.getContext(), toolkitContext);
 
         // Create emitter for streaming
-        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
+        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
 
         // Merge preset parameters with input
         Map<String, Object> mergedInput = new HashMap<>();
@@ -244,7 +297,7 @@ class ToolExecutor {
 
         // Parallel or sequential execution
         if (parallel) {
-            return Flux.merge(monos).collectList();
+            return Flux.mergeSequential(monos).collectList();
         }
         return Flux.concat(monos).collectList();
     }
@@ -272,6 +325,7 @@ class ToolExecutor {
         execution = applyScheduling(execution);
         execution = applyTimeout(execution, executionConfig, toolCall);
         execution = applyRetry(execution, executionConfig, toolCall);
+        execution = applyShutdownGuard(execution);
 
         // Add tool metadata and error handling
         return execution
@@ -344,5 +398,22 @@ class ToolExecutor {
                 toolCall.getName());
 
         return execution.retryWhen(retrySpec);
+    }
+
+    /**
+     * Race tool execution against the global shutdown timeout signal.
+     * When the signal fires, the tool Mono is cancelled and an error is emitted,
+     * which flows through {@code onErrorResume} into a normal {@code ToolResultBlock.error}.
+     */
+    private Mono<ToolResultBlock> applyShutdownGuard(Mono<ToolResultBlock> execution) {
+        Mono<ToolResultBlock> shutdownGuard =
+                GracefulShutdownManager.getInstance()
+                        .getShutdownTimeoutSignal()
+                        .then(
+                                Mono.error(
+                                        new RuntimeException(
+                                                "Tool execution timeout due to system graceful"
+                                                        + " shutdown.")));
+        return Mono.firstWithSignal(execution, shutdownGuard);
     }
 }

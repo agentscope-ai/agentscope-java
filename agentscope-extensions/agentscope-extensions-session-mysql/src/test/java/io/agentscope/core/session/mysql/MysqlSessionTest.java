@@ -376,6 +376,18 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should truncate session table")
+    void testTruncateAllSessions() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(0);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        int success = session.truncateAllSessions();
+
+        assertEquals(0, success);
+    }
+
+    @Test
     @DisplayName("Should not close DataSource when closing session")
     void testClose() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
@@ -499,6 +511,51 @@ public class MysqlSessionTest {
 
         assertEquals(maxLengthName, session.getDatabaseName());
         assertEquals(maxLengthName, session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept database name with hyphens")
+    void testConstructorAcceptsDatabaseNameWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "my-test-db", "my_table", true);
+
+        assertEquals("my-test-db", session.getDatabaseName());
+        assertEquals("my_table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept table name with hyphens")
+    void testConstructorAcceptsTableNameWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "my_db", "my-test-table", true);
+
+        assertEquals("my_db", session.getDatabaseName());
+        assertEquals("my-test-table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept database and table names with hyphens")
+    void testConstructorAcceptsDatabaseAndTableNamesWithHyphens() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, "xxx-xxx-xx", "test-table", true);
+
+        assertEquals("xxx-xxx-xx", session.getDatabaseName());
+        assertEquals("test-table", session.getTableName());
+    }
+
+    @Test
+    @DisplayName("Should accept name with underscore and hyphen")
+    void testConstructorAcceptsNameWithUnderscoreAndHyphen() throws SQLException {
+        when(mockStatement.execute()).thenReturn(true);
+
+        MysqlSession session =
+                new MysqlSession(mockDataSource, "my_test-db", "my_table-test", true);
+
+        assertEquals("my_test-db", session.getDatabaseName());
+        assertEquals("my_table-test", session.getTableName());
     }
 
     /** Simple test state record for testing. */

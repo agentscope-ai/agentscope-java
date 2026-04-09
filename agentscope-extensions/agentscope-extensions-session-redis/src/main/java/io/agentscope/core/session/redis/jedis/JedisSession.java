@@ -17,6 +17,7 @@ package io.agentscope.core.session.redis.jedis;
 
 import io.agentscope.core.session.ListHashUtil;
 import io.agentscope.core.session.Session;
+import io.agentscope.core.session.redis.RedisSession;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
@@ -34,6 +35,11 @@ import redis.clients.jedis.JedisPool;
 /**
  * Redis-based session implementation using Jedis.
  *
+ * @deprecated Use {@link io.agentscope.core.session.redis.RedisSession} with jedisClient instead.
+ * RedisSession provides a unified session implementation that works with multiple Redis clients.
+ * For basic usage, simple constructors are available.
+ * For advanced configuration, use {@link RedisSession#builder()}.
+ *
  * <p>This implementation stores session state in Redis with the following key structure:
  *
  * <ul>
@@ -42,14 +48,13 @@ import redis.clients.jedis.JedisPool;
  *   <li>Session marker: {@code {prefix}{sessionId}:_keys} - Redis Set tracking all state keys
  * </ul>
  *
- * <p>Features:
- *
  * <ul>
  *   <li>Incremental list storage (only appends new items)
  *   <li>Type-safe state serialization using Jackson
  *   <li>Automatic session key tracking
  * </ul>
  */
+@Deprecated
 public class JedisSession implements Session {
 
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";

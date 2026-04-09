@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -241,5 +242,45 @@ class AgentSkillTest {
         }
         AgentSkill skill4 = new AgentSkill("name", "desc", "content", manyResources);
         assertEquals(50, skill4.getResources().size());
+    }
+
+    @Test
+    @DisplayName("Should return resource paths")
+    void testGetResourcePaths() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/process.py", "print('hello')");
+        resources.put("assets/data.json", "{\"key\": \"value\"}");
+        resources.put("config.yaml", "name: test");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+        Set<String> paths = skill.getResourcePaths();
+
+        assertEquals(3, paths.size());
+        assertTrue(paths.contains("scripts/process.py"));
+        assertTrue(paths.contains("assets/data.json"));
+        assertTrue(paths.contains("config.yaml"));
+        assertThrows(UnsupportedOperationException.class, () -> paths.add("new.txt"));
+    }
+
+    @Test
+    @DisplayName("Should return resource content by path")
+    void testGetResourceByPath() {
+        Map<String, String> resources = new HashMap<>();
+        resources.put("scripts/process.py", "print('hello')");
+
+        AgentSkill skill = new AgentSkill("test", "desc", "content", resources);
+
+        assertEquals("print('hello')", skill.getResource("scripts/process.py"));
+        assertEquals(null, skill.getResource("missing.txt"));
+    }
+
+    @Test
+    @DisplayName("Should return empty paths when no resources")
+    void testGetResourcePathsNoResources() {
+        AgentSkill skill = new AgentSkill("test", "desc", "content", null);
+        Set<String> paths = skill.getResourcePaths();
+
+        assertNotNull(paths);
+        assertTrue(paths.isEmpty());
     }
 }

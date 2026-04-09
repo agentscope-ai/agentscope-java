@@ -17,9 +17,8 @@ package io.agentscope.core.skill;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -36,31 +35,40 @@ public class SkillHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        // Reset skill state and skill tool group before and after calls
-        if (event instanceof PreCallEvent preCallEvent) {
-            skillBox.deactivateAllSkills();
-            skillBox.syncToolGroupStates();
-            return Mono.just(event);
-        }
-
-        if (event instanceof PostCallEvent postCallEvent) {
-            skillBox.deactivateAllSkills();
-            skillBox.syncToolGroupStates();
-            return Mono.just(event);
-        }
-
         // Inject skill prompts
         if (event instanceof PreReasoningEvent preReasoningEvent) {
-            skillBox.syncToolGroupStates();
             String skillPrompt = skillBox.getSkillPrompt();
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                List<Msg> inputMessages = new ArrayList<>(preReasoningEvent.getInputMessages());
-                inputMessages.add(
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text(skillPrompt).build())
-                                .build());
-                preReasoningEvent.setInputMessages(inputMessages);
+                List<Msg> inputMessages = preReasoningEvent.getInputMessages();
+                int systemIndex = findFirstSystemMessageIndex(inputMessages);
+                if (systemIndex >= 0) {
+                    // Merge skill prompt into existing system message in-place (structural)
+                    Msg existingSystem = inputMessages.get(systemIndex);
+                    List<ContentBlock> mergedContent = new ArrayList<>(existingSystem.getContent());
+                    mergedContent.add(TextBlock.builder().text(skillPrompt).build());
+                    Msg mergedMsg =
+                            Msg.builder()
+                                    .id(existingSystem.getId())
+                                    .role(MsgRole.SYSTEM)
+                                    .name(existingSystem.getName())
+                                    .content(mergedContent)
+                                    .metadata(existingSystem.getMetadata())
+                                    .timestamp(existingSystem.getTimestamp())
+                                    .build();
+                    List<Msg> newMessages = new ArrayList<>(inputMessages);
+                    newMessages.set(systemIndex, mergedMsg);
+                    preReasoningEvent.setInputMessages(newMessages);
+                } else {
+                    // No existing system message, add one at the beginning
+                    List<Msg> newMessages = new ArrayList<>(inputMessages.size() + 1);
+                    newMessages.add(
+                            Msg.builder()
+                                    .role(MsgRole.SYSTEM)
+                                    .content(TextBlock.builder().text(skillPrompt).build())
+                                    .build());
+                    newMessages.addAll(inputMessages);
+                    preReasoningEvent.setInputMessages(newMessages);
+                }
             }
             return Mono.just(event);
         }
@@ -68,10 +76,19 @@ public class SkillHook implements Hook {
         return Mono.just(event);
     }
 
+    private int findFirstSystemMessageIndex(List<Msg> messages) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).getRole() == MsgRole.SYSTEM) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     @Override
     public int priority() {
-        // High priority (10) to ensure skills system prompt is added early
+        // High priority (55) to ensure skills system prompt is added early
         // before other hooks that might depend on skill system prompt
-        return 10;
+        return 55;
     }
 }

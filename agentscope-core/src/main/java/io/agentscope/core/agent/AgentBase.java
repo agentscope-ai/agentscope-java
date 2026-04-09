@@ -23,9 +23,12 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.shutdown.GracefulShutdownHook;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,12 +95,18 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
+    private static final List<Hook> systemHooks =
+            new CopyOnWriteArrayList<>(
+                    List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    // Hook non-null
+    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
+    private final AtomicReference<InterruptSource> interruptSource =
+            new AtomicReference<>(InterruptSource.USER);
 
     /**
      * Constructor for AgentBase.
@@ -133,6 +142,7 @@ public abstract class AgentBase implements StateModule, Agent {
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
+        sortHooks();
     }
 
     @Override
@@ -160,24 +170,22 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(this::doCall)
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(this::doCall)
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
     }
 
     /**
@@ -191,24 +199,26 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(m -> doCall(m, structuredOutputClass))
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(
+                                                                m ->
+                                                                        doCall(
+                                                                                m,
+                                                                                structuredOutputClass))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
     }
 
     /**
@@ -222,24 +232,22 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(m -> doCall(m, schema))
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(m -> doCall(m, schema))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
     }
 
     /**
@@ -295,6 +303,7 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public void interrupt() {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
     }
 
@@ -306,10 +315,21 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     @Override
     public void interrupt(Msg msg) {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
         if (msg != null) {
             userInterruptMessage.set(msg);
         }
+    }
+
+    /**
+     * Interrupt execution with explicit source.
+     *
+     * @param source interruption source
+     */
+    public void interrupt(InterruptSource source) {
+        interruptSource.set(source != null ? source : InterruptSource.SYSTEM);
+        interruptFlag.set(true);
     }
 
     /**
@@ -353,6 +373,7 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void resetInterruptFlag() {
         interruptFlag.set(false);
         userInterruptMessage.set(null);
+        interruptSource.set(InterruptSource.USER);
     }
 
     /**
@@ -363,9 +384,45 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     private InterruptContext createInterruptContext() {
         return InterruptContext.builder()
-                .source(InterruptSource.USER)
+                .source(interruptSource.get())
                 .userMessage(userInterruptMessage.get())
                 .build();
+    }
+
+    /**
+     * Acquire execution resources for a {@code call()} invocation.
+     * Used as the {@code resourceSupplier} in {@link Mono#using} to guarantee that
+     * {@link #releaseExecution} is always called on completion, error, or cancellation.
+     *
+     * @return this agent instance
+     */
+    private AgentBase acquireExecution() {
+        if (checkRunning && !running.compareAndSet(false, true)) {
+            throw new IllegalStateException("Agent is still running, please wait for it to finish");
+        }
+        try {
+            resetInterruptFlag();
+            GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+            GracefulShutdownManager.getInstance().registerRequest(this);
+        } catch (RuntimeException ex) {
+            if (checkRunning) {
+                running.set(false);
+            }
+            throw ex;
+        }
+        return this;
+    }
+
+    /**
+     * Release execution resources after a {@code call()} invocation.
+     * Used as the {@code resourceCleanup} in {@link Mono#using} — guaranteed to run
+     * regardless of how the reactive chain terminates (success, error, or cancel).
+     *
+     * @param resource the agent instance (ignored, uses {@code this})
+     */
+    private void releaseExecution(AgentBase resource) {
+        running.set(false);
+        GracefulShutdownManager.getInstance().unregisterRequest(this);
     }
 
     /**
@@ -395,6 +452,15 @@ public abstract class AgentBase implements StateModule, Agent {
      */
     protected AtomicBoolean getInterruptFlag() {
         return interruptFlag;
+    }
+
+    /**
+     * Get current interruption source.
+     *
+     * @return interruption source
+     */
+    protected InterruptSource getInterruptSource() {
+        return interruptSource.get();
     }
 
     /**
@@ -455,7 +521,12 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
+            sortHooks();
         }
+    }
+
+    private void sortHooks() {
+        this.hooks.sort(HOOK_COMPARATOR);
     }
 
     /**
@@ -479,7 +550,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        return hooks;
     }
 
     /**
@@ -648,6 +719,19 @@ public abstract class AgentBase implements StateModule, Agent {
     }
 
     /**
+     * Stream with multiple input messages using a JSON schema.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param schema JSON schema defining the structure of the response
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+        return createEventStream(options, () -> call(msgs, schema));
+    }
+
+    /**
      * Helper method to create an event stream with proper hook lifecycle management.
      *
      * <p>This method handles the common logic for streaming events during agent execution,
@@ -664,40 +748,46 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Flux of events emitted during execution
      */
     private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
-        return Flux.<Event>create(
-                        sink -> {
-                            // Create streaming hook with options
-                            StreamingHook streamingHook = new StreamingHook(sink, options);
+        return Flux.deferContextual(
+                ctxView ->
+                        Flux.<Event>create(
+                                        sink -> {
+                                            // Create streaming hook with options
+                                            StreamingHook streamingHook =
+                                                    new StreamingHook(sink, options);
 
-                            // Add temporary hook
-                            hooks.add(streamingHook);
+                                            // Add temporary hook
+                                            addHook(streamingHook);
 
-                            // Execute call and manage hook lifecycle
-                            callSupplier
-                                    .get()
-                                    .doFinally(
-                                            signalType -> {
-                                                // Remove temporary hook
-                                                hooks.remove(streamingHook);
-                                            })
-                                    .subscribe(
-                                            finalMsg -> {
-                                                if (options.shouldStream(EventType.AGENT_RESULT)) {
-                                                    Event finalEvent =
-                                                            new Event(
-                                                                    EventType.AGENT_RESULT,
-                                                                    finalMsg,
-                                                                    true);
-                                                    sink.next(finalEvent);
-                                                }
+                                            // Use Mono.defer to ensure trace context propagation
+                                            // while maintaining streaming hook functionality
+                                            Mono.defer(() -> callSupplier.get())
+                                                    .contextWrite(
+                                                            context -> context.putAll(ctxView))
+                                                    .doFinally(
+                                                            signalType -> {
+                                                                // Remove temporary hook
+                                                                hooks.remove(streamingHook);
+                                                            })
+                                                    .subscribe(
+                                                            finalMsg -> {
+                                                                if (options.shouldStream(
+                                                                        EventType.AGENT_RESULT)) {
+                                                                    sink.next(
+                                                                            new Event(
+                                                                                    EventType
+                                                                                            .AGENT_RESULT,
+                                                                                    finalMsg,
+                                                                                    true));
+                                                                }
 
-                                                // Complete the stream
-                                                sink.complete();
-                                            },
-                                            sink::error);
-                        },
-                        FluxSink.OverflowStrategy.BUFFER)
-                .publishOn(Schedulers.boundedElastic());
+                                                                // Complete the stream
+                                                                sink.complete();
+                                                            },
+                                                            sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .publishOn(Schedulers.boundedElastic()));
     }
 
     @Override

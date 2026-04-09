@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
@@ -28,7 +27,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
 /**
@@ -38,19 +36,9 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvoker {
 
     private final ToolResultConverter defaultConverter;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     ToolMethodInvoker(ToolResultConverter resultConverter) {
         this.defaultConverter = resultConverter;
-    }
-
-    /**
-     * Set the chunk callback for delivering streaming chunks from ToolEmitter.
-     *
-     * @param callback Callback to invoke when tools emit chunks
-     */
-    void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
     }
 
     /**
@@ -72,9 +60,9 @@ class ToolMethodInvoker {
                 customConverter != null ? customConverter : defaultConverter;
 
         Map<String, Object> input = param.getInput();
-        ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
         ToolExecutionContext context = param.getContext();
+        ToolEmitter emitter = param.getEmitter();
 
         Class<?> returnType = method.getReturnType();
 
@@ -84,8 +72,7 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
@@ -98,14 +85,8 @@ class ToolMethodInvoker {
                                                     r ->
                                                             converter.convert(
                                                                     r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -113,8 +94,7 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
@@ -122,14 +102,8 @@ class ToolMethodInvoker {
                     .flatMap(
                             mono ->
                                     mono.map(r -> converter.convert(r, extractGenericType(method)))
-                                            .onErrorResume(
-                                                    e ->
-                                                            Mono.just(
-                                                                    handleInvocationError(
-                                                                            e instanceof Exception
-                                                                                    ? (Exception) e
-                                                                                    : new RuntimeException(
-                                                                                            e)))));
+                                            .onErrorResume(this::handleError))
+                    .onErrorResume(this::handleError);
 
         } else {
             // Sync method: wrap in Mono.fromCallable
@@ -137,18 +111,11 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(
-                                                method, input, toolUseBlock, agent, context);
+                                        convertParameters(method, input, agent, context, emitter);
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+                    .onErrorResume(this::handleError);
         }
     }
 
@@ -168,17 +135,17 @@ class ToolMethodInvoker {
      *
      * @param method the method
      * @param input the input map
-     * @param toolUseBlock the tool use block for ToolEmitter injection (may be null)
      * @param agent the agent for Agent injection (may be null)
      * @param context the tool execution context for ToolExecutionContext injection (may be null)
+     * @param emitter the tool emitter for ToolEmitter injection (may be null)
      * @return array of converted arguments
      */
     private Object[] convertParameters(
             Method method,
             Map<String, Object> input,
-            ToolUseBlock toolUseBlock,
             Agent agent,
-            ToolExecutionContext context) {
+            ToolExecutionContext context,
+            ToolEmitter emitter) {
         Parameter[] parameters = method.getParameters();
 
         if (parameters.length == 0) {
@@ -191,7 +158,7 @@ class ToolMethodInvoker {
 
             // Special handling: inject ToolEmitter automatically
             if (param.getType() == ToolEmitter.class) {
-                args[i] = new DefaultToolEmitter(toolUseBlock, chunkCallback);
+                args[i] = emitter;
             }
             // Special handling: inject Agent automatically
             else if (param.getType() == Agent.class) {
@@ -310,19 +277,23 @@ class ToolMethodInvoker {
             return null;
         }
 
-        Class<?> paramType = parameter.getType();
+        Class<?> rawType = parameter.getType();
+        Type paramType = parameter.getParameterizedType();
 
-        // Direct assignment if types match
-        if (paramType.isAssignableFrom(value.getClass())) {
+        // Direct assignment only if:
+        // 1. Raw types match, AND
+        // 2. The parameter is not a parameterized type (no generic info to preserve)
+        if (rawType.isAssignableFrom(value.getClass())
+                && !(paramType instanceof ParameterizedType)) {
             return value;
         }
 
-        // Try JsonCodec conversion first
+        // Use JsonCodec conversion with full type information to preserve generics.
         try {
             return JsonUtils.getJsonCodec().convertValue(value, paramType);
         } catch (Exception e) {
             // Fallback to string-based conversion for primitives
-            return convertFromString(value.toString(), paramType);
+            return convertFromString(value.toString(), rawType);
         }
     }
 
@@ -349,13 +320,41 @@ class ToolMethodInvoker {
     }
 
     /**
+     * Reactive error handler for use with {@code onErrorResume}.
+     *
+     * <p>Delegates to {@link #handleInvocationError(Throwable)} and wraps the
+     * result in {@code Mono.just(...)}.
+     *
+     * @param e the error from the reactive chain
+     * @return Mono containing ToolResultBlock with error info
+     * @throws ToolSuspendException if found in the exception chain
+     */
+    private Mono<ToolResultBlock> handleError(Throwable e) {
+        return Mono.just(handleInvocationError(e));
+    }
+
+    /**
      * Handle invocation errors with informative messages.
      *
-     * @param e the exception
+     * <p>Special handling for {@link ToolSuspendException}: if found in the exception chain,
+     * it will be re-thrown to allow proper suspension handling by {@link ToolExecutor}.
+     *
+     * @param e the throwable
      * @return ToolResultBlock with error message
+     * @throws ToolSuspendException if found in the exception chain
      */
-    private ToolResultBlock handleInvocationError(Exception e) {
+    private ToolResultBlock handleInvocationError(Throwable e) {
+        // Check if the exception itself is ToolSuspendException
+        if (e instanceof ToolSuspendException) {
+            throw (ToolSuspendException) e;
+        }
+
         Throwable cause = e.getCause();
+        // Check for ToolSuspendException in the exception chain
+        if (cause instanceof ToolSuspendException) {
+            throw (ToolSuspendException) cause;
+        }
+
         String errorMsg =
                 cause != null
                         ? ExceptionUtils.getErrorMessage(cause)

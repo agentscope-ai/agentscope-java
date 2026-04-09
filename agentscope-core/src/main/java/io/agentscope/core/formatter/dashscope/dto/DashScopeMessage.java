@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.dashscope.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -22,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope message DTO.
@@ -78,7 +80,12 @@ public class DashScopeMessage {
 
     /** Reasoning/thinking content (for assistant messages with thinking enabled). */
     @JsonProperty("reasoning_content")
+    @JsonAlias("reasoning")
     private String reasoningContent;
+
+    /** Cache control configuration for prompt caching. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
 
     public DashScopeMessage() {}
 
@@ -177,6 +184,14 @@ public class DashScopeMessage {
         this.reasoningContent = reasoningContent;
     }
 
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -216,6 +231,11 @@ public class DashScopeMessage {
 
         public Builder reasoningContent(String reasoningContent) {
             message.setReasoningContent(reasoningContent);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            message.setCacheControl(cacheControl);
             return this;
         }
 

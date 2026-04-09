@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.plan.hint;
 
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.SubTask;
 
@@ -52,6 +53,9 @@ public class DefaultPlanToHint implements PlanToHint {
                     + " \"proceed\", \"do it\")\n"
                     + "- If user says anything else (questions, modifications, unrelated topics),"
                     + " respond accordingly but DO NOT start execution\n";
+
+    private static final String RULE_SUBTASK_LIMIT =
+            "- Subtask Limit: Ensure the plan consists of no more than {max_subtasks} subtasks\n";
 
     private static final String RULE_COMMON =
             "- Update before processing each subtask: When processing each subtask, call"
@@ -154,20 +158,32 @@ public class DefaultPlanToHint implements PlanToHint {
      * </ul>
      *
      * @param plan The current plan, or null if no plan exists
-     * @param needUserConfirm Whether to include the "wait for user confirmation" rule in hints
+     * @param planNotebook related planNoteBook configuration
      * @return A formatted hint message wrapped in system-hint tags, or null if no hint is
      *     applicable
      */
     @Override
-    public String generateHint(Plan plan, boolean needUserConfirm) {
+    public String generateHint(Plan plan, PlanNotebook planNotebook) {
         String hint;
-        String confirmationRule = needUserConfirm ? RULE_WAIT_FOR_CONFIRMATION : "";
+        String confirmationRule =
+                planNotebook.isNeedUserConfirm() ? RULE_WAIT_FOR_CONFIRMATION : "";
 
         if (plan == null) {
-            hint =
-                    needUserConfirm
-                            ? NO_PLAN + IMPORTANT_RULES_SEPARATOR + confirmationRule
-                            : NO_PLAN;
+            // no plan description with optional append rules
+            StringBuilder appendRules = new StringBuilder();
+            if (planNotebook.isNeedUserConfirm()) {
+                appendRules.append(confirmationRule);
+            }
+            if (planNotebook.getMaxSubtasks() != null) {
+                appendRules.append(
+                        RULE_SUBTASK_LIMIT.replace(
+                                "{max_subtasks}", String.valueOf(planNotebook.getMaxSubtasks())));
+            }
+            if (appendRules.isEmpty()) {
+                hint = NO_PLAN;
+            } else {
+                hint = NO_PLAN + IMPORTANT_RULES_SEPARATOR + appendRules;
+            }
         } else {
             // Count subtasks by state
             int nTodo = 0;

@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -48,7 +49,20 @@ import java.util.Objects;
     @JsonSubTypes.Type(value = AguiEvent.ToolCallResult.class, name = "TOOL_CALL_RESULT"),
     @JsonSubTypes.Type(value = AguiEvent.StateSnapshot.class, name = "STATE_SNAPSHOT"),
     @JsonSubTypes.Type(value = AguiEvent.StateDelta.class, name = "STATE_DELTA"),
-    @JsonSubTypes.Type(value = AguiEvent.Raw.class, name = "RAW")
+    @JsonSubTypes.Type(value = AguiEvent.Raw.class, name = "RAW"),
+    @JsonSubTypes.Type(value = AguiEvent.Custom.class, name = "CUSTOM"),
+    @JsonSubTypes.Type(value = AguiEvent.ReasoningStart.class, name = "REASONING_START"),
+    @JsonSubTypes.Type(
+            value = AguiEvent.ReasoningMessageStart.class,
+            name = "REASONING_MESSAGE_START"),
+    @JsonSubTypes.Type(
+            value = AguiEvent.ReasoningMessageContent.class,
+            name = "REASONING_MESSAGE_CONTENT"),
+    @JsonSubTypes.Type(value = AguiEvent.ReasoningMessageEnd.class, name = "REASONING_MESSAGE_END"),
+    @JsonSubTypes.Type(
+            value = AguiEvent.ReasoningMessageChunk.class,
+            name = "REASONING_MESSAGE_CHUNK"),
+    @JsonSubTypes.Type(value = AguiEvent.ReasoningEnd.class, name = "REASONING_END")
 })
 public sealed interface AguiEvent
         permits AguiEvent.RunStarted,
@@ -62,13 +76,21 @@ public sealed interface AguiEvent
                 AguiEvent.ToolCallResult,
                 AguiEvent.StateSnapshot,
                 AguiEvent.StateDelta,
-                AguiEvent.Raw {
+                AguiEvent.Raw,
+                AguiEvent.Custom,
+                AguiEvent.ReasoningStart,
+                AguiEvent.ReasoningMessageStart,
+                AguiEvent.ReasoningMessageContent,
+                AguiEvent.ReasoningMessageEnd,
+                AguiEvent.ReasoningMessageChunk,
+                AguiEvent.ReasoningEnd {
 
     /**
      * Get the event type.
      *
      * @return The event type
      */
+    @JsonIgnore
     AguiEventType getType();
 
     /**
@@ -499,6 +521,253 @@ public sealed interface AguiEvent
         @Override
         public AguiEventType getType() {
             return AguiEventType.RAW;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * The Custom event provides an extension mechanism for implementing
+     * features not covered by the standard event types.
+     */
+    record Custom(String threadId, String runId, String name, Object value) implements AguiEvent {
+
+        @JsonCreator
+        public Custom(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("name") String name,
+                @JsonProperty("value") Object value) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.name = Objects.requireNonNull(name, "name cannot be null");
+            this.value = value; // nullable
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.CUSTOM;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event indicating the start of a reasoning/thinking phase. This event is emitted
+     * when the agent begins its internal reasoning process.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningStart(String threadId, String runId, String messageId, String encryptedContent)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningStart(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("encryptedContent") String encryptedContent) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+            this.encryptedContent = encryptedContent; // Optional
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_START;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event signaling the start of a reasoning message.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningMessageStart(String threadId, String runId, String messageId, String role)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningMessageStart(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("role") String role) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+            this.role = Objects.requireNonNull(role, "role cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_MESSAGE_START;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event containing a chunk of content in a streaming reasoning message.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningMessageContent(String threadId, String runId, String messageId, String delta)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningMessageContent(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("delta") String delta) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+            this.delta = Objects.requireNonNull(delta, "delta cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_MESSAGE_CONTENT;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event signaling the end of a reasoning message.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningMessageEnd(String threadId, String runId, String messageId)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningMessageEnd(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_MESSAGE_END;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * A convenience event to auto start/close reasoning messages.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningMessageChunk(String threadId, String runId, String messageId, String delta)
+            implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningMessageChunk(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId,
+                @JsonProperty("delta") String delta) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = messageId; // Optional
+            this.delta = delta; // Optional
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_MESSAGE_CHUNK;
+        }
+
+        @Override
+        public String getThreadId() {
+            return threadId;
+        }
+
+        @Override
+        public String getRunId() {
+            return runId;
+        }
+    }
+
+    /**
+     * Event indicating the end of a reasoning/thinking phase. This event is emitted
+     * when the agent has finished its internal reasoning process.
+     *
+     * <p>According to AG-UI Reasoning draft specification.
+     */
+    record ReasoningEnd(String threadId, String runId, String messageId) implements AguiEvent {
+
+        @JsonCreator
+        public ReasoningEnd(
+                @JsonProperty("threadId") String threadId,
+                @JsonProperty("runId") String runId,
+                @JsonProperty("messageId") String messageId) {
+            this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
+            this.runId = Objects.requireNonNull(runId, "runId cannot be null");
+            this.messageId = Objects.requireNonNull(messageId, "messageId cannot be null");
+        }
+
+        @Override
+        public AguiEventType getType() {
+            return AguiEventType.REASONING_END;
         }
 
         @Override

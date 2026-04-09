@@ -49,6 +49,15 @@ public enum HookEventType {
     /** During tool execution streaming */
     ACTING_CHUNK,
 
+    /** Before summary generation (when max iterations reached) */
+    PRE_SUMMARY,
+
+    /** After summary generation completes */
+    POST_SUMMARY,
+
+    /** During summary streaming */
+    SUMMARY_CHUNK,
+
     /** When an error occurs */
     ERROR
 }

@@ -18,6 +18,7 @@ package io.agentscope.core.model;
 import io.agentscope.core.message.ContentBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Represents a chat completion response from a language model.
@@ -101,6 +102,17 @@ public class ChatResponse {
     }
 
     /**
+     * Creates a new instance of ChatResponse with the specified ID,
+     * copying all other fields from this instance.
+     *
+     * @param newId the new identifier
+     * @return a new ChatResponse instance
+     */
+    public ChatResponse withId(String newId) {
+        return new ChatResponse(newId, this.content, this.usage, this.metadata, this.finishReason);
+    }
+
+    /**
      * Creates a new builder for ChatResponse.
      *
      * @return a new Builder instance
@@ -176,11 +188,20 @@ public class ChatResponse {
 
         /**
          * Builds a new ChatResponse instance with the set values.
+         * <p>
+         * If no id was set (or is empty/blank), a random UUID will be generated
+         * automatically. This ensures compatibility with LLM providers (like Ollama)
+         * that don't return an id field in their API responses.
          *
          * @return a new ChatResponse instance
          */
         public ChatResponse build() {
-            return new ChatResponse(id, content, usage, metadata, finishReason);
+            // Auto-generate id if not set, empty, or blank (for providers like Ollama)
+            String responseId = this.id;
+            if (responseId == null || responseId.trim().isEmpty()) {
+                responseId = UUID.randomUUID().toString();
+            }
+            return new ChatResponse(responseId, content, usage, metadata, finishReason);
         }
     }
 }

@@ -165,7 +165,7 @@ public class OpenAIRequest {
      * Example: ["text", "audio"]
      */
     @JsonProperty("modalities")
-    private java.util.List<String> modalities;
+    private List<String> modalities;
 
     /**
      * Audio output configuration.
@@ -385,11 +385,11 @@ public class OpenAIRequest {
         this.prediction = prediction;
     }
 
-    public java.util.List<String> getModalities() {
+    public List<String> getModalities() {
         return modalities;
     }
 
-    public void setModalities(java.util.List<String> modalities) {
+    public void setModalities(List<String> modalities) {
         this.modalities = modalities;
     }
 
@@ -579,7 +579,7 @@ public class OpenAIRequest {
             return this;
         }
 
-        public Builder modalities(java.util.List<String> modalities) {
+        public Builder modalities(List<String> modalities) {
             request.setModalities(modalities);
             return this;
         }

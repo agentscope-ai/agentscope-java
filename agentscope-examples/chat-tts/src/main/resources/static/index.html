@@ -1,0 +1,945 @@
+<!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat TTS - 边回复边播放</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a25;
+            --accent-cyan: #00d4ff;
+            --accent-purple: #a855f7;
+            --accent-pink: #ec4899;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8b8b9e;
+            --border-color: #2a2a3a;
+            --gradient-accent: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #ec4899 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-accent);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main Chat Area */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .message {
+            display: flex;
+            gap: 1rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .message.user .avatar {
+            background: var(--gradient-accent);
+        }
+
+        .message.assistant .avatar {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 1rem 1.25rem;
+            border-radius: 16px;
+            line-height: 1.6;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #00d4ff33 0%, #a855f733 100%);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 16px 16px 4px 16px;
+        }
+
+        .message.assistant .message-content {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px 16px 16px 4px;
+        }
+
+        .message-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .play-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--accent-cyan);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .play-btn:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-cyan);
+            transform: scale(1.1);
+        }
+
+        .play-btn.playing {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-color: var(--accent-cyan);
+        }
+
+        .audio-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            flex: 1;
+        }
+
+        .audio-bars {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        }
+
+        .audio-bar {
+            width: 3px;
+            height: 12px;
+            background: var(--accent-cyan);
+            border-radius: 2px;
+            animation: audioWave 0.5s ease-in-out infinite;
+        }
+
+        .audio-bar:nth-child(1) { animation-delay: 0s; }
+        .audio-bar:nth-child(2) { animation-delay: 0.1s; }
+        .audio-bar:nth-child(3) { animation-delay: 0.2s; }
+        .audio-bar:nth-child(4) { animation-delay: 0.3s; }
+
+        @keyframes audioWave {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(1); }
+        }
+
+        .audio-bars.stopped .audio-bar {
+            animation: none;
+            transform: scaleY(0.3);
+            background: var(--text-secondary);
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+
+        /* Input Area */
+        .input-container {
+            padding: 1rem 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 0.75rem;
+            transition: border-color 0.2s;
+        }
+
+        .input-wrapper:focus-within {
+            border-color: var(--accent-cyan);
+        }
+
+        .input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-family: inherit;
+            padding: 0.5rem;
+            resize: none;
+            outline: none;
+            min-height: 24px;
+            max-height: 120px;
+        }
+
+        .input-field::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .send-btn {
+            width: 48px;
+            height: 48px;
+            background: var(--gradient-accent);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        .send-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Empty state */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            opacity: 0.3;
+        }
+
+        .empty-text {
+            font-size: 1.1rem;
+        }
+
+        .empty-hint {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">🎙️</div>
+            <span class="logo-text">Chat TTS</span>
+        </div>
+        <div class="status-badge">
+            <span class="status-dot"></span>
+            <span>边回复边播放</span>
+        </div>
+    </header>
+
+    <div class="chat-container">
+        <div class="messages" id="messages">
+            <div class="empty-state" id="empty-state">
+                <div class="empty-icon">💬</div>
+                <div class="empty-text">开始对话吧</div>
+                <div class="empty-hint">AI 会一边回复，一边用语音朗读</div>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typing-indicator">
+            <div class="typing-dots">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+            </div>
+            <span>AI 正在思考...</span>
+        </div>
+
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea 
+                    class="input-field" 
+                    id="input-field" 
+                    placeholder="输入消息..." 
+                    rows="1"
+                    onkeydown="handleKeyDown(event)"
+                ></textarea>
+                <button class="send-btn" id="send-btn" onclick="sendMessage()">
+                    ➤
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global audio context
+        let audioContext = null;
+        let currentPlayingMessage = null; // Track which message is currently playing
+        const allAudioPlayers = new Map(); // Track all audio players by messageDiv
+
+        // Initialize AudioContext on first user interaction
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            }
+        }
+
+        // Stop all playing audio from all messages
+        function stopAllAudio() {
+            // Stop current playing message
+            if (currentPlayingMessage) {
+                const audioPlayer = currentPlayingMessage.audioPlayer;
+                if (audioPlayer) {
+                    stopAudioPlayer(audioPlayer);
+                    updateAudioUI(currentPlayingMessage.messageDiv, false);
+                }
+                currentPlayingMessage = null;
+            }
+            
+            // Stop all other audio players
+            allAudioPlayers.forEach((audioPlayer, messageDiv) => {
+                if (audioPlayer.isPlaying) {
+                    stopAudioPlayer(audioPlayer);
+                    updateAudioUI(messageDiv, false);
+                }
+            });
+        }
+        
+        // Stop a specific audio player (internal helper)
+        function stopAudioPlayer(audioPlayer) {
+            audioPlayer.isPlaying = false;
+            // Stop all active audio sources
+            audioPlayer.sources.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source may already be stopped
+                }
+            });
+            audioPlayer.sources = [];
+            // Don't clear chunks - preserve them for replay
+            // Reset playback index to start from beginning next time
+            audioPlayer.currentIndex = 0;
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('input-field');
+            const message = input.value.trim();
+            if (!message) return;
+
+            initAudio();
+            
+            // Stop any currently playing audio (new message arrives)
+            stopAllAudio();
+            
+            // Clear input
+            input.value = '';
+            input.style.height = 'auto';
+
+            // Hide empty state
+            document.getElementById('empty-state').style.display = 'none';
+
+            // Add user message
+            addMessage(message, 'user');
+
+            // Show typing indicator
+            document.getElementById('typing-indicator').style.display = 'flex';
+
+            // Disable send button
+            const sendBtn = document.getElementById('send-btn');
+            sendBtn.disabled = true;
+
+            // Create assistant message container
+            const messageDiv = addMessage('', 'assistant', true);
+            const audioPlayer = createAudioPlayer(messageDiv);
+            
+            // Store reference for auto-play
+            currentPlayingMessage = { messageDiv, audioPlayer };
+
+            // Store accumulated text for this message to avoid duplicates
+            if (!messageDiv.accumulatedText) {
+                messageDiv.accumulatedText = '';
+            }
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            try {
+                                const data = JSON.parse(line.slice(5));
+                                handleSSEData(data, messageDiv, audioPlayer, (text) => {
+                                    currentText = text;
+                                });
+                            } catch (e) {
+                                // Ignore parse errors
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                updateMessageText(messageDiv, '抱歉，发生了错误: ' + error.message);
+            } finally {
+                document.getElementById('typing-indicator').style.display = 'none';
+                sendBtn.disabled = false;
+            }
+        }
+
+        // Handle SSE data
+        function handleSSEData(data, messageDiv, audioPlayer, updateText) {
+            if (data.text !== undefined) {
+                // Text event - handle incremental text accumulation
+                const textSpan = messageDiv.querySelector('.message-text');
+                if (textSpan) {
+                    const receivedText = data.text;
+                    const isLast = data.isLast === true;
+                    
+                    // Initialize accumulated text if not exists
+                    if (messageDiv.accumulatedText === undefined) {
+                        messageDiv.accumulatedText = '';
+                    }
+                    
+                    if (isLast) {
+                        // Final event: use received text directly (complete text)
+                        if (receivedText !== messageDiv.accumulatedText) {
+                            messageDiv.accumulatedText = receivedText;
+                            textSpan.textContent = messageDiv.accumulatedText;
+                            updateText(messageDiv.accumulatedText);
+                            scrollToBottom();
+                        }
+                    } else {
+                        // Incremental event: in incremental mode, backend sends delta text
+                        // Check if receivedText is already in accumulated to avoid duplicates
+                        const currentText = messageDiv.accumulatedText;
+                        
+                        if (receivedText.length > currentText.length && 
+                            receivedText.startsWith(currentText)) {
+                            // Received text is accumulated (contains all previous + new)
+                            messageDiv.accumulatedText = receivedText;
+                        } else if (!currentText.endsWith(receivedText) && 
+                                   !currentText.includes(receivedText)) {
+                            // Received text is new delta, append it
+                            messageDiv.accumulatedText += receivedText;
+                        } else if (currentText.length === 0 && receivedText) {
+                            // First chunk, use it directly
+                            messageDiv.accumulatedText = receivedText;
+                        }
+                        
+                        // Update display if changed
+                        if (textSpan.textContent !== messageDiv.accumulatedText) {
+                            textSpan.textContent = messageDiv.accumulatedText;
+                            updateText(messageDiv.accumulatedText);
+                            scrollToBottom();
+                        }
+                    }
+                }
+            } else if (data.audio !== undefined) {
+                // Audio event - add to this message's audio queue
+                const audioData = base64ToArrayBuffer(data.audio);
+                addAudioChunk(audioPlayer, audioData, messageDiv);
+            } else if (data.status === 'completed') {
+                // Mark audio as ready after a delay
+                setTimeout(() => {
+                    const audioBars = messageDiv.querySelector('.audio-bars');
+                    if (audioBars && !audioPlayer.isPlaying) {
+                        audioBars.classList.add('stopped');
+                    }
+                }, 1000);
+            }
+        }
+
+        // Create audio player for a message
+        function createAudioPlayer(messageDiv) {
+            const audioPlayer = {
+                chunks: [], // Queue of audio chunks (preserved for replay)
+                sources: [], // Active audio sources
+                isPlaying: false,
+                currentSource: null,
+                currentIndex: 0 // Current playback position in chunks array
+            };
+            
+            // Register this audio player
+            allAudioPlayers.set(messageDiv, audioPlayer);
+
+            const playBtn = messageDiv.querySelector('.play-btn');
+            if (playBtn) {
+                playBtn.onclick = () => {
+                    if (audioPlayer.isPlaying) {
+                        stopAudio(audioPlayer, messageDiv);
+                    } else {
+                        // Stop other messages before playing this one
+                        stopAllAudio();
+                        // Reset to beginning if all chunks have been played
+                        if (audioPlayer.currentIndex >= audioPlayer.chunks.length) {
+                            audioPlayer.currentIndex = 0;
+                        }
+                        playAudio(audioPlayer, messageDiv);
+                    }
+                };
+            }
+
+            return audioPlayer;
+        }
+
+        // Add audio chunk to player
+        function addAudioChunk(audioPlayer, audioData, messageDiv) {
+            // Don't add chunks if this message is no longer the current one
+            // (user may have sent a new message)
+            if (currentPlayingMessage && 
+                currentPlayingMessage.messageDiv !== messageDiv) {
+                return; // Ignore chunks for old messages
+            }
+            
+            audioPlayer.chunks.push(audioData);
+            
+            // Auto-play if this is the current message being generated
+            if (currentPlayingMessage && 
+                currentPlayingMessage.messageDiv === messageDiv &&
+                !audioPlayer.isPlaying) {
+                playAudio(audioPlayer, messageDiv);
+            }
+        }
+
+        // Play audio from queue
+        async function playAudio(audioPlayer, messageDiv) {
+            if (audioPlayer.isPlaying || audioPlayer.chunks.length === 0) {
+                return;
+            }
+
+            audioPlayer.isPlaying = true;
+            updateAudioUI(messageDiv, true);
+            currentPlayingMessage = { messageDiv, audioPlayer };
+
+            // Play chunks from current index to end
+            while (audioPlayer.currentIndex < audioPlayer.chunks.length && audioPlayer.isPlaying) {
+                // Check again before processing each chunk
+                if (!audioPlayer.isPlaying) {
+                    break;
+                }
+                
+                const chunk = audioPlayer.chunks[audioPlayer.currentIndex];
+                audioPlayer.currentIndex++;
+                await playAudioChunk(chunk, audioPlayer);
+                
+                // Check again after playing chunk (might have been stopped)
+                if (!audioPlayer.isPlaying) {
+                    break;
+                }
+            }
+
+            // Clean up if playback completed or was stopped
+            if (audioPlayer.isPlaying) {
+                // Playback completed naturally - reset index for next replay
+                audioPlayer.isPlaying = false;
+                audioPlayer.currentIndex = 0;
+                updateAudioUI(messageDiv, false);
+                if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                    currentPlayingMessage = null;
+                }
+            } else {
+                // Playback was stopped - keep currentIndex for resume
+                // UI already updated in stopAudio
+                if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                    currentPlayingMessage = null;
+                }
+            }
+        }
+
+        // Play a single audio chunk
+        async function playAudioChunk(audioData, audioPlayer) {
+            return new Promise((resolve, reject) => {
+                // Check if playback was stopped before starting
+                if (!audioPlayer.isPlaying) {
+                    resolve();
+                    return;
+                }
+
+                try {
+                    // Try to decode as WAV first
+                    audioContext.decodeAudioData(audioData.slice(0))
+                        .then(audioBuffer => {
+                            // Check again after decoding (playback might have been stopped)
+                            if (!audioPlayer.isPlaying) {
+                                resolve();
+                                return;
+                            }
+                            
+                            const source = audioContext.createBufferSource();
+                            source.buffer = audioBuffer;
+                            source.connect(audioContext.destination);
+                            audioPlayer.sources.push(source);
+                            
+                            source.onended = () => {
+                                const index = audioPlayer.sources.indexOf(source);
+                                if (index > -1) {
+                                    audioPlayer.sources.splice(index, 1);
+                                }
+                                resolve();
+                            };
+                            
+                            // Check one more time before starting
+                            if (audioPlayer.isPlaying) {
+                                source.start();
+                            } else {
+                                resolve();
+                            }
+                        })
+                        .catch(() => {
+                            // Fallback to raw PCM
+                            if (audioPlayer.isPlaying) {
+                                playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                            } else {
+                                resolve();
+                            }
+                        });
+                } catch (e) {
+                    // Fallback to raw PCM
+                    if (audioPlayer.isPlaying) {
+                        playRawPCM(audioData, audioPlayer).then(resolve).catch(reject);
+                    } else {
+                        resolve();
+                    }
+                }
+            });
+        }
+
+        // Play raw PCM data
+        async function playRawPCM(data, audioPlayer) {
+            return new Promise((resolve, reject) => {
+                // Check if playback was stopped before starting
+                if (!audioPlayer.isPlaying) {
+                    resolve();
+                    return;
+                }
+
+                try {
+                    const pcmData = new Int16Array(data);
+                    const floatData = new Float32Array(pcmData.length);
+                    for (let i = 0; i < pcmData.length; i++) {
+                        floatData[i] = pcmData[i] / 32768.0;
+                    }
+                    
+                    const audioBuffer = audioContext.createBuffer(1, floatData.length, 24000);
+                    audioBuffer.getChannelData(0).set(floatData);
+                    
+                    // Check again after creating buffer (playback might have been stopped)
+                    if (!audioPlayer.isPlaying) {
+                        resolve();
+                        return;
+                    }
+                    
+                    const source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(audioContext.destination);
+                    audioPlayer.sources.push(source);
+                    
+                    source.onended = () => {
+                        const index = audioPlayer.sources.indexOf(source);
+                        if (index > -1) {
+                            audioPlayer.sources.splice(index, 1);
+                        }
+                        resolve();
+                    };
+                    
+                    // Check one more time before starting
+                    if (audioPlayer.isPlaying) {
+                        source.start();
+                    } else {
+                        resolve();
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        // Stop audio playback
+        function stopAudio(audioPlayer, messageDiv) {
+            stopAudioPlayer(audioPlayer);
+            // Note: currentIndex is reset to 0 in stopAudioPlayer for restart from beginning
+            // If you want resume capability, don't reset currentIndex here
+            updateAudioUI(messageDiv, false);
+            
+            if (currentPlayingMessage && currentPlayingMessage.messageDiv === messageDiv) {
+                currentPlayingMessage = null;
+            }
+        }
+
+        // Update audio UI
+        function updateAudioUI(messageDiv, isPlaying) {
+            const playBtn = messageDiv.querySelector('.play-btn');
+            const audioBars = messageDiv.querySelector('.audio-bars');
+            const statusText = messageDiv.querySelector('.audio-status-text');
+            
+            if (playBtn) {
+                playBtn.textContent = isPlaying ? '⏸' : '▶';
+                playBtn.classList.toggle('playing', isPlaying);
+            }
+            
+            if (audioBars) {
+                audioBars.classList.toggle('stopped', !isPlaying);
+            }
+            
+            if (statusText) {
+                statusText.textContent = isPlaying ? '正在朗读...' : '点击播放';
+            }
+        }
+
+        // Add message to chat
+        function addMessage(text, role, withAudio = false) {
+            const messagesDiv = document.getElementById('messages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const avatar = role === 'user' ? '👤' : '🤖';
+            
+            let audioControls = '';
+            if (withAudio && role === 'assistant') {
+                audioControls = `
+                    <div class="audio-controls">
+                        <button class="play-btn">▶</button>
+                        <div class="audio-status">
+                            <div class="audio-bars stopped">
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                                <span class="audio-bar"></span>
+                            </div>
+                            <span class="audio-status-text">点击播放</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="avatar">${avatar}</div>
+                <div class="message-content">
+                    <div class="message-text">${text}</div>
+                    ${audioControls}
+                </div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            scrollToBottom();
+            
+            return messageDiv;
+        }
+
+        // Update message text
+        function updateMessageText(messageDiv, text) {
+            const textSpan = messageDiv.querySelector('.message-text');
+            if (textSpan) {
+                textSpan.textContent = text;
+            }
+        }
+
+        // Base64 to ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Handle Enter key
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Auto-resize textarea
+        const inputField = document.getElementById('input-field');
+        inputField.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Scroll to bottom
+        function scrollToBottom() {
+            const messages = document.getElementById('messages');
+            messages.scrollTop = messages.scrollHeight;
+        }
+    </script>
+</body>
+</html>
+
+

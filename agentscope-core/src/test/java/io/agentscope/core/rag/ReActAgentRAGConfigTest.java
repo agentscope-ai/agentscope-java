@@ -24,7 +24,9 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -55,9 +57,7 @@ class ReActAgentRAGConfigTest {
                 new Model() {
                     @Override
                     public Flux<ChatResponse> stream(
-                            List<Msg> messages,
-                            List<io.agentscope.core.model.ToolSchema> tools,
-                            io.agentscope.core.model.GenerateOptions options) {
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         // Return a simple finish response
                         ChatResponse response =
                                 ChatResponse.builder()

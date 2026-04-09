@@ -14,6 +14,11 @@ Adopts **three-stage on-demand loading** to optimize context: Initially loads on
 
 **Workflow:** User Query → AI Identifies Relevant Skill → Calls `load_skill_through_path` Tool to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion
 
+**Unified Loading Tool**: `load_skill_through_path(skillId, resourcePath)` provides a single entry point for loading skill resources
+- `skillId` uses an enum field, ensuring selection only from registered Skills, guaranteeing accuracy
+- `resourcePath` is the resource path relative to the Skill root directory (e.g., `references/api-doc.md`)
+- Returns a list of all available resource paths when the path is incorrect, helping the LLM correct errors
+
 ### Adaptive Design
 
 We have further abstracted skills so that their discovery and content loading are no longer dependent on the file system. Instead, the LLM discovers and loads skill content and resources through tools. At the same time, to maintain compatibility with the existing skill ecosystem and resources, skills are still organized according to file system structure for their content and resources.
@@ -23,7 +28,7 @@ We have further abstracted skills so that their discovery and content loading ar
 Taking the [Skill Structure](#skill-structure) as an example, this directory-structured skill is represented in our system as:
 
 ```java
-AgentSkill skill = new AgentSkill.builder()
+AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use this skill when analyzing data, calculating statistics, or generating reports")
     .skillContent("# Data Analysis\n...")
@@ -165,6 +170,8 @@ ReActAgent agent = ReActAgent.builder()
 
 Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.
 
+**Lifecycle of Progressively Disclosed Tools**: Tool lifecycle remains consistent with Skill lifecycle. Once a Skill is activated, Tools remain available throughout the entire session, avoiding the call failures caused by Tool deactivation after each conversation round in the old mechanism.
+
 **Example Code**:
 
 ```java
@@ -192,17 +199,66 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-### Feature 2: Skill Persistence Storage
+### Feature 2: Code Execution Capabilities
+
+Provides an isolated code execution environment for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern to compose tools and configuration on demand.
+
+**Basic Usage**:
+
+```java
+SkillBox skillBox = new SkillBox(toolkit);
+
+// Enable all code execution tools (Shell, read file, write file)
+skillBox.codeExecution()
+    .withShell()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+**Configuration Reference**:
+
+- **Tool Selection**: Combine `withShell()`, `withRead()`, `withWrite()` as needed — only explicitly enabled tools are registered
+- **`workDir`**: Shared working directory for all tools. Created automatically when specified; if omitted, a temporary directory `agentscope-code-execution-*` is created lazily and cleaned up on JVM exit
+- **`uploadDir`**: Upload location for Skill resource files; defaults to `workDir/skills`
+- **File Filtering**: Controls which resource files are allowed to upload. Defaults to `scripts/`, `assets/` folders and `.py`, `.js`, `.sh` extensions. Adjust with `includeFolders()`/`includeExtensions()`, or fully customize with `fileFilter()` (the two approaches are mutually exclusive)
+- **Custom Shell**: `withShell(customShellTool)` accepts a custom tool whose `baseDir` is automatically overridden with `workDir` while preserving its security policy
+
+**Custom Configuration**:
+
+```java
+// Specify directory + custom Shell + file filtering
+ShellCommandTool customShell = new ShellCommandTool(
+    null,  // baseDir will be automatically overridden with workDir
+    Set.of("python3", "node", "npm"),
+    command -> askUserApproval(command)
+);
+
+skillBox.codeExecution()
+    .workDir("/data/agent-workspace")              // working directory
+    .uploadDir("/data/agent-workspace/my-skills")  // optional, defaults to workDir/skills
+    .includeFolders(Set.of("scripts/", "data/"))   // optional, customize upload folders
+    .includeExtensions(Set.of(".py", ".json"))      // optional, customize upload extensions
+    .withShell(customShell)
+    .withRead()
+    .withWrite()
+    .enable();
+
+// Or use a fully custom file filter (mutually exclusive with includeFolders/includeExtensions)
+skillBox.codeExecution()
+    .fileFilter(path -> path.endsWith(".py"))  // or SkillFileFilter.acceptAll()
+    .withRead()
+    .withWrite()
+    .enable();
+```
+
+### Feature 3: Skill Persistence Storage
 
 **Why is this feature needed?**
 
 Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:
 
-- File system storage
-- Database storage (not yet implemented)
-- Git repository (not yet implemented)
-
-**Example Code**:
+#### File System Storage
 
 ```java
 AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
@@ -210,9 +266,118 @@ repo.save(List.of(skill), false);
 AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
-This protection applies to all repository operations: `getSkill()`, `save()`, `delete()`, and `skillExists()`.
+#### MySQL Database Storage
 
-For detailed security guidelines, please refer to [Claude Agent Skills Security Considerations](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑).
+```java
+// Using simple constructor with default database/table names
+DataSource dataSource = createDataSource();
+MysqlSkillRepository repo = new MysqlSkillRepository(dataSource, true, true);
+
+// Using Builder for custom configuration
+MysqlSkillRepository repo = MysqlSkillRepository.builder(dataSource)
+        .databaseName("my_database")
+        .skillsTableName("my_skills")
+        .resourcesTableName("my_resources")
+        .createIfNotExist(true)
+        .writeable(true)
+        .build();
+
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
+```
+
+#### Git Repository (Read-Only)
+
+Used to load Skills from a Git repository (read-only). Supports HTTPS and SSH.
+
+**Update mechanism**
+- By default, each read triggers a lightweight remote reference check; a pull runs only when the
+    remote HEAD changes.
+- You can disable auto-sync via the constructor and call `sync()` manually when you want to
+    refresh.
+
+```java
+AgentSkillRepository repo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git");
+AgentSkill skill = repo.getSkill("data-analysis");
+List<AgentSkill> allSkills = repo.getAllSkills();
+
+GitSkillRepository manualRepo = new GitSkillRepository(
+    "https://github.com/your-org/your-skills-repo.git", false);
+manualRepo.sync();
+```
+
+If the repository contains a `skills/` subdirectory, it will be used; otherwise the repo root
+is used.
+
+#### Classpath Repository (Read-Only)
+
+Used to load pre-packaged Skills from classpath resources. Automatically compatible with standard JARs and Spring Boot Fat JARs.
+
+```java
+try (ClasspathSkillRepository repository = new ClasspathSkillRepository("skills")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    List<AgentSkill> allSkills = repository.getAllSkills();
+} catch //...
+```
+
+Resource structure: Place multiple skill subdirectories under `src/main/resources/skills/`, each containing a `SKILL.md`.
+
+> Note: `JarSkillRepositoryAdapter` is deprecated. Use `ClasspathSkillRepository` instead.
+
+#### Nacos Repository (Read-Only)
+
+Pulls or subscribes to Skills from Nacos via a pre-built `AiService` (or Nacos connection config). The Agent fetches Skills from Nacos at runtime in real time, with support for change subscription and automatic awareness. Suitable for online scenarios that need to stay in sync with Nacos.
+
+```java
+// Create Nacos skill repository with a pre-built AiService
+try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "namespace")) {
+    AgentSkill skill = repository.getSkill("data-analysis");
+    boolean exists = repository.skillExists("data-analysis");
+} catch //...
+```
+
+> Note: Add the `agentscope-extensions-nacos-skill` dependency.
+
+### Feature 4: Custom Skill Prompts
+
+When SkillBox injects a system prompt into the Agent, it generates a description entry for each registered Skill so the LLM can decide when to load which Skill. The two components of this prompt can be customized via the constructor:
+
+- **`instruction`**: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in `load_skill_through_path` usage guide
+- **`template`**: The format template for each Skill entry, containing three `%s` placeholders corresponding to `name`, `description`, and `skillId` in order
+
+When code execution is enabled, the section appended after `</available_skills>` can also be customized via `.codeExecutionInstruction()`:
+
+- **`codeExecutionInstruction`**: Template for the code execution section; every `%s` placeholder will be replaced with the `uploadDir` absolute path. Passing `null` or blank uses the built-in default.
+
+Passing `null` or a blank string for any of these uses the built-in default.
+
+**Example**:
+
+```java
+// Customize instruction and template
+String customInstruction = """
+    ## Available Skills
+    When a task matches a skill, load it with load_skill_through_path.
+    """;
+
+String customTemplate = """
+    - **%s**: %s (id: %s)
+    """;
+
+SkillBox skillBox = new SkillBox(toolkit, customInstruction, customTemplate);
+
+// Customize the code execution section (takes effect when code execution is enabled)
+skillBox.codeExecution()
+    .workDir("/data/workspace")
+    .codeExecutionInstruction("""
+        ## Script Execution
+        Skills root directory: %s
+        Always use absolute paths when running scripts.
+        """)
+    .withShell()
+    .enable();
+```
 
 ### Performance Optimization Recommendations
 

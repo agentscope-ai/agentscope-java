@@ -36,12 +36,22 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.socket.client.Socket;
 import java.time.Duration;
 import org.json.JSONException;
+
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.socket.client.Socket;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 @DisplayName("StudioWebSocketClient Tests")
@@ -147,10 +157,8 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("UserInputData with actual values should return them")
     void testUserInputDataWithValues() {
-        java.util.List<io.agentscope.core.message.ContentBlock> blocks =
-                java.util.List.of(
-                        io.agentscope.core.message.TextBlock.builder().text("test").build());
-        java.util.Map<String, Object> structured = java.util.Map.of("key", "value");
+        List<ContentBlock> blocks = List.of(TextBlock.builder().text("test").build());
+        Map<String, Object> structured = Map.of("key", "value");
 
         StudioWebSocketClient.UserInputData data =
                 new StudioWebSocketClient.UserInputData(blocks, structured);
@@ -168,8 +176,7 @@ class StudioWebSocketClientTest {
         client.waitForInput(requestId).subscribe();
 
         // Second wait with same requestId should override the first
-        reactor.core.publisher.Mono<StudioWebSocketClient.UserInputData> secondWait =
-                client.waitForInput(requestId);
+        Mono<StudioWebSocketClient.UserInputData> secondWait = client.waitForInput(requestId);
 
         assertNotNull(secondWait);
     }
@@ -195,18 +202,17 @@ class StudioWebSocketClientTest {
         String requestId = "test-request-123";
 
         // Set up waiting request
-        reactor.core.publisher.Mono<StudioWebSocketClient.UserInputData> waitMono =
-                client.waitForInput(requestId);
+        Mono<StudioWebSocketClient.UserInputData> waitMono = client.waitForInput(requestId);
 
         // Prepare JSONArray for blocksInput
-        org.json.JSONArray blocksInput = new org.json.JSONArray();
-        org.json.JSONObject textBlock = new org.json.JSONObject();
+        JSONArray blocksInput = new JSONArray();
+        JSONObject textBlock = new JSONObject();
         textBlock.put("type", "text");
         textBlock.put("text", "Hello");
         blocksInput.put(textBlock);
 
         // Prepare JSONObject for structuredInput
-        org.json.JSONObject structuredInput = new org.json.JSONObject();
+        JSONObject structuredInput = new JSONObject();
         structuredInput.put("field1", "value1");
 
         // Call handleUserInput
@@ -228,10 +234,9 @@ class StudioWebSocketClientTest {
     void testHandleUserInputWithNullStructured() {
         String requestId = "test-request-456";
 
-        reactor.core.publisher.Mono<StudioWebSocketClient.UserInputData> waitMono =
-                client.waitForInput(requestId);
+        Mono<StudioWebSocketClient.UserInputData> waitMono = client.waitForInput(requestId);
 
-        org.json.JSONArray blocksInput = new org.json.JSONArray();
+        JSONArray blocksInput = new JSONArray();
         Object[] args = new Object[] {requestId, blocksInput, null};
         client.handleUserInput(args);
 
@@ -246,14 +251,13 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("parseContentBlocks should parse valid JSON array")
     void testParseContentBlocks() throws Exception {
-        org.json.JSONArray jsonArray = new org.json.JSONArray();
-        org.json.JSONObject textBlock = new org.json.JSONObject();
+        JSONArray jsonArray = new JSONArray();
+        JSONObject textBlock = new JSONObject();
         textBlock.put("type", "text");
         textBlock.put("text", "Test content");
         jsonArray.put(textBlock);
 
-        java.util.List<io.agentscope.core.message.ContentBlock> blocks =
-                client.parseContentBlocks(jsonArray);
+        List<ContentBlock> blocks = client.parseContentBlocks(jsonArray);
 
         assertNotNull(blocks);
         assertEquals(1, blocks.size());
@@ -262,9 +266,8 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("parseContentBlocks should handle empty array")
     void testParseContentBlocksEmpty() {
-        org.json.JSONArray jsonArray = new org.json.JSONArray();
-        java.util.List<io.agentscope.core.message.ContentBlock> blocks =
-                client.parseContentBlocks(jsonArray);
+        JSONArray jsonArray = new JSONArray();
+        List<ContentBlock> blocks = client.parseContentBlocks(jsonArray);
 
         assertNotNull(blocks);
         assertEquals(0, blocks.size());
@@ -273,13 +276,12 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("parseContentBlocks should skip invalid blocks")
     void testParseContentBlocksInvalid() throws Exception {
-        org.json.JSONArray jsonArray = new org.json.JSONArray();
-        org.json.JSONObject invalidBlock = new org.json.JSONObject();
+        JSONArray jsonArray = new JSONArray();
+        JSONObject invalidBlock = new JSONObject();
         invalidBlock.put("invalid", "data");
         jsonArray.put(invalidBlock);
 
-        java.util.List<io.agentscope.core.message.ContentBlock> blocks =
-                client.parseContentBlocks(jsonArray);
+        List<ContentBlock> blocks = client.parseContentBlocks(jsonArray);
 
         assertNotNull(blocks);
         // Invalid block should be skipped
@@ -288,11 +290,11 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("jsonObjectToMap should convert JSONObject to Map")
     void testJsonObjectToMap() throws Exception {
-        org.json.JSONObject jsonObject = new org.json.JSONObject();
+        JSONObject jsonObject = new JSONObject();
         jsonObject.put("key1", "value1");
         jsonObject.put("key2", 123);
 
-        java.util.Map<String, Object> map = client.jsonObjectToMap(jsonObject);
+        Map<String, Object> map = client.jsonObjectToMap(jsonObject);
 
         assertNotNull(map);
         assertEquals("value1", map.get("key1"));
@@ -302,8 +304,8 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("jsonObjectToMap should handle empty JSONObject")
     void testJsonObjectToMapEmpty() {
-        org.json.JSONObject jsonObject = new org.json.JSONObject();
-        java.util.Map<String, Object> map = client.jsonObjectToMap(jsonObject);
+        JSONObject jsonObject = new JSONObject();
+        Map<String, Object> map = client.jsonObjectToMap(jsonObject);
 
         assertNotNull(map);
         assertEquals(0, map.size());
@@ -312,9 +314,8 @@ class StudioWebSocketClientTest {
     @Test
     @DisplayName("Package-private constructor with socket should work")
     void testConstructorWithSocket() {
-        io.socket.client.Socket mockSocket =
-                org.mockito.Mockito.mock(io.socket.client.Socket.class);
-        org.mockito.Mockito.when(mockSocket.connected()).thenReturn(true);
+        Socket mockSocket = Mockito.mock(Socket.class);
+        Mockito.when(mockSocket.connected()).thenReturn(true);
 
         StudioWebSocketClient clientWithSocket = new StudioWebSocketClient(config, mockSocket);
 

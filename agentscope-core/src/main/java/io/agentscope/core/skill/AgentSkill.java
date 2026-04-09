@@ -16,8 +16,11 @@
 
 package io.agentscope.core.skill;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents an agent skill that can be loaded and used by agents.
@@ -164,6 +167,25 @@ public class AgentSkill {
     }
 
     /**
+     * Gets the resource content by path.
+     *
+     * @param resourcePath The resource path
+     * @return The resource content, or null if not found
+     */
+    public String getResource(String resourcePath) {
+        return resources.get(resourcePath);
+    }
+
+    /**
+     * Gets all resource paths for this skill.
+     *
+     * @return Unmodifiable set of resource paths
+     */
+    public Set<String> getResourcePaths() {
+        return Collections.unmodifiableSet(new HashSet<>(resources.keySet()));
+    }
+
+    /**
      * Gets a unique identifier for this skill.
      *
      * <p>The ID is composed of name and source: "name_source".
@@ -192,6 +214,22 @@ public class AgentSkill {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Returns a string representation of this skill.
+     *
+     * @return String representation including name, description, and source
+     */
+    @Override
+    public String toString() {
+        return "AgentSkill{name='"
+                + name
+                + "', description='"
+                + description
+                + "', source='"
+                + source
+                + "'}";
     }
 
     /**

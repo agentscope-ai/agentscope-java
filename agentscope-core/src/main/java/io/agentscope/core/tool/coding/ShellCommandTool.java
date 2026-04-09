@@ -21,17 +21,28 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -43,7 +54,13 @@ import reactor.core.scheduler.Schedulers;
  * Tool for executing shell commands with security validation.
  *
  * <p>Features: command whitelist, user approval callback, multiple command detection,
- * timeout support (default 300s), platform-specific validation.
+ * timeout support (default 300s), platform-specific validation, customizable charset
+ * for decoding command output (default UTF-8).
+ *
+ * <p><b>Charset Support:</b> The tool supports custom charset configuration for decoding
+ * command output streams (stdout/stderr). This is particularly useful when working with
+ * systems that use non-UTF-8 encodings (e.g., GBK, GB2312 for Chinese Windows systems).
+ * The charset can be configured at tool construction time or overridden per command execution.
  *
  * <p><b>Security Warning:</b> {@code new ShellCommandTool()} allows arbitrary command execution.
  * For production, ALWAYS use whitelist: {@code new ShellCommandTool(allowedCommands)}
@@ -58,16 +75,45 @@ public class ShellCommandTool implements AgentTool {
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);
     private static final int DEFAULT_TIMEOUT = 300;
 
+    /**
+     * Shared thread pool for asynchronous stream reading.
+     * Uses cached thread pool for dynamic scaling with 60s idle timeout.
+     * Daemon threads ensure they don't prevent JVM shutdown.
+     */
+    private static final ExecutorService STREAM_READER_POOL =
+            Executors.newCachedThreadPool(
+                    new ThreadFactory() {
+                        private final AtomicInteger counter = new AtomicInteger(0);
+
+                        @Override
+                        public Thread newThread(Runnable r) {
+                            Thread t =
+                                    new Thread(
+                                            r,
+                                            "ShellCommand-StreamReader-"
+                                                    + counter.incrementAndGet());
+                            t.setDaemon(true); // Daemon thread won't prevent JVM shutdown
+                            return t;
+                        }
+                    });
+
     private final Set<String> allowedCommands;
     private final Function<String, Boolean> approvalCallback;
     private final CommandValidator commandValidator;
+    private final Path baseDir;
+
+    /**
+     * The charset used to decode command output streams (stdout/stderr).
+     * Defaults to UTF-8.
+     */
+    private final Charset charset;
 
     public ShellCommandTool() {
-        this(null, null);
+        this(null, null, null, createDefaultValidator(), StandardCharsets.UTF_8);
     }
 
     public ShellCommandTool(Set<String> allowedCommands) {
-        this(allowedCommands, null);
+        this(null, allowedCommands, null, createDefaultValidator(), StandardCharsets.UTF_8);
     }
 
     /**
@@ -78,7 +124,31 @@ public class ShellCommandTool implements AgentTool {
      */
     public ShellCommandTool(
             Set<String> allowedCommands, Function<String, Boolean> approvalCallback) {
-        this(allowedCommands, approvalCallback, createDefaultValidator());
+        this(
+                null,
+                allowedCommands,
+                approvalCallback,
+                createDefaultValidator(),
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, and approval callback.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables
+     * @param approvalCallback Callback function to request user approval
+     */
+    public ShellCommandTool(
+            String baseDir,
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback) {
+        this(
+                baseDir,
+                allowedCommands,
+                approvalCallback,
+                createDefaultValidator(),
+                StandardCharsets.UTF_8);
     }
 
     /**
@@ -92,6 +162,45 @@ public class ShellCommandTool implements AgentTool {
             Set<String> allowedCommands,
             Function<String, Boolean> approvalCallback,
             CommandValidator commandValidator) {
+        this(null, allowedCommands, approvalCallback, commandValidator, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Constructor with base directory, command whitelist, approval callback, and custom validator.
+     *
+     * <p>Uses UTF-8 as the default charset for decoding command output.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param approvalCallback Callback function to request user approval
+     * @param commandValidator Custom command validator
+     */
+    public ShellCommandTool(
+            String baseDir,
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback,
+            CommandValidator commandValidator) {
+        this(baseDir, allowedCommands, approvalCallback, commandValidator, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Full constructor with all configuration options including charset.
+     *
+     * <p>This is the most comprehensive constructor that allows setting all available options.
+     * All other constructors delegate to this one with default values.
+     *
+     * @param baseDir Base directory for command execution (null to use current directory)
+     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param approvalCallback Callback function to request user approval
+     * @param commandValidator Custom command validator (null to use platform-specific default)
+     * @param charset Charset used to decode command output streams (null to use UTF-8)
+     */
+    public ShellCommandTool(
+            String baseDir,
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback,
+            CommandValidator commandValidator,
+            Charset charset) {
         // Use ConcurrentHashMap.newKeySet() for thread-safe, high-performance concurrent access
         // Create defensive copy to prevent external modifications
         if (allowedCommands != null && !allowedCommands.isEmpty()) {
@@ -103,6 +212,13 @@ public class ShellCommandTool implements AgentTool {
         this.approvalCallback = approvalCallback;
         this.commandValidator =
                 commandValidator != null ? commandValidator : createDefaultValidator();
+        this.baseDir = baseDir != null ? Paths.get(baseDir).toAbsolutePath().normalize() : null;
+        this.charset = charset != null ? charset : StandardCharsets.UTF_8;
+
+        if (this.baseDir != null) {
+            logger.info("ShellCommandTool initialized with base directory: {}", this.baseDir);
+        }
+        logger.debug("ShellCommandTool initialized with charset: {}", this.charset.name());
     }
 
     /**
@@ -182,6 +298,55 @@ public class ShellCommandTool implements AgentTool {
         return allowedCommands.contains(command);
     }
 
+    /**
+     * Get the approval callback function.
+     * Returns the callback that is used to request user approval for non-whitelisted commands.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with the same configuration.
+     *
+     * @return The approval callback function, or null if not configured
+     */
+    public Function<String, Boolean> getApprovalCallback() {
+        return approvalCallback;
+    }
+
+    /**
+     * Get the command validator.
+     * Returns the validator used for command security validation.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with the same configuration.
+     *
+     * @return The command validator instance
+     */
+    public CommandValidator getCommandValidator() {
+        return commandValidator;
+    }
+
+    /**
+     * Get the base directory for command execution.
+     * Returns the directory where commands will be executed.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with a different base directory.
+     *
+     * @return The base directory path, or null if using current directory
+     */
+    public Path getBaseDir() {
+        return baseDir;
+    }
+
+    /**
+     * Get the charset used for decoding command output streams.
+     * Returns the charset used to decode stdout and stderr from executed commands.
+     *
+     * <p>This method is useful for cloning ShellCommandTool instances with the same configuration,
+     * or for inspecting the current charset setting.
+     *
+     * @return The charset used for decoding command output (never null)
+     */
+    public Charset getCharset() {
+        return charset;
+    }
+
     // ========================= AgentTool interface implementation =========================
 
     @Override
@@ -193,6 +358,14 @@ public class ShellCommandTool implements AgentTool {
     public String getDescription() {
         StringBuilder desc = new StringBuilder();
         desc.append("Execute a shell command with security validation and return the result.");
+
+        // Add base directory information if configured
+        if (baseDir != null) {
+            desc.append(" WORKING DIRECTORY: The command will be executed in the directory: ");
+            desc.append(baseDir.toString());
+            desc.append(
+                    ". All relative paths in the command will be resolved from this directory.");
+        }
 
         // Add whitelist information if configured
         if (!allowedCommands.isEmpty()) {
@@ -234,7 +407,17 @@ public class ShellCommandTool implements AgentTool {
                                                 "integer",
                                                 "description",
                                                 "The maximum time (in seconds) allowed for the"
-                                                        + " command to run (default: 300)")),
+                                                        + " command to run (default: 300)"),
+                                "charset",
+                                        Map.of(
+                                                "type",
+                                                "string",
+                                                "description",
+                                                "The charset used to decode command output"
+                                                        + " (default: "
+                                                        + charset.name()
+                                                        + "). Common values: UTF-8, GBK, GB2312,"
+                                                        + " ISO-8859-1, etc.")),
                 "required", List.of("command"));
     }
 
@@ -244,11 +427,45 @@ public class ShellCommandTool implements AgentTool {
         String command = (String) input.get("command");
         Integer timeout =
                 input.containsKey("timeout") ? ((Number) input.get("timeout")).intValue() : null;
+        String charsetName = (String) input.get("charset");
+        Charset overrideCharset = null;
+        if (charsetName != null && !charsetName.trim().isEmpty()) {
+            try {
+                overrideCharset = Charset.forName(charsetName.trim());
+            } catch (IllegalArgumentException e) {
+                logger.warn(
+                        "Invalid charset name '{}', using default charset: {}",
+                        charsetName,
+                        charset.name());
+            }
+        }
 
-        return executeShellCommand(command, timeout);
+        return executeShellCommand(command, timeout, overrideCharset);
     }
 
     // =============================== Execute shell command ===============================
+
+    /**
+     * Execute a shell command and return the return code, standard output, and
+     * standard error within tags.
+     *
+     * <p>Uses the default charset configured for this tool instance.
+     *
+     * <p>Security features:
+     * <ul>
+     *   <li>Command whitelist validation - only whitelisted commands execute directly</li>
+     *   <li>Multiple command detection - prevents command chaining attacks (&amp;, |, ;)</li>
+     *   <li>User approval callback - requests permission for non-whitelisted commands</li>
+     *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
+     * </ul>
+     *
+     * @param command The shell command to execute
+     * @param timeout The maximum time (in seconds) allowed for the command to run (default: 300)
+     * @return A ToolResultBlock containing the formatted output with returncode, stdout, and stderr
+     */
+    public Mono<ToolResultBlock> executeShellCommand(String command, Integer timeout) {
+        return executeShellCommand(command, timeout, null);
+    }
 
     /**
      * Execute a shell command and return the return code, standard output, and
@@ -264,13 +481,19 @@ public class ShellCommandTool implements AgentTool {
      *
      * @param command The shell command to execute
      * @param timeout The maximum time (in seconds) allowed for the command to run (default: 300)
+     * @param overrideCharset Optional charset to use for decoding output (null to use default)
      * @return A ToolResultBlock containing the formatted output with returncode, stdout, and stderr
      */
-    public Mono<ToolResultBlock> executeShellCommand(String command, Integer timeout) {
+    public Mono<ToolResultBlock> executeShellCommand(
+            String command, Integer timeout, Charset overrideCharset) {
 
+        Charset effectiveCharset = overrideCharset != null ? overrideCharset : charset;
         int actualTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
         logger.debug(
-                "Executing shell command: '{}' with timeout: {} seconds", command, actualTimeout);
+                "Executing shell command: '{}' with timeout: {} seconds, charset: {}",
+                command,
+                actualTimeout,
+                effectiveCharset.name());
 
         // Validate command before execution
         CommandValidator.ValidationResult validationResult =
@@ -296,7 +519,7 @@ public class ShellCommandTool implements AgentTool {
             logger.info("Command '{}' approved by user, proceeding with execution", command);
         }
 
-        return Mono.fromCallable(() -> executeCommand(command, actualTimeout))
+        return Mono.fromCallable(() -> executeCommand(command, actualTimeout, effectiveCharset))
                 .subscribeOn(Schedulers.boundedElastic())
                 .timeout(Duration.ofSeconds(actualTimeout + 2))
                 .onErrorResume(
@@ -323,9 +546,11 @@ public class ShellCommandTool implements AgentTool {
      *
      * @param command The command to execute
      * @param timeoutSeconds The timeout in seconds
+     * @param effectiveCharset The charset to use for decoding output streams
      * @return ToolResultBlock with formatted result
      */
-    private ToolResultBlock executeCommand(String command, int timeoutSeconds) {
+    private ToolResultBlock executeCommand(
+            String command, int timeoutSeconds, Charset effectiveCharset) {
         ProcessBuilder processBuilder;
 
         // Determine the shell based on the operating system
@@ -336,13 +561,39 @@ public class ShellCommandTool implements AgentTool {
             processBuilder = new ProcessBuilder("sh", "-c", command);
         }
 
+        // Set working directory if baseDir is specified
+        if (baseDir != null) {
+            processBuilder.directory(baseDir.toFile());
+            logger.debug("Setting working directory to: {}", baseDir);
+        }
+
         Process process = null;
+        Future<String> stdoutFuture = null;
+        Future<String> stderrFuture = null;
+
         try {
             long startTime = System.currentTimeMillis();
             logger.debug("Starting command execution: {}", command);
 
             // Start the process
             process = processBuilder.start();
+
+            // CRITICAL FIX: Start asynchronous stream readers immediately to prevent pipe buffer
+            // deadlock
+            // When a child process writes more data than the pipe buffer can hold (typically
+            // 4-64KB),
+            // it will block waiting for the parent process to read the data. If the parent is
+            // blocked
+            // in waitFor(), this creates a deadlock. By reading streams asynchronously in
+            // background
+            // threads from the thread pool, we ensure the pipe buffers are continuously drained,
+            // preventing the deadlock.
+            stdoutFuture =
+                    STREAM_READER_POOL.submit(
+                            new StreamReader(process.getInputStream(), "stdout", effectiveCharset));
+            stderrFuture =
+                    STREAM_READER_POOL.submit(
+                            new StreamReader(process.getErrorStream(), "stderr", effectiveCharset));
 
             // Wait for the process to complete with timeout
             logger.debug("Waiting for process with timeout: {} seconds", timeoutSeconds);
@@ -359,12 +610,12 @@ public class ShellCommandTool implements AgentTool {
                         timeoutSeconds,
                         waitElapsed);
 
-                // Try to capture partial output before terminating
-                String stdout = readStream(process.getInputStream());
-                String stderr = readStream(process.getErrorStream());
-
                 // Terminate the process
                 process.destroyForcibly();
+
+                // Get partial output from async readers with short timeout
+                String stdout = getOutputWithTimeout(stdoutFuture, 1, TimeUnit.SECONDS);
+                String stderr = getOutputWithTimeout(stderrFuture, 1, TimeUnit.SECONDS);
 
                 String timeoutMessage =
                         String.format(
@@ -384,8 +635,11 @@ public class ShellCommandTool implements AgentTool {
 
             // Process completed normally
             int returnCode = process.exitValue();
-            String stdout = readStream(process.getInputStream());
-            String stderr = readStream(process.getErrorStream());
+
+            // Get complete output from async readers
+            // Process has finished, so readers should complete quickly
+            String stdout = getOutputWithTimeout(stdoutFuture, 5, TimeUnit.SECONDS);
+            String stderr = getOutputWithTimeout(stderrFuture, 5, TimeUnit.SECONDS);
 
             logger.debug("Command '{}' completed with return code: {}", command, returnCode);
 
@@ -411,37 +665,40 @@ public class ShellCommandTool implements AgentTool {
             // Clean up process resources
             if (process != null && process.isAlive()) {
                 // Destroy the process if still alive
-                // Note: Streams are already closed by try-with-resources in readStream()
+                // Note: Streams are already closed by try-with-resources in StreamReader
                 process.destroyForcibly();
             }
         }
     }
 
     /**
-     * Read all content from an input stream.
+     * Get output from a Future with timeout.
      *
-     * @param inputStream The input stream to read from
-     * @return The content as a string
+     * <p>This helper method safely retrieves the output from an asynchronous stream reader,
+     * with proper timeout and error handling. If the future times out or fails, it will be
+     * cancelled and an empty string will be returned.
+     *
+     * @param future The Future containing the output string
+     * @param timeout The timeout value
+     * @param unit The timeout unit
+     * @return The output string, or empty string if timeout or error occurs
      */
-    private String readStream(java.io.InputStream inputStream) {
-        if (inputStream == null) {
+    private String getOutputWithTimeout(Future<String> future, long timeout, TimeUnit unit) {
+        try {
+            return future.get(timeout, unit);
+        } catch (TimeoutException e) {
+            logger.warn("Timeout waiting for stream reader to complete");
+            future.cancel(true); // Cancel the task
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while waiting for stream reader");
+            future.cancel(true); // Cancel the task
+            return "";
+        } catch (ExecutionException e) {
+            logger.error("Error in stream reader: {}", e.getCause().getMessage(), e.getCause());
             return "";
         }
-
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (output.length() > 0) {
-                    output.append("\n");
-                }
-                output.append(line);
-            }
-        } catch (IOException e) {
-            logger.error("Error reading stream: {}", e.getMessage(), e);
-        }
-        return output.toString();
     }
 
     /**
@@ -489,6 +746,54 @@ public class ShellCommandTool implements AgentTool {
                     e.getMessage(),
                     e);
             return false;
+        }
+    }
+
+    /**
+     * Callable task for reading process output streams asynchronously.
+     * This prevents pipe buffer deadlock by continuously draining stdout/stderr.
+     */
+    private static class StreamReader implements Callable<String> {
+        private final InputStream inputStream;
+        private final String streamType;
+        private final Charset charset;
+
+        /**
+         * Creates a new StreamReader with the specified charset.
+         *
+         * @param inputStream The input stream to read from
+         * @param streamType A descriptive name for logging (e.g., "stdout", "stderr")
+         * @param charset The charset to use for decoding the stream
+         */
+        StreamReader(InputStream inputStream, String streamType, Charset charset) {
+            this.inputStream = inputStream;
+            this.streamType = streamType;
+            this.charset = charset;
+        }
+
+        @Override
+        public String call() throws Exception {
+            if (inputStream == null) {
+                return "";
+            }
+
+            logger.debug("StreamReader [{}] started with charset {}", streamType, charset.name());
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader =
+                    new BufferedReader(new InputStreamReader(inputStream, charset))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (output.length() > 0) {
+                        output.append("\n");
+                    }
+                    output.append(line);
+                }
+            } catch (IOException e) {
+                logger.error("Error reading {} stream: {}", streamType, e.getMessage(), e);
+                throw e;
+            }
+            logger.debug("StreamReader [{}] completed, read {} bytes", streamType, output.length());
+            return output.toString();
         }
     }
 }

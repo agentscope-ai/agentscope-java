@@ -22,10 +22,12 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
@@ -73,6 +75,7 @@ public class StructuredOutputHook implements Hook {
     private Msg resultMsg = null;
     private int retryCount = 0;
     private ChatUsage aggregatedUsage = null;
+    private ThinkingBlock aggregatedThinking = null;
 
     /**
      * Creates a new StructuredOutputHook.
@@ -165,9 +168,9 @@ public class StructuredOutputHook implements Hook {
                 completed = true;
                 resultMsg = event.getToolResultMsg();
 
-                // Collect usage now, before memory compression (which happens in PostCall)
+                // Collect metadata now, before memory compression (which happens in PostCall)
                 List<Msg> messages = new ArrayList<>(memory.getMessages());
-                aggregatedUsage = collectChatUsage(messages);
+                collectStructuredOutputMetadata(messages);
 
                 log.debug("generate_response completed successfully, stopping agent");
                 event.stopAgent();
@@ -201,11 +204,8 @@ public class StructuredOutputHook implements Hook {
         if (resultMsg != null) {
             Msg finalMsg = extractFinalResponseMsg(resultMsg);
             if (finalMsg != null) {
-                // Merge collected usage into final message (usage was collected in
-                // handlePostActing)
-                if (aggregatedUsage != null) {
-                    finalMsg = mergeChatUsage(finalMsg, aggregatedUsage);
-                }
+                // Merge collected metadata into final message
+                finalMsg = mergeCollectedMetadata(finalMsg);
                 memory.addMessage(finalMsg);
             }
         }
@@ -215,9 +215,9 @@ public class StructuredOutputHook implements Hook {
     }
 
     /**
-     * Collect and aggregate ChatUsage from assistant messages that are being removed.
+     * Collect and aggregate metadata from assistant messages that are being removed.
      */
-    private ChatUsage collectChatUsage(List<Msg> messages) {
+    private void collectStructuredOutputMetadata(List<Msg> messages) {
         int totalInput = 0;
         int totalOutput = 0;
         double totalTime = 0;
@@ -225,6 +225,7 @@ public class StructuredOutputHook implements Hook {
 
         for (Msg msg : messages) {
             if (isStructuredOutputRelated(msg) && msg.getRole() == MsgRole.ASSISTANT) {
+                // Collect ChatUsage
                 ChatUsage usage = msg.getChatUsage();
                 if (usage != null) {
                     hasUsage = true;
@@ -232,31 +233,53 @@ public class StructuredOutputHook implements Hook {
                     totalOutput += usage.getOutputTokens();
                     totalTime += usage.getTime();
                 }
+
+                // Collect ThinkingBlock (keep the last one)
+                ThinkingBlock thinking = msg.getFirstContentBlock(ThinkingBlock.class);
+                if (thinking != null) {
+                    this.aggregatedThinking = thinking;
+                }
             }
         }
 
-        return hasUsage
-                ? ChatUsage.builder()
-                        .inputTokens(totalInput)
-                        .outputTokens(totalOutput)
-                        .time(totalTime)
-                        .build()
-                : null;
+        this.aggregatedUsage =
+                hasUsage
+                        ? ChatUsage.builder()
+                                .inputTokens(totalInput)
+                                .outputTokens(totalOutput)
+                                .time(totalTime)
+                                .build()
+                        : null;
     }
 
     /**
-     * Create a new message with the given ChatUsage merged into its metadata.
+     * Merge collected metadata (ChatUsage and ThinkingBlock) into the message.
      */
-    private Msg mergeChatUsage(Msg msg, ChatUsage chatUsage) {
+    private Msg mergeCollectedMetadata(Msg msg) {
+        // Merge ChatUsage into metadata
         Map<String, Object> metadata =
                 new HashMap<>(msg.getMetadata() != null ? msg.getMetadata() : Map.of());
-        metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        if (aggregatedUsage != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, aggregatedUsage);
+        }
+
+        // Merge ThinkingBlock into content
+        List<ContentBlock> newContent;
+        if (aggregatedThinking != null) {
+            newContent = new ArrayList<>();
+            newContent.add(aggregatedThinking);
+            if (msg.getContent() != null) {
+                newContent.addAll(msg.getContent());
+            }
+        } else {
+            newContent = msg.getContent();
+        }
 
         return Msg.builder()
                 .id(msg.getId())
                 .name(msg.getName())
                 .role(msg.getRole())
-                .content(msg.getContent())
+                .content(newContent)
                 .metadata(metadata)
                 .timestamp(msg.getTimestamp())
                 .build();
@@ -372,6 +395,15 @@ public class StructuredOutputHook implements Hook {
      */
     public ChatUsage getAggregatedUsage() {
         return aggregatedUsage;
+    }
+
+    /**
+     * Get the aggregated ThinkingBlock from the last reasoning round.
+     *
+     * @return The ThinkingBlock, or null if no thinking was collected
+     */
+    public ThinkingBlock getAggregatedThinking() {
+        return aggregatedThinking;
     }
 
     @Override

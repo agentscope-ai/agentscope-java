@@ -24,7 +24,6 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
-import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
@@ -77,7 +76,6 @@ public class Toolkit {
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ToolExecutor executor;
-    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     /**
      * Create a Toolkit with default configuration (sequential execution using Reactor).
@@ -108,14 +106,13 @@ public class Toolkit {
         if (config != null && config.hasCustomExecutor()) {
             this.executor =
                     new ToolExecutor(
+                            this,
                             toolRegistry,
                             groupManager,
                             this.config,
-                            methodInvoker,
                             config.getExecutorService());
         } else {
-            this.executor =
-                    new ToolExecutor(toolRegistry, groupManager, this.config, methodInvoker);
+            this.executor = new ToolExecutor(this, toolRegistry, groupManager, this.config);
         }
     }
 
@@ -229,8 +226,7 @@ public class Toolkit {
 
         // Create registered wrapper with preset parameters
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(
-                        tool, groupName, extendedModel, mcpClientName, presetParameters);
+                new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
         // Register in toolRegistry
         toolRegistry.registerTool(toolName, tool, registered);
@@ -435,18 +431,30 @@ public class Toolkit {
     /**
      * Set the chunk callback for streaming tool responses.
      *
-     * <p>This is an internal method used by ReActAgent to receive streaming updates from tool
-     * executions. When tools emit progress updates via ToolEmitter, this callback will be invoked
-     * with the tool use block and the incremental result chunk.
-     *
-     * <p><b>Note:</b> This method is primarily intended for internal framework use. Most users
-     * should not need to call this directly as it is automatically configured by the agent.
+     * <p>This callback is preserved when the toolkit is deep-copied and will be invoked whenever
+     * tools emit progress updates via ToolEmitter. When the toolkit is used by ReActAgent, the
+     * user callback is invoked in addition to the framework's internal chunk callback.
      *
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        this.chunkCallback = callback;
         executor.setChunkCallback(callback);
+    }
+
+    /**
+     * Set the framework-internal chunk callback for streaming tool responses.
+     *
+     * <p>This method is used by ReActAgent to forward tool chunks into ActingChunkEvent hooks
+     * without overwriting any user callback configured via {@link #setChunkCallback(BiConsumer)}.
+     *
+     * <p><b>Internal API - Not recommended for external use.</b> This method is intended for
+     * framework components such as {@link io.agentscope.core.ReActAgent}. External callers should
+     * use {@link #setChunkCallback(BiConsumer)} instead.
+     *
+     * @param callback Internal callback to invoke when tools emit chunks via ToolEmitter
+     */
+    public void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        executor.setInternalChunkCallback(callback);
     }
 
     /**
@@ -474,7 +482,7 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return TracerRegistry.get().callTool(this, param, () -> executor.execute(param));
+        return executor.execute(param);
     }
 
     /**
@@ -594,6 +602,21 @@ public class Toolkit {
     }
 
     /**
+     * Atomically remove a tool only if the registered instance is the expected one.
+     *
+     * @param toolName Name of the tool to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    public boolean removeToolIfSame(String toolName, AgentTool expected) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return false;
+        }
+        return toolRegistry.removeToolIfSame(toolName, expected);
+    }
+
+    /**
      * Remove tool groups and all tools within them.
      *
      * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning
@@ -689,6 +712,9 @@ public class Toolkit {
     /**
      * Create a deep copy of this toolkit.
      *
+     * <p>Note: User-defined chunk callbacks are preserved during copy so they continue to work
+     * when the toolkit is passed into ReActAgent.Builder and copied internally.
+     *
      * @return A new Toolkit instance with copied state
      */
     public Toolkit copy() {
@@ -699,6 +725,9 @@ public class Toolkit {
 
         // Copy all tool groups and their states
         this.groupManager.copyTo(copy.groupManager);
+
+        // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
+        copy.executor.setChunkCallback(this.executor.getChunkCallback());
 
         return copy;
     }

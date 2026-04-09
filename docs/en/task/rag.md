@@ -540,7 +540,7 @@ public class CustomReader implements Reader {
 6. **Vector Store Selection**:
    - Use **InMemoryStore**: Development, testing, small datasets (<10K documents)
    - Use **QdrantStore**: Production, large datasets, persistence required
-
+   - Use **ElasticsearchStore**: Production environments, large-scale datasets, and self-hosted (private deployment) services.
 
 ## Complete Examples
 
@@ -548,4 +548,6 @@ public class CustomReader implements Reader {
 - **Bailian Knowledge Base Example**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
 - **Dify Knowledge Base Example**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
 - **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
+- **Elasticsearch Knowledge Base Example**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
 - **PgVector Knowledge Base Example**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
+- 

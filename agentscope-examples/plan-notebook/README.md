@@ -7,6 +7,7 @@ A Spring Boot web application demonstrating the PlanNotebook component of AgentS
 PlanNotebook is an interactive example that showcases how to integrate the AgentScope Java SDK's planning capabilities into a web application. It features:
 
 - **SSE Streaming**: Real-time agent response streaming via Server-Sent Events
+- **Model context inspection**: Each LLM call emits a `ctx` SSE payload (system + memory as sent); the UI shows JSON, a flat transcript, and a line diff vs the previous call in the same reply
 - **Plan Management**: Create, update, and track plans with subtasks
 - **Interactive Web UI**: Built-in web interface for chat and plan visualization
 - **REST API**: Comprehensive API for programmatic plan management
@@ -78,6 +79,15 @@ Open your browser and navigate to: **http://localhost:8080**
 | GET | `/api/chat?message=...&sessionId=...` | Chat with agent (SSE streaming) |
 | GET | `/api/health` | Health check |
 | POST | `/api/reset` | Reset agent and clear all data |
+
+### Human-in-the-Loop (HITL) API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/resume` | Resume agent execution after user review (SSE streaming) |
+| GET | `/api/paused` | Check if the agent is currently paused |
+| POST | `/api/stop` | Request the agent to pause after the next plan tool execution |
+| GET | `/api/stop-requested` | Check if a stop has been requested |
 
 ### Plan API
 
