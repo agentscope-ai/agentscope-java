@@ -272,6 +272,52 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should apply preset parameters after explicit ToolCallParam input")
+    void shouldApplyPresetParametersAfterExplicitInput() {
+        class OverrideTool {
+            @Tool(description = "Test preset precedence with explicit ToolCallParam input")
+            public ToolResultBlock testOverride(
+                    @ToolParam(name = "param1") String param1,
+                    @ToolParam(name = "param2") String param2) {
+                return ToolResultBlock.text(
+                        String.format("param1: %s, param2: %s", param1, param2));
+            }
+        }
+
+        toolkit.registration()
+                .tool(new OverrideTool())
+                .presetParameters(
+                        Map.of(
+                                "testOverride",
+                                Map.of("param1", "preset_value1", "param2", "preset_value2")))
+                .apply();
+
+        Map<String, Object> explicitInput = Map.of("param1", "agent_value1");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-override")
+                        .name("testOverride")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(explicitInput)
+                                        .build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        String resultText = extractFirstText(result);
+        assertTrue(
+                resultText.contains("param1: preset_value1"),
+                "Preset value should override explicit ToolCallParam input");
+        assertTrue(resultText.contains("param2: preset_value2"), "Preset value should be used");
+    }
+
+    @Test
     @DisplayName("Should format all error messages consistently")
     void testErrorMessageFormat() {
         // Register various failing tools
