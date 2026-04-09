@@ -325,14 +325,14 @@ public class AguiAgentAdapter {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock output : toolResult.getOutput()) {
             if (output instanceof TextBlock textBlock) {
-                if (sb.length() > 0) {
+                if (!sb.isEmpty()) {
                     sb.append("\n");
                 }
                 sb.append(textBlock.getText());
             }
         }
 
-        return sb.length() > 0 ? sb.toString() : null;
+        return !sb.isEmpty() ? sb.toString() : null;
     }
 
     /**
