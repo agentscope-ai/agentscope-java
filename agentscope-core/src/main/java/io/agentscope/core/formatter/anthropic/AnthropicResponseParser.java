@@ -94,7 +94,11 @@ public class AnthropicResponseParser {
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
                         .build();
 
-        return ChatResponse.builder().id(message.id()).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder()
+                .id(safeMessageId(message))
+                .content(contentBlocks)
+                .usage(usage)
+                .build();
     }
 
     /**
@@ -125,7 +129,7 @@ public class AnthropicResponseParser {
 
         // Message start
         if (event.isMessageStart()) {
-            messageId = event.asMessageStart().message().id();
+            messageId = safeMessageId(event.asMessageStart().message());
         }
 
         // Content block delta - text
@@ -187,6 +191,35 @@ public class AnthropicResponseParser {
         }
 
         return ChatResponse.builder().id(messageId).content(contentBlocks).usage(usage).build();
+    }
+
+    /**
+     * Read Anthropic message id without requiring the strict SDK accessor to succeed.
+     *
+     * <p>Some proxy services strip the `id` field from the payload. In that case the SDK's
+     * `message.id()` accessor throws, but the parser should still be able to produce a
+     * ChatResponse and let the ChatResponse builder generate a fallback id.
+     */
+    private static String safeMessageId(Message message) {
+        if (message == null) {
+            return null;
+        }
+
+        try {
+            var rawId = message._id();
+            if (rawId != null && !rawId.isMissing()) {
+                return rawId.asString().orElse(null);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to read Anthropic raw message id: {}", e.getMessage());
+        }
+
+        try {
+            return message.id();
+        } catch (Exception e) {
+            log.debug("Anthropic message id is missing, falling back to generated ChatResponse id");
+            return null;
+        }
     }
 
     /**
