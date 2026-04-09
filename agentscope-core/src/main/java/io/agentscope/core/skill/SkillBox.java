@@ -38,12 +38,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SkillBox implements StateModule {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
     private static final String BASE64_PREFIX = "base64:";
+    private static final Pattern INVALID_FILE_NAME_CHARS = Pattern.compile("[\\\\/:*?\"<>|]");
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final AgentSkillPromptProvider skillPromptProvider;
@@ -734,7 +736,7 @@ public class SkillBox implements StateModule {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Path skillDir = targetDir.resolve(unifyToSafeSkillId(skillId));
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -775,6 +777,26 @@ public class SkillBox implements StateModule {
         }
 
         logger.info("Uploaded {} skill files to: {}", fileCount, targetDir);
+    }
+
+    /**
+     * Normalizes a logical skill id to a filesystem-safe directory name.
+     *
+     * <p>Why this is needed: some repositories (e.g. Nacos) build source identifiers like
+     * {@code nacos:public}. The skill id is composed as {@code name + "_" + source}, so it may
+     * contain {@code ':'}. On Windows, {@code ':'} is illegal in a path segment (except drive
+     * letters), and using it in {@link Path#resolve(String)} can fail upload with
+     * {@code InvalidPathException} or cause file writes to be skipped.
+     *
+     * <p>This method only affects filesystem paths. It does not change the logical
+     * {@link AgentSkill#getSkillId()} value kept in memory.
+     */
+    static String unifyToSafeSkillId(String skillId) {
+        if (skillId == null || skillId.isBlank()) {
+            return "skill";
+        }
+        String safe = INVALID_FILE_NAME_CHARS.matcher(skillId).replaceAll("_");
+        return safe.isBlank() ? "skill" : safe;
     }
 
     private static class DefaultSkillFileFilter implements SkillFileFilter {
