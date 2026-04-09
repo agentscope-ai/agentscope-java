@@ -15,17 +15,20 @@
  */
 package com.alibaba.cloud.ai.examples.multiagents.skills;
 
+import java.io.IOException;
+import java.util.List;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
+import io.agentscope.core.skill.repository.GitSkillRepository;
 import io.agentscope.core.tool.Toolkit;
-import java.io.IOException;
-import java.util.List;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 /**
  * Configures the SQL assistant agent using AgentScope skill support.
@@ -50,9 +53,13 @@ public class SkillsConfig {
             Use the read_skill tool when you need detailed schema or business logic for a specific domain.
             """;
 
+//    @Bean
+//    public ClasspathSkillRepository skillRepository() throws IOException {
+//        return new ClasspathSkillRepository("skills");
+//    }
     @Bean
-    public ClasspathSkillRepository skillRepository() throws IOException {
-        return new ClasspathSkillRepository("skills");
+    public GitSkillRepository skillRepository() throws IOException {
+        return new GitSkillRepository("https://github.com/JimLiu/baoyu-skills.git", "skills");
     }
 
     @Bean

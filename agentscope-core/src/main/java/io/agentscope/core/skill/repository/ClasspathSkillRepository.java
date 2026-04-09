@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.skill.repository;
 
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -27,8 +25,12 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 
 /**
  * ClasspathSkillRepository - Loads skills from classpath resources and JAR files.
@@ -76,7 +78,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     private final Logger logger = LoggerFactory.getLogger(ClasspathSkillRepository.class);
 
     private final FileSystem fileSystem;
-    private final Path skillBasePath;
+    protected final Path skillBasePath;
     private final boolean isJar;
     private final String source;
     private final String resourcePath;

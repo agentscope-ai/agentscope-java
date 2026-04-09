@@ -18,3 +18,6 @@ server:
 logging:
   level:
     io.agentscope: DEBUG
+
+dashscope:
+  key: sk-ee81f85f800d4dd296deba602faf51a3
