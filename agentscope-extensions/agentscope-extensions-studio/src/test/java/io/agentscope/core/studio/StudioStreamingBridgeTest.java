@@ -16,17 +16,23 @@
 package io.agentscope.core.studio;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -42,11 +48,29 @@ class StudioStreamingBridgeTest {
                 .build();
     }
 
+    private Msg thinkingMsg(String thinking) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("Agent")
+                .content(ThinkingBlock.builder().thinking(thinking).build())
+                .build();
+    }
+
+    private Msg toolResultMsg(String text) {
+        ToolResultBlock toolResult =
+                ToolResultBlock.text(text);
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("Agent")
+                .content(toolResult)
+                .build();
+    }
+
     @Test
     void testStreamingAndCompletion() {
 
-        StudioClient mockClient = mock(StudioClient.class);
-        StudioWebSocketClient mockWs = mock(StudioWebSocketClient.class);
+        StudioClient mockClient = Mockito.mock(StudioClient.class);
+        StudioWebSocketClient mockWs = Mockito.mock(StudioWebSocketClient.class);
 
         when(mockClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
 
@@ -77,11 +101,14 @@ class StudioStreamingBridgeTest {
 
         verify(mockWs, times(5)).sendStreamEvent(any(Event.class));
 
-        verify(mockWs, atLeastOnce()).sendStreamEvent(argThat(e ->
-                !e.isLast()
-                        && (e.getType() == EventType.REASONING
-                        || e.getType() == EventType.TOOL_RESULT
-                        || e.getType() == EventType.AGENT_RESULT)));
+        verify(mockWs, Mockito.atLeastOnce())
+                .sendStreamEvent(
+                        argThat(
+                                e ->
+                                        !e.isLast()
+                                                && (e.getType() == EventType.REASONING
+                                                        || e.getType() == EventType.TOOL_RESULT
+                                                        || e.getType() == EventType.AGENT_RESULT)));
 
         verify(mockWs, times(1)).sendStreamCompleted();
 
@@ -90,8 +117,8 @@ class StudioStreamingBridgeTest {
 
     @Test
     void testFallbackWhenNoTerminalAgentResult() {
-        StudioClient mockClient = mock(StudioClient.class);
-        StudioWebSocketClient mockWs = mock(StudioWebSocketClient.class);
+        StudioClient mockClient = Mockito.mock(StudioClient.class);
+        StudioWebSocketClient mockWs = Mockito.mock(StudioWebSocketClient.class);
 
         when(mockClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
 
@@ -109,5 +136,36 @@ class StudioStreamingBridgeTest {
         verify(mockWs, times(1)).sendStreamCompleted();
         verify(mockClient, times(1)).pushMessage(eq(lastMsg));
     }
-}
 
+    @Test
+    void testReasoningAndToolResultEventsWithThinkingAndToolResultBlocksAreStreamed() {
+        StudioClient mockClient = Mockito.mock(StudioClient.class);
+        StudioWebSocketClient mockWs = Mockito.mock(StudioWebSocketClient.class);
+
+        when(mockClient.pushMessage(any(Msg.class))).thenReturn(Mono.empty());
+
+        StudioStreamingBridge bridge = new StudioStreamingBridge(mockClient, mockWs);
+
+        Event reasoningFinal =
+                new Event(EventType.REASONING, thinkingMsg("chain-of-thought"), true);
+        Event toolFinal =
+                new Event(EventType.TOOL_RESULT, toolResultMsg("tool-output"), true);
+
+        // Include a terminal AGENT_RESULT so that the stream completes normally
+        Msg finalMsg = msg("answer");
+        Event answerFinal = new Event(EventType.AGENT_RESULT, finalMsg, true);
+
+        Flux<Event> flux = Flux.just(reasoningFinal, toolFinal, answerFinal);
+
+        bridge.forwardToStudio(flux).block();
+
+        // Both reasoning and tool result events (even with isLast == true) should be streamed
+        verify(mockWs, times(1)).sendStreamEvent(reasoningFinal);
+        verify(mockWs, times(1)).sendStreamEvent(toolFinal);
+        // Terminal AGENT_RESULT should not be streamed as an event, only used for completion
+        verify(mockWs, Mockito.never()).sendStreamEvent(answerFinal);
+
+        verify(mockWs, times(1)).sendStreamCompleted();
+        verify(mockClient, times(1)).pushMessage(eq(finalMsg));
+    }
+}

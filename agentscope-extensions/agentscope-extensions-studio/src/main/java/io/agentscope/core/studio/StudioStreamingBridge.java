@@ -15,17 +15,35 @@
  */
 package io.agentscope.core.studio;
 
-
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.Msg;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.Objects;
-
+/**
+ * Bridges agent streaming events to AgentScope Studio.
+ *
+ * <p>This component subscribes to a {@link reactor.core.publisher.Flux} of
+ * {@link io.agentscope.core.agent.Event} instances produced by a
+ * {@code StreamableAgent} and forwards them to Studio using both the HTTP
+ * {@link StudioClient} and the WebSocket-based {@link StudioWebSocketClient}.
+ *
+ * <p>The bridge forwards REASONING, TOOL_RESULT, and SUMMARY events directly to the
+ * Studio frontend via {@link StudioWebSocketClient#sendStreamEvent(Event)} so that
+ * intermediate and final reasoning/tool outputs are visible in real time. Non-terminal
+ * {@link EventType#AGENT_RESULT} events are also streamed as incremental chunks.
+ *
+ * <p>The final {@link EventType#AGENT_RESULT} event with {@code isLast == true} is treated as
+ * a control signal: its {@link Msg} payload is cached for persistence and it triggers
+ * {@link StudioWebSocketClient#sendStreamCompleted()} but is not forwarded again as a
+ * streaming chunk. After the stream completes, the selected final {@link Msg} (terminal
+ * AGENT_RESULT if present, otherwise the last non-terminal AGENT_RESULT) is persisted once
+ * via {@link StudioClient#pushMessage(Msg)}.
+ */
 public class StudioStreamingBridge {
 
     private static final Logger logger = LoggerFactory.getLogger(StudioStreamingBridge.class);
@@ -33,6 +51,13 @@ public class StudioStreamingBridge {
     private final StudioClient studioClient;
     private final StudioWebSocketClient webSocketClient;
 
+    /**
+     * Creates a new streaming bridge for forwarding agent events to Studio.
+     *
+     * @param studioClient HTTP client used to persist the final agent message to Studio
+     * @param webSocketClient WebSocket client used to stream incremental events and
+     *     completion signals to the Studio frontend
+     */
     public StudioStreamingBridge(StudioClient studioClient, StudioWebSocketClient webSocketClient) {
         this.studioClient = Objects.requireNonNull(studioClient, "studioClient must not be null");
         this.webSocketClient =
@@ -40,23 +65,28 @@ public class StudioStreamingBridge {
     }
 
     /**
-     * Forwards Flux<Event> to Studio:
+     * Forwards a stream of agent events to Studio for real-time visualization and
+     * final message persistence.
      *
      * <ol>
-     *   <li>Non-terminal events (isLast == false) are streamed to the frontend via
-     *       webSocketClient.sendStreamEvent(event).</li>
-     *   <li>The terminal AGENT_RESULT event with isLast == true is used to:
+     *   <li>All REASONING, TOOL_RESULT, and SUMMARY events are forwarded to the frontend via
+     *       {@link StudioWebSocketClient#sendStreamEvent(Event)} regardless of the {@code isLast}
+     *       flag so that final reasoning/tool outputs remain visible even when emitted as
+     *       terminal events.</li>
+     *   <li>Non-terminal AGENT_RESULT events ({@code isLast == false}) are also forwarded as
+     *       streaming chunks.</li>
+     *   <li>The terminal AGENT_RESULT event with {@code isLast == true} is used to:
      *       <ul>
-     *         <li>cache the final Msg for persistence, and</li>
-     *         <li>trigger webSocketClient.sendStreamCompleted().</li>
+     *         <li>cache the final {@link Msg} for persistence, and</li>
+     *         <li>trigger {@link StudioWebSocketClient#sendStreamCompleted()}.</li>
      *       </ul>
      *       It is not sent again as a streaming chunk.</li>
-     *   <li>If a final Msg exists, it is persisted once via studioClient.pushMessage(finalMsg)
-     *       after the stream completes.</li>
+     *   <li>If a final {@link Msg} exists, it is persisted once via
+     *       {@link StudioClient#pushMessage(Msg)} after the stream completes.</li>
      * </ol>
      *
-     * <p>Note: isLast is treated purely as a control flag and does not generate
-     * additional visible content.</p>
+     * <p>Note: {@code isLast} is treated purely as a control flag for AGENT_RESULT and does not
+     * generate additional visible content.</p>
      */
     public Mono<Void> forwardToStudio(Flux<Event> eventFlux) {
         return Mono.defer(
@@ -68,7 +98,8 @@ public class StudioStreamingBridge {
                             .doOnError(
                                     ex ->
                                             logger.error(
-                                                    "Error occurred during streaming to Studio", ex))
+                                                    "Error occurred during streaming to Studio",
+                                                    ex))
                             .doFinally(
                                     signalType -> {
                                         if (!holder.completedSignalSent) {
@@ -76,7 +107,8 @@ public class StudioStreamingBridge {
                                                 webSocketClient.sendStreamCompleted();
                                             } catch (Exception e) {
                                                 logger.error(
-                                                        "Failed to send streamCompleted in doFinally",
+                                                        "Failed to send streamCompleted in"
+                                                                + " doFinally",
                                                         e);
                                             }
                                             holder.completedSignalSent = true;
@@ -88,8 +120,8 @@ public class StudioStreamingBridge {
                                                 Msg finalMsg = holder.getEffectiveFinalMsg();
                                                 if (finalMsg == null) {
                                                     logger.debug(
-                                                            "No final Msg determined from stream; skip"
-                                                                    + " pushMessage");
+                                                            "No final Msg determined from stream;"
+                                                                    + " skip pushMessage");
                                                     return Mono.empty();
                                                 }
                                                 return studioClient.pushMessage(finalMsg);
@@ -129,10 +161,9 @@ public class StudioStreamingBridge {
             return;
         }
 
-        if (!isLast
-                && (type == EventType.REASONING
+        if (type == EventType.REASONING
                 || type == EventType.TOOL_RESULT
-                || type == EventType.SUMMARY)) {
+                || type == EventType.SUMMARY) {
             webSocketClient.sendStreamEvent(event);
         }
     }

@@ -20,6 +20,8 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.util.JsonUtils;
 import io.socket.client.IO;
 import io.socket.client.Socket;
@@ -402,6 +404,14 @@ public class StudioWebSocketClient {
 
     /**
      * Sends a stream event to Studio in real-time.
+     *
+     * <p>This method delivers best-effort, non-guaranteed notifications over the
+     * existing Socket.IO connection. If the underlying WebSocket is {@code null}
+     * or not connected, the method logs a warning and returns without throwing
+     * an exception and without attempting any reconnection.
+     *
+     * @param event the agent event to forward to Studio; if {@code null}, the
+     *     call is ignored and no payload is emitted
      */
     public void sendStreamEvent(Event event) {
         if (socket == null || !socket.connected()) {
@@ -444,6 +454,11 @@ public class StudioWebSocketClient {
 
     /**
      * Sends a stream completed event to Studio.
+     *
+     * <p>This method delivers a best-effort completion signal over the
+     * existing Socket.IO connection. If the underlying WebSocket is {@code null}
+     * or not connected, the method logs a warning and returns without throwing
+     * an exception and without attempting any reconnection.
      */
     public void sendStreamCompleted() {
         if (socket == null || !socket.connected()) {
@@ -466,11 +481,47 @@ public class StudioWebSocketClient {
         if (msg == null || msg.getContent() == null || msg.getContent().isEmpty()) {
             return null;
         }
-        Object first = msg.getContent().get(0);
-        if (first instanceof TextBlock tb && tb.getText() != null) {
-            return tb.getText();
+
+        StringBuilder builder = new StringBuilder();
+        for (Object block : msg.getContent()) {
+            if (!(block instanceof ContentBlock)) {
+                continue;
+            }
+            if (block instanceof TextBlock) {
+                TextBlock tb = (TextBlock) block;
+                if (tb.getText() != null && !tb.getText().isEmpty()) {
+                    appendWithNewline(builder, tb.getText());
+                }
+            } else if (block instanceof ThinkingBlock) {
+                ThinkingBlock tb = (ThinkingBlock) block;
+                if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
+                    appendWithNewline(builder, tb.getThinking());
+                }
+            } else if (block instanceof ToolResultBlock) {
+                ToolResultBlock trb = (ToolResultBlock) block;
+                for (ContentBlock outputBlock : trb.getOutput()) {
+                    if (outputBlock instanceof TextBlock) {
+                        TextBlock otb = (TextBlock) outputBlock;
+                        if (otb.getText() != null && !otb.getText().isEmpty()) {
+                            appendWithNewline(builder, otb.getText());
+                        }
+                    } else if (outputBlock instanceof ThinkingBlock) {
+                        ThinkingBlock otb = (ThinkingBlock) outputBlock;
+                        if (otb.getThinking() != null && !otb.getThinking().isEmpty()) {
+                            appendWithNewline(builder, otb.getThinking());
+                        }
+                    }
+                }
+            }
         }
 
-        return null;
+        return builder.length() > 0 ? builder.toString() : null;
+    }
+
+    private void appendWithNewline(StringBuilder builder, String text) {
+        if (builder.length() > 0) {
+            builder.append('\n');
+        }
+        builder.append(text);
     }
 }

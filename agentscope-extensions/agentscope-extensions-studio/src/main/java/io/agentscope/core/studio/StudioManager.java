@@ -127,9 +127,22 @@ public class StudioManager {
     }
 
     /**
-     * Stream agent events to Studio.
+     * Stream agent events to Studio for real-time visualization and final message persistence.
+     *
+     * <p>This method invokes {@link StreamableAgent#stream(Msg, StreamOptions)} on the provided
+     * agent to obtain a {@link Flux} of {@link Event} instances, then forwards that stream to
+     * Studio via a {@link StudioStreamingBridge}. The bridge:
+     * @param agent the {@link StreamableAgent} to run; must not be {@code null}
+     * @param input the input {@link Msg} for this invocation (may be {@code null} for agents that
+     *     do not require an initial message)
+     * @param options optional {@link StreamOptions} controlling the agent's streaming behavior;
+     *     when {@code null}, {@link StreamOptions#defaults()} is used
+     * @return a {@link Mono} that completes when the event stream has been fully forwarded to
+     *     Studio and, if a final message exists, persisted; if Studio is not initialized,
+     *     this returns a {@link Mono#error(Throwable)} with {@link IllegalStateException}
      */
-    public static Mono<Void> streamToStudio(StreamableAgent agent, Msg input, StreamOptions options) {
+    public static Mono<Void> streamToStudio(
+            StreamableAgent agent, Msg input, StreamOptions options) {
         if (!isInitialized() || client == null || wsClient == null) {
             return Mono.error(new IllegalStateException("Studio is not initialized"));
         }
