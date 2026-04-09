@@ -16,11 +16,16 @@
 package io.agentscope.core.studio;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.StreamableAgent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.tracing.telemetry.TelemetryTracer;
 import java.net.URI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -119,6 +124,19 @@ public class StudioManager {
         config = null;
         client = null;
         wsClient = null;
+    }
+
+    /**
+     * Stream agent events to Studio.
+     */
+    public static Mono<Void> streamToStudio(StreamableAgent agent, Msg input, StreamOptions options) {
+        if (!isInitialized() || client == null || wsClient == null) {
+            return Mono.error(new IllegalStateException("Studio is not initialized"));
+        }
+        StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        Flux<Event> events = agent.stream(input, effective);
+        StudioStreamingBridge bridge = new StudioStreamingBridge(client, wsClient);
+        return bridge.forwardToStudio(events);
     }
 
     /**

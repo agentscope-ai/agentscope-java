@@ -15,7 +15,11 @@
  */
 package io.agentscope.core.studio;
 
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.util.JsonUtils;
 import io.socket.client.IO;
 import io.socket.client.Socket;
@@ -394,5 +398,79 @@ public class StudioWebSocketClient {
         public Map<String, Object> getStructuredInput() {
             return structuredInput;
         }
+    }
+
+    /**
+     * Sends a stream event to Studio in real-time.
+     */
+    public void sendStreamEvent(Event event) {
+        if (socket == null || !socket.connected()) {
+            logger.warn("Attempted to send stream event while WebSocket is not connected");
+            return;
+        }
+        if (event == null) {
+            return;
+        }
+
+        try {
+            JSONObject payload = new JSONObject();
+            EventType type = event.getType();
+            payload.put("eventType", type != null ? type.name() : "UNKNOWN");
+            payload.put("isLast", event.isLast());
+
+            Msg msg = event.getMessage();
+            if (msg != null) {
+                String text = extractTextFromMsg(msg);
+                if (text != null) {
+                    payload.put("text", text);
+                }
+                if (msg.getRole() != null) {
+                    payload.put("role", msg.getRole().name());
+                }
+                if (msg.getName() != null) {
+                    payload.put("name", msg.getName());
+                }
+                if (msg.getMetadata() != null) {
+                    String metadataJson = JsonUtils.getJsonCodec().toJson(msg.getMetadata());
+                    payload.put("metadata", new JSONObject(metadataJson));
+                }
+            }
+
+            socket.emit("studioStreamEvent", payload);
+        } catch (Exception e) {
+            logger.error("Failed to send stream event to Studio", e);
+        }
+    }
+
+    /**
+     * Sends a stream completed event to Studio.
+     */
+    public void sendStreamCompleted() {
+        if (socket == null || !socket.connected()) {
+            logger.warn("Attempted to send streamCompleted while WebSocket is not connected");
+            return;
+        }
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("status", "completed");
+            socket.emit("studioStreamCompleted", payload);
+        } catch (Exception e) {
+            logger.error("Failed to send streamCompleted event to Studio", e);
+        }
+    }
+
+    /**
+     * Extracts text content from a Msg for streaming to Studio.
+     */
+    private String extractTextFromMsg(Msg msg) {
+        if (msg == null || msg.getContent() == null || msg.getContent().isEmpty()) {
+            return null;
+        }
+        Object first = msg.getContent().get(0);
+        if (first instanceof TextBlock tb && tb.getText() != null) {
+            return tb.getText();
+        }
+
+        return null;
     }
 }
