@@ -15,6 +15,14 @@
  */
 package io.agentscope.core.skill.repository;
 
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
+
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -25,14 +33,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
-
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import java.util.stream.Stream;
 
 /**
  * GitSkillRepository - Downloads skills from a Git repository and loads them from the local filesystem.
@@ -99,10 +100,10 @@ public class GitSkillRepository implements AgentSkillRepository {
 
             Path classpathRoot = Path.of(classpathRootUrl.toURI());
             this.skillsPath = Files.createDirectories(classpathRoot.resolve(GIT_SKILL_PATH + repoName));
-            this.tempPath   = Files.createDirectories(classpathRoot.resolve("temp"));
+            this.tempPath = Files.createDirectories(classpathRoot.resolve("temp"));
 
             logger.info("Skills path: {}", this.skillsPath);
-            logger.info("Temp   path: {}", this.tempPath);
+            logger.info("Temp path: {}", this.tempPath);
 
         } catch (URISyntaxException e) {
             throw new IOException("Invalid classpath root URI", e);
@@ -167,27 +168,31 @@ public class GitSkillRepository implements AgentSkillRepository {
 
     private void copySkillsToPath(Path sourceSkillsPath, Path targetPath) throws IOException {
         logger.info("Copying skills from {} to {}", sourceSkillsPath, targetPath);
-        long skillCount = Files.list(sourceSkillsPath)
-                .filter(Files::isDirectory)
-                .filter(path -> !path.getFileName().toString().startsWith("."))
-                .map(skillDir -> {
-                    try {
-                        String skillName = skillDir.getFileName().toString();
-                        Path targetSkillDir = targetPath.resolve(skillName);
+        long skillCount;
+        try (Stream<Path> stream = Files.list(sourceSkillsPath)) {
+            skillCount = stream
+                    .filter(Files::isDirectory)
+                    .filter(path -> !path.getFileName().toString().startsWith("."))
+                    .map(skillDir -> {
+                        try {
+                            String skillName = skillDir.getFileName().toString();
+                            Path targetSkillDir = targetPath.resolve(skillName);
 
-                        if (Files.exists(targetSkillDir)) {
-                            logger.info("Overwriting existing skill: {}", skillName);
-                            deleteDirectory(targetSkillDir);
+                            if (Files.exists(targetSkillDir)) {
+                                logger.info("Overwriting existing skill: {}", skillName);
+                                deleteDirectory(targetSkillDir);
+                            }
+
+                            copyDirectory(skillDir, targetSkillDir);
+                            logger.debug("Copied skill: {}", skillName);
+                            return 1;
+                        } catch (IOException e) {
+                            logger.warn("Failed to copy skill: {}", skillDir, e);
+                            return 0;
                         }
-
-                        copyDirectory(skillDir, targetSkillDir);
-                        logger.debug("Copied skill: {}", skillName);
-                        return 1;
-                    } catch (IOException e) {
-                        logger.warn("Failed to copy skill: {}", skillDir, e);
-                        return 0;
-                    }
-                }).count();
+                    })
+                    .count();
+        }
         logger.info("Copied {} skill directories to {}", skillCount, targetPath);
     }
 
@@ -230,9 +235,7 @@ public class GitSkillRepository implements AgentSkillRepository {
         });
     }
 
-    // -------------------------------------------------------------------------
     // AgentSkillRepository implementation
-    // -------------------------------------------------------------------------
 
     @Override
     public AgentSkill getSkill(String skillName) {
@@ -290,9 +293,7 @@ public class GitSkillRepository implements AgentSkillRepository {
         return false;
     }
 
-    // -------------------------------------------------------------------------
     // Git-specific operations
-    // -------------------------------------------------------------------------
 
     /**
      * Refreshes the repository by re-downloading from Git.
