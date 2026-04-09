@@ -47,8 +47,7 @@ class SkillBoxSafeSkillIdTest {
 
         Map<String, String> resources = new HashMap<>();
         resources.put("scripts/main.py", "print('ok')");
-        AgentSkill skill =
-                new AgentSkill("my_skill", "desc", "content", resources, "nacos:public");
+        AgentSkill skill = new AgentSkill("my_skill", "desc", "content", resources, "nacos:public");
         skillBox.registerSkill(skill);
 
         skillBox.uploadSkillFiles();
