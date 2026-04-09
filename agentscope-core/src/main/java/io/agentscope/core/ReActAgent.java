@@ -936,45 +936,21 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     }
 
     private Mono<Void> notifyReasoningChunk(Msg chunkMsg, ReasoningContext context) {
-        ContentBlock content = chunkMsg.getFirstContentBlock();
+        return notifyReasoningChunk(chunkMsg, context, null);
+    }
 
-        ContentBlock accumulatedContent = null;
-        if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
-        } else if (content instanceof ToolUseBlock tub) {
-            // Support streaming ToolUseBlock events
-            ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
-            if (accumulated != null) {
-                accumulatedContent = accumulated;
-            } else {
-                // If no accumulated data, use the current chunk directly
-                accumulatedContent = tub;
-            }
+    private Mono<Void> notifyReasoningChunk(
+            Msg chunkMsg, ReasoningContext context, GenerateOptions generateOptions) {
+        ContentBlock accumulatedContent = resolveAccumulatedReasoningContent(chunkMsg, context);
+        if (accumulatedContent == null) {
+            return Mono.empty();
         }
 
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            ReasoningChunkEvent event =
-                    new ReasoningChunkEvent(
-                            this, model.getModelName(), null, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
-        }
-
-        return Mono.empty();
+        Msg accumulated = buildAccumulatedChunkMessage(chunkMsg, accumulatedContent, context);
+        ReasoningChunkEvent event =
+                new ReasoningChunkEvent(
+                        this, model.getModelName(), generateOptions, chunkMsg, accumulated);
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
     // ==================== Summary Hook Notification Methods ====================
@@ -994,34 +970,66 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             Msg chunkMsg, ReasoningContext context, GenerateOptions generateOptions) {
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
-        ContentBlock accumulatedContent = null;
+        ContentBlock accumulatedContent = resolveAccumulatedSummaryContent(chunkMsg, context);
+        if (accumulatedContent == null) {
+            return Mono.empty();
+        }
+
+        Msg accumulated = buildAccumulatedChunkMessage(chunkMsg, accumulatedContent, context);
+        SummaryChunkEvent event =
+                new SummaryChunkEvent(
+                        this, model.getModelName(), generateOptions, chunkMsg, accumulated);
+        Mono<Void> summaryNotification =
+                Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+
+        if (content instanceof ThinkingBlock) {
+            return notifyReasoningChunk(chunkMsg, context, generateOptions)
+                    .then(summaryNotification);
+        }
+
+        return summaryNotification;
+    }
+
+    private Msg buildAccumulatedChunkMessage(
+            Msg chunkMsg, ContentBlock accumulatedContent, ReasoningContext context) {
+        Msg accumulated =
+                Msg.builder()
+                        .id(chunkMsg.getId())
+                        .name(chunkMsg.getName())
+                        .role(chunkMsg.getRole())
+                        .content(accumulatedContent)
+                        .build();
+        if (context.getChatUsage() != null) {
+            accumulated.getMetadata().put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
+        }
+        return accumulated;
+    }
+
+    private ContentBlock resolveAccumulatedReasoningContent(
+            Msg chunkMsg, ReasoningContext context) {
+        ContentBlock content = chunkMsg.getFirstContentBlock();
         if (content instanceof TextBlock) {
-            accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
-        } else if (content instanceof ThinkingBlock) {
-            accumulatedContent =
-                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
+            return TextBlock.builder().text(context.getAccumulatedText()).build();
         }
-
-        if (accumulatedContent != null) {
-            Msg accumulated =
-                    Msg.builder()
-                            .id(chunkMsg.getId())
-                            .name(chunkMsg.getName())
-                            .role(chunkMsg.getRole())
-                            .content(accumulatedContent)
-                            .build();
-            if (context.getChatUsage() != null) {
-                accumulated
-                        .getMetadata()
-                        .put(MessageMetadataKeys.CHAT_USAGE, context.getChatUsage());
-            }
-            SummaryChunkEvent event =
-                    new SummaryChunkEvent(
-                            this, model.getModelName(), generateOptions, chunkMsg, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+        if (content instanceof ThinkingBlock) {
+            return ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
         }
+        if (content instanceof ToolUseBlock tub) {
+            ToolUseBlock accumulated = context.getAccumulatedToolCall(tub.getId());
+            return accumulated != null ? accumulated : tub;
+        }
+        return null;
+    }
 
-        return Mono.empty();
+    private ContentBlock resolveAccumulatedSummaryContent(Msg chunkMsg, ReasoningContext context) {
+        ContentBlock content = chunkMsg.getFirstContentBlock();
+        if (content instanceof TextBlock) {
+            return TextBlock.builder().text(context.getAccumulatedText()).build();
+        }
+        if (content instanceof ThinkingBlock) {
+            return ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
+        }
+        return null;
     }
 
     @Override
