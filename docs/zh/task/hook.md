@@ -206,3 +206,42 @@ public class ErrorHandlingHook implements Hook {
 cd agentscope-examples/quickstart
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.HookExample"
 ```
+
+## 内置 JSONL 跟踪导出器
+
+为了便于本地调试和离线排障，AgentScope Java 提供了一个内置的 JSONL 导出器：
+
+> **警告**：JSONL 跟踪导出器会将完整的 prompt、消息、工具输入以及错误堆栈
+> 写入本地文件。这些记录可能包含敏感用户数据、凭据或其他机密信息，
+> 因此只能在受信任的环境中启用，并应将输出文件按敏感数据处理。
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.hook.recorder.JsonlTraceExporter;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+
+public class JsonlTraceExample {
+
+    public void run(Model model, Toolkit toolkit) throws IOException {
+        try (JsonlTraceExporter exporter =
+                JsonlTraceExporter.builder(Path.of("logs", "agentscope-trace.jsonl"))
+                        .includeReasoningChunks(true) // 可选
+                        .includeActingChunks(true)    // 可选
+                        .build()) {
+            ReActAgent agent = ReActAgent.builder()
+                    .name("Assistant")
+                    .model(model)
+                    .toolkit(toolkit)
+                    .hooks(List.of(exporter))
+                    .build();
+
+            // 在 exporter 关闭前使用 agent
+        }
+    }
+}
+```
+
