@@ -78,7 +78,7 @@ public class ClasspathSkillRepository implements AgentSkillRepository {
     private final Logger logger = LoggerFactory.getLogger(ClasspathSkillRepository.class);
 
     private final FileSystem fileSystem;
-    protected final Path skillBasePath;
+    private final Path skillBasePath;
     private final boolean isJar;
     private final String source;
     private final String resourcePath;

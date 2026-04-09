@@ -26,6 +26,7 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.skill.repository.GitSkillRepository;
 import io.agentscope.core.tool.Toolkit;
@@ -59,7 +60,7 @@ public class SkillsConfig {
 //    }
     @Bean
     public GitSkillRepository skillRepository() throws IOException {
-        return new GitSkillRepository("https://github.com/JimLiu/baoyu-skills.git", "skills");
+        return new GitSkillRepository("https://github.com/JimLiu/baoyu-skills.git");
     }
 
     @Bean
@@ -68,7 +69,7 @@ public class SkillsConfig {
     }
 
     @Bean
-    public SkillBox skillBox(Toolkit toolkit, ClasspathSkillRepository skillRepository) {
+    public SkillBox skillBox(Toolkit toolkit, AgentSkillRepository skillRepository) {
         SkillBox skillBox = new SkillBox(toolkit);
         List<AgentSkill> skills = skillRepository.getAllSkills();
         for (AgentSkill skill : skills) {

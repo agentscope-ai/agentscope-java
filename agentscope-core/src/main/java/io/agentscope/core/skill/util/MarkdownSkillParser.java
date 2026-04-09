@@ -182,10 +182,16 @@ public class MarkdownSkillParser {
                     continue;
                 }
 
+                // Skip indented lines (nested YAML values / block scalars)
+                if (line.startsWith(" ") || line.startsWith("\t")) {
+                    continue;
+                }
+
                 Matcher matcher = KEY_VALUE_PATTERN.matcher(line.trim());
                 if (!matcher.matches()) {
-                    throw new IllegalArgumentException(
-                            "Invalid YAML line (expected 'key: value' format): " + line);
+                    // Skip unrecognized lines (e.g. nested YAML block keys like "metadata:")
+                    // rather than failing hard, so SKILL.md files with richer YAML still load.
+                    continue;
                 }
 
                 String key = matcher.group(1);
