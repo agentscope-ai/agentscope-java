@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -640,19 +641,63 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
-        // Create summary message preserving original role and name
+        // Create summary message
+        // If original message was a tool message, preserve its structure
         String summaryContent = block != null ? block.getTextContent() : "";
         String finalContent = summaryContent;
         if (!offloadHint.isEmpty()) {
             finalContent = summaryContent + "\n" + offloadHint;
         }
 
-        return Msg.builder()
-                .role(message.getRole())
-                .name(message.getName())
-                .content(TextBlock.builder().text(finalContent).build())
-                .metadata(metadata)
-                .build();
+        // Check if original message was a tool message
+        if (message.hasContentBlocks(ToolUseBlock.class)) {
+            // Preserve ToolUseBlock structure with compressed summary
+            List<ContentBlock> compressedBlocks = new ArrayList<>();
+            for (ContentBlock originalBlock : message.getContent()) {
+                if (originalBlock instanceof ToolUseBlock) {
+                    ToolUseBlock originalToolUse = (ToolUseBlock) originalBlock;
+                    // Keep original tool use block (tool calls are usually not too large)
+                    compressedBlocks.add(originalToolUse);
+                }
+            }
+            return Msg.builder()
+                    .role(message.getRole())
+                    .name(message.getName())
+                    .content(compressedBlocks)
+                    .metadata(metadata)
+                    .build();
+        } else if (message.hasContentBlocks(ToolResultBlock.class)
+                || message.getRole() == MsgRole.TOOL) {
+            // Preserve ToolResultBlock structure with compressed output
+            List<ContentBlock> compressedBlocks = new ArrayList<>();
+            for (ContentBlock originalBlock : message.getContent()) {
+                if (originalBlock instanceof ToolResultBlock) {
+                    ToolResultBlock originalToolResult = (ToolResultBlock) originalBlock;
+                    // Replace output with compressed summary
+                    ToolResultBlock compressedToolResult =
+                            ToolResultBlock.builder()
+                                    .id(originalToolResult.getId())
+                                    .name(originalToolResult.getName())
+                                    .output(List.of(TextBlock.builder().text(finalContent).build()))
+                                    .build();
+                    compressedBlocks.add(compressedToolResult);
+                }
+            }
+            return Msg.builder()
+                    .role(message.getRole())
+                    .name(message.getName())
+                    .content(compressedBlocks)
+                    .metadata(metadata)
+                    .build();
+        } else {
+            // Regular text message
+            return Msg.builder()
+                    .role(message.getRole())
+                    .name(message.getName())
+                    .content(TextBlock.builder().text(finalContent).build())
+                    .metadata(metadata)
+                    .build();
+        }
     }
 
     /**
