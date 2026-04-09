@@ -219,15 +219,16 @@ class ToolExecutor {
         // Create emitter for streaming
         ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, getEffectiveChunkCallback());
 
-        // Merge preset parameters with input
+        // Merge input with preset parameters. Preset values win so framework-controlled
+        // parameters remain immutable from the caller/LLM perspective.
         Map<String, Object> mergedInput = new HashMap<>();
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
         if (param.getInput() != null && !param.getInput().isEmpty()) {
             mergedInput.putAll(param.getInput());
         } else if (toolCall.getInput() != null) {
             mergedInput.putAll(toolCall.getInput());
+        }
+        if (registered != null) {
+            mergedInput.putAll(registered.getPresetParameters());
         }
 
         // Build final execution param
