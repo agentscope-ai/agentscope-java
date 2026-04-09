@@ -506,12 +506,20 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 continue;
             }
 
-            String textContent = msg.getTextContent();
+            // Calculate message size using character count (handles all message types including
+            // tool calls)
+            int messageSize = MsgUtils.calculateMessageCharCount(msg);
 
             // Check if message content exceeds threshold
-            if (textContent == null || textContent.length() <= threshold) {
+            if (messageSize <= threshold) {
                 continue;
             }
+
+            log.info(
+                    "Found large message at index {} with size {} chars (threshold: {})",
+                    i,
+                    messageSize,
+                    threshold);
 
             // Step 4: Offload the original message
             String uuid = UUID.randomUUID().toString();
@@ -521,11 +529,13 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             log.info(
                     "Offloaded current round large message: index={}, size={} chars, uuid={}",
                     i,
-                    textContent.length(),
+                    messageSize,
                     uuid);
 
             // Step 5: Generate summary using LLM
-            Msg summaryMsg = generateLargeMessageSummary(msg, uuid);
+            // Convert tool messages to text format before compression to avoid model errors
+            Msg messageForCompression = convertToolMessageToText(msg);
+            Msg summaryMsg = generateLargeMessageSummary(messageForCompression, uuid);
 
             // Build metadata for compression event
             Map<String, Object> metadata = new HashMap<>();
