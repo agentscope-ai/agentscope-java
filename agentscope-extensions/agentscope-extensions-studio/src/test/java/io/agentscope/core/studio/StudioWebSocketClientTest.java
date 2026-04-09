@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,15 +36,10 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.socket.client.Socket;
 import java.time.Duration;
-import org.json.JSONException;
-
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.TextBlock;
-import io.socket.client.Socket;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -323,8 +319,6 @@ class StudioWebSocketClientTest {
         assertEquals(true, clientWithSocket.isConnected());
         clientWithSocket.close();
     }
-
-    // ==================== sendStreamEvent Tests ====================
 
     @Test
     @DisplayName("sendStreamEvent should log warning when socket is null")
