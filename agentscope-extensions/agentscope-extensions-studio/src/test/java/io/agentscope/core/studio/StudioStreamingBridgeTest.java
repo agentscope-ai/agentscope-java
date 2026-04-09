@@ -57,13 +57,8 @@ class StudioStreamingBridgeTest {
     }
 
     private Msg toolResultMsg(String text) {
-        ToolResultBlock toolResult =
-                ToolResultBlock.text(text);
-        return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("Agent")
-                .content(toolResult)
-                .build();
+        ToolResultBlock toolResult = ToolResultBlock.text(text);
+        return Msg.builder().role(MsgRole.ASSISTANT).name("Agent").content(toolResult).build();
     }
 
     @Test
@@ -148,8 +143,7 @@ class StudioStreamingBridgeTest {
 
         Event reasoningFinal =
                 new Event(EventType.REASONING, thinkingMsg("chain-of-thought"), true);
-        Event toolFinal =
-                new Event(EventType.TOOL_RESULT, toolResultMsg("tool-output"), true);
+        Event toolFinal = new Event(EventType.TOOL_RESULT, toolResultMsg("tool-output"), true);
 
         // Include a terminal AGENT_RESULT so that the stream completes normally
         Msg finalMsg = msg("answer");
