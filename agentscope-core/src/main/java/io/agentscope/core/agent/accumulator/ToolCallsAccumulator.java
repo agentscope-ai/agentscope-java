@@ -17,7 +17,7 @@ package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.util.JsonUtils;
+import io.agentscope.core.util.ToolCallJsonUtils;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,25 +87,18 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             Map<String, Object> finalArgs = new HashMap<>(args);
             String rawContentStr = this.rawContent.toString();
 
-            // If no parsed arguments but has raw JSON content, try to parse
-            if (finalArgs.isEmpty() && rawContentStr.length() > 0) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed =
-                            JsonUtils.getJsonCodec().fromJson(rawContentStr, Map.class);
-                    if (parsed != null) {
-                        finalArgs.putAll(parsed);
-                    }
-                } catch (Exception ignored) {
-                    // Parsing failed, keep empty args
-                }
+            if (finalArgs.isEmpty()) {
+                finalArgs.putAll(ToolCallJsonUtils.parseJsonObjectOrEmpty(rawContentStr));
             }
+
+            String sanitizedContent =
+                    ToolCallJsonUtils.sanitizeArgumentsJson(rawContentStr, finalArgs);
 
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
-                    .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
+                    .content(sanitizedContent)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }

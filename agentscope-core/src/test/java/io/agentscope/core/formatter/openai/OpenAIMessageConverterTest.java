@@ -531,6 +531,50 @@ class OpenAIMessageConverterTest {
             assertTrue(args.contains("city"));
             assertTrue(args.contains("Shanghai"));
         }
+
+        @Test
+        @DisplayName("Should fallback to input map serialization when content is invalid JSON")
+        void testToolCallFallbackToInputMapWhenContentInvalid() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_invalid_content_test")
+                            .name("get_weather")
+                            .input(Map.of("city", "Beijing"))
+                            .content("{\"city\":\"Beiji")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            assertEquals(
+                    "{\"city\":\"Beijing\"}",
+                    result.getToolCalls().get(0).getFunction().getArguments());
+        }
+
+        @Test
+        @DisplayName(
+                "Should fallback to empty object when content is invalid JSON and input is absent")
+        void testToolCallFallbackToEmptyObjectWhenContentInvalidAndInputAbsent() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_invalid_content_empty")
+                            .name("get_weather")
+                            .content("{\"city\":\"Beiji")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            assertEquals("{}", result.getToolCalls().get(0).getFunction().getArguments());
+        }
     }
 
     @Nested

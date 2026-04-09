@@ -24,7 +24,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.util.JsonUtils;
+import io.agentscope.core.util.ToolCallJsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -236,19 +236,9 @@ public class DashScopeToolsHelper {
                 continue;
             }
 
-            // Prioritize using content field (raw arguments string), fallback to input map
-            // serialization
-            String argsJson;
-            if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
-                argsJson = toolUse.getContent();
-            } else {
-                try {
-                    argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                } catch (Exception e) {
-                    log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
-                    argsJson = "{}";
-                }
-            }
+            String argsJson =
+                    ToolCallJsonUtils.sanitizeArgumentsJson(
+                            toolUse.getContent(), toolUse.getInput());
 
             DashScopeFunction function = DashScopeFunction.of(toolUse.getName(), argsJson);
             DashScopeToolCall toolCall =

@@ -180,6 +180,45 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
+    @DisplayName("Should replace incomplete raw JSON with empty object when interrupted")
+    void testBuildSanitizesIncompleteRawContent() {
+        ToolUseBlock interruptedChunk =
+                ToolUseBlock.builder()
+                        .id("call_incomplete")
+                        .name("search")
+                        .content("{\"query\":\"hello wor")
+                        .build();
+
+        accumulator.add(interruptedChunk);
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals("{}", toolCall.getContent());
+        assertTrue(toolCall.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should serialize structured input when raw JSON fragments are invalid")
+    void testBuildFallsBackToStructuredInputWhenRawContentInvalid() {
+        ToolUseBlock interruptedChunk =
+                ToolUseBlock.builder()
+                        .id("call_structured")
+                        .name("search")
+                        .input(Map.of("query", "hello world", "page", 2))
+                        .content("{\"query\":\"hello wor")
+                        .build();
+
+        accumulator.add(interruptedChunk);
+
+        ToolUseBlock toolCall = accumulator.buildAllToolCalls().get(0);
+
+        assertEquals("hello world", toolCall.getInput().get("query"));
+        assertEquals(2, toolCall.getInput().get("page"));
+        assertTrue(toolCall.getContent().contains("hello world"));
+        assertTrue(toolCall.getContent().contains("page"));
+    }
+
+    @Test
     @DisplayName("Should get accumulated tool call by ID")
     void testGetAccumulatedToolCallById() {
         ToolUseBlock call1 =

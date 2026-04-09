@@ -340,6 +340,38 @@ class DashScopeToolsHelperComprehensiveTest {
         assertTrue(argsJson.contains("value"));
     }
 
+    @Test
+    void testConvertToolCallsFallsBackToStructuredInputWhenContentInvalid() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_invalid_json")
+                        .name("search")
+                        .input(Map.of("query", "hello world"))
+                        .content("{\"query\":\"hello wor")
+                        .build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        assertEquals("search", result.get(0).getFunction().getName());
+        assertEquals("{\"query\":\"hello world\"}", result.get(0).getFunction().getArguments());
+    }
+
+    @Test
+    void testConvertToolCallsFallsBackToEmptyObjectWhenContentInvalidAndInputMissing() {
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_invalid_empty")
+                        .name("search")
+                        .content("{\"query\":\"hello wor")
+                        .build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        assertEquals("{}", result.get(0).getFunction().getArguments());
+    }
+
     // ==================== convertToolChoice Tests ====================
 
     @Test
