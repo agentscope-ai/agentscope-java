@@ -534,9 +534,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                     uuid);
 
             // Step 5: Generate summary using LLM
-            // Convert tool messages to text format before compression to avoid model errors
+            // Convert tool messages to text format for compression context to avoid model errors
             Msg messageForCompression = convertToolMessageToText(msg);
-            Msg summaryMsg = generateLargeMessageSummary(messageForCompression, uuid);
+            // Pass original message to preserve structure in the result
+            Msg summaryMsg = generateLargeMessageSummary(messageForCompression, uuid, msg);
 
             // Build metadata for compression event
             Map<String, Object> metadata = new HashMap<>();
@@ -571,11 +572,12 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
     /**
      * Generate a summary of a large message using the model.
      *
-     * @param message the message to summarize
+     * @param message the message to summarize (may be converted to text format)
      * @param offloadUuid the UUID of offloaded message
+     * @param originalMessage the original message before conversion (to preserve structure)
      * @return a summary message preserving the original role and name
      */
-    private Msg generateLargeMessageSummary(Msg message, String offloadUuid) {
+    private Msg generateLargeMessageSummary(Msg message, String offloadUuid, Msg originalMessage) {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
@@ -649,11 +651,11 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
             finalContent = summaryContent + "\n" + offloadHint;
         }
 
-        // Check if original message was a tool message
-        if (message.hasContentBlocks(ToolUseBlock.class)) {
+        // Check if ORIGINAL message was a tool message (not the converted one)
+        if (originalMessage.hasContentBlocks(ToolUseBlock.class)) {
             // Preserve ToolUseBlock structure with compressed summary
             List<ContentBlock> compressedBlocks = new ArrayList<>();
-            for (ContentBlock originalBlock : message.getContent()) {
+            for (ContentBlock originalBlock : originalMessage.getContent()) {
                 if (originalBlock instanceof ToolUseBlock) {
                     ToolUseBlock originalToolUse = (ToolUseBlock) originalBlock;
                     // Keep original tool use block (tool calls are usually not too large)
@@ -661,16 +663,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 }
             }
             return Msg.builder()
-                    .role(message.getRole())
-                    .name(message.getName())
+                    .role(originalMessage.getRole())
+                    .name(originalMessage.getName())
                     .content(compressedBlocks)
                     .metadata(metadata)
                     .build();
-        } else if (message.hasContentBlocks(ToolResultBlock.class)
-                || message.getRole() == MsgRole.TOOL) {
+        } else if (originalMessage.hasContentBlocks(ToolResultBlock.class)
+                || originalMessage.getRole() == MsgRole.TOOL) {
             // Preserve ToolResultBlock structure with compressed output
             List<ContentBlock> compressedBlocks = new ArrayList<>();
-            for (ContentBlock originalBlock : message.getContent()) {
+            for (ContentBlock originalBlock : originalMessage.getContent()) {
                 if (originalBlock instanceof ToolResultBlock) {
                     ToolResultBlock originalToolResult = (ToolResultBlock) originalBlock;
                     // Replace output with compressed summary
@@ -684,16 +686,16 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
                 }
             }
             return Msg.builder()
-                    .role(message.getRole())
-                    .name(message.getName())
+                    .role(originalMessage.getRole())
+                    .name(originalMessage.getName())
                     .content(compressedBlocks)
                     .metadata(metadata)
                     .build();
         } else {
             // Regular text message
             return Msg.builder()
-                    .role(message.getRole())
-                    .name(message.getName())
+                    .role(originalMessage.getRole())
+                    .name(originalMessage.getName())
                     .content(TextBlock.builder().text(finalContent).build())
                     .metadata(metadata)
                     .build();
