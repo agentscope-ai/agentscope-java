@@ -29,6 +29,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Static Long-Term Memory Hook for automatic memory management.
@@ -211,16 +212,20 @@ public class StaticLongTermMemoryHook implements Hook {
 
         // Record to long-term memory
         if (asyncRecord) {
-            // Fire-and-forget: do not block the agent's response
+            // Fire-and-forget: schedule on boundedElastic so the agent's
+            // response is not blocked. subscribe() is intentional here —
+            // the record pipeline runs independently of the event chain.
             longTermMemory
                     .record(allMessages)
-                    .subscribe(
-                            unused -> {},
-                            error ->
-                                    log.warn(
-                                            "Failed to asynchronously record to long-term memory:"
-                                                    + " {}",
-                                            error.getMessage()));
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .onErrorResume(
+                            error -> {
+                                log.warn(
+                                        "Failed to asynchronously record to long-term memory: {}",
+                                        error.getMessage());
+                                return Mono.empty();
+                            })
+                    .subscribe();
             return Mono.just(event);
         } else {
             return longTermMemory
