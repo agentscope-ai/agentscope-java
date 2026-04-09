@@ -74,6 +74,7 @@ public class GeminiChatModel extends ChatModelBase {
      * Creates a new Gemini chat model instance.
      *
      * @param apiKey         the API key for authentication (for Gemini API)
+     * @param baseUrl        the custom base URL for Gemini API (null for default)
      * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
      *                       "gemini-1.5-pro")
      * @param streamEnabled  whether streaming should be enabled
@@ -90,6 +91,7 @@ public class GeminiChatModel extends ChatModelBase {
      */
     public GeminiChatModel(
             String apiKey,
+            String baseUrl,
             String modelName,
             boolean streamEnabled,
             String project,
@@ -106,7 +108,12 @@ public class GeminiChatModel extends ChatModelBase {
         this.project = project;
         this.location = location;
         this.vertexAI = vertexAI;
-        this.httpOptions = httpOptions;
+        this.httpOptions =
+                baseUrl == null
+                        ? httpOptions
+                        : (httpOptions == null
+                                ? HttpOptions.builder().baseUrl(baseUrl).build()
+                                : httpOptions.toBuilder().baseUrl(baseUrl).build());
         this.credentials = credentials;
         this.clientOptions = clientOptions;
         this.defaultOptions =
@@ -136,8 +143,8 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         // Configure HTTP and client options
-        if (httpOptions != null) {
-            clientBuilder.httpOptions(httpOptions);
+        if (this.httpOptions != null) {
+            clientBuilder.httpOptions(this.httpOptions);
         }
         if (clientOptions != null) {
             clientBuilder.clientOptions(clientOptions);
@@ -281,6 +288,7 @@ public class GeminiChatModel extends ChatModelBase {
      */
     public static class Builder {
         private String apiKey;
+        private String baseUrl;
         private String modelName = "gemini-2.5-flash";
         private boolean streamEnabled = true;
         private String project;
@@ -301,6 +309,17 @@ public class GeminiChatModel extends ChatModelBase {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the custom base URL (for Gemini API).
+         *
+         * @param baseUrl the custom Gemini API base URL
+         * @return this builder
+         */
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
             return this;
         }
 
@@ -424,6 +443,7 @@ public class GeminiChatModel extends ChatModelBase {
         public GeminiChatModel build() {
             return new GeminiChatModel(
                     apiKey,
+                    baseUrl,
                     modelName,
                     streamEnabled,
                     project,
