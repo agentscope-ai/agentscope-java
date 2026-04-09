@@ -154,6 +154,51 @@ public class GeminiChatModel extends ChatModelBase {
     }
 
     /**
+     * Creates a new Gemini chat model instance with the default Gemini API endpoint.
+     *
+     * @param apiKey         the API key for authentication (for Gemini API)
+     * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
+     *                       "gemini-1.5-pro")
+     * @param streamEnabled  whether streaming should be enabled
+     * @param project        the Google Cloud project ID (for Vertex AI)
+     * @param location       the Google Cloud location (for Vertex AI, e.g.,
+     *                       "us-central1")
+     * @param vertexAI       whether to use Vertex AI APIs (null for auto-detection)
+     * @param httpOptions    HTTP options for the client
+     * @param credentials    Google credentials (for Vertex AI)
+     * @param clientOptions  client options for the API client
+     * @param defaultOptions default generation options
+     * @param formatter      the message formatter to use (null for default Gemini
+     *                       formatter)
+     */
+    public GeminiChatModel(
+            String apiKey,
+            String modelName,
+            boolean streamEnabled,
+            String project,
+            String location,
+            Boolean vertexAI,
+            HttpOptions httpOptions,
+            GoogleCredentials credentials,
+            ClientOptions clientOptions,
+            GenerateOptions defaultOptions,
+            Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder> formatter) {
+        this(
+                apiKey,
+                null,
+                modelName,
+                streamEnabled,
+                project,
+                location,
+                vertexAI,
+                httpOptions,
+                credentials,
+                clientOptions,
+                defaultOptions,
+                formatter);
+    }
+
+    /**
      * Stream chat completion responses from Gemini's API.
      *
      * <p>
