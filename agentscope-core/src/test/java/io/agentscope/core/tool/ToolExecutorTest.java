@@ -318,6 +318,36 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should use only preset parameters when both input sources are absent")
+    void shouldUseOnlyPresetParametersWhenInputsAbsent() {
+        class PresetOnlyTool {
+            @Tool(description = "Test preset usage when no explicit inputs are present")
+            public ToolResultBlock presetOnly(@ToolParam(name = "param1") String param1) {
+                return ToolResultBlock.text("param1: " + param1);
+            }
+        }
+
+        toolkit.registration()
+                .tool(new PresetOnlyTool())
+                .presetParameters(Map.of("presetOnly", Map.of("param1", "preset_value1")))
+                .apply();
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-preset-only")
+                        .name("presetOnly")
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals("param1: preset_value1", extractFirstText(result));
+    }
+
+    @Test
     @DisplayName("Should format all error messages consistently")
     void testErrorMessageFormat() {
         // Register various failing tools

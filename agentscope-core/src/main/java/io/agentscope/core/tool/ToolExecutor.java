@@ -222,14 +222,12 @@ class ToolExecutor {
         // Merge input with preset parameters. Preset values win so framework-controlled
         // parameters remain immutable from the caller/LLM perspective.
         Map<String, Object> mergedInput = new HashMap<>();
-        if (param.getInput() != null && !param.getInput().isEmpty()) {
+        if (!param.getInput().isEmpty()) {
             mergedInput.putAll(param.getInput());
-        } else if (toolCall.getInput() != null) {
+        } else if (!toolCall.getInput().isEmpty()) {
             mergedInput.putAll(toolCall.getInput());
         }
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
+        mergedInput.putAll(registered.getPresetParameters());
 
         // Build final execution param
         ToolCallParam executionParam =
