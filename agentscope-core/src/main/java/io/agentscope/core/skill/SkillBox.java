@@ -795,8 +795,7 @@ public class SkillBox implements StateModule {
         if (skillId == null || skillId.isBlank()) {
             return "skill";
         }
-        String safe = INVALID_FILE_NAME_CHARS.matcher(skillId).replaceAll("_");
-        return safe.isBlank() ? "skill" : safe;
+        return INVALID_FILE_NAME_CHARS.matcher(skillId).replaceAll("_");
     }
 
     private static class DefaultSkillFileFilter implements SkillFileFilter {

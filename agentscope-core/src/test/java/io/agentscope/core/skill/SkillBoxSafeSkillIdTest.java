@@ -40,6 +40,37 @@ class SkillBoxSafeSkillIdTest {
     }
 
     @Test
+    @DisplayName("Should return default 'skill' when skillId is null")
+    void testUnifyToSafeSkillIdWithNull() {
+        assertEquals("skill", SkillBox.unifyToSafeSkillId(null));
+    }
+
+    @Test
+    @DisplayName("Should return default 'skill' when skillId is blank (spaces)")
+    void testUnifyToSafeSkillIdWithBlankSpaces() {
+        assertEquals("skill", SkillBox.unifyToSafeSkillId("   "));
+    }
+
+    @Test
+    @DisplayName("Should return default 'skill' when skillId is blank (tabs)")
+    void testUnifyToSafeSkillIdWithBlankTabs() {
+        assertEquals("skill", SkillBox.unifyToSafeSkillId("\t\t"));
+    }
+
+    @Test
+    @DisplayName("Should return sanitized value when result is not blank")
+    void testUnifyToSafeSkillIdWithNonBlankResult() {
+        // Single unsafe char replaced
+        assertEquals("my_skill", SkillBox.unifyToSafeSkillId("my:skill"));
+
+        // Multiple unsafe chars replaced
+        assertEquals("skill_name_with_colon", SkillBox.unifyToSafeSkillId("skill:name:with:colon"));
+
+        // No unsafe chars - unchanged
+        assertEquals("safe_skill_id", SkillBox.unifyToSafeSkillId("safe_skill_id"));
+    }
+
+    @Test
     @DisplayName("Should upload resources under normalized skill id directory")
     void testUploadUsesSafeSkillId(@TempDir Path tempDir) throws IOException {
         SkillBox skillBox = new SkillBox(new Toolkit());
