@@ -331,6 +331,7 @@ public class DashScopeHttpClient {
      *       <li>Models containing "-vl" → multimodal API</li>
      *       <li>Models containing "-asr" → multimodal API</li>
      *       <li>Models starting with "qwen3.5" → multimodal API</li>
+     *       <li>Models starting with "qwen3.6" → multimodal API</li>
      *       <li>All other models → text generation API</li>
      *     </ul>
      *   </li>
@@ -370,6 +371,7 @@ public class DashScopeHttpClient {
      *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen3-vl-max)</li>
      *   <li>Models containing "-asr" (e.g., qwen3-asr-flash)</li>
      *   <li>Models starting with "qwen3.5" (e.g., qwen3.5-plus, qwen3.5-flash)</li>
+     *   <li>Models starting with "qwen3.6" (e.g., qwen3.6-plus, qwen3.6-flash)</li>
      * </ul>
      *
      * @param modelName the model name
@@ -383,7 +385,8 @@ public class DashScopeHttpClient {
         return lowerModelName.startsWith("qvq")
                 || lowerModelName.contains("-vl")
                 || lowerModelName.contains("-asr")
-                || lowerModelName.startsWith("qwen3.5");
+                || lowerModelName.startsWith("qwen3.5")
+                || lowerModelName.startsWith("qwen3.6");
     }
 
     /**
