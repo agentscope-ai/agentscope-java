@@ -312,6 +312,56 @@ cd examples/advanced
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 ```
 
+### BailianLongTermMemory
+
+Long-term memory implementation based on [Bailian Memory Library](https://help.aliyun.com/zh/model-studio/memory-library).
+
+**Usage Example**:
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.bailian.BailianLongTermMemory;
+
+BailianLongTermMemory longTermMemory = BailianLongTermMemory.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .userId("your_user_id")
+        .memoryLibraryId("your_memory_library_id")
+        .projectId("your_project_id")
+        .profileSchema("your_profile_schema")
+        .build();
+
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .longTermMemory(longTermMemory)
+        .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+        .build();
+```
+
+**Configuration Notes**:
+
+- `apiKey`: Alibaba Cloud DashScope API key (required)
+- `userId`: User ID (required)
+- `memoryLibraryId`: Bailian memory library ID (optional)
+- `projectId`: Bailian project ID (optional)
+- `profileSchema`: Bailian configuration Schema ID (optional)
+
+**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianMemoryExample.java`
+
+**Run Example**:
+
+```bash
+export DASHSCOPE_API_KEY=sk-xxxx
+export BAILIAN_USER_ID=your_user_id
+export BAILIAN_MEMORY_LIBRARY_ID=your_library_id
+export BAILIAN_PROJECT_ID=your_project_id
+export BAILIAN_PROFILE_SCHEMA=your_profile_schema
+
+cd agentscope-examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.BailianMemoryExample"
+```
+
 ## Related Documentation
 
 - [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
