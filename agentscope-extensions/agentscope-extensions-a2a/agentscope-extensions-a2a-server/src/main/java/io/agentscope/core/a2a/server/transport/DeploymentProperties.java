@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 public record DeploymentProperties(String host, int port) {
 
     private static final Logger log = LoggerFactory.getLogger(DeploymentProperties.class);
+    private static final String DEFAULT_HOST = "localhost";
 
     public static class Builder {
 
@@ -55,7 +56,12 @@ public record DeploymentProperties(String host, int port) {
                 try {
                     host = NetworkUtils.getLocalIpAddress();
                     log.info("Local IP address: {}", host);
-                } catch (SocketException ignored) {
+                } catch (SocketException exception) {
+                    host = DEFAULT_HOST;
+                    log.warn(
+                            "Failed to resolve local IP address, fallback to default host: {}",
+                            DEFAULT_HOST,
+                            exception);
                 }
             }
             if (null == port) {
