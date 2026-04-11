@@ -10,6 +10,7 @@ The tool system enables agents to perform external operations such as API calls,
 - **Tool Groups**: Dynamically activate/deactivate tool collections
 - **Preset Parameters**: Hide sensitive parameters (e.g., API Keys)
 - **Parallel Execution**: Support parallel invocation of multiple tools
+- **Spring Boot Auto-Scan**: Automatically discovers and registers all Spring Bean methods annotated with `@Tool`
 
 ## Quick Start
 
@@ -94,6 +95,62 @@ public ToolResultBlock generate(
 | `Mono<T>` | Async execution |
 | `Flux<T>` | Streaming execution |
 | `ToolResultBlock` | Direct control over return format (text, image, error, etc.) |
+
+## Spring Boot Auto-Scanning and Registration
+
+In Spring Boot projects, including the `agentscope-spring-boot-starter` enables the framework to automatically scan the Spring container for all Bean methods annotated with `@Tool`. These methods are registered as global tools, eliminating the need to call `registerTool` manually.
+
+### Add Dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-spring-boot-starter</artifactId>
+</dependency>
+```
+
+### Usage
+
+Directly declare a class containing `@Tool` methods as a Spring Bean (e.g., using `@Component` or `@Service`):
+
+```java
+import org.springframework.stereotype.Service;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+
+@Service
+public class OrderService {
+
+    // This method will be automatically scanned and wrapped as an AgentScope Tool
+    @Tool(name = "get_order", description = "Retrieve order details")
+    public String getOrder(@ToolParam(description = "Order ID") String orderId) {
+        return "The status for order " + orderId + " is: Shipped";
+    }
+}
+```
+
+### Configuration Switch
+
+The auto-scanning feature is **enabled** by default. If you encounter naming conflicts, security policy restrictions, or have extreme startup performance requirements, you can disable it at any time through your Spring Boot configuration file (`application.yml` or `application.properties`):
+
+```yaml
+agentscope:
+  tool:
+    auto-scan:
+      enabled: false  # Set to false to completely disable auto-scanning
+```
+
+### Advanced Feature Support
+
+* **Spring AOP Proxy Support**: Whether a Bean is enhanced by `@Transactional`, `@Async`, or custom aspects (via CGLIB or JDK dynamic proxies), the framework accurately extracts the `@Tool` annotation from the original target class. It also preserves the full Spring aspect interception logic during final execution.
+* **Interface and Superclass Inheritance**: The framework supports defining `@Tool` annotations on interfaces or superclasses. Implementation classes only need to maintain standard inheritance relationships to be automatically scanned and registered.
+
+### Important Notes and Fault Tolerance
+
+* **Safe Scanning Timing**: The auto-scanning process is triggered after all singleton Beans in the Spring container are initialized (based on `SmartInitializingSingleton`). This timing avoids "early initialization" issues that can lead to dependency cycle problems.
+* **Fail-Fast for Naming Conflicts**: If the scanner detects identical `@Tool(name="...")` values across different Beans, it throws a `BeanInitializationException` during the application startup phase. This halts the startup to prevent runtime routing confusion.
+* **`@Lazy` Initialization Warning**: If a Bean marked with `@Lazy` contains tool methods, the framework forcefully triggers the initialization of that Bean. A `WARN` log is issued to notify the developer of this early initialization.
+* **Prototype and Infrastructure Bean Filtering**: To prevent memory leaks and state inconsistency, the scanner automatically filters out prototype-scoped Beans (`@Scope("prototype")`) and Spring internal infrastructure Beans.
 
 ## Tool Groups
 

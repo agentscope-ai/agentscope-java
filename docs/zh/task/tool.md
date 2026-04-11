@@ -10,6 +10,7 @@
 - **工具组管理**：动态激活/停用工具集合
 - **预设参数**：隐藏敏感参数（如 API Key）
 - **并行执行**：支持多工具并行调用
+- **Spring Boot 自动扫描**：自动发现并注册所有标注 `@Tool` 的 Spring Bean 方法
 
 ## 快速开始
 
@@ -94,6 +95,62 @@ public ToolResultBlock generate(
 | `Mono<T>` | 异步执行 |
 | `Flux<T>` | 流式执行 |
 | `ToolResultBlock` | 直接控制返回格式（文本、图片、错误等） |
+
+## Spring Boot 自动扫描注册
+
+在 Spring Boot 项目中，如果您引入了 `agentscope-spring-boot-starter`，框架会自动扫描 Spring 容器中所有带有 `@Tool` 注解的 Bean 方法，并将它们注册为全局工具，**无需手动调用 `registerTool`**。
+
+### 引入依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-spring-boot-starter</artifactId>
+</dependency>
+```
+
+### 使用方法
+
+直接将带有 `@Tool` 的类声明为 Spring Bean（例如使用 `@Component` 或 `@Service`）：
+
+```java
+import org.springframework.stereotype.Service;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+
+@Service
+public class OrderService {
+
+    // 该方法将被自动扫描，并包装为 AgentScope Tool
+    @Tool(name = "get_order", description = "获取订单详情")
+    public String getOrder(@ToolParam(description = "订单号") String orderId) {
+        return "订单 " + orderId + " 的状态为：已发货";
+    }
+}
+```
+
+### 配置开关
+
+自动扫描功能默认是**开启**的。如果在项目中遇到同名冲突、安全策略限制或有极端的启动性能要求，可通过 Spring Boot 配置文件（`application.yml` 或 `application.properties`）随时将其关闭：
+
+```yaml
+agentscope:
+  tool:
+    auto-scan:
+      enabled: false  # 设置为 false 即可彻底关闭自动扫描
+```
+
+### 高级特性支持
+
+* **Spring AOP 代理支持**：无论 Bean 是否被 `@Transactional`、`@Async` 或自定义切面增强（CGLIB/JDK 动态代理），框架能精准提取原始目标类上的 `@Tool` 注解，同时在最终执行时完整保留 Spring 切面的拦截逻辑。
+* **接口与父类继承**：支持将 `@Tool` 注解定义在接口（Interface）或父类（Superclass）上，实现类只需保持常规继承关系，同样会被自动扫描和注册。
+
+### 注意事项与容错机制
+
+* **安全扫描时机**：自动扫描动作挂载在 Spring 容器的所有单例 Bean 初始化完成之后（基于 `SmartInitializingSingleton`），不会导致“提前实例化”引发的依赖循环问题。
+* **同名冲突快速失败（Fail-Fast）**：如果扫描器在不同的 Bean 中发现了相同的 `@Tool(name="...")`，会在应用启动阶段直接抛出 `BeanInitializationException` 并阻断启动，杜绝运行时路由错乱。
+* **`@Lazy` 延迟加载提醒**：如果一个被标记为 `@Lazy` 的 Bean 内部包含工具方法，框架会强制触发该 Bean 的初始化，并在控制台输出一条 `WARN` 日志提示。
+* **多例（Prototype）与内部 Bean 过滤**：为了防止内存泄漏和状态混乱，扫描器会主动过滤掉多例（`@Scope("prototype")`）及 Spring 内部（Infrastructure）的 Bean。
 
 ## 工具组
 
