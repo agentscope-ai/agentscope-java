@@ -204,7 +204,9 @@ public class Toolkit {
             if (originalMethod.isAnnotationPresent(Tool.class)) {
                 Tool toolAnnotation = originalMethod.getAnnotation(Tool.class);
                 String toolName =
-                        toolAnnotation.name().isEmpty() ? originalMethod.getName() : toolAnnotation.name();
+                        toolAnnotation.name().isEmpty()
+                                ? originalMethod.getName()
+                                : toolAnnotation.name();
                 Map<String, Object> toolPresets =
                         (presetParameters != null && presetParameters.containsKey(toolName))
                                 ? presetParameters.get(toolName)
@@ -214,13 +216,26 @@ public class Toolkit {
                 Method executableMethod = originalMethod;
                 if (targetClass != null && toolObject.getClass() != targetClass) {
                     try {
-                        executableMethod = toolObject.getClass().getMethod(originalMethod.getName(), originalMethod.getParameterTypes());
+                        executableMethod =
+                                toolObject
+                                        .getClass()
+                                        .getMethod(
+                                                originalMethod.getName(),
+                                                originalMethod.getParameterTypes());
                     } catch (NoSuchMethodException e) {
-                        logger.debug("Proxy method not found for {}, falling back to original method", originalMethod.getName());
+                        logger.debug(
+                                "Proxy method not found for {}, falling back to original method",
+                                originalMethod.getName());
                     }
                 }
 
-                registerToolMethod(toolObject, originalMethod, executableMethod, groupName, extendedModel, toolPresets);
+                registerToolMethod(
+                        toolObject,
+                        originalMethod,
+                        executableMethod,
+                        groupName,
+                        extendedModel,
+                        toolPresets);
             }
         }
     }
@@ -403,14 +418,19 @@ public class Toolkit {
                                 presetParameters != null
                                         ? presetParameters.keySet()
                                         : Collections.emptySet();
-                        return schemaGenerator.generateParameterSchema(originalMethod, excludeParams);
+                        return schemaGenerator.generateParameterSchema(
+                                originalMethod, excludeParams);
                     }
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         // Pass custom converter to method invoker
                         return methodInvoker.invokeAsync(
-                                toolObject, originalMethod, executableMethod, param, customConverter);
+                                toolObject,
+                                originalMethod,
+                                executableMethod,
+                                param,
+                                customConverter);
                     }
                 };
 
@@ -993,7 +1013,8 @@ public class Toolkit {
             }
 
             if (toolObject != null) {
-                toolkit.registerTool(toolObject, targetClass, groupName, extendedModel, presetParameters);
+                toolkit.registerTool(
+                        toolObject, targetClass, groupName, extendedModel, presetParameters);
             } else if (agentTool != null) {
                 String toolName = agentTool.getName();
                 Map<String, Object> toolPresets =

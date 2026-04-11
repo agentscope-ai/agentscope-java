@@ -73,5 +73,7 @@ public class AgentscopeProperties {
         return anthropic;
     }
 
-    public ToolProperties getTool() { return tool; }
+    public ToolProperties getTool() {
+        return tool;
+    }
 }

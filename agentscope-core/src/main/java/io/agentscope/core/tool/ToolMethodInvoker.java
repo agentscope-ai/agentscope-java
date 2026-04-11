@@ -83,10 +83,12 @@ class ToolMethodInvoker {
                             () -> {
                                 executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(originalMethod, input, agent, context, emitter);
+                                        convertParameters(
+                                                originalMethod, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
-                                        (CompletableFuture<Object>) executableMethod.invoke(toolObject, args);
+                                        (CompletableFuture<Object>)
+                                                executableMethod.invoke(toolObject, args);
                                 return future;
                             })
                     .flatMap(
@@ -95,7 +97,9 @@ class ToolMethodInvoker {
                                             .map(
                                                     r ->
                                                             converter.convert(
-                                                                    r, extractGenericType(originalMethod)))
+                                                                    r,
+                                                                    extractGenericType(
+                                                                            originalMethod)))
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -105,14 +109,21 @@ class ToolMethodInvoker {
                             () -> {
                                 executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(originalMethod, input, agent, context, emitter);
+                                        convertParameters(
+                                                originalMethod, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
-                                Mono<Object> mono = (Mono<Object>) executableMethod.invoke(toolObject, args);
+                                Mono<Object> mono =
+                                        (Mono<Object>) executableMethod.invoke(toolObject, args);
                                 return mono;
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(r -> converter.convert(r, extractGenericType(originalMethod)))
+                                    mono.map(
+                                                    r ->
+                                                            converter.convert(
+                                                                    r,
+                                                                    extractGenericType(
+                                                                            originalMethod)))
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -122,9 +133,11 @@ class ToolMethodInvoker {
                             () -> {
                                 executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(originalMethod, input, agent, context, emitter);
+                                        convertParameters(
+                                                originalMethod, input, agent, context, emitter);
                                 Object result = executableMethod.invoke(toolObject, args);
-                                return converter.convert(result, originalMethod.getGenericReturnType());
+                                return converter.convert(
+                                        result, originalMethod.getGenericReturnType());
                             })
                     .onErrorResume(this::handleError);
         }

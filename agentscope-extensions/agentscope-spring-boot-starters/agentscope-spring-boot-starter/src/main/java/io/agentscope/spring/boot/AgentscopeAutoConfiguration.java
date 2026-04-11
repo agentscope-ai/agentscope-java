@@ -171,7 +171,11 @@ public class AgentscopeAutoConfiguration {
      * {@code globalAgentscopeToolkit} template.
      */
     @Bean
-    @ConditionalOnProperty(prefix = "agentscope.tool.auto-scan", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(
+            prefix = "agentscope.tool.auto-scan",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
     @ConditionalOnBean(name = "globalAgentscopeToolkit")
     public AgentscopeToolRegistrar agentScopeToolRegistrar(
             @Qualifier("globalAgentscopeToolkit") Toolkit globalToolkit) {
@@ -232,7 +236,7 @@ public class AgentscopeAutoConfiguration {
     public ReActAgent agentscopeReActAgent(
             Model model,
             Memory memory,
-            @Qualifier("agentscopeToolkit") Toolkit toolkit,  // Inject Toolkit(Prototype)
+            @Qualifier("agentscopeToolkit") Toolkit toolkit, // Inject Toolkit(Prototype)
             AgentscopeProperties properties) {
         AgentProperties config = properties.getAgent();
         return ReActAgent.builder()

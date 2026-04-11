@@ -17,6 +17,11 @@ package io.agentscope.spring.boot.tool;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanInitializationException;
@@ -30,11 +35,6 @@ import org.springframework.core.MethodIntrospector;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.ClassUtils;
 
-import java.lang.reflect.Method;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
 /**
  * Scanner and registrar for AgentScope tools.
  *
@@ -45,7 +45,8 @@ import java.util.Set;
  * <p>Built-in fault tolerance includes fail-fast validation for globally unique tool names
  * and graceful handling of Spring AOP proxies and {@code @Lazy} initialized beans.
  */
-public class AgentscopeToolRegistrar implements SmartInitializingSingleton, ApplicationContextAware {
+public class AgentscopeToolRegistrar
+        implements SmartInitializingSingleton, ApplicationContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(AgentscopeToolRegistrar.class);
 
@@ -70,18 +71,21 @@ public class AgentscopeToolRegistrar implements SmartInitializingSingleton, Appl
             return;
         }
 
-        ConfigurableListableBeanFactory beanFactory = ((ConfigurableApplicationContext) applicationContext).getBeanFactory();
+        ConfigurableListableBeanFactory beanFactory =
+                ((ConfigurableApplicationContext) applicationContext).getBeanFactory();
         String[] beanNames = beanFactory.getBeanDefinitionNames();
 
         // Global tracker to ensure tool names are unique across the application
         Set<String> registeredToolNames = new HashSet<>();
 
         for (String beanName : beanNames) {
-            // Skip non-singletons and infrastructure beans to prevent memory leaks and premature initialization
+            // Skip non-singletons and infrastructure beans to prevent memory leaks and premature
+            // initialization
             BeanDefinition beanDefinition = null;
             if (beanFactory.containsBeanDefinition(beanName)) {
                 beanDefinition = beanFactory.getBeanDefinition(beanName);
-                if (!beanDefinition.isSingleton() || beanDefinition.getRole() == BeanDefinition.ROLE_INFRASTRUCTURE) {
+                if (!beanDefinition.isSingleton()
+                        || beanDefinition.getRole() == BeanDefinition.ROLE_INFRASTRUCTURE) {
                     continue;
                 }
             }
@@ -96,13 +100,16 @@ public class AgentscopeToolRegistrar implements SmartInitializingSingleton, Appl
             Class<?> originalClass = ClassUtils.getUserClass(beanType);
 
             // Scan for @Tool annotations (supports interfaces and superclasses)
-            Map<Method, Tool> annotatedMethods = MethodIntrospector.selectMethods(originalClass,
-                    (MethodIntrospector.MetadataLookup<Tool>) method ->
-                            AnnotationUtils.findAnnotation(method, Tool.class));
+            Map<Method, Tool> annotatedMethods =
+                    MethodIntrospector.selectMethods(
+                            originalClass,
+                            (MethodIntrospector.MetadataLookup<Tool>)
+                                    method -> AnnotationUtils.findAnnotation(method, Tool.class));
 
             // Process beans that actually contain tool methods
             if (!annotatedMethods.isEmpty()) {
-                // Fail-fast validation: Check for tool name collisions before instantiating the bean
+                // Fail-fast validation: Check for tool name collisions before instantiating the
+                // bean
                 for (Map.Entry<Method, Tool> entry : annotatedMethods.entrySet()) {
                     Method method = entry.getKey();
                     Tool toolAnn = entry.getValue();
@@ -110,33 +117,78 @@ public class AgentscopeToolRegistrar implements SmartInitializingSingleton, Appl
 
                     if (!registeredToolNames.add(toolName)) {
                         throw new BeanInitializationException(
-                                String.format("Duplicate AgentScope tool name '%s' found in Spring Bean '%s'. Tool names must be unique globally.", toolName, beanName)
-                        );
+                                String.format(
+                                        "Duplicate AgentScope tool name '%s' found in Spring Bean"
+                                                + " '%s'. Tool names must be unique globally.",
+                                        toolName, beanName));
                     }
                 }
 
                 // Transparently warn developers if a @Lazy bean is being eagerly initialized
                 if (beanDefinition != null && beanDefinition.isLazyInit()) {
-                    log.warn("Spring Bean '{}' is marked with @Lazy but contains @Tool methods. It is being forcefully initialized early by AgentScope to register tools.", beanName);
+                    log.warn(
+                            "Spring Bean '{}' is marked with @Lazy but contains @Tool methods. It"
+                                + " is being forcefully initialized early by AgentScope to register"
+                                + " tools.",
+                            beanName);
                 }
 
                 try {
                     Object bean = applicationContext.getBean(beanName);
 
-                    // Pass both the proxy instance (bean) and the original user class (originalClass).
-                    // This ensures AgentScope extracts metadata (like @Tool) from the unproxied class,
-                    // while routing actual method executions through the proxy to preserve Spring AOP aspects.
-                    toolkit.registration()
-                            .tool(bean, originalClass)
-                            .apply();
+                    // Build the complete class hierarchy tree (including all superclasses and
+                    // interfaces)
+                    Set<Class<?>> hierarchy = new LinkedHashSet<>();
+                    Class<?> current = originalClass;
+                    while (current != null && current != Object.class) {
+                        hierarchy.add(current);
+                        current = current.getSuperclass();
+                    }
+                    hierarchy.addAll(ClassUtils.getAllInterfacesForClassAsSet(originalClass));
 
-                    log.info("Successfully registered Spring Bean '{}' (found {} tools) as AgentScope Tool(s).",
-                            beanName, annotatedMethods.size());
+                    // Filter the hierarchy to find ONLY the classes/interfaces declaring @Tool.
+                    Set<Class<?>> classesToScan = new LinkedHashSet<>();
+                    for (Class<?> clazz : hierarchy) {
+                        // Skip Java and Spring internal interfaces
+                        if (clazz.getName().startsWith("java.")
+                                || clazz.getName().startsWith("org.springframework.")) {
+                            continue;
+                        }
+
+                        // Inspect the declared methods to verify if this class/interface contains
+                        // tools
+                        for (Method m : clazz.getDeclaredMethods()) {
+                            if (m.isAnnotationPresent(Tool.class)) {
+                                classesToScan.add(clazz);
+                                break;
+                            }
+                        }
+                    }
+
+                    for (Class<?> clazzToScan : classesToScan) {
+                        // Pass both the proxy instance (bean) and the specific declaring
+                        // class/interface (clazzToScan).
+                        // This ensures AgentScope extracts metadata (like @Tool) from the exact
+                        // interface/superclass,
+                        // while still routing actual method executions through the proxy to
+                        // preserve Spring AOP aspects.
+                        toolkit.registration().tool(bean, clazzToScan).apply();
+                    }
+
+                    log.info(
+                            "Successfully registered Spring Bean '{}' (found {} tools) as"
+                                    + " AgentScope Tool(s).",
+                            beanName,
+                            annotatedMethods.size());
                 } catch (Exception e) {
-                    throw new BeanInitializationException("Failed to register Spring Bean '" + beanName + "' as AgentScope Tool.", e);
+                    throw new BeanInitializationException(
+                            "Failed to register Spring Bean '" + beanName + "' as AgentScope Tool.",
+                            e);
                 }
             }
         }
-        log.info("Finished scanning AgentScope @Tool. Total tools registered: {}", registeredToolNames.size());
+        log.info(
+                "Finished scanning AgentScope @Tool. Total tools registered: {}",
+                registeredToolNames.size());
     }
 }
