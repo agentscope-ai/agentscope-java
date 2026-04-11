@@ -33,6 +33,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Scope;
 
 /**
@@ -155,6 +156,7 @@ public class AgentscopeAutoConfiguration {
      * template, ensuring isolated state per agent while inheriting all auto-scanned tools.
      */
     @Bean
+    @Primary
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean(name = "agentscopeToolkit")
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)

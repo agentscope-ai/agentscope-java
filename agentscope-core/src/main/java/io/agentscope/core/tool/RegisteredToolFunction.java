@@ -139,4 +139,12 @@ class RegisteredToolFunction {
         }
         return extendedModel.mergeWithBaseSchema(tool.getParameters());
     }
+
+    /**
+     * Creates a deep copy of this RegisteredToolFunction.
+     * Ensures mutable states (like presetParameters) are isolated.
+     */
+    public RegisteredToolFunction copy() {
+        return new RegisteredToolFunction(this.tool, this.extendedModel, this.mcpClientName, this.presetParameters);
+    }
 }
