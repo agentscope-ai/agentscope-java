@@ -48,9 +48,11 @@ class AgentscopeAutoConfigurationTest {
         contextRunner.run(
                 context -> {
                     assertThat(context).hasSingleBean(Memory.class);
-                    assertThat(context).hasSingleBean(Toolkit.class);
                     assertThat(context).hasSingleBean(Model.class);
                     assertThat(context).hasSingleBean(ReActAgent.class);
+
+                    assertThat(context).hasBean("globalAgentscopeToolkit")
+                            .hasBean("agentscopeToolkit");
                 });
     }
 

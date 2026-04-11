@@ -44,15 +44,26 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously with custom converter support.
      *
-     * @param toolObject the object containing the method
-     * @param method the method to invoke
+     * <p>To support AOP proxies (e.g., Spring CGLIB or JDK Dynamic Proxies), this method strictly
+     * separates metadata extraction from the actual reflection execution:
+     * <ul>
+     * <li>{@code originalMethod}: The unproxied method. Used exclusively to extract annotations,
+     * parameter names, and generic return types (which are often lost on proxy classes).</li>
+     * <li>{@code executableMethod}: The method on the proxy object. Used exclusively to ensure
+     * that aspects (e.g., transactions, security) are correctly triggered.</li>
+     * </ul>
+     *
+     * @param toolObject the object containing the method (can be a proxy instance)
+     * @param originalMethod the original method used for reading metadata and generic types
+     * @param executableMethod the actual method to invoke on the toolObject
      * @param param the tool call parameters containing input, toolUseBlock, agent, and context
      * @param customConverter custom converter for this invocation (null to use default)
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(
             Object toolObject,
-            Method method,
+            Method originalMethod,
+            Method executableMethod,
             ToolCallParam param,
             ToolResultConverter customConverter) {
         // Use custom converter if provided, otherwise use default
@@ -64,18 +75,18 @@ class ToolMethodInvoker {
         ToolExecutionContext context = param.getContext();
         ToolEmitter emitter = param.getEmitter();
 
-        Class<?> returnType = method.getReturnType();
+        Class<?> returnType = originalMethod.getReturnType();
 
         if (returnType == CompletableFuture.class) {
             // Async method returning CompletableFuture: invoke and convert to Mono
             return Mono.fromCallable(
                             () -> {
-                                method.setAccessible(true);
+                                executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
+                                        convertParameters(originalMethod, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
-                                        (CompletableFuture<Object>) method.invoke(toolObject, args);
+                                        (CompletableFuture<Object>) executableMethod.invoke(toolObject, args);
                                 return future;
                             })
                     .flatMap(
@@ -84,7 +95,7 @@ class ToolMethodInvoker {
                                             .map(
                                                     r ->
                                                             converter.convert(
-                                                                    r, extractGenericType(method)))
+                                                                    r, extractGenericType(originalMethod)))
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -92,16 +103,16 @@ class ToolMethodInvoker {
             // Async method returning Mono: invoke and flatMap
             return Mono.fromCallable(
                             () -> {
-                                method.setAccessible(true);
+                                executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
+                                        convertParameters(originalMethod, input, agent, context, emitter);
                                 @SuppressWarnings("unchecked")
-                                Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
+                                Mono<Object> mono = (Mono<Object>) executableMethod.invoke(toolObject, args);
                                 return mono;
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
+                                    mono.map(r -> converter.convert(r, extractGenericType(originalMethod)))
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -109,11 +120,11 @@ class ToolMethodInvoker {
             // Sync method: wrap in Mono.fromCallable
             return Mono.fromCallable(
                             () -> {
-                                method.setAccessible(true);
+                                executableMethod.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, agent, context, emitter);
-                                Object result = method.invoke(toolObject, args);
-                                return converter.convert(result, method.getGenericReturnType());
+                                        convertParameters(originalMethod, input, agent, context, emitter);
+                                Object result = executableMethod.invoke(toolObject, args);
+                                return converter.convert(result, originalMethod.getGenericReturnType());
                             })
                     .onErrorResume(this::handleError);
         }

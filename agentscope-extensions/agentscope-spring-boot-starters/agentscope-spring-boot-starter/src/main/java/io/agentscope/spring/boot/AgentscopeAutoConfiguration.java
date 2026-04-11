@@ -23,8 +23,11 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import io.agentscope.spring.boot.tool.AgentscopeToolRegistrar;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,8 +36,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
 
 /**
- * Spring Boot auto-configuration that exposes default Model, Memory, Toolkit
- * and ReActAgent beans
+ * Spring Boot auto-configuration that exposes default Model, Memory, Toolkit,
+ * ReActAgent beans, and enables automatic @Tool scanning
  * for AgentScope.
  *
  * <p>
@@ -124,8 +127,56 @@ import org.springframework.context.annotation.Scope;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(AgentscopeProperties.class)
-@ConditionalOnClass(ReActAgent.class)
+@ConditionalOnClass({ReActAgent.class, Toolkit.class})
 public class AgentscopeAutoConfiguration {
+
+    /**
+     * Global singleton template for the Toolkit.
+     *
+     * <p>
+     * This bean acts as a centralized registry during the Spring application startup phase.
+     * It receives all automatically scanned and registered Spring Beans annotated with {@code @Tool}.
+     * It is not intended for direct runtime usage by agents, but rather as a template for cloning.
+     */
+    @Bean(name = "globalAgentscopeToolkit")
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = "globalAgentscopeToolkit")
+    public Toolkit globalAgentscopeToolkit() {
+        return new Toolkit();
+    }
+
+    /**
+     * Default Toolkit implementation for runtime agent usage.
+     *
+     * <p>
+     * Toolkit maintains state (such as tool group configurations and runtime modifications)
+     * and is not thread-safe, so it is exposed as a prototype-scoped bean.
+     * Each requested instance is created via a deep copy from the {@code globalAgentscopeToolkit}
+     * template, ensuring isolated state per agent while inheriting all auto-scanned tools.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = "agentscopeToolkit")
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+    public Toolkit agentscopeToolkit(@Qualifier("globalAgentscopeToolkit") Toolkit globalToolkit) {
+        return globalToolkit.copy();
+    }
+
+    /**
+     * Automatic scanner and registrar for AgentScope tools.
+     *
+     * <p>
+     * Runs after all Spring singletons are instantiated to scan the application context for
+     * methods annotated with {@code @Tool}. Discovered tools are subsequently registered into the
+     * {@code globalAgentscopeToolkit} template.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "agentscope.tool.auto-scan", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnBean(name = "globalAgentscopeToolkit")
+    public AgentscopeToolRegistrar agentScopeToolRegistrar(
+            @Qualifier("globalAgentscopeToolkit") Toolkit globalToolkit) {
+        return new AgentscopeToolRegistrar(globalToolkit);
+    }
 
     /**
      * Default Memory implementation backed by InMemoryMemory.
@@ -143,24 +194,6 @@ public class AgentscopeAutoConfiguration {
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Memory agentscopeMemory() {
         return new InMemoryMemory();
-    }
-
-    /**
-     * Default Toolkit implementation with an initially empty tool set.
-     *
-     * <p>
-     * Toolkit holds mutable state and is not thread-safe, so it is also exposed as
-     * a
-     * prototype-scoped bean. In application code, prefer obtaining instances lazily
-     * via
-     * {@code ObjectProvider<Toolkit>} or method injection.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
-    @ConditionalOnMissingBean
-    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-    public Toolkit agentscopeToolkit() {
-        return new Toolkit();
     }
 
     /**
@@ -197,7 +230,10 @@ public class AgentscopeAutoConfiguration {
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public ReActAgent agentscopeReActAgent(
-            Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
+            Model model,
+            Memory memory,
+            @Qualifier("agentscopeToolkit") Toolkit toolkit,  // Inject Toolkit(Prototype)
+            AgentscopeProperties properties) {
         AgentProperties config = properties.getAgent();
         return ReActAgent.builder()
                 .name(config.getName())
