@@ -100,7 +100,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
-        <xxl-job.version>3.3.2</xxl-job.version>
+        <xxl-job.version>3.4.0</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.6</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
