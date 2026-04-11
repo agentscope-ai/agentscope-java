@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
@@ -32,6 +33,7 @@ import java.util.Objects;
  * need to process visual information from images, diagrams, screenshots,
  * or other visual content.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public final class ImageBlock extends ContentBlock {
 
     private final Source source;

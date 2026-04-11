@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
@@ -31,6 +32,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * or analyze video content such as presentations, tutorials, surveillance footage,
  * or other visual media that includes motion and temporal elements.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public final class VideoBlock extends ContentBlock {
 
     private final Source source;
