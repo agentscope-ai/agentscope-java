@@ -145,6 +145,7 @@ class RegisteredToolFunction {
      * Ensures mutable states (like presetParameters) are isolated.
      */
     public RegisteredToolFunction copy() {
-        return new RegisteredToolFunction(this.tool, this.extendedModel, this.mcpClientName, this.presetParameters);
+        return new RegisteredToolFunction(
+                this.tool, this.extendedModel, this.mcpClientName, this.presetParameters);
     }
 }
