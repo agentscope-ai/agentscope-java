@@ -25,8 +25,12 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
@@ -465,5 +469,102 @@ class OpenAIChatModelTest {
                 request.getPath().endsWith("/chat/completions")
                         || request.getPath().contains("/v1/chat/completions"),
                 "Path should contain default endpoint path: " + request.getPath());
+    }
+
+    // ==========================================================================
+    // Proxy configuration tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should create model with proxy() only")
+    void testProxyOnly() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("gpt-4", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with httpTransport() only (no proxy)")
+    void testHttpTransportOnly() {
+        HttpTransport transport = HttpTransportFactory.getDefault();
+
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .httpTransport(transport)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName(
+            "Should use factory default transport when neither proxy() nor httpTransport() is set")
+    void testDefaultTransportWhenNoneSet() {
+        // Neither proxy() nor httpTransport() → should use HttpTransportFactory.getDefault()
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should prefer httpTransport() over proxy() with warning")
+    void testHttpTransportTakesPrecedenceOverProxy() {
+        HttpTransport transport = HttpTransportFactory.getDefault();
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        // Both set - httpTransport should take precedence
+        // This should log a warning but still build successfully
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .httpTransport(transport)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should create proxy-only transport without httpTransport()")
+    void testProxyCreatesDefaultTransport() {
+        ProxyConfig proxy = ProxyConfig.socks5("socks.example.com", 1080);
+
+        // Only proxy(), no httpTransport() → should use default OkHttpTransport with proxy
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        // Model should be created with a default transport that has the proxy configured
+    }
+
+    @Test
+    @DisplayName("Should build proxy with custom HttpTransport containing proxy")
+    void testProxyInHttpTransportConfig() {
+        // Advanced: proxy configured within the transport itself
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+        HttpTransport transport =
+                OkHttpTransport.builder()
+                        .config(
+                                HttpTransportConfig.builder()
+                                        .proxy(proxy)
+                                        .connectTimeout(Duration.ofSeconds(60))
+                                        .build())
+                        .build();
+
+        OpenAIChatModel model =
+                OpenAIChatModel.builder().apiKey("test-api-key").modelName("gpt-4").stream(false)
+                        .httpTransport(transport)
+                        .build();
+
+        assertNotNull(model);
     }
 }

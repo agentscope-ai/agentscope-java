@@ -24,7 +24,10 @@ import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ollama.OllamaOptions;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -238,6 +241,7 @@ public class OllamaChatModel extends ChatModelBase {
         private OllamaOptions defaultOptions;
         private Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
         private HttpTransport httpTransport;
+        private ProxyConfig proxyConfig;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -260,8 +264,59 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets the HTTP transport to use.
+         *
+         * <p><b>Note on proxy configuration:</b> Because {@code httpTransport} is a
+         * fully-constructed HTTP client instance, its configuration (including proxy)
+         * cannot be modified after creation. If you need to configure a proxy, either:
+         *
+         * <ul>
+         *   <li>Use {@link #proxy(ProxyConfig)} without calling {@code httpTransport()},
+         *       for simple proxy-only customization.
+         *   <li>Configure the proxy directly within the transport's
+         *       {@link HttpTransportConfig} when building the transport instance.
+         * </ul>
+         *
+         * <p>If both {@code httpTransport()} and {@code proxy()} are called,
+         * {@code httpTransport()} takes full precedence and {@code proxy()} is ignored
+         * (a warning is logged at build time).
+         *
+         * @param httpTransport the HTTP transport (null for default from factory)
+         * @return this builder instance
+         */
         public Builder httpTransport(HttpTransport httpTransport) {
             this.httpTransport = httpTransport;
+            return this;
+        }
+
+        /**
+         * Sets the proxy configuration for HTTP traffic.
+         *
+         * <p><b>Interaction with {@link #httpTransport(HttpTransport)}:</b>
+         * Because {@code httpTransport} is a fully-constructed HTTP client instance,
+         * its configuration cannot be modified after creation. The final transport is
+         * determined as follows:
+         *
+         * <ul>
+         *   <li>If only {@code proxy()} is called: the default {@link OkHttpTransport}
+         *       is used with the specified proxy configuration applied.
+         *   <li>If only {@code httpTransport()} is called: the provided transport is
+         *       used as-is (proxy must be configured within the transport's own
+         *       {@link HttpTransportConfig}).
+         *   <li>If <i>both</i> are called: {@code httpTransport()} takes full precedence.
+         *       The {@code proxy()} setting is <b>ignored</b> and a warning is logged.
+         *       To configure proxy with a custom transport, set it within the transport's
+         *       {@link HttpTransportConfig} directly.
+         *   <li>If neither is called: the default transport from {@link HttpTransportFactory}
+         *       is used (no proxy).
+         * </ul>
+         *
+         * @param proxyConfig the proxy configuration (see {@link ProxyConfig})
+         * @return this builder instance
+         */
+        public Builder proxy(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
             return this;
         }
 
@@ -281,7 +336,44 @@ public class OllamaChatModel extends ChatModelBase {
             // 3. Set merged config back
             finalOptions.setExecutionConfig(mergedConfig);
 
-            return new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, httpTransport);
+            HttpTransport transport = resolveTransport();
+
+            return new OllamaChatModel(modelName, baseUrl, finalOptions, formatter, transport);
+        }
+
+        /**
+         * Resolves the final HttpTransport to use.
+         *
+         * <p>If {@code httpTransport()} is set, it takes full precedence and
+         * {@code proxyConfig} is ignored (with a warning logged). Otherwise,
+         * if {@code proxy()} is set, a default transport with the proxy applied
+         * is created. If neither is set, the factory default is used.
+         *
+         * @return the resolved HttpTransport
+         */
+        private HttpTransport resolveTransport() {
+            if (httpTransport != null) {
+                if (proxyConfig != null) {
+                    log.warn(
+                            "OllamaChatModel: both proxy() and httpTransport() are set. "
+                                    + "httpTransport() takes precedence, proxy() is ignored. "
+                                    + "To configure proxy, use one of the following:\n"
+                                    + "  1. Simple: only call proxy() without httpTransport()\n"
+                                    + "  2. Advanced: set proxy in HttpTransportConfig when "
+                                    + "building a custom HttpTransport");
+                }
+                return httpTransport;
+            }
+
+            if (proxyConfig != null) {
+                // Only proxy() called → use default transport with proxy
+                return OkHttpTransport.builder()
+                        .config(HttpTransportConfig.builder().proxy(proxyConfig).build())
+                        .build();
+            }
+
+            // Neither called → use factory default
+            return HttpTransportFactory.getDefault();
         }
     }
 }

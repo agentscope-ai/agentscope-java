@@ -32,6 +32,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.ProxyConfig;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -955,6 +956,57 @@ class DashScopeChatModelTest {
                 "Request body should NOT contain cache_control when disabled: " + body);
 
         mockServer.shutdown();
+    }
+
+    // ==========================================================================
+    // Proxy configuration tests
+    // ==========================================================================
+
+    @Test
+    @DisplayName("Should create DashScope model with proxy() only")
+    void testProxyOnly() {
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        DashScopeChatModel model =
+                DashScopeChatModel.builder().apiKey("test-api-key").modelName("qwen-plus").stream(
+                                false)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
+        assertEquals("qwen-plus", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create DashScope model with httpTransport() only")
+    void testHttpTransportOnly() {
+        OkHttpTransport transport = OkHttpTransport.builder().build();
+
+        DashScopeChatModel model =
+                DashScopeChatModel.builder().apiKey("test-api-key").modelName("qwen-plus").stream(
+                                false)
+                        .httpTransport(transport)
+                        .build();
+
+        assertNotNull(model);
+    }
+
+    @Test
+    @DisplayName("Should prefer DashScope httpTransport() over proxy() with warning")
+    void testHttpTransportTakesPrecedenceOverProxy() {
+        OkHttpTransport transport = OkHttpTransport.builder().build();
+        ProxyConfig proxy = ProxyConfig.http("proxy.example.com", 8080);
+
+        // Both set - httpTransport should take precedence
+        // This should log a warning but still build successfully
+        DashScopeChatModel model =
+                DashScopeChatModel.builder().apiKey("test-api-key").modelName("qwen-plus").stream(
+                                false)
+                        .httpTransport(transport)
+                        .proxy(proxy)
+                        .build();
+
+        assertNotNull(model);
     }
 
     /**
