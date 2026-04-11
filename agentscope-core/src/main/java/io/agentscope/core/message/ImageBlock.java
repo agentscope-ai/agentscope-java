@@ -36,15 +36,36 @@ public final class ImageBlock extends ContentBlock {
 
     private final Source source;
 
+    private final Integer minPixels;
+
+    private final Integer maxPixels;
+
     /**
-     * Creates a new image block for JSON deserialization.
+     * Creates a new image block with source.
      *
      * @param source The image source (URL or Base64)
      * @throws NullPointerException if source is null
      */
-    @JsonCreator
     public ImageBlock(@JsonProperty("source") Source source) {
+        this(source, null, null);
+    }
+
+    /**
+     * Creates a new image block for JSON deserialization.
+     *
+     * @param source The image source (URL or Base64)
+     * @param minPixels Used to set the minimum pixel threshold for input image.
+     * @param maxPixels Used to set the maximum pixel threshold for input image.
+     * @throws NullPointerException if source is null
+     */
+    @JsonCreator
+    private ImageBlock(
+            @JsonProperty("source") Source source,
+            @JsonProperty("min_pixels") Integer minPixels,
+            @JsonProperty("max_pixels") Integer maxPixels) {
         this.source = Objects.requireNonNull(source, "source cannot be null");
+        this.minPixels = minPixels;
+        this.maxPixels = maxPixels;
     }
 
     /**
@@ -54,6 +75,24 @@ public final class ImageBlock extends ContentBlock {
      */
     public Source getSource() {
         return source;
+    }
+
+    /**
+     * Gets the minimum pixel threshold for input image.
+     *
+     * @return The minimum pixel threshold
+     */
+    public Integer getMinPixels() {
+        return minPixels;
+    }
+
+    /**
+     * Gets the maximum pixel threshold for input image.
+     *
+     * @return The maximum pixel threshold
+     */
+    public Integer getMaxPixels() {
+        return maxPixels;
     }
 
     /**
@@ -72,6 +111,10 @@ public final class ImageBlock extends ContentBlock {
 
         private Source source;
 
+        private Integer minPixels;
+
+        private Integer maxPixels;
+
         /**
          * Sets the source for the image.
          *
@@ -84,13 +127,35 @@ public final class ImageBlock extends ContentBlock {
         }
 
         /**
+         * Sets the minimum pixel threshold for input image frames.
+         *
+         * @param minPixels The minimum pixel threshold
+         * @return This builder for chaining
+         */
+        public Builder minPixels(Integer minPixels) {
+            this.minPixels = minPixels;
+            return this;
+        }
+
+        /**
+         * Sets the maximum pixel threshold for input image frames.
+         *
+         * @param maxPixels The maximum pixel threshold
+         * @return This builder for chaining
+         */
+        public Builder maxPixels(Integer maxPixels) {
+            this.maxPixels = maxPixels;
+            return this;
+        }
+
+        /**
          * Builds a new ImageBlock with the configured source.
          *
          * @return A new ImageBlock instance
          * @throws NullPointerException if source is null
          */
         public ImageBlock build() {
-            return new ImageBlock(source);
+            return new ImageBlock(source, minPixels, maxPixels);
         }
     }
 }
