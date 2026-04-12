@@ -1720,6 +1720,10 @@ class AutoContextMemoryTest {
 
         assertNotNull(messages.get(6).getMetadata());
         assertTrue(messages.get(6).getMetadata().containsKey("_compress_meta"));
+    }
+
+    @Test
+    @DisplayName(
             "Should continue to subsequent strategies when tool compression is skipped due to low"
                     + " tokens")
     void testCompressionStrategiesContinueWhenToolCompressionSkipped() {
