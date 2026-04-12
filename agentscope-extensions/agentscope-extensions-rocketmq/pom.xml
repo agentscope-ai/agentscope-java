@@ -27,6 +27,7 @@
 
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-rocketmq</artifactId>
+    <name>AgentScope Java - Extensions - RocketMQ</name>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

@@ -46,6 +46,7 @@
         <module>hitl-chat</module>
         <module>a2a</module>
         <module>chat-tts</module>
+        <module>graceful-shutdown</module>
         <module>multiagent-patterns/handoffs</module>
         <module>multiagent-patterns/routing</module>
         <module>multiagent-patterns/subagent</module>
@@ -53,6 +54,7 @@
         <module>multiagent-patterns/workflow</module>
         <module>multiagent-patterns/pipeline</module>
         <module>multiagent-patterns/skills</module>
+        <module>a2a-rocketmq</module>
     </modules>
 
     <properties>
@@ -61,7 +63,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
         <spring.boot.version>4.0.4</spring.boot.version>
-        <micronaut.version>4.10.9</micronaut.version>
+        <micronaut.version>4.10.11</micronaut.version>
     </properties>
 
 </project>

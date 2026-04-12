@@ -931,6 +931,111 @@ class ReActAgentTest {
                 "Second tool should be calculator");
     }
 
+    @Test
+    @DisplayName("Should include ChatUsage in accumulated message metadata when available")
+    void testChatUsageInAccumulatedMessageMetadata() {
+        // Track received ChatUsage from ReasoningChunkEvent
+        final java.util.List<ChatUsage> capturedChatUsages =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.List<Msg> capturedAccumulatedMsgs =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        // Create a hook to capture ReasoningChunkEvent and check metadata
+        io.agentscope.core.hook.Hook captureHook =
+                new io.agentscope.core.hook.Hook() {
+                    @Override
+                    public <T extends io.agentscope.core.hook.HookEvent>
+                            reactor.core.publisher.Mono<T> onEvent(T event) {
+                        if (event
+                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                            // Capture accumulated message and check its metadata
+                            Msg accumulated = chunkEvent.getAccumulated();
+                            if (accumulated != null) {
+                                capturedAccumulatedMsgs.add(accumulated);
+
+                                // Capture ChatUsage from metadata
+                                Object usage =
+                                        accumulated
+                                                .getMetadata()
+                                                .get(
+                                                        io.agentscope.core.message
+                                                                .MessageMetadataKeys.CHAT_USAGE);
+                                if (usage instanceof ChatUsage) {
+                                    capturedChatUsages.add((ChatUsage) usage);
+                                }
+                            }
+                        }
+                        return reactor.core.publisher.Mono.just(event);
+                    }
+                };
+
+        // Setup model to return response with ChatUsage
+        MockModel modelWithUsage =
+                new MockModel(
+                        messages -> {
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Test response")
+                                                                    .build()))
+                                            .usage(new ChatUsage(100, 50, 1.5))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(modelWithUsage)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .hook(captureHook)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "Test message");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify ChatUsage was captured in events
+        assertFalse(capturedChatUsages.isEmpty(), "Should capture ChatUsage from events");
+
+        // Verify ChatUsage values
+        ChatUsage capturedUsage = capturedChatUsages.get(0);
+        assertEquals(100, capturedUsage.getInputTokens(), "Input tokens should match");
+        assertEquals(50, capturedUsage.getOutputTokens(), "Output tokens should match");
+        assertEquals(1.5, capturedUsage.getTime(), "Time should match");
+
+        // Verify accumulated messages were captured
+        assertFalse(
+                capturedAccumulatedMsgs.isEmpty(),
+                "Should capture accumulated messages from events");
+
+        // Verify metadata contains CHAT_USAGE
+        Msg accumulatedMsg = capturedAccumulatedMsgs.get(0);
+        Object metadataUsage =
+                accumulatedMsg
+                        .getMetadata()
+                        .get(io.agentscope.core.message.MessageMetadataKeys.CHAT_USAGE);
+        assertNotNull(metadataUsage, "Accumulated message metadata should contain CHAT_USAGE");
+        assertTrue(
+                metadataUsage instanceof ChatUsage,
+                "Metadata CHAT_USAGE should be ChatUsage instance");
+
+        ChatUsage metadataChatUsage = (ChatUsage) metadataUsage;
+        assertEquals(100, metadataChatUsage.getInputTokens(), "Metadata input tokens should match");
+        assertEquals(
+                50, metadataChatUsage.getOutputTokens(), "Metadata output tokens should match");
+        assertEquals(1.5, metadataChatUsage.getTime(), "Metadata time should match");
+    }
+
     // Helper method to create tool call response
     private static ChatResponse createToolCallResponseHelper(
             String toolName, String toolCallId, Map<String, Object> arguments) {

@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.11-SNAPSHOT</revision>
+        <revision>1.0.12-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -74,7 +74,7 @@
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
         <guava.version>33.5.0-jre</guava.version>
-        <google-genai.version>1.38.0</google-genai.version>
+        <google-genai.version>1.45.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.9</dashscope-sdk-java.version>
         <bailian.version>2.8.2</bailian.version>
         <openai-java.version>4.28.0</openai-java.version>
@@ -82,29 +82,29 @@
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.17.0</qdrant.version>
-        <milvus.version>2.6.16</milvus.version>
+        <milvus.version>2.6.17</milvus.version>
         <httpclient5.version>5.6</httpclient5.version>
         <elasticsearch.version>9.3.3</elasticsearch.version>
         <postgresql.version>42.7.9</postgresql.version>
         <pgvector.version>0.1.6</pgvector.version>
         <pdfbox.version>3.0.7</pdfbox.version>
         <poi.version>5.5.1</poi.version>
-        <tika.version>3.2.3</tika.version>
+        <tika.version>3.3.0</tika.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
         <mysql.version>9.6.0</mysql.version>
-        <opentelemetry-reactor.version>2.26.0-alpha</opentelemetry-reactor.version>
+        <opentelemetry-reactor.version>2.26.1-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.40.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>4.2.0</redisson.version>
         <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
-        <jedis.version>7.2.1</jedis.version>
+        <jedis.version>7.4.1</jedis.version>
         <lettuce.version>6.4.2.RELEASE</lettuce.version>
         <xxl-job.version>3.3.2</xxl-job.version>
         <quartz.version>2.5.2</quartz.version>
         <spring.version>7.0.6</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
-        <nacos-client.version>3.2.0-BETA</nacos-client.version>
+        <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
         <json-schema-validator.version>3.0.1</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>

@@ -201,7 +201,7 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Feature 2: Code Execution Capabilities
 
-Provides an isolated code execution folder for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern for flexible configuration of required tools.
+Provides an isolated code execution environment for Skills, supporting Shell commands, file read/write operations, etc. Uses Builder pattern to compose tools and configuration on demand.
 
 **Basic Usage**:
 
@@ -216,35 +216,41 @@ skillBox.codeExecution()
     .enable();
 ```
 
+**Configuration Reference**:
+
+- **Tool Selection**: Combine `withShell()`, `withRead()`, `withWrite()` as needed — only explicitly enabled tools are registered
+- **`workDir`**: Shared working directory for all tools. Created automatically when specified; if omitted, a temporary directory `agentscope-code-execution-*` is created lazily and cleaned up on JVM exit
+- **`uploadDir`**: Upload location for Skill resource files; defaults to `workDir/skills`
+- **File Filtering**: Controls which resource files are allowed to upload. Defaults to `scripts/`, `assets/` folders and `.py`, `.js`, `.sh` extensions. Adjust with `includeFolders()`/`includeExtensions()`, or fully customize with `fileFilter()` (the two approaches are mutually exclusive)
+- **Custom Shell**: `withShell(customShellTool)` accepts a custom tool whose `baseDir` is automatically overridden with `workDir` while preserving its security policy
+
 **Custom Configuration**:
 
 ```java
-// Customize working directory and Shell command whitelist
+// Specify directory + custom Shell + file filtering
 ShellCommandTool customShell = new ShellCommandTool(
-    null,  // baseDir will be automatically set to workDir
+    null,  // baseDir will be automatically overridden with workDir
     Set.of("python3", "node", "npm"),
-    command -> askUserApproval(command)  // Optional command approval callback
+    command -> askUserApproval(command)
 );
 
 skillBox.codeExecution()
-    .workDir("/path/to/workdir")  // Specify working directory
-    .withShell(customShell)       // Use custom Shell tool
-    .withRead()                   // Enable file reading
-    .withWrite()                  // Enable file writing
+    .workDir("/data/agent-workspace")              // working directory
+    .uploadDir("/data/agent-workspace/my-skills")  // optional, defaults to workDir/skills
+    .includeFolders(Set.of("scripts/", "data/"))   // optional, customize upload folders
+    .includeExtensions(Set.of(".py", ".json"))      // optional, customize upload extensions
+    .withShell(customShell)
+    .withRead()
+    .withWrite()
     .enable();
 
-// Or enable only file operations, without Shell
+// Or use a fully custom file filter (mutually exclusive with includeFolders/includeExtensions)
 skillBox.codeExecution()
+    .fileFilter(path -> path.endsWith(".py"))  // or SkillFileFilter.acceptAll()
     .withRead()
     .withWrite()
     .enable();
 ```
-
-**Core Features**:
-- **Unified Working Directory**: All tools share the same `workDir`, ensuring file isolation
-- **Selective Enabling**: Flexibly combine Shell, read file, and write file tools as needed
-- **Flexible Configuration**: Supports custom ShellCommandTool to meet customization requirements
-- **Automatic Management**: Automatically creates temporary directory when `workDir` is not specified, with automatic cleanup on program exit
 
 ### Feature 3: Skill Persistence Storage
 
@@ -332,6 +338,46 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 ```
 
 > Note: Add the `agentscope-extensions-nacos-skill` dependency.
+
+### Feature 4: Custom Skill Prompts
+
+When SkillBox injects a system prompt into the Agent, it generates a description entry for each registered Skill so the LLM can decide when to load which Skill. The two components of this prompt can be customized via the constructor:
+
+- **`instruction`**: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in `load_skill_through_path` usage guide
+- **`template`**: The format template for each Skill entry, containing three `%s` placeholders corresponding to `name`, `description`, and `skillId` in order
+
+When code execution is enabled, the section appended after `</available_skills>` can also be customized via `.codeExecutionInstruction()`:
+
+- **`codeExecutionInstruction`**: Template for the code execution section; every `%s` placeholder will be replaced with the `uploadDir` absolute path. Passing `null` or blank uses the built-in default.
+
+Passing `null` or a blank string for any of these uses the built-in default.
+
+**Example**:
+
+```java
+// Customize instruction and template
+String customInstruction = """
+    ## Available Skills
+    When a task matches a skill, load it with load_skill_through_path.
+    """;
+
+String customTemplate = """
+    - **%s**: %s (id: %s)
+    """;
+
+SkillBox skillBox = new SkillBox(toolkit, customInstruction, customTemplate);
+
+// Customize the code execution section (takes effect when code execution is enabled)
+skillBox.codeExecution()
+    .workDir("/data/workspace")
+    .codeExecutionInstruction("""
+        ## Script Execution
+        Skills root directory: %s
+        Always use absolute paths when running scripts.
+        """)
+    .withShell()
+    .enable();
+```
 
 ### Performance Optimization Recommendations
 

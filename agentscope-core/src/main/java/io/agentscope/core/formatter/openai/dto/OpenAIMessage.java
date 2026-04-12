@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.openai.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -76,10 +77,12 @@ public class OpenAIMessage {
     private List<OpenAIToolCall> toolCalls;
 
     /**
-     * Reasoning/thinking content (for o1 and similar reasoning models).
-     * This field contains the model's internal reasoning process.
+     * Reasoning/thinking content from the model.
+     * Accepts both {@code reasoning_content} (commercial APIs like DeepSeek, DashScope) and
+     * {@code reasoning} (vLLM deployments) during deserialization.
      */
     @JsonProperty("reasoning_content")
+    @JsonAlias("reasoning")
     private String reasoningContent;
 
     /**
