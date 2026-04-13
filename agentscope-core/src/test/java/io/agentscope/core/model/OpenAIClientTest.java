@@ -41,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for OpenAIClient.
@@ -914,5 +915,94 @@ class OpenAIClientTest {
         assertThrows(
                 OpenAIException.class,
                 () -> client.stream(TEST_API_KEY, baseUrl, request, options).collectList().block());
+    }
+
+    @Test
+    @DisplayName("Should handle non-standard rate limit error in sync response body")
+    void testNonStandardErrorInResponseBody() {
+        String errorResponse =
+                """
+                {
+                    "code": "429",
+                    "message": "The request has triggered the maximum tokens per minute limit.",
+                    "status": "error"
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        OpenAIException exception =
+                assertThrows(
+                        OpenAIException.class, () -> client.call(TEST_API_KEY, baseUrl, request));
+
+        assertNotNull(exception);
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("429", exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("maximum tokens per minute"));
+    }
+
+    @Test
+    @DisplayName("Should handle non-standard rate limit error in streaming chunk")
+    void testNonStandardErrorInStreamChunk() {
+        String chunk1 =
+                "data:"
+                    + " {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"}}]}\n\n";
+        String chunk2 =
+                "data: {\"code\":\"429\",\"message\":\"MAX_TPM limit"
+                        + " exceeded\",\"status\":\"error\"}\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(chunk1 + chunk2)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        List<OpenAIResponse> responses = new ArrayList<>();
+        Throwable[] capturedError = new Throwable[1];
+
+        client.stream(TEST_API_KEY, baseUrl, request, options)
+                .doOnNext(responses::add)
+                .doOnError(e -> capturedError[0] = e)
+                .onErrorResume(e -> Flux.empty())
+                .blockLast();
+
+        assertEquals(1, responses.size());
+        assertEquals("chatcmpl-123", responses.get(0).getId());
+
+        assertNotNull(capturedError[0]);
+        assertTrue(capturedError[0] instanceof OpenAIException);
+
+        OpenAIException exception = (OpenAIException) capturedError[0];
+        assertEquals(429, exception.getStatusCode());
+        assertEquals("429", exception.getErrorCode());
+        assertTrue(exception.getMessage().contains("MAX_TPM limit exceeded"));
     }
 }

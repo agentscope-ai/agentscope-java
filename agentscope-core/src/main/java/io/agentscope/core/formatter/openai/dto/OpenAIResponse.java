@@ -100,6 +100,18 @@ public class OpenAIResponse {
     @JsonProperty("error")
     private OpenAIError error;
 
+    /** Error code for non-standard error responses. */
+    @JsonProperty("code")
+    private String code;
+
+    /** Error message for non-standard error responses. */
+    @JsonProperty("message")
+    private String message;
+
+    /** Status for non-standard error responses. */
+    @JsonProperty("status")
+    private String status;
+
     public OpenAIResponse() {}
 
     public String getId() {
@@ -166,13 +178,42 @@ public class OpenAIResponse {
         this.error = error;
     }
 
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     /**
      * Check if this response represents an error.
+     *
+     * Support the detection of standard OpenAI error structures
+     * and non-standard code/status error structures.
      *
      * @return true if the response contains an error
      */
     public boolean isError() {
-        return error != null;
+        return error != null
+                || "error".equalsIgnoreCase(status)
+                || (code != null && !code.equals("200") && !code.equals("0"));
     }
 
     /**

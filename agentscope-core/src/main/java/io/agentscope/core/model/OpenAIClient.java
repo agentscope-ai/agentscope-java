@@ -334,21 +334,32 @@ public class OpenAIClient {
 
             if (response.isError()) {
                 OpenAIError error = response.getError();
-                if (error == null) {
-                    throw new OpenAIException(
-                            "OpenAI API returned error but error details are null",
-                            400,
-                            "unknown_error",
-                            responseBody);
-                }
+
+                // Prioritize the message in the standard error,
+                // otherwise take the non-standard message in the outer layer
                 String errorMessage =
-                        error.getMessage() != null ? error.getMessage() : "Unknown error";
-                String errorCode = error.getCode() != null ? error.getCode() : "unknown_error";
+                        error != null && error.getMessage() != null
+                                ? error.getMessage()
+                                : (response.getMessage() != null
+                                        ? response.getMessage()
+                                        : "Unknown error");
+
+                String errorCode =
+                        error != null && error.getCode() != null
+                                ? error.getCode()
+                                : (response.getCode() != null
+                                        ? response.getCode()
+                                        : "unknown_error");
+
+                int statusCode = httpResponse.getStatusCode();
+                if (statusCode == 200
+                        && ("429".equals(errorCode)
+                                || (errorCode != null && errorCode.contains("429")))) {
+                    statusCode = 429;
+                }
+
                 throw OpenAIException.create(
-                        httpResponse.getStatusCode(),
-                        "OpenAI API error: " + errorMessage,
-                        errorCode,
-                        responseBody);
+                        statusCode, "OpenAI API error: " + errorMessage, errorCode, responseBody);
             }
 
             return response;
@@ -416,17 +427,35 @@ public class OpenAIClient {
                                     // Check for error in streaming response chunk
                                     if (response.isError()) {
                                         OpenAIError error = response.getError();
+
+                                        // Prioritize the message in the standard error,
+                                        // otherwise take the non-standard message in the outer
+                                        // layer
                                         String errorMessage =
                                                 error != null && error.getMessage() != null
                                                         ? error.getMessage()
-                                                        : "Unknown error in streaming response";
+                                                        : (response.getMessage() != null
+                                                                ? response.getMessage()
+                                                                : "Unknown error in streaming"
+                                                                        + " response");
+
                                         String errorCode =
                                                 error != null && error.getCode() != null
                                                         ? error.getCode()
-                                                        : null;
+                                                        : (response.getCode() != null
+                                                                ? response.getCode()
+                                                                : "unknown_error");
+
+                                        int statusCode = 400;
+                                        if ("429".equals(errorCode)
+                                                || (errorCode != null
+                                                        && errorCode.contains("429"))) {
+                                            statusCode = 429;
+                                        }
+
                                         sink.error(
                                                 OpenAIException.create(
-                                                        400,
+                                                        statusCode,
                                                         "OpenAI API error in streaming response: "
                                                                 + errorMessage,
                                                         errorCode,
