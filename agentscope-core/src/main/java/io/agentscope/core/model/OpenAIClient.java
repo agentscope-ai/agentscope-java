@@ -16,7 +16,6 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.Version;
-import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.model.exception.OpenAIException;
@@ -333,31 +332,9 @@ public class OpenAIClient {
             }
 
             if (response.isError()) {
-                OpenAIError error = response.getError();
-
-                // Prioritize the message in the standard error,
-                // otherwise take the non-standard message in the outer layer
-                String errorMessage =
-                        error != null && error.getMessage() != null
-                                ? error.getMessage()
-                                : (response.getMessage() != null
-                                        ? response.getMessage()
-                                        : "Unknown error");
-
-                String errorCode =
-                        error != null && error.getCode() != null
-                                ? error.getCode()
-                                : (response.getCode() != null
-                                        ? response.getCode()
-                                        : "unknown_error");
-
-                int statusCode = httpResponse.getStatusCode();
-                if (statusCode == 200
-                        && ("429".equals(errorCode)
-                                || (errorCode != null && errorCode.contains("429")))) {
-                    statusCode = 429;
-                }
-
+                String errorMessage = response.getEffectiveErrorMessage();
+                String errorCode = response.getEffectiveErrorCode();
+                int statusCode = resolveErrorStatusCode(httpResponse.getStatusCode(), errorCode);
                 throw OpenAIException.create(
                         statusCode, "OpenAI API error: " + errorMessage, errorCode, responseBody);
             }
@@ -426,40 +403,16 @@ public class OpenAIClient {
                                 if (response != null) {
                                     // Check for error in streaming response chunk
                                     if (response.isError()) {
-                                        OpenAIError error = response.getError();
-
-                                        // Prioritize the message in the standard error,
-                                        // otherwise take the non-standard message in the outer
-                                        // layer
-                                        String errorMessage =
-                                                error != null && error.getMessage() != null
-                                                        ? error.getMessage()
-                                                        : (response.getMessage() != null
-                                                                ? response.getMessage()
-                                                                : "Unknown error in streaming"
-                                                                        + " response");
-
-                                        String errorCode =
-                                                error != null && error.getCode() != null
-                                                        ? error.getCode()
-                                                        : (response.getCode() != null
-                                                                ? response.getCode()
-                                                                : "unknown_error");
-
-                                        int statusCode = 400;
-                                        if ("429".equals(errorCode)
-                                                || (errorCode != null
-                                                        && errorCode.contains("429"))) {
-                                            statusCode = 429;
-                                        }
-
+                                        String errorMessage = response.getEffectiveErrorMessage();
+                                        String errorCode = response.getEffectiveErrorCode();
+                                        int statusCode = resolveErrorStatusCode(200, errorCode);
                                         sink.error(
                                                 OpenAIException.create(
                                                         statusCode,
                                                         "OpenAI API error in streaming response: "
                                                                 + errorMessage,
                                                         errorCode,
-                                                        null));
+                                                        data));
                                         return;
                                     }
                                     sink.next(response);
@@ -485,6 +438,39 @@ public class OpenAIClient {
             return Flux.error(
                     new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
+    }
+
+    /**
+     * Resolve the actual HTTP error status code when the API returns 200 OK
+     * but contains an error payload.
+     *
+     * @param httpStatusCode the original HTTP status code
+     * @param errorCode the error code extracted from the response body
+     * @return a valid HTTP error status code (4xx or 5xx)
+     */
+    private int resolveErrorStatusCode(int httpStatusCode, String errorCode) {
+        if (httpStatusCode >= 400) {
+            return httpStatusCode;
+        }
+
+        // Handling HTTP 200 with Body containing errors
+        if (errorCode != null) {
+            if (errorCode.contains("429")) {
+                return 429;
+            }
+
+            try {
+                int parsedCode = Integer.parseInt(errorCode);
+                if (parsedCode >= 400 && parsedCode <= 599) {
+                    return parsedCode;
+                }
+            } catch (NumberFormatException e) {
+                // Ignore error codes of non numeric types
+            }
+        }
+
+        // Extraction failed, return to default
+        return 400;
     }
 
     /**

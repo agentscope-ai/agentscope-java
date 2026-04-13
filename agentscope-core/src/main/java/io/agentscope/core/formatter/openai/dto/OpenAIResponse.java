@@ -217,6 +217,26 @@ public class OpenAIResponse {
     }
 
     /**
+     * Get the effective error message, handling both standard and non-standard formats.
+     */
+    public String getEffectiveErrorMessage() {
+        if (error != null && error.getMessage() != null) {
+            return error.getMessage();
+        }
+        return message != null ? message : "Unknown error";
+    }
+
+    /**
+     * Get the effective error code, handling both standard and non-standard formats.
+     */
+    public String getEffectiveErrorCode() {
+        if (error != null && error.getCode() != null) {
+            return error.getCode();
+        }
+        return code != null ? code : "unknown_error";
+    }
+
+    /**
      * Check if this is a streaming chunk response.
      *
      * <p>Detects streaming chunks by:
