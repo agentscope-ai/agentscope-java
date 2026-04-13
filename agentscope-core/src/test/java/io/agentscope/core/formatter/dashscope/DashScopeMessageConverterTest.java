@@ -610,4 +610,71 @@ class DashScopeMessageConverterTest {
         assertTrue(dsMsg.isMultimodal());
         assertEquals(2, dsMsg.getContentAsList().size());
     }
+
+    @Test
+    void testToolResultWithTextImageAudioBlocks() {
+        // Test that tool result with TextBlock + ImageBlock + AudioBlock returns 3 content parts
+        DashScopeMessageConverter conv =
+                new DashScopeMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append(tb.getText());
+                                } else if (block instanceof ImageBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned image can be found at: /tmp/test.png");
+                                } else if (block instanceof AudioBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned audio can be found at: /tmp/test.wav");
+                                }
+                            }
+                            return sb.toString();
+                        });
+
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_multi_media")
+                        .name("get_multimodal")
+                        .output(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/audio.wav")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = conv.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_multi_media", dsMsg.getToolCallId());
+        assertEquals("get_multimodal", dsMsg.getName());
+        assertTrue(dsMsg.isMultimodal());
+        // Should preserve all 3 content parts: text, image, audio
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("The capital of Japan is Tokyo.", dsMsg.getContentAsList().get(0).getText());
+        assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
+        assertEquals("https://example.com/audio.wav", dsMsg.getContentAsList().get(2).getAudio());
+    }
 }
