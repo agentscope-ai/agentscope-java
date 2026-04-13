@@ -36,7 +36,7 @@ implementation 'io.agentscope:agentscope:1.0.11'
 
 The all-in-one package includes these dependencies by default:
 
-- DashScope SDK (Qwen series models)
+- DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)
 - MCP SDK (Model Context Protocol)
 - Reactor Core, Jackson, SLF4J (base frameworks)
 
@@ -185,6 +185,7 @@ implementation 'io.agentscope:agentscope-core:1.0.11'
 |--------|---------|-------------------|
 | [agentscope-extensions-scheduler-common](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common) | Scheduler Common | `io.agentscope:agentscope-extensions-scheduler-common` |
 | [agentscope-extensions-scheduler-xxl-job](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job) | XXL-Job Scheduler | `io.agentscope:agentscope-extensions-scheduler-xxl-job` |
+| [agentscope-extensions-scheduler-quartz](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz) | Quartz Scheduler | `io.agentscope:agentscope-extensions-scheduler-quartz` |
 
 #### User Interface
 
@@ -224,6 +225,8 @@ Additional starters:
 |---------|---------|-------------------|
 | agentscope-a2a-spring-boot-starter | A2A Integration | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI Integration | `io.agentscope:agentscope-agui-spring-boot-starter` |
+| agentscope-chat-completions-web-starter | Chat Completions Web Integration | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-nacos-spring-boot-starter | Nacos Integration | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus
 

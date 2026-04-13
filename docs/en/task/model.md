@@ -8,7 +8,7 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | Provider   | Class                   | Streaming | Tools | Vision | Reasoning |
 |------------|-------------------------|-----------|-------|--------|-----------|
 | DashScope  | `DashScopeChatModel`    | ✅        | ✅    | ✅     | ✅        |
-| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     |           |
+| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     | ✅        |
 | Anthropic  | `AnthropicChatModel`    | ✅        | ✅    | ✅     | ✅        |
 | Gemini     | `GeminiChatModel`       | ✅        | ✅    | ✅     | ✅        |
 | Ollama     | `OllamaChatModel`       | ✅        | ✅    | ✅     | ✅        |
@@ -48,6 +48,31 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `stream` | Enable streaming, default `true` |
 | `enableThinking` | Enable thinking mode to show reasoning process |
 | `enableSearch` | Enable web search for real-time information |
+| `endpointType` | API endpoint type (default `AUTO` auto-detect), options: `TEXT` (force text API) or `MULTIMODAL` (force multimodal API) |
+| `defaultOptions` | Default generation options (temperature, maxTokens, etc.) |
+| `formatter` | Message formatter (default `DashScopeChatFormatter`) |
+
+### Endpoint Type (endpointType)
+
+DashScope models support both text and multimodal API endpoints. By default, the framework automatically detects the appropriate endpoint type based on the model name (e.g., `qwen-vl-*` and `qwen3.5` series automatically use the multimodal endpoint).
+
+When auto-detection is inaccurate (e.g., using custom model names or compatible APIs), you can manually specify the endpoint type:
+
+```java
+// Force multimodal API (suitable for scenarios with images, audio, etc.)
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.MULTIMODAL)
+        .build();
+
+// Force text API
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.TEXT)
+        .build();
+```
 
 ### Thinking Mode
 
@@ -105,6 +130,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `modelName` | Model name, e.g., `gpt-4o`, `gpt-4o-mini` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
+| `generateOptions` | Default generation options (note: OpenAI uses `.generateOptions()` instead of `.defaultOptions()`) |
 
 ## Anthropic
 
@@ -275,7 +301,7 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K sampling
         .maxTokens(2000)            // Maximum output tokens
         .seed(42L)                  // Random seed
-        .toolChoice(new ToolChoice.auto())  // Tool choice strategy
+        .toolChoice(new ToolChoice.Auto())  // Tool choice strategy
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()
@@ -299,17 +325,21 @@ OllamaChatModel model = OllamaChatModel.builder()
 | `topP` | Double | Nucleus sampling threshold, 0.0-1.0 |
 | `topK` | Integer | Limits candidate tokens |
 | `maxTokens` | Integer | Maximum tokens to generate |
+| `maxCompletionTokens` | Integer | Maximum completion tokens |
 | `thinkingBudget` | Integer | Token budget for thinking |
+| `reasoningEffort` | String | Reasoning effort level (e.g., `low`, `medium`, `high`) |
+| `frequencyPenalty` | Double | Frequency penalty, -2.0-2.0 |
+| `presencePenalty` | Double | Presence penalty, -2.0-2.0 |
 | `seed` | Long | Random seed |
 | `toolChoice` | ToolChoice | Tool choice strategy |
 
 ### Tool Choice Strategy
 
 ```java
-ToolChoice.auto()              // Model decides (default)
-ToolChoice.none()              // Disable tool calling
-ToolChoice.required()          // Force tool calling
-ToolChoice.specific("tool_name")  // Force specific tool
+new ToolChoice.Auto()              // Model decides (default)
+new ToolChoice.None()              // Disable tool calling
+new ToolChoice.Required()          // Force tool calling
+new ToolChoice.Specific("tool_name")  // Force specific tool
 ```
 
 ### Additional Parameters

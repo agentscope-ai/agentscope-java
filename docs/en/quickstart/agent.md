@@ -26,12 +26,16 @@ The `ReActAgent` class exposes the following parameters in its constructor:
 | Parameter | Further Reading | Description |
 |-----------|-----------------|-------------|
 | `name` (required) | | Agent's name |
-| `sysPrompt` (required) | | System prompt |
+| `sysPrompt` | | System prompt (recommended) |
 | `model` (required) | [Model Integration](../task/model.md) | Model for generating responses |
 | `toolkit` | [Tool System](../task/tool.md) | Module for registering/calling tool functions |
 | `memory` | [Memory Management](../task/memory.md) | Short-term memory for conversation history |
-| `longTermMemory` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory |
-| `longTermMemoryMode` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
+| `description` | | Agent description |
+| `generateOptions` | | LLM generation parameters (temperature, topP, maxTokens, etc.) |
+| `toolExecutionContext` | [Tool System](../task/tool.md) | Tool execution context for dependency injection into tools |
+| `planNotebook` | [Planning](../task/plan.md) | Plan manager |
+| `longTermMemory` | [Memory Management](../task/memory.md) | Long-term memory |
+| `longTermMemoryMode` | [Memory Management](../task/memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
 | `maxIters` | | Max iterations for generating response (default: 10) |
 | `hooks` | [Hook System](../task/hook.md) | Event hooks for customizing agent behavior |
 | `modelExecutionConfig` | | Timeout/retry config for model calls |

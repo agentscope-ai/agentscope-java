@@ -72,7 +72,7 @@ public Mono<String> search(
 
 ### Streaming Tools
 
-Use `ToolEmitter` to send intermediate progress, suitable for long-running tasks:
+Use `ToolEmitter` to send intermediate progress, suitable for long-running tasks (progress is only visible to Hooks, not sent to LLM):
 
 ```java
 @Tool(description = "Generate data")
@@ -200,6 +200,7 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | Tool | Method | Description |
 |------|--------|-------------|
 | `ReadFileTool` | `view_text_file` | View files by line range |
+| `ReadFileTool` | `list_directory` | List files and folders in a directory |
 | `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content |
 | `WriteFileTool` | `insert_text_file` | Insert content at specified line |
 
@@ -230,8 +231,8 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 | Tool | Capabilities |
 |------|--------------|
-| `DashScopeMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text |
-| `OpenAIMultiModalTool` | Text-to-image, image editing, image variations, image-to-text, text-to-speech, speech-to-text |
+| `DashScopeMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text, text-to-video, image-to-video, first-last-frame-to-video, video understanding |
+| `OpenAIMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text |
 
 ### Sub-agent Tools
 
@@ -282,7 +283,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `parallel` | Whether to execute multiple tools in parallel | `true` |
+| `parallel` | Whether to execute multiple tools in parallel | `false` |
 | `allowToolDeletion` | Whether to allow tool deletion | `true` |
 | `executionConfig.timeout` | Tool execution timeout | 5 minutes |
 
@@ -292,7 +293,7 @@ Allow agents to autonomously manage tool groups:
 
 ```java
 toolkit.registerMetaTool();
-// Agent can call "reset_equipped_tools" to activate/deactivate tool groups
+// Agent can call "reset_equipped_tools" to activate (reset to specified set) tool groups
 ```
 
 When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.
@@ -327,14 +328,16 @@ if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
     List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
 
     // After external execution, provide result
-    Msg toolResult = Msg.builder()
-        .role(MsgRole.TOOL)
-        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
-            TextBlock.builder().text("External execution result").build()))
-        .build();
+    for (ToolUseBlock toolUse : pendingTools) {
+        Msg toolResult = Msg.builder()
+            .role(MsgRole.TOOL)
+            .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+                TextBlock.builder().text("External execution result").build()))
+            .build();
 
-    // Resume execution
-    response = agent.call(toolResult).block();
+        // Resume execution
+        response = agent.call(toolResult).block();
+    }
 }
 ```
 
