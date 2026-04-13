@@ -15,7 +15,7 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 
 | Event Type            | Timing                    | Modifiable | Description                              |
 |-----------------------|---------------------------|------------|------------------------------------------|
-| PreCallEvent          | Before agent call         | ❌         | Before agent starts processing (notification-only)           |
+| PreCallEvent          | Before agent call         | ✅         | Before agent starts processing (modifiable input messages)           |
 | PostCallEvent         | After agent call          | ✅         | After agent completes response (can modify final message)           |
 | PreReasoningEvent     | Before reasoning          | ✅         | Before LLM reasoning (can modify input messages)          |
 | PostReasoningEvent    | After reasoning           | ✅         | After LLM reasoning (can modify reasoning result)            |
@@ -23,6 +23,9 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 | PreActingEvent        | Before tool execution     | ✅         | Before tool execution (can modify tool parameters)                    |
 | PostActingEvent       | After tool execution      | ✅         | After tool execution (can modify tool result)                |
 | ActingChunkEvent      | During tool stream        | ❌         | Tool execution progress chunks (notification-only)    |
+| PreSummaryEvent       | Before summary            | ✅         | Before summary generation when max iterations reached         |
+| PostSummaryEvent      | After summary             | ✅         | After summary generation (can modify summary result)       |
+| SummaryChunkEvent     | During summary stream     | ❌         | Each chunk of streaming summary (notification-only)           |
 | ErrorEvent            | On error                  | ❌         | When errors occur (notification-only)                        |
 
 ## Creating Hooks
