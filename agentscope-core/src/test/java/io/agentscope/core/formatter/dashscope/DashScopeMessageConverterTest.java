@@ -563,4 +563,51 @@ class DashScopeMessageConverterTest {
         assertTrue(args.contains("city"));
         assertTrue(args.contains("Shanghai"));
     }
+
+    @Test
+    void testToolResultWithImageBlock() {
+        DashScopeMessageConverter conv =
+                new DashScopeMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append(tb.getText());
+                                } else if (block instanceof ImageBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned image can be found at: /tmp/test.png");
+                                }
+                            }
+                            return sb.toString();
+                        });
+
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("get_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Here is a cat image").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = conv.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_123", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+    }
 }

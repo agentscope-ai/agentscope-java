@@ -341,13 +341,8 @@ class DashScopeChatFormatterGroundTruthTest {
                         .build());
 
         // Message 8: Tool result
-        String toolResultContent =
-                "- The capital of Japan is Tokyo.\n"
-                        + "- The returned image can be found at: "
-                        + imagePath
-                        + "\n"
-                        + "- The returned audio can be found at: "
-                        + mockAudioPath;
+        File imageFile2 = new File(imagePath);
+        String absoluteImagePath2 = "file://" + imageFile2.getAbsolutePath();
         groundTruthChat.add(
                 DashScopeMessage.builder()
                         .role("tool")
@@ -356,7 +351,15 @@ class DashScopeChatFormatterGroundTruthTest {
                         .content(
                                 List.of(
                                         DashScopeContentPart.builder()
-                                                .text(toolResultContent)
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build(),
+                                        DashScopeContentPart.builder()
+                                                .image(absoluteImagePath2)
+                                                .build(),
+                                        DashScopeContentPart.builder()
+                                                .audio(
+                                                        "data:audio/wav;base64,"
+                                                                + "ZmFrZSBhdWRpbyBjb250ZW50")
                                                 .build()))
                         .build());
 
