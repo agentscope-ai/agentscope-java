@@ -239,6 +239,45 @@ McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
         .buildSync();
 ```
 
+### elicitation 支持
+
+MCP中的 elicitation 功能允许调用 MCP 服务端工具过程中，实现交互式信息补充收集。
+
+异步客户端示例
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-async")
+.stdioTransport("python", "-m", "mcp_server")
+.asyncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 返回 Mono<ElicitResult>
+        return Mono.just(
+            ElicitResult.builder()
+                .action(ElicitResult.Action.ACCEPT)
+                .data(Map.of("response", "user input"))
+                .build()
+        );
+    })
+    .buildAsync()
+    .block();
+```
+
+同步客户端示例
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp-sync")
+.stdioTransport("python", "-m", "mcp_server")
+.syncElicitation(request -> {
+// 处理 elicitation 请求
+System.out.println("Received elicit request: " + request.message());
+        // 直接返回 ElicitResult
+        return ElicitResult.builder()
+            .action(ElicitResult.Action.ACCEPT)
+            .data(Map.of("response", "user input"))
+            .build();
+    })
+    .buildSync();
+```
+
 ## 管理 MCP 客户端
 
 ### 列出 MCP 服务器的工具
