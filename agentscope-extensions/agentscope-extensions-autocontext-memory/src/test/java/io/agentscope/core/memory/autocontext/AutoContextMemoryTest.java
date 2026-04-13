@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -2072,5 +2073,105 @@ class AutoContextMemoryTest {
                 1,
                 testModel.getCallCount(),
                 "Model should be called exactly once for the second high-token tool group");
+    }
+
+    // ==================== ToolUseBlock Compression Format Tests ====================
+
+    @Test
+    @DisplayName(
+            "Should preserve ToolUseBlock and compress TextBlock when compressing mixed ASSISTANT"
+                    + " message")
+    void testToolUseBlockPreservedAndTextBlockCompressedDuringLargeMessageCompression()
+            throws Exception {
+        // Use CapturingModel to verify messages sent to the model
+        CapturingModel capturingModel = new CapturingModel("Compressed summary of reasoning");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .largePayloadThreshold(100) // low threshold to trigger compression
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, capturingModel);
+
+        // Add messages to exceed msgThreshold
+        for (int i = 0; i < 8; i++) {
+            testMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Add a user message (this becomes the latest user)
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+
+        // Create a large ASSISTANT message with both TextBlock and ToolUseBlock
+        String largeReasoning = "x".repeat(200); // exceeds largePayloadThreshold
+        Msg mixedMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text(largeReasoning).build(),
+                                        ToolUseBlock.builder()
+                                                .name("search")
+                                                .id("call_001")
+                                                .input(new HashMap<>())
+                                                .build()))
+                        .build();
+        testMemory.addMessage(mixedMsg);
+
+        // Trigger compression
+        testMemory.compressIfNeeded();
+
+        // Verify: model was called for compression
+        assertTrue(
+                capturingModel.getCapturedMessages().size() > 0,
+                "Model should be called for compression");
+
+        // Verify: messages sent to model should NOT contain ToolUseBlock
+        List<List<Msg>> captured = capturingModel.getCapturedMessages();
+        for (List<Msg> msgs : captured) {
+            for (Msg msg : msgs) {
+                assertFalse(
+                        msg.hasContentBlocks(ToolUseBlock.class),
+                        "Messages sent to model for compression should not contain ToolUseBlock");
+            }
+        }
+
+        // Verify: the compressed message in memory should preserve ToolUseBlock
+        List<Msg> finalMessages = testMemory.getMessages();
+        boolean foundCompressedMixed = false;
+        for (Msg msg : finalMessages) {
+            if (msg.hasContentBlocks(ToolUseBlock.class) && msg.getRole() == MsgRole.ASSISTANT) {
+                foundCompressedMixed = true;
+                // Should still have ToolUseBlock
+                boolean hasToolUse = false;
+                boolean hasText = false;
+                for (var block : msg.getContent()) {
+                    if (block instanceof ToolUseBlock toolUse) {
+                        hasToolUse = true;
+                        assertEquals(
+                                "call_001", toolUse.getId(), "ToolUseBlock id should be preserved");
+                        assertEquals(
+                                "search",
+                                toolUse.getName(),
+                                "ToolUseBlock name should be preserved");
+                    } else if (block instanceof TextBlock textBlock) {
+                        hasText = true;
+                        // TextBlock should be compressed (not the original large text)
+                        assertNotEquals(
+                                largeReasoning,
+                                textBlock.getText(),
+                                "TextBlock should be compressed, not original");
+                    }
+                }
+                assertTrue(hasToolUse, "Compressed message should preserve ToolUseBlock");
+                assertTrue(hasText, "Compressed message should have summary TextBlock");
+            }
+        }
+
+        assertTrue(
+                foundCompressedMixed,
+                "Should find a compressed ASSISTANT message with preserved ToolUseBlock");
     }
 }
