@@ -108,12 +108,7 @@ public class GeminiChatModel extends ChatModelBase {
         this.project = project;
         this.location = location;
         this.vertexAI = vertexAI;
-        this.httpOptions =
-                baseUrl == null
-                        ? httpOptions
-                        : (httpOptions == null
-                                ? HttpOptions.builder().baseUrl(baseUrl).build()
-                                : httpOptions.toBuilder().baseUrl(baseUrl).build());
+        this.httpOptions = resolveHttpOptions(baseUrl, httpOptions);
         this.credentials = credentials;
         this.clientOptions = clientOptions;
         this.defaultOptions =
@@ -154,7 +149,11 @@ public class GeminiChatModel extends ChatModelBase {
     }
 
     /**
-     * Creates a new Gemini chat model instance with the default Gemini API endpoint.
+     * Creates a new Gemini chat model instance using the default endpoint configuration.
+     *
+     * <p>This overload passes {@code null} for {@code baseUrl}, allowing the SDK to use its
+     * default endpoint behavior for either Gemini API or Vertex AI, depending on the provided
+     * configuration.
      *
      * @param apiKey         the API key for authentication (for Gemini API)
      * @param modelName      the model name to use (e.g., "gemini-2.0-flash",
@@ -196,6 +195,16 @@ public class GeminiChatModel extends ChatModelBase {
                 clientOptions,
                 defaultOptions,
                 formatter);
+    }
+
+    private static HttpOptions resolveHttpOptions(String baseUrl, HttpOptions httpOptions) {
+        if (baseUrl == null) {
+            return httpOptions;
+        }
+        if (httpOptions == null) {
+            return HttpOptions.builder().baseUrl(baseUrl).build();
+        }
+        return httpOptions.toBuilder().baseUrl(baseUrl).build();
     }
 
     /**

@@ -314,7 +314,7 @@ class GeminiChatModelTest {
                         .build();
 
         assertNotNull(model);
-        assertEquals(baseUrl, getHttpOptions(model).baseUrl().orElse(null));
+        assertEquals(baseUrl, getHttpOptions(model).baseUrl().orElseThrow());
     }
 
     @Test
@@ -339,9 +339,9 @@ class GeminiChatModelTest {
         assertNotNull(effectiveHttpOptions);
         assertEquals(
                 "https://override-gemini-endpoint.example",
-                effectiveHttpOptions.baseUrl().orElse(null));
-        assertEquals("v1beta", effectiveHttpOptions.apiVersion().orElse(null));
-        assertEquals(3210, effectiveHttpOptions.timeout().orElse(null));
+                effectiveHttpOptions.baseUrl().orElseThrow());
+        assertEquals("v1beta", effectiveHttpOptions.apiVersion().orElseThrow());
+        assertEquals(3210, effectiveHttpOptions.timeout().orElseThrow());
     }
 
     @Test
