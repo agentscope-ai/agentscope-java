@@ -22,7 +22,7 @@
 - [Session](https://java.agentscope.io/_sources/en/task/session.md)
 - [Multimodal](https://java.agentscope.io/_sources/en/task/multimodal.md)
 - [Structured Output](https://java.agentscope.io/_sources/en/task/structured-output.md)
-- [Studio (Visual Debugging)](https://java.agentscope.io/_sources/en/task/studio.md)
+- [Observability & Studio](https://java.agentscope.io/_sources/en/task/observability.md)
 - [AG-UI Protocol Integration](https://java.agentscope.io/_sources/en/task/agui.md)
 - [A2A (Agent2Agent)](https://java.agentscope.io/_sources/en/task/a2a.md)
 - [MsgHub](https://java.agentscope.io/_sources/en/task/msghub.md)

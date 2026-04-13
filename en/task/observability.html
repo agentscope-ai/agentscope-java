@@ -4,12 +4,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="AG-UI Protocol Integration" href="agui.html"><link rel="prev" title="Structured Output" href="structured-output.html">
-        <link rel="canonical" href="https://java.agentscope.io/en/task/studio.html">
+    <meta property="article:modified_time" content="2026-04-13T01:21:16+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="AG-UI Protocol Integration" href="agui.html"><link rel="prev" title="Structured Output" href="structured-output.html">
+        <link rel="canonical" href="https://java.agentscope.io/en/task/observability.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>Studio (Visual Debugging) - AgentScope Java</title>
+        <title>Observability &amp; Studio - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=9c3e77be" />
@@ -340,7 +340,7 @@
 <li class="toctree-l1"><a class="reference internal" href="session.html">Session Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multimodal.html">Multimodal</a></li>
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">Structured Output</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Studio</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Observability &amp; Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="msghub.html">MsgHub</a></li>
@@ -382,7 +382,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/multimodal.html">多模态</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/observability.html">可观测与调试</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/msghub.html">MsgHub</a></li>
@@ -419,7 +419,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/studio.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/observability.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -436,12 +436,20 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="studio-visual-debugging">
-<h1>Studio (Visual Debugging)<a class="headerlink" href="#studio-visual-debugging" title="Link to this heading">¶</a></h1>
+          <section id="observability-studio">
+<h1>Observability &amp; Studio<a class="headerlink" href="#observability-studio" title="Link to this heading">¶</a></h1>
+<p>AgentScope Java provides multiple mechanisms for observing and debugging agent execution:</p>
+<ul class="simple">
+<li><p><strong>Studio (Visual Debugging)</strong>: Real-time visualization and interactive debugging through a Web UI</p></li>
+<li><p><strong>OpenTelemetry Tracing</strong>: Export trace data to external observability platforms (e.g., Langfuse, Jaeger) via the OTLP protocol</p></li>
+</ul>
+<hr class="docutils" />
+<section id="studio-visual-debugging">
+<h2>Studio (Visual Debugging)<a class="headerlink" href="#studio-visual-debugging" title="Link to this heading">¶</a></h2>
 <p>Studio provides a Web interface for real-time visualization of Agent execution processes, supporting interactive debugging and message tracing.</p>
 <hr class="docutils" />
 <section id="core-features">
-<h2>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h2>
+<h3>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Real-time Visualization</strong>: Web interface displays Agent reasoning and execution processes</p></li>
 <li><p><strong>Interactive Input</strong>: Interact with Agent through Web UI</p></li>
@@ -451,9 +459,9 @@
 </section>
 <hr class="docutils" />
 <section id="quick-start">
-<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<h3>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h3>
 <section id="start-studio-server">
-<h3>1. Start Studio Server<a class="headerlink" href="#start-studio-server" title="Link to this heading">¶</a></h3>
+<h4>1. Start Studio Server<a class="headerlink" href="#start-studio-server" title="Link to this heading">¶</a></h4>
 <p>Start from source code</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/agentscope-studio
 <span class="nb">cd</span><span class="w"> </span>agentscope-studio
@@ -470,7 +478,7 @@ as_studio
 <p><img alt="Studio Server Page" src="../../_images/studioServer.png" /></p>
 </section>
 <section id="java-application-integration">
-<h3>2. Java Application Integration<a class="headerlink" href="#java-application-integration" title="Link to this heading">¶</a></h3>
+<h4>2. Java Application Integration<a class="headerlink" href="#java-application-integration" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioManager</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioMessageHook</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
@@ -499,12 +507,12 @@ as_studio
 </div>
 </section>
 <section id="view-trace-information-in-agentscope-studio">
-<h3>3. View Trace Information in AgentScope Studio<a class="headerlink" href="#view-trace-information-in-agentscope-studio" title="Link to this heading">¶</a></h3>
+<h4>3. View Trace Information in AgentScope Studio<a class="headerlink" href="#view-trace-information-in-agentscope-studio" title="Link to this heading">¶</a></h4>
 <p><img alt="Trace Information" src="../../_images/studioServer-trace.png" /></p>
 </section>
 </section>
 <section id="studiouseragent">
-<h2>StudioUserAgent<a class="headerlink" href="#studiouseragent" title="Link to this heading">¶</a></h2>
+<h3>StudioUserAgent<a class="headerlink" href="#studiouseragent" title="Link to this heading">¶</a></h3>
 <p>Receive user input through Web UI.</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
 
@@ -522,16 +530,16 @@ as_studio
 <p>You can find the Project in Studio’s Projects and debug through the WebUI</p>
 <p><img alt="Studio Server Web UI Input Interface" src="../../_images/studioServer-webUI.png" /></p>
 <section id="conversation-loop">
-<h3>Conversation Loop<a class="headerlink" href="#conversation-loop" title="Link to this heading">¶</a></h3>
+<h4>Conversation Loop<a class="headerlink" href="#conversation-loop" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
 <span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="c1">// Get user input from Web UI</span>
 <span class="w">    </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">break</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="c1">// Agent processes</span>
 <span class="w">    </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 <span class="p">}</span>
@@ -541,7 +549,7 @@ as_studio
 </section>
 <hr class="docutils" />
 <section id="complete-example">
-<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
+<h3>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.examples</span><span class="p">;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
@@ -552,12 +560,12 @@ as_studio
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">StudioExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
-<span class="w">        </span>
+
 <span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connecting to Studio at http://localhost:3000...&quot;</span><span class="p">);</span>
-<span class="w">        </span>
+
 <span class="w">        </span><span class="c1">// Initialize Studio</span>
 <span class="w">        </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:3000&quot;</span><span class="p">)</span>
@@ -566,7 +574,7 @@ as_studio
 <span class="w">            </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
 <span class="w">            </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 <span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connected to Studio\n&quot;</span><span class="p">);</span>
-<span class="w">        </span>
+
 <span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="c1">// Create Agent (with Studio Hook)</span>
 <span class="w">            </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -578,39 +586,39 @@ as_studio
 <span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">            </span>
+
 <span class="w">            </span><span class="c1">// Create user Agent</span>
 <span class="w">            </span><span class="n">StudioUserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioUserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;User&quot;</span><span class="p">)</span>
 <span class="w">                </span><span class="p">.</span><span class="na">studioClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">webSocketClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getWebSocketClient</span><span class="p">())</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">            </span>
+
 <span class="w">            </span><span class="c1">// Conversation loop</span>
 <span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Starting conversation (type &#39;exit&#39; to quit)&quot;</span><span class="p">);</span>
 <span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Open http://localhost:3000 to interact\n&quot;</span><span class="p">);</span>
-<span class="w">            </span>
+
 <span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
 <span class="w">            </span><span class="kt">int</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
 <span class="w">            </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Waiting for user input...&quot;</span><span class="p">);</span>
 <span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">                </span>
+
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
 <span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nConversation ended&quot;</span><span class="p">);</span>
 <span class="w">                    </span><span class="k">break</span><span class="p">;</span>
 <span class="w">                </span><span class="p">}</span>
-<span class="w">                </span>
+
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] User: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">                </span>
+
 <span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Agent: &quot;</span><span class="w"> </span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Agent: &quot;</span>
 <span class="w">                        </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
 <span class="w">                </span><span class="p">}</span>
 <span class="w">                </span><span class="n">turn</span><span class="o">++</span><span class="p">;</span>
 <span class="w">            </span><span class="p">}</span>
-<span class="w">            </span>
+
 <span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nShutting down...&quot;</span><span class="p">);</span>
 <span class="w">            </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
@@ -623,9 +631,9 @@ as_studio
 </section>
 <hr class="docutils" />
 <section id="advanced-usage">
-<h2>Advanced Usage<a class="headerlink" href="#advanced-usage" title="Link to this heading">¶</a></h2>
+<h3>Advanced Usage<a class="headerlink" href="#advanced-usage" title="Link to this heading">¶</a></h3>
 <section id="manual-message-pushing">
-<h3>Manual Message Pushing<a class="headerlink" href="#manual-message-pushing" title="Link to this heading">¶</a></h3>
+<h4>Manual Message Pushing<a class="headerlink" href="#manual-message-pushing" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">StudioClient</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">();</span>
 
 <span class="n">Msg</span><span class="w"> </span><span class="n">customMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -638,7 +646,7 @@ as_studio
 </div>
 </section>
 <section id="multi-agent-visualization">
-<h3>Multi-Agent Visualization<a class="headerlink" href="#multi-agent-visualization" title="Link to this heading">¶</a></h3>
+<h4>Multi-Agent Visualization<a class="headerlink" href="#multi-agent-visualization" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Add Hook to each Agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent1&quot;</span><span class="p">)</span>
@@ -655,11 +663,119 @@ as_studio
 </div>
 </section>
 </section>
+</section>
+<hr class="docutils" />
+<section id="opentelemetry-tracing">
+<h2>OpenTelemetry Tracing<a class="headerlink" href="#opentelemetry-tracing" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java integrates with OpenTelemetry to provide distributed tracing for agent execution. You can export traces to any platform that supports the OTLP protocol, such as Langfuse.</p>
+<section id="id1">
+<h3>Quick Start<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">TelemetryTracer</span></code> and register it via <code class="docutils literal notranslate"><span class="pre">TracerRegistry</span></code> to enable automatic tracing for all agent calls, model calls, and tool executions:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.TracerRegistry</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.telemetry.TelemetryTracer</span><span class="p">;</span>
+
+<span class="c1">// Register a TelemetryTracer with an OTLP endpoint</span>
+<span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
+<span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;https://your-otlp-endpoint/v1/traces&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="p">);</span>
+
+<span class="c1">// After registration, all agent activities are automatically traced</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Once registered, the tracer automatically captures:</p>
+<ul class="simple">
+<li><p><strong>Agent calls</strong> — span for each <code class="docutils literal notranslate"><span class="pre">agent.call()</span></code></p></li>
+<li><p><strong>Model calls</strong> — span for each LLM invocation</p></li>
+<li><p><strong>Tool executions</strong> — span for each tool call</p></li>
+<li><p><strong>Formatting</strong> — span for message formatting</p></li>
+</ul>
+<p>No additional code is needed — tracing is applied globally.</p>
+</section>
+<section id="configuration">
+<h3>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">TelemetryTracer</span></code> supports the following builder options:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">endpoint</span></code></p></td>
+<td><p>OTLP endpoint URL</p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">addHeader</span></code></p></td>
+<td><p>Add a single HTTP header (e.g., for auth)</p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">headers</span></code></p></td>
+<td><p>Set all HTTP headers as a <code class="docutils literal notranslate"><span class="pre">Map</span></code></p></td>
+<td><p>—</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enabled</span></code></p></td>
+<td><p>Enable or disable tracing</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tracer</span></code></p></td>
+<td><p>Use a custom OpenTelemetry <code class="docutils literal notranslate"><span class="pre">Tracer</span></code> instance</p></td>
+<td><p>—</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="integration-with-langfuse">
+<h3>Integration with Langfuse<a class="headerlink" href="#integration-with-langfuse" title="Link to this heading">¶</a></h3>
+<p><a class="reference external" href="https://langfuse.com/">Langfuse</a> is an open-source observability platform that supports the OpenTelemetry protocol. You can send traces to Langfuse Cloud or a self-hosted instance.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.TracerRegistry</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tracing.telemetry.TelemetryTracer</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Base64</span><span class="p">;</span>
+
+<span class="c1">// Encode your Langfuse API key as Base64</span>
+<span class="n">String</span><span class="w"> </span><span class="n">publicKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;pk-lf-xxxxxxxx&quot;</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">secretKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;sk-lf-xxxxxxxx&quot;</span><span class="p">;</span>
+<span class="n">String</span><span class="w"> </span><span class="n">encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base64</span><span class="p">.</span><span class="na">getEncoder</span><span class="p">().</span><span class="na">encodeToString</span><span class="p">((</span><span class="n">publicKey</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;:&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">secretKey</span><span class="p">).</span><span class="na">getBytes</span><span class="p">());</span>
+
+<span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
+<span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;https://cloud.langfuse.com/api/public/otel/v1/traces&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Basic &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">encoded</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addHeader</span><span class="p">(</span><span class="s">&quot;x-langfuse-ingestion-version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;4&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Note</strong>: The <code class="docutils literal notranslate"><span class="pre">x-langfuse-ingestion-version</span></code> header is required by Langfuse when using the OTLP endpoint. Make sure to include it.</p>
+</div></blockquote>
+<p>After running your agent, you can view the traces in the Langfuse dashboard, including the full call chain, latency, and input/output of each step.</p>
+</section>
+<section id="integration-with-other-otlp-backends">
+<h3>Integration with Other OTLP Backends<a class="headerlink" href="#integration-with-other-otlp-backends" title="Link to this heading">¶</a></h3>
+<p>Any platform that supports the OTLP protocol can be used. For example, to send traces to a local Jaeger instance:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TracerRegistry</span><span class="p">.</span><span class="na">register</span><span class="p">(</span>
+<span class="w">    </span><span class="n">TelemetryTracer</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;http://localhost:4317&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
 <hr class="docutils" />
 <section id="more-resources">
 <h2>More Resources<a class="headerlink" href="#more-resources" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>Complete Example</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java">StudioExample.java</a></p></li>
+<li><p><strong>Studio Example</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java">StudioExample.java</a></p></li>
 <li><p><strong>Studio Repository</strong>: https://github.com/agentscope-ai/agentscope-studio</p></li>
 <li><p><strong>Hook Documentation</strong>: <a class="reference internal" href="hook.html"><span class="std std-doc">hook.md</span></a></p></li>
 </ul>
@@ -719,7 +835,7 @@ as_studio
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -754,7 +870,8 @@ as_studio
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Studio (Visual Debugging)</a><ul>
+<li><a class="reference internal" href="#">Observability &amp; Studio</a><ul>
+<li><a class="reference internal" href="#studio-visual-debugging">Studio (Visual Debugging)</a><ul>
 <li><a class="reference internal" href="#core-features">Core Features</a></li>
 <li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
 <li><a class="reference internal" href="#start-studio-server">1. Start Studio Server</a></li>
@@ -770,6 +887,15 @@ as_studio
 <li><a class="reference internal" href="#advanced-usage">Advanced Usage</a><ul>
 <li><a class="reference internal" href="#manual-message-pushing">Manual Message Pushing</a></li>
 <li><a class="reference internal" href="#multi-agent-visualization">Multi-Agent Visualization</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#opentelemetry-tracing">OpenTelemetry Tracing</a><ul>
+<li><a class="reference internal" href="#id1">Quick Start</a></li>
+<li><a class="reference internal" href="#configuration">Configuration</a></li>
+<li><a class="reference internal" href="#integration-with-langfuse">Integration with Langfuse</a></li>
+<li><a class="reference internal" href="#integration-with-other-otlp-backends">Integration with Other OTLP Backends</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#more-resources">More Resources</a></li>
