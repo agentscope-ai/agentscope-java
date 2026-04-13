@@ -34,15 +34,14 @@ AgentScope includes production-ready tools that address common challenges in age
 AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:
 
 - **MCP Protocol** - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.
-- **A2A Protocol** - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.
+- **A2A Protocol** - Enable distributed multi-agent collaboration through extension modules. Register agent capabilities to Nacos or similar registries (via `agentscope-extensions-nacos-a2a`), allowing agents to discover and invoke each other as naturally as calling microservices.
 
 ### Production Grade
 
 Built for enterprise deployment requirements:
 
-- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.
-- **Security Sandbox** - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.
-- **Observability** - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
+- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. Supports GraalVM native image compilation through Micronaut/Quarkus, suitable for serverless and auto-scaling environments.
+- **Observability** - Pluggable Tracer SPI with extension module support for OpenTelemetry, enabling distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
 
 ## Requirements
 
@@ -167,7 +166,7 @@ implementation 'io.agentscope:agentscope:1.0.11'
 
 The all-in-one package includes these dependencies by default:
 
-- DashScope SDK (Qwen series models)
+- DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)
 - MCP SDK (Model Context Protocol)
 - Reactor Core, Jackson, SLF4J (base frameworks)
 
@@ -316,6 +315,7 @@ implementation 'io.agentscope:agentscope-core:1.0.11'
 |--------|---------|-------------------|
 | [agentscope-extensions-scheduler-common](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common) | Scheduler Common | `io.agentscope:agentscope-extensions-scheduler-common` |
 | [agentscope-extensions-scheduler-xxl-job](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job) | XXL-Job Scheduler | `io.agentscope:agentscope-extensions-scheduler-xxl-job` |
+| [agentscope-extensions-scheduler-quartz](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz) | Quartz Scheduler | `io.agentscope:agentscope-extensions-scheduler-quartz` |
 
 #### User Interface
 
@@ -355,6 +355,8 @@ Additional starters:
 |---------|---------|-------------------|
 | agentscope-a2a-spring-boot-starter | A2A Integration | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI Integration | `io.agentscope:agentscope-agui-spring-boot-starter` |
+| agentscope-chat-completions-web-starter | Chat Completions Web Integration | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-nacos-spring-boot-starter | Nacos Integration | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus
 
@@ -451,9 +453,11 @@ Message is the most fundamental data structure in AgentScope, used for:
 
 | Field | Description |
 |-------|-------------|
+| `id` | Unique message identifier (auto-generated UUID) |
 | `name` | Sender's name, used to distinguish identities in multi-agent scenarios |
 | `role` | Role: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL` |
 | `content` | List of content blocks, supports multiple types |
+| `timestamp` | Message timestamp |
 | `metadata` | Optional structured data |
 
 **Content types**:
@@ -478,6 +482,8 @@ Messages returned by Agent contain additional metadata to help understand execut
 | Value | Description |
 |-------|-------------|
 | `MODEL_STOP` | Task completed normally |
+| `TOOL_CALLS` | Model returned tool calls (internal tools, framework continues execution) |
+| `STRUCTURED_OUTPUT` | Structured output completed |
 | `TOOL_SUSPENDED` | Tool needs external execution, waiting for result |
 | `REASONING_STOP_REQUESTED` | Paused by Hook during Reasoning phase (HITL) |
 | `ACTING_STOP_REQUESTED` | Paused by Hook during Acting phase (HITL) |
@@ -512,10 +518,11 @@ Msg imgMsg = Msg.builder()
 The Agent interface defines the core contract:
 
 ```java
-public interface Agent {
-    Mono<Msg> call(Msg msg);      // Process message and return response
-    Flux<Msg> stream(Msg msg);    // Stream response in real-time
-    void interrupt();             // Stop execution
+public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
+    String getAgentId();
+    String getName();
+    void interrupt();
+    void interrupt(Msg msg);
 }
 ```
 
@@ -618,8 +625,13 @@ Formatter is responsible for converting AgentScope messages to the format requir
 - Identity handling in multi-agent scenarios
 
 **Built-in implementations**:
-- `DashScopeFormatter` - Alibaba Cloud DashScope (Qwen series)
-- `OpenAIFormatter` - OpenAI and compatible APIs
+- `DashScopeChatFormatter` - Alibaba Cloud DashScope (Qwen series)
+- `OpenAIChatFormatter` - OpenAI and compatible APIs
+- `AnthropicChatFormatter` - Anthropic (Claude series)
+- `GeminiChatFormatter` - Google Gemini
+- `OllamaChatFormatter` - Ollama local models
+- `DeepSeekFormatter` - DeepSeek
+- `GLMFormatter` - GLM (Zhipu)
 
 > Formatter is automatically selected based on Model type; manual configuration is usually not needed.
 
@@ -641,6 +653,9 @@ Hook provides extension points at key nodes of the ReAct loop through an event m
 | `PreActingEvent` | Before executing tool | ✓ |
 | `PostActingEvent` | After tool execution | ✓ |
 | `ActingChunkEvent` | During tool streaming output | - |
+| `PreSummaryEvent` | Before summary generation | ✓ |
+| `PostSummaryEvent` | After summary generation | ✓ |
+| `SummaryChunkEvent` | During summary streaming output | - |
 | `ErrorEvent` | When error occurs | - |
 
 **Hook Priority**: Hooks execute in priority order (lower value = higher priority), default is 100.
@@ -688,9 +703,10 @@ ReActAgent agent = ReActAgent.builder()
 
 **Problem solved**: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.
 
-AgentScope separates "initialization" from "state":
-- `saveState()` - Export current state as a serializable Map
-- `loadState()` - Restore from saved state
+AgentScope separates "initialization" from "state" through the `StateModule` interface:
+- `saveTo(Session, SessionKey)` - Save current state to Session
+- `loadFrom(Session, SessionKey)` - Restore state from Session
+- `loadIfExists(Session, SessionKey)` - Restore state from Session if it exists
 
 **Session** provides persistent storage across runs:
 
@@ -769,12 +785,16 @@ The `ReActAgent` class exposes the following parameters in its constructor:
 | Parameter | Further Reading | Description |
 |-----------|-----------------|-------------|
 | `name` (required) | | Agent's name |
-| `sysPrompt` (required) | | System prompt |
+| `sysPrompt` | | System prompt (recommended) |
 | `model` (required) | [Model Integration](../task/model.md) | Model for generating responses |
 | `toolkit` | [Tool System](../task/tool.md) | Module for registering/calling tool functions |
 | `memory` | [Memory Management](../task/memory.md) | Short-term memory for conversation history |
-| `longTermMemory` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory |
-| `longTermMemoryMode` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
+| `description` | | Agent description |
+| `generateOptions` | | LLM generation parameters (temperature, topP, maxTokens, etc.) |
+| `toolExecutionContext` | [Tool System](../task/tool.md) | Tool execution context for dependency injection into tools |
+| `planNotebook` | [Planning](../task/plan.md) | Plan manager |
+| `longTermMemory` | [Memory Management](../task/memory.md) | Long-term memory |
+| `longTermMemoryMode` | [Memory Management](../task/memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
 | `maxIters` | | Max iterations for generating response (default: 10) |
 | `hooks` | [Hook System](../task/hook.md) | Event hooks for customizing agent behavior |
 | `modelExecutionConfig` | | Timeout/retry config for model calls |
@@ -936,7 +956,7 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 | Provider   | Class                   | Streaming | Tools | Vision | Reasoning |
 |------------|-------------------------|-----------|-------|--------|-----------|
 | DashScope  | `DashScopeChatModel`    | ✅        | ✅    | ✅     | ✅        |
-| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     |           |
+| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     | ✅        |
 | Anthropic  | `AnthropicChatModel`    | ✅        | ✅    | ✅     | ✅        |
 | Gemini     | `GeminiChatModel`       | ✅        | ✅    | ✅     | ✅        |
 | Ollama     | `OllamaChatModel`       | ✅        | ✅    | ✅     | ✅        |
@@ -976,6 +996,31 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 | `stream` | Enable streaming, default `true` |
 | `enableThinking` | Enable thinking mode to show reasoning process |
 | `enableSearch` | Enable web search for real-time information |
+| `endpointType` | API endpoint type (default `AUTO` auto-detect), options: `TEXT` (force text API) or `MULTIMODAL` (force multimodal API) |
+| `defaultOptions` | Default generation options (temperature, maxTokens, etc.) |
+| `formatter` | Message formatter (default `DashScopeChatFormatter`) |
+
+### Endpoint Type (endpointType)
+
+DashScope models support both text and multimodal API endpoints. By default, the framework automatically detects the appropriate endpoint type based on the model name (e.g., `qwen-vl-*` and `qwen3.5` series automatically use the multimodal endpoint).
+
+When auto-detection is inaccurate (e.g., using custom model names or compatible APIs), you can manually specify the endpoint type:
+
+```java
+// Force multimodal API (suitable for scenarios with images, audio, etc.)
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.MULTIMODAL)
+        .build();
+
+// Force text API
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("custom-model")
+        .endpointType(EndpointType.TEXT)
+        .build();
+```
 
 ### Thinking Mode
 
@@ -1032,6 +1077,7 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 | `modelName` | Model name, e.g., `gpt-4o`, `gpt-4o-mini` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
+| `generateOptions` | Default generation options (note: OpenAI uses `.generateOptions()` instead of `.defaultOptions()`) |
 
 ## Anthropic
 
@@ -1202,7 +1248,7 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K sampling
         .maxTokens(2000)            // Maximum output tokens
         .seed(42L)                  // Random seed
-        .toolChoice(new ToolChoice.auto())  // Tool choice strategy
+        .toolChoice(new ToolChoice.Auto())  // Tool choice strategy
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()
@@ -1226,17 +1272,21 @@ OllamaChatModel model = OllamaChatModel.builder()
 | `topP` | Double | Nucleus sampling threshold, 0.0-1.0 |
 | `topK` | Integer | Limits candidate tokens |
 | `maxTokens` | Integer | Maximum tokens to generate |
+| `maxCompletionTokens` | Integer | Maximum completion tokens |
 | `thinkingBudget` | Integer | Token budget for thinking |
+| `reasoningEffort` | String | Reasoning effort level (e.g., `low`, `medium`, `high`) |
+| `frequencyPenalty` | Double | Frequency penalty, -2.0-2.0 |
+| `presencePenalty` | Double | Presence penalty, -2.0-2.0 |
 | `seed` | Long | Random seed |
 | `toolChoice` | ToolChoice | Tool choice strategy |
 
 ### Tool Choice Strategy
 
 ```java
-ToolChoice.auto()              // Model decides (default)
-ToolChoice.none()              // Disable tool calling
-ToolChoice.required()          // Force tool calling
-ToolChoice.specific("tool_name")  // Force specific tool
+new ToolChoice.Auto()              // Model decides (default)
+new ToolChoice.None()              // Disable tool calling
+new ToolChoice.Required()          // Force tool calling
+new ToolChoice.Specific("tool_name")  // Force specific tool
 ```
 
 ### Additional Parameters
@@ -1422,7 +1472,7 @@ public Mono<String> search(
 
 ### Streaming Tools
 
-Use `ToolEmitter` to send intermediate progress, suitable for long-running tasks:
+Use `ToolEmitter` to send intermediate progress, suitable for long-running tasks (progress is only visible to Hooks, not sent to LLM):
 
 ```java
 @Tool(description = "Generate data")
@@ -1550,6 +1600,7 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | Tool | Method | Description |
 |------|--------|-------------|
 | `ReadFileTool` | `view_text_file` | View files by line range |
+| `ReadFileTool` | `list_directory` | List files and folders in a directory |
 | `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content |
 | `WriteFileTool` | `insert_text_file` | Insert content at specified line |
 
@@ -1580,8 +1631,8 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 | Tool | Capabilities |
 |------|--------------|
-| `DashScopeMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text |
-| `OpenAIMultiModalTool` | Text-to-image, image editing, image variations, image-to-text, text-to-speech, speech-to-text |
+| `DashScopeMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text, text-to-video, image-to-video, first-last-frame-to-video, video understanding |
+| `OpenAIMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text |
 
 ### Sub-agent Tools
 
@@ -1632,7 +1683,7 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `parallel` | Whether to execute multiple tools in parallel | `true` |
+| `parallel` | Whether to execute multiple tools in parallel | `false` |
 | `allowToolDeletion` | Whether to allow tool deletion | `true` |
 | `executionConfig.timeout` | Tool execution timeout | 5 minutes |
 
@@ -1642,7 +1693,7 @@ Allow agents to autonomously manage tool groups:
 
 ```java
 toolkit.registerMetaTool();
-// Agent can call "reset_equipped_tools" to activate/deactivate tool groups
+// Agent can call "reset_equipped_tools" to activate (reset to specified set) tool groups
 ```
 
 When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.
@@ -1677,14 +1728,16 @@ if (response.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
     List<ToolUseBlock> pendingTools = response.getContentBlocks(ToolUseBlock.class);
 
     // After external execution, provide result
-    Msg toolResult = Msg.builder()
-        .role(MsgRole.TOOL)
-        .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
-            TextBlock.builder().text("External execution result").build()))
-        .build();
+    for (ToolUseBlock toolUse : pendingTools) {
+        Msg toolResult = Msg.builder()
+            .role(MsgRole.TOOL)
+            .content(ToolResultBlock.of(toolUse.getId(), toolUse.getName(),
+                TextBlock.builder().text("External execution result").build()))
+            .build();
 
-    // Resume execution
-    response = agent.call(toolResult).block();
+        // Resume execution
+        response = agent.call(toolResult).block();
+    }
 }
 ```
 
@@ -1886,9 +1939,9 @@ String groupName = "filesystem";
 toolkit.createToolGroup(groupName, "Tools for operating system files", true);
 
 // Register MCP tools in a group
-toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
+toolkit.registration().mcpClient(mcpClient).group(groupName).apply();
 
-// Create agent that only uses specific groups
+// Create agent with toolkit (only active group tools available)
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
@@ -1951,7 +2004,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
-> **Note**: Query parameters only apply to HTTP transports (SSE and HTTP). They are ignored for StdIO transport.
+> **Note**: Query parameters and HTTP headers only apply to HTTP transports (SSE and HTTP). They are silently ignored for StdIO transport.
 
 ### Synchronous vs Asynchronous Clients
 
@@ -2399,7 +2452,7 @@ ReActAgent agent = ReActAgent.builder()
 ## Simplified Integration
 
 ```java
-SkillBox skillBox = new SkillBox();
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 skillBox.registerSkill(dataSkill);
 
@@ -2689,7 +2742,6 @@ ReActAgent agent = ReActAgent.builder()
             .limit(3)
             .scoreThreshold(0.3)
             .build())
-    .enableOnlyForUserQueries(true)  // Retrieve only for user messages
     .build();
 ```
 
@@ -3201,7 +3253,7 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 
 | Event Type            | Timing                    | Modifiable | Description                              |
 |-----------------------|---------------------------|------------|------------------------------------------|
-| PreCallEvent          | Before agent call         | ❌         | Before agent starts processing (notification-only)           |
+| PreCallEvent          | Before agent call         | ✅         | Before agent starts processing (modifiable input messages)           |
 | PostCallEvent         | After agent call          | ✅         | After agent completes response (can modify final message)           |
 | PreReasoningEvent     | Before reasoning          | ✅         | Before LLM reasoning (can modify input messages)          |
 | PostReasoningEvent    | After reasoning           | ✅         | After LLM reasoning (can modify reasoning result)            |
@@ -3209,6 +3261,9 @@ AgentScope Java uses a **unified event model** where all hooks implement the `on
 | PreActingEvent        | Before tool execution     | ✅         | Before tool execution (can modify tool parameters)                    |
 | PostActingEvent       | After tool execution      | ✅         | After tool execution (can modify tool result)                |
 | ActingChunkEvent      | During tool stream        | ❌         | Tool execution progress chunks (notification-only)    |
+| PreSummaryEvent       | Before summary            | ✅         | Before summary generation when max iterations reached         |
+| PostSummaryEvent      | After summary             | ✅         | After summary generation (can modify summary result)       |
+| SummaryChunkEvent     | During summary stream     | ❌         | Each chunk of streaming summary (notification-only)           |
 | ErrorEvent            | On error                  | ❌         | When errors occur (notification-only)                        |
 
 ## Creating Hooks
@@ -3848,7 +3903,7 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 
 - [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
 - [Session Management](./session.md)
-- [ReActAgent Guide](./react-agent.md)
+- [ReActAgent Guide](./agent-config.md)
 
 
 # Plan
@@ -3938,6 +3993,30 @@ During execution, the system automatically injects plan hints before each reason
 See `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java`
 
 ## Configuration Options
+
+### User Confirmation (needUserConfirm)
+
+Controls whether the agent needs to wait for user confirmation before starting execution after creating a plan.
+
+**Default Value**: `true` (user confirmation required)
+
+When enabled, the agent will display the plan content and ask the user whether to proceed (e.g., "Should I proceed with this plan?") after creating a plan. It will only start executing subtasks after the user explicitly confirms (e.g., replying "yes", "go ahead"). If the user's message already implies execution intent (e.g., "execute the plan"), confirmation is skipped and execution begins directly.
+
+When disabled, the agent will immediately start executing after creating the plan, without waiting for user confirmation.
+
+```java
+// Require user confirmation (default behavior)
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(true)
+        .build();
+
+// No confirmation needed, execute immediately after creating plan
+PlanNotebook planNotebook = PlanNotebook.builder()
+        .needUserConfirm(false)
+        .build();
+```
+
+> **Note**: When subtasks are already in execution (status is `in_progress`), confirmation rule hints will not be injected regardless of the `needUserConfirm` setting.
 
 ### Limit Subtask Count
 
@@ -4997,7 +5076,7 @@ Install via npm
 npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
-Studio will run at http://localhost:5173
+Studio will run at http://localhost:5173 (frontend dev server)
 
 ![Studio Server Page](../../imgs/studioServer.png)
 
@@ -5617,8 +5696,8 @@ ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
     .description("Intelligent assistant")
     .version("1.0.0")
     .skills(List.of(
-        new AgentSkill("text-generation", "Text Generation"),
-        new AgentSkill("question-answering", "Q&A")))
+        AgentSkill.builder().name("text-generation").description("Text Generation").skillContent("").build(),
+        AgentSkill.builder().name("question-answering").description("Q&A").skillContent("").build()))
     .build();
 
 AgentScopeA2aServer.builder(agentBuilder)
@@ -6434,7 +6513,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 
 // User requests are processed normally (using GPT-4), 10% automatically sampled for training
-Msg response = agent.call(Msg.userMsg("Search for Python tutorials")).block();
+Msg response = agent.call(Msg.builder().textContent("Search for Python tutorials").build()).block();
 
 // 3. Stop when training is complete
 runner.stop();
@@ -6996,9 +7075,9 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 **Configuration**:
 
-- `workflow.rag.enabled` – Enable RAG workflow beans.
-- `workflow.sql.enabled` – Enable SQL workflow beans.
-- `workflow.runner.enabled` – When `true`, run a one-shot demo on startup (use with one of the above).
+- `workflow.rag.enabled` – Enable RAG workflow beans (default `false`).
+- `workflow.sql.enabled` – Enable SQL workflow beans (default `true` in example).
+- `workflow.runner.enabled` – When `true`, run a one-shot demo on startup (default `true` in example; use with one of the above).
 - **DashScope API key**: `AI_DASHSCOPE_API_KEY` or `spring.ai.dashscope.api-key` (required for RAG and SQL; RAG also needs an embedding model).
 
 ## Custom workflow vs other patterns
@@ -7551,7 +7630,7 @@ Register each tool on the corresponding agent’s Toolkit via `toolkit.registerT
 Create a sales and a support agent as `AgentScopeAgent`, each with its own ReActAgent, system prompt, and Toolkit that includes the appropriate handoff tool.
 
 ```java
-import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -7575,6 +7654,7 @@ ReActAgent.Builder salesReActBuilder = ReActAgent.builder()
 
 AgentScopeAgent salesAgent = AgentScopeAgent.fromBuilder(salesReActBuilder)
         .name(AgentScopeStateConstants.SALES_AGENT)
+        .description("Sales agent for pricing, product availability, and sales inquiries")
         .instruction("please assist the customer with their sales inquiry: {input}.")
         .includeContents(true)
         .returnReasoningContents(true)
@@ -7598,6 +7678,7 @@ ReActAgent.Builder supportReActBuilder = ReActAgent.builder()
 
 AgentScopeAgent supportAgent = AgentScopeAgent.fromBuilder(supportReActBuilder)
         .name(AgentScopeStateConstants.SUPPORT_AGENT)
+        .description("Support agent for technical issues and troubleshooting")
         .instruction("please assist the customer with their product technical inquiry: {input}.")
         .includeContents(true)
         .returnReasoningContents(true)

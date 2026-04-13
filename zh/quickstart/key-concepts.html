@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-03T05:06:04+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="创建 ReAct 智能体" href="agent.html"><link rel="prev" title="安装" href="installation.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="创建 ReAct 智能体" href="agent.html"><link rel="prev" title="安装" href="installation.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/quickstart/key-concepts.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -516,14 +516,20 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">name</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">id</span></code></p></td>
+<td><p>消息唯一标识符（自动生成 UUID）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">name</span></code></p></td>
 <td><p>发送者名称，多智能体场景用于区分身份</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">role</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">role</span></code></p></td>
 <td><p>角色：<code class="docutils literal notranslate"><span class="pre">USER</span></code>、<code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>、<code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code> 或 <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">content</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">content</span></code></p></td>
 <td><p>内容块列表，支持多种类型</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timestamp</span></code></p></td>
+<td><p>消息时间戳</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code></p></td>
 <td><p>可选的结构化数据</p></td>
@@ -570,6 +576,12 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MODEL_STOP</span></code></p></td>
 <td><p>任务正常完成</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALLS</span></code></p></td>
+<td><p>模型返回工具调用（内部工具，框架继续执行）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">STRUCTURED_OUTPUT</span></code></p></td>
+<td><p>结构化输出完成</p></td>
+</tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_SUSPENDED</span></code></p></td>
 <td><p>工具需要外部执行，等待提供结果</p></td>
 </tr>
@@ -611,10 +623,11 @@
 <h2>智能体（Agent）<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
 <p><strong>解决的问题</strong>：需要一个统一的抽象来封装”接收消息 → 处理 → 返回响应”的逻辑。</p>
 <p>Agent 接口定义了智能体的核心契约：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">      </span><span class="c1">// 处理消息，返回响应</span>
-<span class="w">    </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stream</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">    </span><span class="c1">// 流式返回响应</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">();</span><span class="w">             </span><span class="c1">// 中断执行</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">CallableAgent</span><span class="p">,</span><span class="w"> </span><span class="n">StreamableAgent</span><span class="p">,</span><span class="w"> </span><span class="n">ObservableAgent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
+<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -718,8 +731,13 @@
 </ul>
 <p><strong>内置实现</strong>：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">DashScopeFormatter</span></code> - 阿里云百炼（通义千问系列）</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIFormatter</span></code> - OpenAI 及兼容 API</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code> - 阿里云百炼（通义千问系列）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code> - OpenAI 及兼容 API</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatFormatter</span></code> - Anthropic（Claude 系列）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GeminiChatFormatter</span></code> - Google Gemini</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OllamaChatFormatter</span></code> - Ollama 本地模型</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DeepSeekFormatter</span></code> - DeepSeek</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GLMFormatter</span></code> - GLM（智谱）</p></li>
 </ul>
 <blockquote>
 <div><p>格式化器根据 Model 类型自动选择，通常无需手动配置。</p>
@@ -771,7 +789,19 @@
 <td><p>工具流式输出时</p></td>
 <td><p>-</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreSummaryEvent</span></code></p></td>
+<td><p>摘要生成前</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostSummaryEvent</span></code></p></td>
+<td><p>摘要生成后</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SummaryChunkEvent</span></code></p></td>
+<td><p>摘要流式输出时</p></td>
+<td><p>-</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
 <td><p>发生错误时</p></td>
 <td><p>-</p></td>
 </tr>
@@ -820,10 +850,11 @@
 <section id="id4">
 <h2>状态管理与会话<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <p><strong>解决的问题</strong>：智能体的对话历史、配置等状态需要能够保存和恢复，以支持会话持久化。</p>
-<p>AgentScope 将对象的”初始化”与”状态”分离：</p>
+<p>AgentScope 将对象的”初始化”与”状态”分离，通过 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 接口管理：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">saveState()</span></code> - 导出当前状态为可序列化的 Map</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">loadState()</span></code> - 从保存的状态恢复</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">saveTo(Session,</span> <span class="pre">SessionKey)</span></code> - 将当前状态保存到 Session</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadFrom(Session,</span> <span class="pre">SessionKey)</span></code> - 从 Session 恢复状态</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadIfExists(Session,</span> <span class="pre">SessionKey)</span></code> - 如果存在则恢复状态</p></li>
 </ul>
 <p><strong>Session</strong> 提供跨运行的持久化存储：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 保存会话</span>
@@ -927,7 +958,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-03</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

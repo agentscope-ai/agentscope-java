@@ -38,7 +38,7 @@ Install via npm
 npm install -g @agentscope/studio  # or npm install @agentscope/studio
 as_studio
 ```
-Studio will run at http://localhost:5173
+Studio will run at http://localhost:5173 (frontend dev server)
 
 ![Studio Server Page](../../imgs/studioServer.png)
 

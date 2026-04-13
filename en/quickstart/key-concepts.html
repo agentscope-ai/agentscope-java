@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-03T05:06:04+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Create ReAct Agent" href="agent.html"><link rel="prev" title="Installation" href="installation.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Create ReAct Agent" href="agent.html"><link rel="prev" title="Installation" href="installation.html">
         <link rel="canonical" href="https://java.agentscope.io/en/quickstart/key-concepts.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -512,14 +512,20 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">name</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">id</span></code></p></td>
+<td><p>Unique message identifier (auto-generated UUID)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">name</span></code></p></td>
 <td><p>Sender’s name, used to distinguish identities in multi-agent scenarios</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">role</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">role</span></code></p></td>
 <td><p>Role: <code class="docutils literal notranslate"><span class="pre">USER</span></code>, <code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>, <code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code>, or <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">content</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">content</span></code></p></td>
 <td><p>List of content blocks, supports multiple types</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">timestamp</span></code></p></td>
+<td><p>Message timestamp</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code></p></td>
 <td><p>Optional structured data</p></td>
@@ -566,6 +572,12 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MODEL_STOP</span></code></p></td>
 <td><p>Task completed normally</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CALLS</span></code></p></td>
+<td><p>Model returned tool calls (internal tools, framework continues execution)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">STRUCTURED_OUTPUT</span></code></p></td>
+<td><p>Structured output completed</p></td>
+</tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_SUSPENDED</span></code></p></td>
 <td><p>Tool needs external execution, waiting for result</p></td>
 </tr>
@@ -607,10 +619,11 @@
 <h2>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
 <p><strong>Problem solved</strong>: Need a unified abstraction to encapsulate the logic of “receive message → process → return response”.</p>
 <p>The Agent interface defines the core contract:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">      </span><span class="c1">// Process message and return response</span>
-<span class="w">    </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stream</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">    </span><span class="c1">// Stream response in real-time</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">();</span><span class="w">             </span><span class="c1">// Stop execution</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">CallableAgent</span><span class="p">,</span><span class="w"> </span><span class="n">StreamableAgent</span><span class="p">,</span><span class="w"> </span><span class="n">ObservableAgent</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
+<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -714,8 +727,13 @@
 </ul>
 <p><strong>Built-in implementations</strong>:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">DashScopeFormatter</span></code> - Alibaba Cloud DashScope (Qwen series)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIFormatter</span></code> - OpenAI and compatible APIs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code> - Alibaba Cloud DashScope (Qwen series)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code> - OpenAI and compatible APIs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatFormatter</span></code> - Anthropic (Claude series)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GeminiChatFormatter</span></code> - Google Gemini</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OllamaChatFormatter</span></code> - Ollama local models</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DeepSeekFormatter</span></code> - DeepSeek</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GLMFormatter</span></code> - GLM (Zhipu)</p></li>
 </ul>
 <blockquote>
 <div><p>Formatter is automatically selected based on Model type; manual configuration is usually not needed.</p>
@@ -767,7 +785,19 @@
 <td><p>During tool streaming output</p></td>
 <td><p>-</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreSummaryEvent</span></code></p></td>
+<td><p>Before summary generation</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostSummaryEvent</span></code></p></td>
+<td><p>After summary generation</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SummaryChunkEvent</span></code></p></td>
+<td><p>During summary streaming output</p></td>
+<td><p>-</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
 <td><p>When error occurs</p></td>
 <td><p>-</p></td>
 </tr>
@@ -816,10 +846,11 @@
 <section id="state-management-and-session">
 <h2>State Management and Session<a class="headerlink" href="#state-management-and-session" title="Link to this heading">¶</a></h2>
 <p><strong>Problem solved</strong>: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.</p>
-<p>AgentScope separates “initialization” from “state”:</p>
+<p>AgentScope separates “initialization” from “state” through the <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> interface:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">saveState()</span></code> - Export current state as a serializable Map</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">loadState()</span></code> - Restore from saved state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">saveTo(Session,</span> <span class="pre">SessionKey)</span></code> - Save current state to Session</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadFrom(Session,</span> <span class="pre">SessionKey)</span></code> - Restore state from Session</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadIfExists(Session,</span> <span class="pre">SessionKey)</span></code> - Restore state from Session if it exists</p></li>
 </ul>
 <p><strong>Session</strong> provides persistent storage across runs:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save session</span>
@@ -923,7 +954,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-03</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

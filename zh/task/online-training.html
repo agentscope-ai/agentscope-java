@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-10T03:29:55+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="多智能体概览" href="../multi-agent/overview.html"><link rel="prev" title="使用 AI 编程" href="ai-coding.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="多智能体概览" href="../multi-agent/overview.html"><link rel="prev" title="使用 AI 编程" href="ai-coding.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/online-training.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -698,7 +698,7 @@ trinity<span class="w"> </span>run<span class="w"> </span>--config<span class="w
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 用户请求正常处理（使用 GPT-4），自动采样10%请求用于训练</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">userMsg</span><span class="p">(</span><span class="s">&quot;搜索 Python 教程&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;搜索 Python 教程&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 3. 训练完成后停止</span>
 <span class="n">runner</span><span class="p">.</span><span class="na">stop</span><span class="p">();</span>
@@ -763,7 +763,7 @@ trinity<span class="w"> </span>run<span class="w"> </span>--config<span class="w
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-10</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

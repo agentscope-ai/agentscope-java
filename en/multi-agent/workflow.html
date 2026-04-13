@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Routing" href="routing.html"><link rel="prev" title="Pipeline" href="pipeline.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Routing" href="routing.html"><link rel="prev" title="Pipeline" href="pipeline.html">
         <link rel="canonical" href="https://java.agentscope.io/en/multi-agent/workflow.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -532,9 +532,9 @@
 </div>
 <p><strong>Configuration</strong>:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">workflow.rag.enabled</span></code> – Enable RAG workflow beans.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">workflow.sql.enabled</span></code> – Enable SQL workflow beans.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">workflow.runner.enabled</span></code> – When <code class="docutils literal notranslate"><span class="pre">true</span></code>, run a one-shot demo on startup (use with one of the above).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">workflow.rag.enabled</span></code> – Enable RAG workflow beans (default <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">workflow.sql.enabled</span></code> – Enable SQL workflow beans (default <code class="docutils literal notranslate"><span class="pre">true</span></code> in example).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">workflow.runner.enabled</span></code> – When <code class="docutils literal notranslate"><span class="pre">true</span></code>, run a one-shot demo on startup (default <code class="docutils literal notranslate"><span class="pre">true</span></code> in example; use with one of the above).</p></li>
 <li><p><strong>DashScope API key</strong>: <code class="docutils literal notranslate"><span class="pre">AI_DASHSCOPE_API_KEY</span></code> or <code class="docutils literal notranslate"><span class="pre">spring.ai.dashscope.api-key</span></code> (required for RAG and SQL; RAG also needs an embedding model).</p></li>
 </ul>
 </section>
@@ -610,7 +610,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

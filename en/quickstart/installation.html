@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-31T12:34:05+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Key Concepts" href="key-concepts.html"><link rel="prev" title="AgentScope Java" href="../intro.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Key Concepts" href="key-concepts.html"><link rel="prev" title="AgentScope Java" href="../intro.html">
         <link rel="canonical" href="https://java.agentscope.io/en/quickstart/installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -486,7 +486,7 @@
 <h3>Included Dependencies<a class="headerlink" href="#included-dependencies" title="Link to this heading">¶</a></h3>
 <p>The all-in-one package includes these dependencies by default:</p>
 <ul class="simple">
-<li><p>DashScope SDK (Qwen series models)</p></li>
+<li><p>DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)</p></li>
 <li><p>MCP SDK (Model Context Protocol)</p></li>
 <li><p>Reactor Core, Jackson, SLF4J (base frameworks)</p></li>
 </ul>
@@ -802,6 +802,10 @@
 <td><p>XXL-Job Scheduler</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-xxl-job</span></code></p></td>
 </tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz">agentscope-extensions-scheduler-quartz</a></p></td>
+<td><p>Quartz Scheduler</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-quartz</span></code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -871,6 +875,14 @@
 <tr class="row-odd"><td><p>agentscope-agui-spring-boot-starter</p></td>
 <td><p>AG-UI Integration</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-agui-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>agentscope-chat-completions-web-starter</p></td>
+<td><p>Chat Completions Web Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-chat-completions-web-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>agentscope-nacos-spring-boot-starter</p></td>
+<td><p>Nacos Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-nacos-spring-boot-starter</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -952,7 +964,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-31</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

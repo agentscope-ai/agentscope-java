@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-23T08:52:22+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="模型" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/tool.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -511,7 +511,7 @@
 </section>
 <section id="id9">
 <h3>流式工具<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
-<p>使用 <code class="docutils literal notranslate"><span class="pre">ToolEmitter</span></code> 发送中间进度，适合长时间任务：</p>
+<p>使用 <code class="docutils literal notranslate"><span class="pre">ToolEmitter</span></code> 发送中间进度，适合长时间任务（进度仅对 Hook 可见，不会发送给 LLM）：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;生成数据&quot;</span><span class="p">)</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
 <span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;count&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">,</span>
@@ -663,11 +663,15 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">view_text_file</span></code></p></td>
 <td><p>按行范围查看文件</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ReadFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_directory</span></code></p></td>
+<td><p>列出目录下的文件和文件夹</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">write_text_file</span></code></p></td>
 <td><p>创建/覆盖/替换文件内容</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">insert_text_file</span></code></p></td>
 <td><p>在指定行插入内容</p></td>
 </tr>
@@ -717,10 +721,10 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p>文生图、图生文、文生语音、语音转文字</p></td>
+<td><p>文生图、图生文、文生语音、语音转文字、文生视频、图生视频、首尾帧图生视频、视频理解</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p>文生图、图片编辑、图片变体、图生文、文生语音、语音转文字</p></td>
+<td><p>文生图、图生文、文生语音、语音转文字</p></td>
 </tr>
 </tbody>
 </table>
@@ -783,7 +787,7 @@
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parallel</span></code></p></td>
 <td><p>是否并行执行多个工具</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">allowToolDeletion</span></code></p></td>
 <td><p>是否允许删除工具</p></td>
@@ -801,7 +805,7 @@
 <h2>元工具<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h2>
 <p>让智能体自主管理工具组：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerMetaTool</span><span class="p">();</span>
-<span class="c1">// Agent 可调用 &quot;reset_equipped_tools&quot; 激活/停用工具组</span>
+<span class="c1">// Agent 可调用 &quot;reset_equipped_tools&quot; 激活指定的工具组（重置为指定的工具组集合）</span>
 </pre></div>
 </div>
 <p>当工具组较多时，可让智能体根据任务需求自主选择激活哪些工具组。</p>
@@ -832,15 +836,16 @@
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pendingTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="w">    </span><span class="c1">// 外部执行后，提供结果</span>
-<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">toolResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">toolUse</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">toolUse</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
-<span class="w">            </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;外部执行结果&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">toolUse</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">pendingTools</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">toolResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">toolUse</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">toolUse</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;外部执行结果&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">    </span><span class="c1">// 恢复执行</span>
-<span class="w">    </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">toolResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="p">}</span>
+<span class="w">        </span><span class="c1">// 恢复执行</span>
+<span class="w">        </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">toolResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
 </pre></div>
 </div>
 </section>
@@ -938,7 +943,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-23</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

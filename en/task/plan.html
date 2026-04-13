@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="State" href="state.html"><link rel="prev" title="Memory" href="memory.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="State" href="state.html"><link rel="prev" title="Memory" href="memory.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/plan.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -548,6 +548,27 @@
 </section>
 <section id="configuration-options">
 <h2>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h2>
+<section id="user-confirmation-needuserconfirm">
+<h3>User Confirmation (needUserConfirm)<a class="headerlink" href="#user-confirmation-needuserconfirm" title="Link to this heading">¶</a></h3>
+<p>Controls whether the agent needs to wait for user confirmation before starting execution after creating a plan.</p>
+<p><strong>Default Value</strong>: <code class="docutils literal notranslate"><span class="pre">true</span></code> (user confirmation required)</p>
+<p>When enabled, the agent will display the plan content and ask the user whether to proceed (e.g., “Should I proceed with this plan?”) after creating a plan. It will only start executing subtasks after the user explicitly confirms (e.g., replying “yes”, “go ahead”). If the user’s message already implies execution intent (e.g., “execute the plan”), confirmation is skipped and execution begins directly.</p>
+<p>When disabled, the agent will immediately start executing after creating the plan, without waiting for user confirmation.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Require user confirmation (default behavior)</span>
+<span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">needUserConfirm</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// No confirmation needed, execute immediately after creating plan</span>
+<span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">needUserConfirm</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Note</strong>: When subtasks are already in execution (status is <code class="docutils literal notranslate"><span class="pre">in_progress</span></code>), confirmation rule hints will not be injected regardless of the <code class="docutils literal notranslate"><span class="pre">needUserConfirm</span></code> setting.</p>
+</div></blockquote>
+</section>
 <section id="limit-subtask-count">
 <h3>Limit Subtask Count<a class="headerlink" href="#limit-subtask-count" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -628,7 +649,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -674,6 +695,7 @@
 <li><a class="reference internal" href="#workflow">Workflow</a></li>
 <li><a class="reference internal" href="#complete-example">Complete Example</a></li>
 <li><a class="reference internal" href="#configuration-options">Configuration Options</a><ul>
+<li><a class="reference internal" href="#user-confirmation-needuserconfirm">User Confirmation (needUserConfirm)</a></li>
 <li><a class="reference internal" href="#limit-subtask-count">Limit Subtask Count</a></li>
 <li><a class="reference internal" href="#custom-storage">Custom Storage</a></li>
 <li><a class="reference internal" href="#custom-hint-generation">Custom Hint Generation</a></li>

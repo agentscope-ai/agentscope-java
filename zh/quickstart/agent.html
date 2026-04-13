@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-02T02:19:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="模型" href="../task/model.html"><link rel="prev" title="核心概念" href="key-concepts.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="模型" href="../task/model.html"><link rel="prev" title="核心概念" href="key-concepts.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/quickstart/agent.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -484,9 +484,9 @@
 <td><p></p></td>
 <td><p>智能体的名称</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> (必需)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code></p></td>
 <td><p></p></td>
-<td><p>智能体的系统提示</p></td>
+<td><p>智能体的系统提示（建议设置）</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">model</span></code> (必需)</p></td>
 <td><p><a class="reference internal" href="../task/model.html"><span class="std std-doc">模型集成</span></a></p></td>
@@ -500,12 +500,28 @@
 <td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">记忆管理</span></a></p></td>
 <td><p>用于存储对话历史的短期记忆</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">description</span></code></p></td>
+<td><p></p></td>
+<td><p>智能体的描述信息</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
+<td><p></p></td>
+<td><p>LLM 生成参数（temperature、topP、maxTokens 等）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">toolExecutionContext</span></code></p></td>
+<td><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">工具系统</span></a></p></td>
+<td><p>工具执行上下文，用于向工具注入依赖</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">planNotebook</span></code></p></td>
+<td><p><a class="reference internal" href="../task/plan.html"><span class="std std-doc">计划</span></a></p></td>
+<td><p>计划管理器</p></td>
+</tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">longTermMemory</span></code></p></td>
-<td><p><a class="reference internal" href="#../task/long-term-memory.md"><span class="xref myst">长期记忆</span></a></p></td>
+<td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">记忆管理</span></a></p></td>
 <td><p>长期记忆</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">longTermMemoryMode</span></code></p></td>
-<td><p><a class="reference internal" href="#../task/long-term-memory.md"><span class="xref myst">长期记忆</span></a></p></td>
+<td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">记忆管理</span></a></p></td>
 <td><p>长期记忆的管理模式：<code class="docutils literal notranslate"><span class="pre">AGENT_CONTROL</span></code>（智能体自主控制）、<code class="docutils literal notranslate"><span class="pre">STATIC_CONTROL</span></code>（静态管理）、<code class="docutils literal notranslate"><span class="pre">BOTH</span></code>（两者皆有）</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">maxIters</span></code></p></td>
@@ -724,7 +740,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-02</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

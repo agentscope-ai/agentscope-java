@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-01-09T07:51:02+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -466,7 +466,7 @@
 <td><p>✅</p></td>
 <td><p>✅</p></td>
 <td><p>✅</p></td>
-<td><p></p></td>
+<td><p>✅</p></td>
 </tr>
 <tr class="row-even"><td><p>Anthropic</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatModel</span></code></p></td>
@@ -572,8 +572,37 @@
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enableSearch</span></code></p></td>
 <td><p>Enable web search for real-time information</p></td>
 </tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">endpointType</span></code></p></td>
+<td><p>API endpoint type (default <code class="docutils literal notranslate"><span class="pre">AUTO</span></code> auto-detect), options: <code class="docutils literal notranslate"><span class="pre">TEXT</span></code> (force text API) or <code class="docutils literal notranslate"><span class="pre">MULTIMODAL</span></code> (force multimodal API)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">defaultOptions</span></code></p></td>
+<td><p>Default generation options (temperature, maxTokens, etc.)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">formatter</span></code></p></td>
+<td><p>Message formatter (default <code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code>)</p></td>
+</tr>
 </tbody>
 </table>
+</div>
+</section>
+<section id="endpoint-type-endpointtype">
+<h3>Endpoint Type (endpointType)<a class="headerlink" href="#endpoint-type-endpointtype" title="Link to this heading">¶</a></h3>
+<p>DashScope models support both text and multimodal API endpoints. By default, the framework automatically detects the appropriate endpoint type based on the model name (e.g., <code class="docutils literal notranslate"><span class="pre">qwen-vl-*</span></code> and <code class="docutils literal notranslate"><span class="pre">qwen3.5</span></code> series automatically use the multimodal endpoint).</p>
+<p>When auto-detection is inaccurate (e.g., using custom model names or compatible APIs), you can manually specify the endpoint type:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Force multimodal API (suitable for scenarios with images, audio, etc.)</span>
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;custom-model&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpointType</span><span class="p">(</span><span class="n">EndpointType</span><span class="p">.</span><span class="na">MULTIMODAL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Force text API</span>
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;custom-model&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">endpointType</span><span class="p">(</span><span class="n">EndpointType</span><span class="p">.</span><span class="na">TEXT</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
 </div>
 </section>
 <section id="thinking-mode">
@@ -642,6 +671,9 @@
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
 <td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
+<td><p>Default generation options (note: OpenAI uses <code class="docutils literal notranslate"><span class="pre">.generateOptions()</span></code> instead of <code class="docutils literal notranslate"><span class="pre">.defaultOptions()</span></code>)</p></td>
 </tr>
 </tbody>
 </table>
@@ -879,7 +911,7 @@
 <span class="w">        </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Top-K sampling</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">            </span><span class="c1">// Maximum output tokens</span>
 <span class="w">        </span><span class="p">.</span><span class="na">seed</span><span class="p">(</span><span class="mi">42L</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Random seed</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolChoice</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">())</span><span class="w">  </span><span class="c1">// Tool choice strategy</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolChoice</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Auto</span><span class="p">())</span><span class="w">  </span><span class="c1">// Tool choice strategy</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -922,9 +954,25 @@
 <td><p>Integer</p></td>
 <td><p>Maximum tokens to generate</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">maxCompletionTokens</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>Maximum completion tokens</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code></p></td>
 <td><p>Integer</p></td>
 <td><p>Token budget for thinking</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">reasoningEffort</span></code></p></td>
+<td><p>String</p></td>
+<td><p>Reasoning effort level (e.g., <code class="docutils literal notranslate"><span class="pre">low</span></code>, <code class="docutils literal notranslate"><span class="pre">medium</span></code>, <code class="docutils literal notranslate"><span class="pre">high</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">frequencyPenalty</span></code></p></td>
+<td><p>Double</p></td>
+<td><p>Frequency penalty, -2.0-2.0</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">presencePenalty</span></code></p></td>
+<td><p>Double</p></td>
+<td><p>Presence penalty, -2.0-2.0</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">seed</span></code></p></td>
 <td><p>Long</p></td>
@@ -940,10 +988,10 @@
 </section>
 <section id="tool-choice-strategy">
 <h3>Tool Choice Strategy<a class="headerlink" href="#tool-choice-strategy" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// Model decides (default)</span>
-<span class="n">ToolChoice</span><span class="p">.</span><span class="na">none</span><span class="p">()</span><span class="w">              </span><span class="c1">// Disable tool calling</span>
-<span class="n">ToolChoice</span><span class="p">.</span><span class="na">required</span><span class="p">()</span><span class="w">          </span><span class="c1">// Force tool calling</span>
-<span class="n">ToolChoice</span><span class="p">.</span><span class="na">specific</span><span class="p">(</span><span class="s">&quot;tool_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Force specific tool</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// Model decides (default)</span>
+<span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">None</span><span class="p">()</span><span class="w">              </span><span class="c1">// Disable tool calling</span>
+<span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Required</span><span class="p">()</span><span class="w">          </span><span class="c1">// Force tool calling</span>
+<span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">Specific</span><span class="p">(</span><span class="s">&quot;tool_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Force specific tool</span>
 </pre></div>
 </div>
 </section>
@@ -1151,7 +1199,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-01-09</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1191,6 +1239,7 @@
 <li><a class="reference internal" href="#getting-api-keys">Getting API Keys</a></li>
 <li><a class="reference internal" href="#dashscope">DashScope</a><ul>
 <li><a class="reference internal" href="#configuration">Configuration</a></li>
+<li><a class="reference internal" href="#endpoint-type-endpointtype">Endpoint Type (endpointType)</a></li>
 <li><a class="reference internal" href="#thinking-mode">Thinking Mode</a></li>
 </ul>
 </li>

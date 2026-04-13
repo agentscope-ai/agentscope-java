@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Multi-Agent Debate" href="multiagent-debate.html"><link rel="prev" title="Supervisor" href="supervisor.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Multi-Agent Debate" href="multiagent-debate.html"><link rel="prev" title="Supervisor" href="supervisor.html">
         <link rel="canonical" href="https://java.agentscope.io/en/multi-agent/handoffs.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -533,7 +533,7 @@
 <section id="step-3-build-the-agents-agentscopeagent-toolkit">
 <h3>Step 3: Build the agents (AgentScopeAgent + Toolkit)<a class="headerlink" href="#step-3-build-the-agents-agentscopeagent-toolkit" title="Link to this heading">¶</a></h3>
 <p>Create a sales and a support agent as <code class="docutils literal notranslate"><span class="pre">AgentScopeAgent</span></code>, each with its own ReActAgent, system prompt, and Toolkit that includes the appropriate handoff tool.</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
@@ -557,6 +557,7 @@
 
 <span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">salesAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">salesReActBuilder</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="n">AgentScopeStateConstants</span><span class="p">.</span><span class="na">SALES_AGENT</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Sales agent for pricing, product availability, and sales inquiries&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;please assist the customer with their sales inquiry: {input}.&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">returnReasoningContents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
@@ -580,6 +581,7 @@
 
 <span class="n">AgentScopeAgent</span><span class="w"> </span><span class="n">supportAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeAgent</span><span class="p">.</span><span class="na">fromBuilder</span><span class="p">(</span><span class="n">supportReActBuilder</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="n">AgentScopeStateConstants</span><span class="p">.</span><span class="na">SUPPORT_AGENT</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Support agent for technical issues and troubleshooting&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">instruction</span><span class="p">(</span><span class="s">&quot;please assist the customer with their product technical inquiry: {input}.&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">includeContents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">returnReasoningContents</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
@@ -742,7 +744,7 @@ Handoff tools use <code class="docutils literal notranslate"><span class="pre">i
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-25T06:55:05+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MsgHub" href="msghub.html"><link rel="prev" title="AG-UI Protocol Integration" href="agui.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MsgHub" href="msghub.html"><link rel="prev" title="AG-UI Protocol Integration" href="agui.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/a2a.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -612,8 +612,8 @@
 <span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Intelligent assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">version</span><span class="p">(</span><span class="s">&quot;1.0.0&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">skills</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;text-generation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Text Generation&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;question-answering&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Q&amp;A&quot;</span><span class="p">)))</span>
+<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;text-generation&quot;</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Text Generation&quot;</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;question-answering&quot;</span><span class="p">).</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Q&amp;A&quot;</span><span class="p">).</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">agentBuilder</span><span class="p">)</span>
@@ -825,7 +825,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-25</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

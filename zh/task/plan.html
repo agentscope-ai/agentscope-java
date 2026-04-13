@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2025-12-23T07:44:33+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="State（状态管理）" href="state.html"><link rel="prev" title="记忆 (Memory)" href="memory.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="State（状态管理）" href="state.html"><link rel="prev" title="记忆 (Memory)" href="memory.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/plan.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -548,6 +548,27 @@
 </section>
 <section id="id8">
 <h2>配置选项<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="needuserconfirm">
+<h3>用户确认（needUserConfirm）<a class="headerlink" href="#needuserconfirm" title="Link to this heading">¶</a></h3>
+<p>控制智能体在创建计划后是否需要等待用户确认才能开始执行。</p>
+<p><strong>默认值</strong>：<code class="docutils literal notranslate"><span class="pre">true</span></code>（需要用户确认）</p>
+<p>当启用时，智能体创建计划后会展示计划内容并询问用户是否同意执行（例如 “Should I proceed with this plan?”），只有在用户明确确认后（如回复 “yes”、”go ahead”）才会开始执行子任务。如果用户的消息本身已隐含执行意图（如 “execute the plan”），则跳过确认直接执行。</p>
+<p>当禁用时，智能体创建计划后会立即开始执行，无需等待用户确认。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 需要用户确认（默认行为）</span>
+<span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">needUserConfirm</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 无需确认，创建计划后立即执行</span>
+<span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">needUserConfirm</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>注意</strong>：当有子任务正在执行时（状态为 <code class="docutils literal notranslate"><span class="pre">in_progress</span></code>），无论 <code class="docutils literal notranslate"><span class="pre">needUserConfirm</span></code> 如何设置，都不会再注入确认规则提示。</p>
+</div></blockquote>
+</section>
 <section id="id9">
 <h3>限制子任务数量<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -628,7 +649,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-23</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -674,6 +695,7 @@
 <li><a class="reference internal" href="#id6">工作流程</a></li>
 <li><a class="reference internal" href="#id7">完整示例</a></li>
 <li><a class="reference internal" href="#id8">配置选项</a><ul>
+<li><a class="reference internal" href="#needuserconfirm">用户确认（needUserConfirm）</a></li>
 <li><a class="reference internal" href="#id9">限制子任务数量</a></li>
 <li><a class="reference internal" href="#id10">自定义存储</a></li>
 <li><a class="reference internal" href="#id11">自定义提示生成</a></li>

@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-31T12:34:05+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="核心概念" href="key-concepts.html"><link rel="prev" title="AgentScope Java" href="../intro.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="核心概念" href="key-concepts.html"><link rel="prev" title="AgentScope Java" href="../intro.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/quickstart/installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -487,7 +487,7 @@
 <h3>默认包含的依赖<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <p>All-in-one 包默认带以下依赖，不用额外配置：</p>
 <ul class="simple">
-<li><p>DashScope SDK（通义千问系列模型）</p></li>
+<li><p>DashScope 模型支持（通义千问系列模型，通过原生 HTTP 调用，无需额外 SDK）</p></li>
 <li><p>MCP SDK（模型上下文协议）</p></li>
 <li><p>Reactor Core、Jackson、SLF4J（基础框架）</p></li>
 </ul>
@@ -804,6 +804,10 @@
 <td><p>XXL-Job 调度</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-xxl-job</span></code></p></td>
 </tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz">agentscope-extensions-scheduler-quartz</a></p></td>
+<td><p>Quartz 调度</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-quartz</span></code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -873,6 +877,14 @@
 <tr class="row-odd"><td><p>agentscope-agui-spring-boot-starter</p></td>
 <td><p>AG-UI 集成</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-agui-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>agentscope-chat-completions-web-starter</p></td>
+<td><p>Chat Completions Web 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-chat-completions-web-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>agentscope-nacos-spring-boot-starter</p></td>
+<td><p>Nacos 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-nacos-spring-boot-starter</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -954,7 +966,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-31</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

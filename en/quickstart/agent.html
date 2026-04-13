@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-02-02T02:19:28+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Model" href="../task/model.html"><link rel="prev" title="Key Concepts" href="key-concepts.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Model" href="../task/model.html"><link rel="prev" title="Key Concepts" href="key-concepts.html">
         <link rel="canonical" href="https://java.agentscope.io/en/quickstart/agent.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -484,9 +484,9 @@
 <td><p></p></td>
 <td><p>Agent’s name</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code> (required)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sysPrompt</span></code></p></td>
 <td><p></p></td>
-<td><p>System prompt</p></td>
+<td><p>System prompt (recommended)</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">model</span></code> (required)</p></td>
 <td><p><a class="reference internal" href="../task/model.html"><span class="std std-doc">Model Integration</span></a></p></td>
@@ -500,12 +500,28 @@
 <td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">Memory Management</span></a></p></td>
 <td><p>Short-term memory for conversation history</p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">description</span></code></p></td>
+<td><p></p></td>
+<td><p>Agent description</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">generateOptions</span></code></p></td>
+<td><p></p></td>
+<td><p>LLM generation parameters (temperature, topP, maxTokens, etc.)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">toolExecutionContext</span></code></p></td>
+<td><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Tool System</span></a></p></td>
+<td><p>Tool execution context for dependency injection into tools</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">planNotebook</span></code></p></td>
+<td><p><a class="reference internal" href="../task/plan.html"><span class="std std-doc">Planning</span></a></p></td>
+<td><p>Plan manager</p></td>
+</tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">longTermMemory</span></code></p></td>
-<td><p><a class="reference internal" href="#../task/long-term-memory.md"><span class="xref myst">Long-term Memory</span></a></p></td>
+<td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">Memory Management</span></a></p></td>
 <td><p>Long-term memory</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">longTermMemoryMode</span></code></p></td>
-<td><p><a class="reference internal" href="#../task/long-term-memory.md"><span class="xref myst">Long-term Memory</span></a></p></td>
+<td><p><a class="reference internal" href="../task/memory.html"><span class="std std-doc">Memory Management</span></a></p></td>
 <td><p>Long-term memory mode: <code class="docutils literal notranslate"><span class="pre">AGENT_CONTROL</span></code>, <code class="docutils literal notranslate"><span class="pre">STATIC_CONTROL</span></code>, or <code class="docutils literal notranslate"><span class="pre">BOTH</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">maxIters</span></code></p></td>
@@ -724,7 +740,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-02-02</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

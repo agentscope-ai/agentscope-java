@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-17T03:07:28+00:00" /><link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Installation" href="quickstart/installation.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Installation" href="quickstart/installation.html">
         <link rel="canonical" href="https://java.agentscope.io/en/intro.html">
         <link rel="prefetch" href="../_static/logo.svg" as="image">
 
@@ -471,16 +471,15 @@
 <p>AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:</p>
 <ul class="simple">
 <li><p><strong>MCP Protocol</strong> - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.</p></li>
-<li><p><strong>A2A Protocol</strong> - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.</p></li>
+<li><p><strong>A2A Protocol</strong> - Enable distributed multi-agent collaboration through extension modules. Register agent capabilities to Nacos or similar registries (via <code class="docutils literal notranslate"><span class="pre">agentscope-extensions-nacos-a2a</span></code>), allowing agents to discover and invoke each other as naturally as calling microservices.</p></li>
 </ul>
 </section>
 <section id="production-grade">
 <h3>Production Grade<a class="headerlink" href="#production-grade" title="Link to this heading">¶</a></h3>
 <p>Built for enterprise deployment requirements:</p>
 <ul class="simple">
-<li><p><strong>High Performance</strong> - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.</p></li>
-<li><p><strong>Security Sandbox</strong> - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.</p></li>
-<li><p><strong>Observability</strong> - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.</p></li>
+<li><p><strong>High Performance</strong> - Reactive architecture based on Project Reactor ensures non-blocking execution. Supports GraalVM native image compilation through Micronaut/Quarkus, suitable for serverless and auto-scaling environments.</p></li>
+<li><p><strong>Observability</strong> - Pluggable Tracer SPI with extension module support for OpenTelemetry, enabling distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.</p></li>
 </ul>
 </section>
 </section>
@@ -656,7 +655,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-17</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

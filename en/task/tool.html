@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-03-23T08:52:22+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/tool.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -511,7 +511,7 @@
 </section>
 <section id="streaming-tools">
 <h3>Streaming Tools<a class="headerlink" href="#streaming-tools" title="Link to this heading">¶</a></h3>
-<p>Use <code class="docutils literal notranslate"><span class="pre">ToolEmitter</span></code> to send intermediate progress, suitable for long-running tasks:</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ToolEmitter</span></code> to send intermediate progress, suitable for long-running tasks (progress is only visible to Hooks, not sent to LLM):</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Generate data&quot;</span><span class="p">)</span>
 <span class="kd">public</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
 <span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;count&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">,</span>
@@ -663,11 +663,15 @@
 <td><p><code class="docutils literal notranslate"><span class="pre">view_text_file</span></code></p></td>
 <td><p>View files by line range</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ReadFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list_directory</span></code></p></td>
+<td><p>List files and folders in a directory</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">write_text_file</span></code></p></td>
 <td><p>Create/overwrite/replace file content</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">insert_text_file</span></code></p></td>
 <td><p>Insert content at specified line</p></td>
 </tr>
@@ -717,10 +721,10 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p>Text-to-image, image-to-text, text-to-speech, speech-to-text</p></td>
+<td><p>Text-to-image, image-to-text, text-to-speech, speech-to-text, text-to-video, image-to-video, first-last-frame-to-video, video understanding</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p>Text-to-image, image editing, image variations, image-to-text, text-to-speech, speech-to-text</p></td>
+<td><p>Text-to-image, image-to-text, text-to-speech, speech-to-text</p></td>
 </tr>
 </tbody>
 </table>
@@ -783,7 +787,7 @@
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parallel</span></code></p></td>
 <td><p>Whether to execute multiple tools in parallel</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">allowToolDeletion</span></code></p></td>
 <td><p>Whether to allow tool deletion</p></td>
@@ -801,7 +805,7 @@
 <h2>Meta Tools<a class="headerlink" href="#meta-tools" title="Link to this heading">¶</a></h2>
 <p>Allow agents to autonomously manage tool groups:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerMetaTool</span><span class="p">();</span>
-<span class="c1">// Agent can call &quot;reset_equipped_tools&quot; to activate/deactivate tool groups</span>
+<span class="c1">// Agent can call &quot;reset_equipped_tools&quot; to activate (reset to specified set) tool groups</span>
 </pre></div>
 </div>
 <p>When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.</p>
@@ -832,14 +836,16 @@
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">ToolUseBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="n">pendingTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getContentBlocks</span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
 <span class="w">    </span><span class="c1">// After external execution, provide result</span>
-<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">toolResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">toolUse</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">toolUse</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
-<span class="w">            </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;External execution result&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">toolUse</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">pendingTools</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">toolResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">TOOL</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">toolUse</span><span class="p">.</span><span class="na">getId</span><span class="p">(),</span><span class="w"> </span><span class="n">toolUse</span><span class="p">.</span><span class="na">getName</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;External execution result&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">    </span><span class="c1">// Resume execution</span>
-<span class="w">    </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">toolResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">        </span><span class="c1">// Resume execution</span>
+<span class="w">        </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">toolResult</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -938,7 +944,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-03-23</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">

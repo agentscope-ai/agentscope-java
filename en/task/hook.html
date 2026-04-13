@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-08T07:03:59+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (Retrieval-Augmented Generation)" href="rag.html">
+    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Human-in-the-Loop" href="hitl.html"><link rel="prev" title="RAG (Retrieval-Augmented Generation)" href="rag.html">
         <link rel="canonical" href="https://java.agentscope.io/en/task/hook.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -463,8 +463,8 @@
 <tbody>
 <tr class="row-even"><td><p>PreCallEvent</p></td>
 <td><p>Before agent call</p></td>
-<td><p>❌</p></td>
-<td><p>Before agent starts processing (notification-only)</p></td>
+<td><p>✅</p></td>
+<td><p>Before agent starts processing (modifiable input messages)</p></td>
 </tr>
 <tr class="row-odd"><td><p>PostCallEvent</p></td>
 <td><p>After agent call</p></td>
@@ -501,7 +501,22 @@
 <td><p>❌</p></td>
 <td><p>Tool execution progress chunks (notification-only)</p></td>
 </tr>
-<tr class="row-even"><td><p>ErrorEvent</p></td>
+<tr class="row-even"><td><p>PreSummaryEvent</p></td>
+<td><p>Before summary</p></td>
+<td><p>✅</p></td>
+<td><p>Before summary generation when max iterations reached</p></td>
+</tr>
+<tr class="row-odd"><td><p>PostSummaryEvent</p></td>
+<td><p>After summary</p></td>
+<td><p>✅</p></td>
+<td><p>After summary generation (can modify summary result)</p></td>
+</tr>
+<tr class="row-even"><td><p>SummaryChunkEvent</p></td>
+<td><p>During summary stream</p></td>
+<td><p>❌</p></td>
+<td><p>Each chunk of streaming summary (notification-only)</p></td>
+</tr>
+<tr class="row-odd"><td><p>ErrorEvent</p></td>
 <td><p>On error</p></td>
 <td><p>❌</p></td>
 <td><p>When errors occur (notification-only)</p></td>
@@ -783,7 +798,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-08</div>
+              Last updated on 2026-04-13</div>
           </div>
           <div class="right-details">
             <div class="icons">
