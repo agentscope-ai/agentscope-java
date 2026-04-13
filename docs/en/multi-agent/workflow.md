@@ -83,9 +83,9 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 **Configuration**:
 
-- `workflow.rag.enabled` – Enable RAG workflow beans.
-- `workflow.sql.enabled` – Enable SQL workflow beans.
-- `workflow.runner.enabled` – When `true`, run a one-shot demo on startup (use with one of the above).
+- `workflow.rag.enabled` – Enable RAG workflow beans (default `false`).
+- `workflow.sql.enabled` – Enable SQL workflow beans (default `true` in example).
+- `workflow.runner.enabled` – When `true`, run a one-shot demo on startup (default `true` in example; use with one of the above).
 - **DashScope API key**: `AI_DASHSCOPE_API_KEY` or `spring.ai.dashscope.api-key` (required for RAG and SQL; RAG also needs an embedding model).
 
 ## Custom workflow vs other patterns
