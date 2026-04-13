@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility for parsing and generating Markdown files with YAML frontmatter.
@@ -54,6 +56,8 @@ import java.util.regex.Pattern;
  */
 public class MarkdownSkillParser {
 
+    private static final Logger logger = LoggerFactory.getLogger(MarkdownSkillParser.class);
+
     /**
      * Private constructor to prevent instantiation.
      */
@@ -81,7 +85,6 @@ public class MarkdownSkillParser {
      *
      * @param markdown Markdown content (may or may not have frontmatter)
      * @return ParsedMarkdown containing metadata and content
-     * @throws IllegalArgumentException if YAML syntax is invalid
      */
     public static ParsedMarkdown parse(String markdown) {
         if (markdown == null || markdown.isEmpty()) {
@@ -102,14 +105,8 @@ public class MarkdownSkillParser {
             return new ParsedMarkdown(Map.of(), markdownContent);
         }
 
-        try {
-            Map<String, String> metadata = SimpleYamlParser.parse(yamlContent);
-            return new ParsedMarkdown(metadata, markdownContent);
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
-        }
+        Map<String, String> metadata = SimpleYamlParser.parse(yamlContent);
+        return new ParsedMarkdown(metadata, markdownContent);
     }
 
     /**
@@ -158,9 +155,14 @@ public class MarkdownSkillParser {
         /**
          * Parse YAML string into a map of key-value pairs.
          *
+         * <p>This is a simplified parser designed for flat string-to-string mappings.
+         * Block-style complex YAML structures (such as multi-line lists or indented
+         * nested objects) are not supported and will be gracefully skipped.
+         * However, flow-style inline structures (e.g., single-line JSON strings)
+         * are treated as standard scalar values and will be parsed as raw strings.
+         *
          * @param yaml YAML content to parse
          * @return Map of key-value pairs
-         * @throws IllegalArgumentException if YAML syntax is invalid
          */
         static Map<String, String> parse(String yaml) {
             Map<String, String> result = new LinkedHashMap<>();
@@ -184,17 +186,42 @@ public class MarkdownSkillParser {
 
                 Matcher matcher = KEY_VALUE_PATTERN.matcher(line.trim());
                 if (!matcher.matches()) {
-                    throw new IllegalArgumentException(
-                            "Invalid YAML line (expected 'key: value' format): " + line);
+                    logger.debug(
+                            "Skipping unsupported YAML line (expected 'key: value' format): {}",
+                            line);
+                    continue;
                 }
 
                 String key = matcher.group(1);
-                String value = parseValue(matcher.group(2));
+                String rawValue = matcher.group(2);
 
-                result.put(key, value);
+                if (isBlockScalarModifier(rawValue)) {
+                    logger.debug(
+                            "Skipping key '{}': block-style values ('{}') are unsupported",
+                            key,
+                            rawValue.trim());
+                    continue;
+                }
+
+                result.put(key, parseValue(rawValue));
             }
 
             return result;
+        }
+
+        /**
+         * Check if the raw value is a YAML block scalar modifier ('|' or '>').
+         *
+         * @param rawValue The raw string captured after the colon
+         * @return true if it is a block scalar modifier
+         */
+        private static boolean isBlockScalarModifier(String rawValue) {
+            if (rawValue == null) {
+                return false;
+            }
+
+            String trimmed = rawValue.trim();
+            return "|".equals(trimmed) || ">".equals(trimmed);
         }
 
         /**
