@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -2173,5 +2174,111 @@ class AutoContextMemoryTest {
         assertTrue(
                 foundCompressedMixed,
                 "Should find a compressed ASSISTANT message with preserved ToolUseBlock");
+    }
+
+    @Test
+    @DisplayName(
+            "Should preserve ToolResultBlock structure and compress output during large TOOL"
+                    + " message compression")
+    void testToolResultBlockPreservedAndOutputCompressedDuringLargeMessageCompression()
+            throws Exception {
+        CapturingModel capturingModel = new CapturingModel("Compressed tool result summary");
+        AutoContextConfig config =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .largePayloadThreshold(100)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(100) // disable Strategy 1
+                        .minCompressionTokenThreshold(Integer.MAX_VALUE) // disable LLM compression
+                        .build();
+        AutoContextMemory testMemory = new AutoContextMemory(config, capturingModel);
+
+        // Add messages to exceed msgThreshold
+        for (int i = 0; i < 8; i++) {
+            testMemory.addMessage(createTextMessage("Message " + i, MsgRole.USER));
+        }
+
+        // Add user + assistant with tool use (to pair with the tool result)
+        testMemory.addMessage(createTextMessage("User query", MsgRole.USER));
+        testMemory.addMessage(
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("assistant")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Let me search").build(),
+                                        ToolUseBlock.builder()
+                                                .name("search")
+                                                .id("call_tr_001")
+                                                .input(new HashMap<>())
+                                                .build()))
+                        .build());
+
+        // Create a large TOOL message with ToolResultBlock containing large output
+        String largeToolOutput = "y".repeat(200); // exceeds largePayloadThreshold
+        Msg toolMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .name("search")
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_tr_001")
+                                        .name("search")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text(largeToolOutput)
+                                                                .build()))
+                                        .build())
+                        .build();
+        testMemory.addMessage(toolMsg);
+
+        // Trigger compression
+        testMemory.compressIfNeeded();
+
+        // Verify: model was called for compression
+        assertTrue(
+                capturingModel.getCapturedMessages().size() > 0,
+                "Model should be called for compression");
+
+        // Verify: messages sent to model should NOT contain ToolResultBlock
+        for (List<Msg> msgs : capturingModel.getCapturedMessages()) {
+            for (Msg msg : msgs) {
+                assertFalse(
+                        msg.hasContentBlocks(ToolResultBlock.class),
+                        "Messages sent to model should not contain ToolResultBlock");
+            }
+        }
+
+        // Verify: the compressed TOOL message should preserve ToolResultBlock structure
+        List<Msg> finalMessages = testMemory.getMessages();
+        boolean foundCompressedTool = false;
+        for (Msg msg : finalMessages) {
+            if (msg.getRole() == MsgRole.TOOL && msg.hasContentBlocks(ToolResultBlock.class)) {
+                ToolResultBlock resultBlock = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (resultBlock != null && "call_tr_001".equals(resultBlock.getId())) {
+                    foundCompressedTool = true;
+                    assertEquals(
+                            "search",
+                            resultBlock.getName(),
+                            "ToolResultBlock name should be preserved");
+                    // Output should be compressed, not the original
+                    String outputText =
+                            resultBlock.getOutput().stream()
+                                    .filter(TextBlock.class::isInstance)
+                                    .map(TextBlock.class::cast)
+                                    .map(TextBlock::getText)
+                                    .collect(Collectors.joining());
+                    assertNotEquals(
+                            largeToolOutput,
+                            outputText,
+                            "ToolResultBlock output should be compressed, not original");
+                }
+            }
+        }
+
+        assertTrue(
+                foundCompressedTool,
+                "Should find a compressed TOOL message with preserved ToolResultBlock structure");
     }
 }
