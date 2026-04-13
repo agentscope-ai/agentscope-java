@@ -23,20 +23,20 @@ For most cases, all-in-one is enough. Switch to core + extensions when you need 
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.9'
+implementation 'io.agentscope:agentscope:1.0.11'
 ```
 
 ### Included Dependencies
 
 The all-in-one package includes these dependencies by default:
 
-- DashScope SDK (Qwen series models)
+- DashScope model support (Qwen series models, via native HTTP calls, no additional SDK required)
 - MCP SDK (Model Context Protocol)
 - Reactor Core, Jackson, SLF4J (base frameworks)
 
@@ -136,13 +136,13 @@ For fine-grained dependency control, use `agentscope-core` with extension module
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.9'
+implementation 'io.agentscope:agentscope-core:1.0.11'
 ```
 
 ### Extension Modules
@@ -185,6 +185,7 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 |--------|---------|-------------------|
 | [agentscope-extensions-scheduler-common](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common) | Scheduler Common | `io.agentscope:agentscope-extensions-scheduler-common` |
 | [agentscope-extensions-scheduler-xxl-job](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job) | XXL-Job Scheduler | `io.agentscope:agentscope-extensions-scheduler-xxl-job` |
+| [agentscope-extensions-scheduler-quartz](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz) | Quartz Scheduler | `io.agentscope:agentscope-extensions-scheduler-quartz` |
 
 #### User Interface
 
@@ -202,7 +203,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -214,7 +215,7 @@ Extension modules automatically include their required third-party dependencies.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -224,6 +225,8 @@ Additional starters:
 |---------|---------|-------------------|
 | agentscope-a2a-spring-boot-starter | A2A Integration | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI Integration | `io.agentscope:agentscope-agui-spring-boot-starter` |
+| agentscope-chat-completions-web-starter | Chat Completions Web Integration | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-nacos-spring-boot-starter | Nacos Integration | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus
 
@@ -231,7 +234,7 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -241,6 +244,6 @@ Additional starters:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
