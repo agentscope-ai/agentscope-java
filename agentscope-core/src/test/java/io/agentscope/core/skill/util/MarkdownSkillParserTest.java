@@ -296,7 +296,7 @@ class MarkdownSkillParserTest {
         }
 
         @Test
-        @DisplayName("Should throw exception for list format")
+        @DisplayName("Should throw exception for preceding list format")
         void testListFormat() {
             String markdown = "---\n- item1\n- item2\n---\nContent";
 
@@ -304,7 +304,7 @@ class MarkdownSkillParserTest {
                     assertThrows(
                             IllegalArgumentException.class,
                             () -> MarkdownSkillParser.parse(markdown));
-            assertTrue(exception.getMessage().contains("Invalid YAML line"));
+            assertTrue(exception.getMessage().contains("List item without a preceding key"));
         }
     }
 
@@ -533,6 +533,260 @@ class MarkdownSkillParserTest {
             assertTrue(toString.contains("ParsedMarkdown"));
             assertTrue(toString.contains("metadata"));
             assertTrue(toString.contains("content"));
+        }
+    }
+
+    @Nested
+    @DisplayName("ParseMarkdownList Tests")
+    class ParseMarkdownListTests {
+        @Test
+        @DisplayName("Test parsing YAML with single list item")
+        void testParseSingleListItem() {
+            String yaml = "name: test\n" + "tags:\n" + "  - feature1";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("feature1", result.get("tags"));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with multiple list items")
+        void testParseMultipleListItems() {
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - feature1\n"
+                            + "  - feature2\n"
+                            + "  - feature3";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("feature1,feature2,feature3", result.get("tags"));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with list in the middle")
+        void testParseListInMiddle() {
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - feature1\n"
+                            + "  - feature2\n"
+                            + "description: A test skill";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("feature1,feature2", result.get("tags"));
+            assertEquals("A test skill", result.get("description"));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with multiple lists")
+        void testParseMultipleLists() {
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - tag1\n"
+                            + "  - tag2\n"
+                            + "description: A test skill\n"
+                            + "inputs:\n"
+                            + "  - input1\n"
+                            + "  - input2\n"
+                            + "  - input3";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("tag1,tag2", result.get("tags"));
+            assertEquals("A test skill", result.get("description"));
+            assertEquals("input1,input2,input3", result.get("inputs"));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with list item without key should throw exception")
+        void testParseListItemWithoutKey() {
+            String yaml = "- item1\n" + "- item2";
+
+            assertThrows(IllegalArgumentException.class, () -> parseYaml(yaml));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with empty list")
+        void testParseEmptyList() {
+            String yaml = "name: test\n" + "tags:\n" + "description: A test skill";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("A test skill", result.get("description"));
+        }
+
+        @Test
+        @DisplayName("Test parsing YAML with list containing spaces")
+        void testParseListWithSpaces() {
+            String yaml = "name: test\n" + "tags:\n" + "  -   feature1   \n" + "  - feature2";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("feature1,feature2", result.get("tags"));
+        }
+
+        @Test
+        @DisplayName("Test parsing markdown with list in frontmatter")
+        void testParseMarkdownWithListInFrontmatter() {
+            String markdown =
+                    "---\n"
+                            + "name: test_skill\n"
+                            + "tags:\n"
+                            + "  - ai\n"
+                            + "  - ml\n"
+                            + "  - deep-learning\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Test Skill\n"
+                            + "This is a test skill description.";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("test_skill", parsed.getMetadata().get("name"));
+            assertEquals("ai,ml,deep-learning", parsed.getMetadata().get("tags"));
+            assertEquals("1.0.0", parsed.getMetadata().get("version"));
+            assertTrue(parsed.getContent().contains("# Test Skill"));
+        }
+
+        @Test
+        @DisplayName("Test parsing markdown with multiple lists in frontmatter")
+        void testParseMarkdownWithMultipleLists() {
+            String markdown =
+                    "---\n"
+                            + "name: vm_renew_skill\n"
+                            + "tags:\n"
+                            + "  - vm\n"
+                            + "  - renew\n"
+                            + "inputs:\n"
+                            + "  - vm_id\n"
+                            + "  - duration\n"
+                            + "outputs:\n"
+                            + "  - result\n"
+                            + "  - status\n"
+                            + "version: 2.0.0\n"
+                            + "---\n"
+                            + "# VM Renew Skill\n"
+                            + "This skill renews virtual machines.";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertTrue(parsed.hasFrontmatter());
+            assertEquals("vm_renew_skill", parsed.getMetadata().get("name"));
+            assertEquals("vm,renew", parsed.getMetadata().get("tags"));
+            assertEquals("vm_id,duration", parsed.getMetadata().get("inputs"));
+            assertEquals("result,status", parsed.getMetadata().get("outputs"));
+            assertEquals("2.0.0", parsed.getMetadata().get("version"));
+            assertTrue(parsed.getContent().contains("# VM Renew Skill"));
+        }
+
+        @Test
+        @DisplayName("Test generating markdown with list values")
+        void testGenerateMarkdownWithList() {
+            Map<String, String> metadata =
+                    Map.of(
+                            "name", "test_skill",
+                            "tags", "ai,ml,deep-learning",
+                            "version", "1.0.0");
+            String content = "# Test Skill\nThis is content.";
+
+            String generated = MarkdownSkillParser.generate(metadata, content);
+
+            assertTrue(generated.startsWith("---\n"));
+            assertTrue(generated.contains("name: test_skill"));
+            assertTrue(generated.contains("version: 1.0.0"));
+            assertTrue(generated.contains("# Test Skill"));
+        }
+
+        @Test
+        @DisplayName("Test round-trip: parse and generate with list")
+        void testRoundTripWithList() {
+            String original =
+                    "---\n"
+                            + "name: round_trip_test\n"
+                            + "tags:\n"
+                            + "  - tag1\n"
+                            + "  - tag2\n"
+                            + "  - tag3\n"
+                            + "version: 1.0.0\n"
+                            + "---\n"
+                            + "# Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(original);
+            String regenerated =
+                    MarkdownSkillParser.generate(parsed.getMetadata(), parsed.getContent());
+
+            // Parse again to verify round-trip
+            ParsedMarkdown reparsed = MarkdownSkillParser.parse(regenerated);
+
+            assertEquals(parsed.getMetadata().get("name"), reparsed.getMetadata().get("name"));
+            assertEquals("tag1,tag2,tag3", reparsed.getMetadata().get("tags"));
+            assertEquals(
+                    parsed.getMetadata().get("version"), reparsed.getMetadata().get("version"));
+        }
+
+        @Test
+        @DisplayName("Test parsing empty markdown")
+        void testParseEmptyMarkdown() {
+            ParsedMarkdown parsed = MarkdownSkillParser.parse("");
+
+            assertFalse(parsed.hasFrontmatter());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Test parsing markdown without frontmatter")
+        void testParseMarkdownWithoutFrontmatter() {
+            String markdown = "# Just Content\nNo frontmatter here.";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertFalse(parsed.hasFrontmatter());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("# Just Content\nNo frontmatter here.", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Test parsing null markdown")
+        void testParseNullMarkdown() {
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(null);
+
+            assertFalse(parsed.hasFrontmatter());
+            assertTrue(parsed.getMetadata().isEmpty());
+            assertEquals("", parsed.getContent());
+        }
+
+        @Test
+        @DisplayName("Test parsing list with special characters in items")
+        void testParseListWithSpecialCharacters() {
+            String yaml =
+                    "name: test\n"
+                            + "tags:\n"
+                            + "  - tag-with-dash\n"
+                            + "  - tag_with_underscore\n"
+                            + "  - tag123";
+
+            Map<String, String> result = parseYaml(yaml);
+
+            assertEquals("test", result.get("name"));
+            assertEquals("tag-with-dash,tag_with_underscore,tag123", result.get("tags"));
+        }
+
+        private Map<String, String> parseYaml(String yaml) {
+            String markdown = "---\n" + yaml + "\n---\n";
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+            return parsed.getMetadata();
         }
     }
 }
