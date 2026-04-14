@@ -758,30 +758,27 @@ public class MysqlSession implements Session {
 
     /**
      * Truncate session table from the database (for testing or cleanup).
-     * <p>
-     * This method clears all session records by executing a TRUNCATE TABLE statement on the
+     *
+     * <p>This method clears all session records by executing a TRUNCATE TABLE statement on the
      * sessions table. TRUNCATE is faster than DELETE as it resets the table without logging
      * individual row deletions and reclaims storage space immediately.
      *
-     * <p>
-     * <strong>Note:</strong> The TRUNCATE operation requires DROP privileges in MySQL.
+     * <p><strong>Note:</strong> In MySQL, {@code TRUNCATE TABLE} is DDL, triggers an implicit
+     * commit, and is not rollbackable. For that reason, this method executes the statement
+     * directly instead of routing it through {@link #executeInWriteTransaction(Connection,
+     * SqlOperation)}.
+     *
+     * <p><strong>Note:</strong> The TRUNCATE operation requires DROP privileges in MySQL.
      *
      * @return typically 0 if successful
      */
     public int truncateAllSessions() {
         String clearSql = "TRUNCATE TABLE " + getFullTableName();
 
-        try (Connection conn = dataSource.getConnection()) {
-            int[] truncateResult = new int[1];
-            executeInWriteTransaction(
-                    conn,
-                    () -> {
-                        try (PreparedStatement stmt = conn.prepareStatement(clearSql)) {
-                            truncateResult[0] = stmt.executeUpdate();
-                        }
-                    });
-            return truncateResult[0];
-        } catch (Exception e) {
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(clearSql)) {
+            return stmt.executeUpdate();
+        } catch (SQLException e) {
             throw new RuntimeException("Failed to truncate sessions", e);
         }
     }

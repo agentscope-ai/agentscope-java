@@ -479,8 +479,9 @@ public class MysqlSessionTest {
     }
 
     @Test
-    @DisplayName("Should commit truncateAllSessions when connection auto-commit is disabled")
-    void testTruncateAllSessionsCommitsWhenAutoCommitDisabled() throws SQLException {
+    @DisplayName(
+            "Should execute truncateAllSessions directly when connection auto-commit is disabled")
+    void testTruncateAllSessionsExecutesDirectlyWhenAutoCommitDisabled() throws SQLException {
         when(mockConnection.getAutoCommit()).thenReturn(false);
         when(mockStatement.execute()).thenReturn(true);
         when(mockStatement.executeUpdate()).thenReturn(0);
@@ -489,8 +490,9 @@ public class MysqlSessionTest {
         int success = session.truncateAllSessions();
 
         assertEquals(0, success);
-        verify(mockConnection).commit();
+        verify(mockConnection, never()).commit();
         verify(mockConnection, never()).setAutoCommit(true);
+        verify(mockConnection, never()).setAutoCommit(false);
     }
 
     @Test
