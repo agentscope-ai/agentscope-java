@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.MessageParam;
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Ground truth tests for AnthropicMultiAgentFormatter - compares with Python implementation.

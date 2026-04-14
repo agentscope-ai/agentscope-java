@@ -16,8 +16,8 @@
 
 package io.agentscope.core.util;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import java.lang.reflect.Type;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * Interface for JSON serialization and deserialization operations.

@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.agent;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Interface for agents that support streaming events during execution.

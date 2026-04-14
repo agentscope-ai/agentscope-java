@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.memory.mem0;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.util.JsonCodec;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
@@ -28,6 +27,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.core.type.TypeReference;
 
 /**
  * HTTP client for interacting with the Mem0 API.
