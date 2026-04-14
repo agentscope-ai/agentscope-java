@@ -298,6 +298,15 @@ public class JsonSession implements Session {
         }
     }
 
+    @Override
+    public void delete(SessionKey sessionKey, String key) {
+        try {
+            Files.deleteIfExists(getStatePath(sessionKey, key));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to delete state: " + key, e);
+        }
+    }
+
     /**
      * List all session keys.
      *

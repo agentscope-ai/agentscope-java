@@ -21,6 +21,7 @@ import io.agentscope.core.skill.util.MarkdownSkillParser.ParsedMarkdown;
 import java.io.IOException;
 import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -172,6 +173,8 @@ public final class SkillFileSystemHelper {
             return false;
         }
 
+        int size = skills.size();
+        int saveCount = 0;
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
@@ -181,7 +184,7 @@ public final class SkillFileSystemHelper {
                     if (!force) {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
-                        return false;
+                        continue; // Skip to the next skill if force=false
                     } else {
                         logger.info("Overwriting existing skill directory: {}", skillName);
                         deleteDirectory(skillDir);
@@ -214,10 +217,15 @@ public final class SkillFileSystemHelper {
                     }
                 }
 
+                saveCount++;
                 logger.info("Successfully saved skill: {}", skillName);
             }
+            boolean allSaved = (size == saveCount);
+            if (!allSaved) {
+                logger.warn("Not all skills were saved. Saved {} of {}", saveCount, size);
+            }
 
-            return true;
+            return allSaved;
         } catch (IOException e) {
             logger.error("Failed to save skills", e);
             throw new RuntimeException("Failed to save skills", e);
@@ -353,34 +361,70 @@ public final class SkillFileSystemHelper {
         return hook;
     }
 
-    private static Map<String, String> loadResources(Path skillDir, Path skillFile)
-            throws IOException {
+    private static Map<String, String> loadResources(Path skillDir, Path skillFile) {
         Map<String, String> resources = new HashMap<>();
-        try (Stream<Path> paths = Files.walk(skillDir)) {
-            paths.filter(Files::isRegularFile)
-                    .filter(p -> !p.equals(skillFile))
-                    .forEach(
-                            p -> {
-                                String relativePath =
-                                        skillDir.relativize(p).toString().replace('\\', '/');
-                                try {
-                                    String content = Files.readString(p, StandardCharsets.UTF_8);
-                                    resources.put(relativePath, content);
-                                } catch (MalformedInputException e) {
-                                    try {
-                                        byte[] bytes = Files.readAllBytes(p);
-                                        String base64 = Base64.getEncoder().encodeToString(bytes);
-                                        resources.put(relativePath, "base64:" + base64);
-                                    } catch (IOException ex) {
-                                        logger.warn(
-                                                "Failed to read binary resource file: {}", p, ex);
-                                    }
-                                } catch (IOException e) {
-                                    logger.warn("Failed to read resource file: {}", p, e);
-                                }
-                            });
-        }
+        // Recursive traversal starting from the root directory
+        collectResources(skillDir, skillDir, skillFile, resources);
         return resources;
+    }
+
+    private static void collectResources(
+            Path currentDir, Path skillDir, Path skillFile, Map<String, String> resources) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(currentDir)) {
+            for (Path entry : stream) {
+                if (Files.isDirectory(entry)) {
+                    if (!entry.getFileName().toString().startsWith(".")) {
+                        collectResources(entry, skillDir, skillFile, resources);
+                    }
+                } else {
+                    if (isValidResource(entry, skillFile)) {
+                        readAndPutResource(entry, skillDir, resources);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to open directory: {}", currentDir, e);
+        }
+    }
+
+    private static void readAndPutResource(
+            Path file, Path skillDir, Map<String, String> resources) {
+        String relativePath = skillDir.relativize(file).toString().replace('\\', '/');
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            resources.put(relativePath, content);
+        } catch (MalformedInputException e) {
+            try {
+                byte[] bytes = Files.readAllBytes(file);
+                String base64 = Base64.getEncoder().encodeToString(bytes);
+                resources.put(relativePath, "base64:" + base64);
+            } catch (IOException ex) {
+                logger.warn("Failed to read binary resource file: {}", file, ex);
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to read resource file: {}", file, e);
+        }
+    }
+
+    private static boolean isValidResource(Path file, Path skillFile) {
+        if (file.equals(skillFile)) {
+            return false;
+        }
+
+        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
+            return false;
+        }
+
+        if (file.getFileName().toString().startsWith(".")) {
+            return false;
+        }
+
+        try {
+            return !Files.isHidden(file);
+        } catch (IOException e) {
+            logger.warn("Failed to check attributes for file: {}", file, e);
+            return true;
+        }
     }
 
     private static Optional<Path> findSkillDirectoryByName(Path baseDir, String skillName) {

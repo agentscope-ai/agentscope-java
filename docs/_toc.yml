@@ -54,8 +54,8 @@ parts:
     title: Multimodal
   - file: en/task/structured-output
     title: Structured Output
-  - file: en/task/studio
-    title: Studio
+  - file: en/task/observability
+    title: Observability & Studio
   - file: en/task/agui
     title: AG-UI Protocol
   - file: en/task/a2a
@@ -64,6 +64,8 @@ parts:
     title: MsgHub
   - file: en/task/ai-coding
     title: Coding with AI
+  - file: en/task/online-training.md
+    title: Online Training
 
 - caption: Multi Agent
   chapters:
@@ -108,7 +110,7 @@ parts:
   - file: zh/task/agent-as-tool
     title: Agent as Tool
   - file: zh/task/agent-skill
-    title: 智能体技能
+    title: Agent Skill
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
@@ -127,8 +129,8 @@ parts:
     title: 多模态
   - file: zh/task/structured-output
     title: 结构化输出
-  - file: zh/task/studio
-    title: Studio
+  - file: zh/task/observability
+    title: 可观测与调试
   - file: zh/task/agui
     title: AG-UI 协议
   - file: zh/task/a2a
@@ -137,6 +139,8 @@ parts:
     title: MsgHub
   - file: zh/task/ai-coding
     title: 使用 AI 编程
+  - file: zh/task/online-training.md
+    title: 在线训练
 
 - caption: 多智能体
   chapters:

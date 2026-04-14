@@ -25,20 +25,20 @@ AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.9'
+implementation 'io.agentscope:agentscope:1.0.11'
 ```
 
 ### 默认包含的依赖
 
 All-in-one 包默认带以下依赖，不用额外配置：
 
-- DashScope SDK（通义千问系列模型）
+- DashScope 模型支持（通义千问系列模型，通过原生 HTTP 调用，无需额外 SDK）
 - MCP SDK（模型上下文协议）
 - Reactor Core、Jackson、SLF4J（基础框架）
 
@@ -140,13 +140,13 @@ All-in-one 包默认带以下依赖，不用额外配置：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.9'
+implementation 'io.agentscope:agentscope-core:1.0.11'
 ```
 
 ### 扩展模块
@@ -189,6 +189,7 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 |-----|------|-----------|
 | [agentscope-extensions-scheduler-common](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common) | 调度通用模块 | `io.agentscope:agentscope-extensions-scheduler-common` |
 | [agentscope-extensions-scheduler-xxl-job](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job) | XXL-Job 调度 | `io.agentscope:agentscope-extensions-scheduler-xxl-job` |
+| [agentscope-extensions-scheduler-quartz](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-quartz) | Quartz 调度 | `io.agentscope:agentscope-extensions-scheduler-quartz` |
 
 #### 用户界面
 
@@ -206,7 +207,7 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -218,7 +219,7 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -228,6 +229,8 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 |---------|------|-----------|
 | agentscope-a2a-spring-boot-starter | A2A 集成 | `io.agentscope:agentscope-a2a-spring-boot-starter` |
 | agentscope-agui-spring-boot-starter | AG-UI 集成 | `io.agentscope:agentscope-agui-spring-boot-starter` |
+| agentscope-chat-completions-web-starter | Chat Completions Web 集成 | `io.agentscope:agentscope-chat-completions-web-starter` |
+| agentscope-nacos-spring-boot-starter | Nacos 集成 | `io.agentscope:agentscope-nacos-spring-boot-starter` |
 
 ### Quarkus
 
@@ -235,7 +238,7 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
 
@@ -245,6 +248,6 @@ implementation 'io.agentscope:agentscope-core:1.0.9'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.9</version>
+    <version>1.0.11</version>
 </dependency>
 ```
