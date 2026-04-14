@@ -447,6 +447,7 @@ public class ElasticsearchStoreTest {
         List<Double> vector = new ArrayList<>();
         for (int i = 0; i < TEST_DIMENSIONS; i++) vector.add(0.0);
         source.put("vector", vector);
+        source.put("payload", "{\"k\":\"v\"}");
 
         store = createMockStoreForSearch(List.of(source));
 
@@ -464,6 +465,7 @@ public class ElasticsearchStoreTest {
                             assertEquals(1, results.size());
                             assertEquals("doc-1", results.get(0).getMetadata().getDocId());
                             assertEquals(0.95, results.get(0).getScore());
+                            assertEquals("v", results.get(0).getMetadata().getPayloadValue("k"));
                         })
                 .verifyComplete();
     }

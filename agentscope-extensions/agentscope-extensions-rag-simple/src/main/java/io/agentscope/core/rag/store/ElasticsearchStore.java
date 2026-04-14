@@ -34,6 +34,7 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
 import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -41,6 +42,7 @@ import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -363,6 +365,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
             properties.put(FIELD_CHUNK_ID, idProperty);
             properties.put(FIELD_CONTENT, contentProperty);
             properties.put(FIELD_VECTOR, vectorProperty);
+            properties.put(FIELD_PAYLOAD, contentProperty);
 
             TypeMapping mapping = new TypeMapping.Builder().properties(properties).build();
 
@@ -405,10 +408,6 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         DocumentMetadata meta = doc.getMetadata();
         map.put(FIELD_DOC_ID, meta.getDocId());
         map.put(FIELD_CHUNK_ID, meta.getChunkId());
-        Map<String, Object> customPayload = meta.getPayload();
-        if (customPayload != null && !customPayload.isEmpty()) {
-            map.put(FIELD_PAYLOAD, meta.getPayload());
-        }
 
         // Serialize ContentBlock to JSON string to ensure safe storage/retrieval
         try {
@@ -417,6 +416,11 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
         } catch (Exception e) {
             log.warn("Failed to serialize content, using text representation", e);
             map.put(FIELD_CONTENT, meta.getContentText());
+        }
+
+        Map<String, Object> customPayload = meta.getPayload();
+        if (customPayload != null && !customPayload.isEmpty()) {
+            map.put(FIELD_PAYLOAD, JsonUtils.getJsonCodec().toJson(customPayload));
         }
 
         return map;
@@ -431,6 +435,7 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
             String docId = (String) source.get(FIELD_DOC_ID);
             String chunkId = (String) source.get(FIELD_CHUNK_ID);
             String contentJson = (String) source.get(FIELD_CONTENT);
+            String payloadJson = (String) source.get(FIELD_PAYLOAD);
 
             // Reconstruct ContentBlock
             ContentBlock content;
@@ -441,7 +446,19 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
                 content = TextBlock.builder().text(contentJson).build();
             }
 
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
+            Map<String, Object> customPayload = new HashMap<>();
+            if (payloadJson != null && !payloadJson.isBlank()) {
+                try {
+                    customPayload =
+                            JsonUtils.getJsonCodec()
+                                    .fromJson(payloadJson, new TypeReference<>() {});
+                } catch (Exception e) {
+                    log.warn("Failed to deserialize payload, using empty map", e);
+                }
+            }
+
+            DocumentMetadata metadata =
+                    new DocumentMetadata(content, docId, chunkId, customPayload);
             Document doc = new Document(metadata);
 
             // Set score if present
