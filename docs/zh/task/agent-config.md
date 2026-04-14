@@ -254,10 +254,10 @@ ExecutionConfig modelConfig = ExecutionConfig.builder()
 **默认配置**（ExecutionConfig.MODEL_DEFAULTS）：
 - 超时：5 分钟
 - 最大尝试：3 次（初始 + 2 次重试）
-- 初始退避：1 秒
-- 最大退避：10 秒
+- 初始退避：2 秒
+- 最大退避：30 秒
 - 退避倍数：2.0（指数退避）
-- 重试条件：所有错误
+- 重试条件：可重试错误（429、5xx、超时、网络 IO 错误）
 
 **使用场景**：
 - 调整模型 API 的超时时间
@@ -460,7 +460,7 @@ Formatter 负责在 AgentScope 格式和模型 API 格式之间转换。
 提供 Agent 可用的技能集。它通过提供工具函数让 Agent 加载技能，并通过 Hook 机制自动注入技能提示。
 
 ```java
-SkillBox skillBox = new SkillBox();
+SkillBox skillBox = new SkillBox(new Toolkit());
 .skillBox(skillBox)
 ```
 
@@ -560,12 +560,12 @@ public class ComprehensiveAgentExample {
         public CityWeather() {}
     }
 
-    // 5. 定义技能类
-    public static class WeatherSkill extends AgentSkill {
-        public WeatherSkill() {
-            super("weather", "weather", "weather", null);
-        }
-    }
+    // 5. 定义技能
+    AgentSkill weatherSkill = AgentSkill.builder()
+        .name("weather")
+        .description("天气查询技能")
+        .skillContent("# Weather Skill\n查询指定城市的天气信息。")
+        .build();
 
     public static void main(String[] args) {
         // ============================================================
@@ -636,7 +636,7 @@ public class ComprehensiveAgentExample {
         // 第五步：配置技能
         // ============================================================
 
-        SkillBox skillBox = new SkillBox();
+        SkillBox skillBox = new SkillBox(new Toolkit());
         skillBox.registerSkill(new WeatherSkill());
 
         // ============================================================

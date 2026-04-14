@@ -54,8 +54,8 @@ parts:
     title: Multimodal
   - file: en/task/structured-output
     title: Structured Output
-  - file: en/task/studio
-    title: Studio
+  - file: en/task/observability
+    title: Observability & Studio
   - file: en/task/agui
     title: AG-UI Protocol
   - file: en/task/a2a
@@ -129,8 +129,8 @@ parts:
     title: 多模态
   - file: zh/task/structured-output
     title: 结构化输出
-  - file: zh/task/studio
-    title: Studio
+  - file: zh/task/observability
+    title: 可观测与调试
   - file: zh/task/agui
     title: AG-UI 协议
   - file: zh/task/a2a

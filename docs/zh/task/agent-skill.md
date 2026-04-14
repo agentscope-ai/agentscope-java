@@ -150,7 +150,7 @@ ReActAgent agent = ReActAgent.builder()
 ## 简化的集成方式
 
 ```java
-SkillBox skillBox = new SkillBox();
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 skillBox.registerSkill(dataSkill);
 

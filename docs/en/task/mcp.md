@@ -157,9 +157,9 @@ String groupName = "filesystem";
 toolkit.createToolGroup(groupName, "Tools for operating system files", true);
 
 // Register MCP tools in a group
-toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
+toolkit.registration().mcpClient(mcpClient).group(groupName).apply();
 
-// Create agent that only uses specific groups
+// Create agent with toolkit (only active group tools available)
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
@@ -222,7 +222,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
-> **Note**: Query parameters only apply to HTTP transports (SSE and HTTP). They are ignored for StdIO transport.
+> **Note**: Query parameters and HTTP headers only apply to HTTP transports (SSE and HTTP). They are silently ignored for StdIO transport.
 
 ### Synchronous vs Asynchronous Clients
 

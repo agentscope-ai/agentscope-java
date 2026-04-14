@@ -160,8 +160,8 @@ ConfigurableAgentCard agentCard = new ConfigurableAgentCard.Builder()
     .description("智能助手")
     .version("1.0.0")
     .skills(List.of(
-        new AgentSkill("text-generation", "文本生成"),
-        new AgentSkill("question-answering", "问答")))
+        AgentSkill.builder().name("text-generation").description("文本生成").skillContent("").build(),
+        AgentSkill.builder().name("question-answering").description("问答").skillContent("").build()))
     .build();
 
 AgentScopeA2aServer.builder(agentBuilder)
