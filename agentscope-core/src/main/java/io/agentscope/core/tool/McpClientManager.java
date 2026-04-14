@@ -178,7 +178,12 @@ class McpClientManager {
                                                     toolPresetParams != null
                                                             ? toolPresetParams.keySet()
                                                             : Collections.emptySet()),
-                                            mcpClientWrapper);
+                                            mcpTool.outputSchema() != null
+                                                    ? new ConcurrentHashMap<>(
+                                                            mcpTool.outputSchema())
+                                                    : null,
+                                            mcpClientWrapper,
+                                            toolPresetParams);
 
                             // Register with group, MCP client name, and preset parameters via
                             // callback

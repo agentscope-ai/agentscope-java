@@ -61,6 +61,7 @@ public class McpTool implements AgentTool {
     private final String name;
     private final String description;
     private final Map<String, Object> parameters;
+    private final Map<String, Object> outputSchema;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
 
@@ -77,7 +78,7 @@ public class McpTool implements AgentTool {
             String description,
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper) {
-        this(name, description, parameters, clientWrapper, null);
+        this(name, description, parameters, null, clientWrapper, null);
     }
 
     /**
@@ -95,9 +96,30 @@ public class McpTool implements AgentTool {
             Map<String, Object> parameters,
             McpClientWrapper clientWrapper,
             Map<String, Object> presetArguments) {
+        this(name, description, parameters, null, clientWrapper, presetArguments);
+    }
+
+    /**
+     * Constructs a new McpTool with an optional output schema and preset arguments.
+     *
+     * @param name the tool name
+     * @param description the tool description
+     * @param parameters the JSON schema for tool parameters
+     * @param outputSchema the JSON schema for tool outputs (can be null)
+     * @param clientWrapper the MCP client wrapper
+     * @param presetArguments preset arguments to merge with each call (can be null)
+     */
+    public McpTool(
+            String name,
+            String description,
+            Map<String, Object> parameters,
+            Map<String, Object> outputSchema,
+            McpClientWrapper clientWrapper,
+            Map<String, Object> presetArguments) {
         this.name = name;
         this.description = description;
         this.parameters = parameters;
+        this.outputSchema = outputSchema != null ? new HashMap<>(outputSchema) : null;
         this.clientWrapper = clientWrapper;
         this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
     }
@@ -130,6 +152,11 @@ public class McpTool implements AgentTool {
     @Override
     public Map<String, Object> getParameters() {
         return parameters;
+    }
+
+    @Override
+    public Map<String, Object> getOutputSchema() {
+        return outputSchema != null ? new HashMap<>(outputSchema) : null;
     }
 
     /**

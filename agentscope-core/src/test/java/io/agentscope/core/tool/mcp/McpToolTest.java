@@ -61,8 +61,29 @@ class McpToolTest {
         assertEquals("test-tool", tool.getName());
         assertEquals("A test tool", tool.getDescription());
         assertEquals(parameters, tool.getParameters());
+        assertNull(tool.getOutputSchema());
         assertEquals("test-client", tool.getClientName());
         assertNull(tool.getPresetArguments());
+    }
+
+    @Test
+    void testConstructor_WithOutputSchema() {
+        Map<String, Object> outputSchema = new HashMap<>();
+        outputSchema.put("type", "object");
+        outputSchema.put("properties", Map.of("answer", Map.of("type", "string")));
+
+        McpTool tool =
+                new McpTool(
+                        "test-tool",
+                        "A test tool",
+                        parameters,
+                        outputSchema,
+                        mockClientWrapper,
+                        null);
+
+        assertNotNull(tool.getOutputSchema());
+        assertEquals("object", tool.getOutputSchema().get("type"));
+        assertTrue(tool.getOutputSchema().containsKey("properties"));
     }
 
     @Test
