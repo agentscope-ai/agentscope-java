@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ToolCallsAccumulator;
 import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
@@ -248,6 +249,86 @@ class OpenAIStreamingToolCallTest {
         assertEquals("no_args_tool", toolUse.getName());
         assertNotNull(toolUse.getInput());
         assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should merge malformed trailing chunk with non-null name")
+    void testMalformedTrailingChunkWithNameStillAccumulates() {
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+
+        OpenAIResponse firstChunkResponse = new OpenAIResponse();
+        firstChunkResponse.setId("chatcmpl-tool");
+        firstChunkResponse.setObject("chat.completion.chunk");
+
+        OpenAIChoice firstChoice = new OpenAIChoice();
+        firstChoice.setIndex(0);
+
+        OpenAIMessage firstDelta = new OpenAIMessage();
+        List<OpenAIToolCall> firstToolCalls = new ArrayList<>();
+
+        OpenAIToolCall firstToolCall = new OpenAIToolCall();
+        firstToolCall.setId("call_abc123");
+        firstToolCall.setIndex(0);
+        firstToolCall.setType("function");
+
+        OpenAIFunction firstFunction = new OpenAIFunction();
+        firstFunction.setName("retrieveFromMemory");
+        firstFunction.setArguments("{\"keywords\":[\"关注\"]");
+        firstToolCall.setFunction(firstFunction);
+        firstToolCalls.add(firstToolCall);
+
+        firstDelta.setToolCalls(firstToolCalls);
+        firstChoice.setDelta(firstDelta);
+        firstChunkResponse.setChoices(List.of(firstChoice));
+
+        ChatResponse firstChunk = parser.parseResponse(firstChunkResponse, Instant.now());
+        firstChunk.getContent().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .forEach(accumulator::add);
+
+        OpenAIResponse malformedTrailingResponse = new OpenAIResponse();
+        malformedTrailingResponse.setId("chatcmpl-tool");
+        malformedTrailingResponse.setObject("chat.completion.chunk");
+
+        OpenAIChoice trailingChoice = new OpenAIChoice();
+        trailingChoice.setIndex(0);
+
+        OpenAIMessage trailingDelta = new OpenAIMessage();
+        List<OpenAIToolCall> trailingToolCalls = new ArrayList<>();
+
+        OpenAIToolCall trailingToolCall = new OpenAIToolCall();
+        trailingToolCall.setId(null);
+        trailingToolCall.setIndex(0);
+        trailingToolCall.setType("function");
+
+        OpenAIFunction trailingFunction = new OpenAIFunction();
+        trailingFunction.setName("retrieveFromMemory");
+        trailingFunction.setArguments("}");
+        trailingToolCall.setFunction(trailingFunction);
+        trailingToolCalls.add(trailingToolCall);
+
+        trailingDelta.setToolCalls(trailingToolCalls);
+        trailingChoice.setDelta(trailingDelta);
+        malformedTrailingResponse.setChoices(List.of(trailingChoice));
+
+        ChatResponse trailingChunk = parser.parseResponse(malformedTrailingResponse, Instant.now());
+        trailingChunk.getContent().stream()
+                .filter(ToolUseBlock.class::isInstance)
+                .map(ToolUseBlock.class::cast)
+                .forEach(accumulator::add);
+
+        List<ToolUseBlock> accumulatedToolCalls = accumulator.buildAllToolCalls();
+
+        assertEquals(1, accumulatedToolCalls.size());
+        ToolUseBlock accumulated = accumulatedToolCalls.get(0);
+        assertEquals("call_abc123", accumulated.getId());
+        assertEquals("retrieveFromMemory", accumulated.getName());
+        assertEquals("{\"keywords\":[\"关注\"]}", accumulated.getContent());
+        assertNotNull(accumulated.getInput());
+        assertEquals(1, accumulated.getInput().size());
+        assertTrue(accumulated.getInput().containsKey("keywords"));
+        assertEquals(List.of("关注"), accumulated.getInput().get("keywords"));
     }
 
     @Test
