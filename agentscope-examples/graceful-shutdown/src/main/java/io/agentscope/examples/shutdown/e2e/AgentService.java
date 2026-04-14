@@ -89,6 +89,9 @@ public class AgentService {
     @Value("${agent.shutdown-partial-reasoning-policy:save}")
     private String partialReasoningPolicy;
 
+    @Value("${agent.shutdown-hook-is-register:true}")
+    private boolean isRegister;
+
     @PostConstruct
     public void initShutdownConfig() {
         Duration gracefulShutdownTime =
@@ -100,7 +103,7 @@ public class AgentService {
         GracefulShutdownManager.getInstance()
                 .setConfig(
                         new GracefulShutdownConfig(
-                                gracefulShutdownTime, shutdownPartialReasoningPolicy));
+                                gracefulShutdownTime, shutdownPartialReasoningPolicy, isRegister));
     }
 
     /**

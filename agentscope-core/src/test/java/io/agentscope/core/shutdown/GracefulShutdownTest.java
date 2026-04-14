@@ -113,6 +113,35 @@ class GracefulShutdownTest {
         void configRejectsNullPolicy() {
             assertThrows(NullPointerException.class, () -> new GracefulShutdownConfig(null, null));
         }
+
+        @Test
+        @DisplayName("DEFAULT config has isRegister set to false")
+        void defaultConfigJvmHookDisabled() {
+            GracefulShutdownConfig cfg = GracefulShutdownConfig.DEFAULT;
+            assertFalse(cfg.isRegister());
+        }
+
+        @Test
+        @DisplayName("2-param constructor sets isRegister to false")
+        void twoParamConstructorJvmHookEnabled() {
+            GracefulShutdownConfig cfg =
+                    new GracefulShutdownConfig(Duration.ofSeconds(10), PartialReasoningPolicy.SAVE);
+            assertFalse(cfg.isRegister());
+        }
+
+        @Test
+        @DisplayName("3-param constructor allows explicit isRegister value")
+        void threeParamConstructorExplicitValue() {
+            GracefulShutdownConfig cfgWithHook =
+                    new GracefulShutdownConfig(
+                            Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, true);
+            assertTrue(cfgWithHook.isRegister());
+
+            GracefulShutdownConfig cfgWithoutHook =
+                    new GracefulShutdownConfig(
+                            Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, false);
+            assertFalse(cfgWithoutHook.isRegister());
+        }
     }
 
     // ==================== GracefulShutdownManager ====================
@@ -573,6 +602,40 @@ class GracefulShutdownTest {
                     new io.agentscope.core.hook.ErrorEvent(agent, new RuntimeException("test"));
 
             StepVerifier.create(hook.onEvent(event)).expectNext(event).verifyComplete();
+        }
+    }
+
+    // ==================== AgentScopeJvmShutdownHook ====================
+
+    @Nested
+    @DisplayName("AgentScopeJvmShutdownHook")
+    class JvmShutdownHookTests {
+
+        @Test
+        @DisplayName("register does nothing when isRegister is false")
+        void registerSkippedWhenDisabled() {
+            AgentScopeJvmShutdownHook.resetForTesting();
+            manager.setConfig(
+                    new GracefulShutdownConfig(
+                            Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, false));
+
+            // Should not throw and should not register the hook
+            assertDoesNotThrow(() -> AgentScopeJvmShutdownHook.register(manager));
+        }
+
+        @Test
+        @DisplayName("register is idempotent when isRegister is true")
+        void registerIdempotentWhenEnabled() {
+            AgentScopeJvmShutdownHook.resetForTesting();
+            manager.setConfig(
+                    new GracefulShutdownConfig(
+                            Duration.ofSeconds(10), PartialReasoningPolicy.SAVE, true));
+
+            // First call should succeed
+            assertDoesNotThrow(() -> AgentScopeJvmShutdownHook.register(manager));
+
+            // Second call should also succeed (idempotent)
+            assertDoesNotThrow(() -> AgentScopeJvmShutdownHook.register(manager));
         }
     }
 

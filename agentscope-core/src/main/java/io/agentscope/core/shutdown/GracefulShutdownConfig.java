@@ -25,6 +25,7 @@ import java.util.Objects;
  * <ul>
  *   <li>Maximum time to wait for ongoing operations to complete</li>
  *   <li>Policy for handling partial reasoning results</li>
+ *   <li>Policy for control register jvm shutdown hook</li>
  * </ul>
  *
  * @param shutdownTimeout       maximum duration to wait for shutdown completion;
@@ -32,9 +33,12 @@ import java.util.Objects;
  *                              to complete; if specified, must be a positive duration
  * @param partialReasoningPolicy policy for handling incomplete reasoning results during shutdown;
  *                              cannot be null
+ * @param isRegister Policy for control register jvm shutdown hook
  */
 public record GracefulShutdownConfig(
-        Duration shutdownTimeout, PartialReasoningPolicy partialReasoningPolicy) {
+        Duration shutdownTimeout,
+        PartialReasoningPolicy partialReasoningPolicy,
+        boolean isRegister) {
 
     /**
      * Default configuration instance.
@@ -43,10 +47,25 @@ public record GracefulShutdownConfig(
      * <ul>
      *   <li>Shutdown timeout: null (wait indefinitely)</li>
      *   <li>Partial reasoning policy: {@link PartialReasoningPolicy#SAVE}</li>
+     *   <li>Is register jvm shutdownHook: {@code false}</li>
      * </ul>
      */
     public static final GracefulShutdownConfig DEFAULT =
-            new GracefulShutdownConfig(null, PartialReasoningPolicy.SAVE);
+            new GracefulShutdownConfig(null, PartialReasoningPolicy.SAVE, false);
+
+    /**
+     *
+     *
+     * <p>Uses the following settings:
+     * <ul>
+     *   <li>Shutdown timeout: null (wait indefinitely)</li>
+     *   <li>Partial reasoning policy: {@link PartialReasoningPolicy#SAVE}</li>
+     * </ul>
+     */
+    public GracefulShutdownConfig(
+            Duration shutdownTimeout, PartialReasoningPolicy partialReasoningPolicy) {
+        this(shutdownTimeout, partialReasoningPolicy, false);
+    }
 
     /**
      * Compact constructor for validation.
