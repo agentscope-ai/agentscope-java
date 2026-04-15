@@ -39,6 +39,7 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
 import org.quartz.Trigger;
+import org.quartz.TriggerKey;
 import reactor.core.publisher.Mono;
 
 /** Unit tests for {@link AgentQuartzJob}. */
@@ -258,9 +259,9 @@ class AgentQuartzJobTest {
     void testExecuteWithInputMsgDeserializationFailure() {
         when(mockScheduler.getScheduledAgent(taskName)).thenReturn(mockTask);
 
-        Trigger mockTrigger = mock(org.quartz.Trigger.class);
+        Trigger mockTrigger = mock(Trigger.class);
         when(mockContext.getTrigger()).thenReturn(mockTrigger);
-        when(mockTrigger.getKey()).thenReturn(new org.quartz.TriggerKey("test-trigger"));
+        when(mockTrigger.getKey()).thenReturn(new TriggerKey("test-trigger"));
         when(mockJobDetail.getKey()).thenReturn(new JobKey(taskName));
 
         // Setup invalid JSON in JobDataMap to force a deserialization exception
