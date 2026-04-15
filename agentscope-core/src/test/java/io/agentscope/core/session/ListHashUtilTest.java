@@ -185,6 +185,15 @@ class ListHashUtilTest {
         assertFalse(ListHashUtil.needsFullRewrite(null, null, 0));
     }
 
+    @Test
+    void testNeedsFullRewriteMissingHashButHasData() {
+        List<Msg> list = createMsgList(5);
+
+        // Scenario: existingCount is 5, but storedHash is null
+        // (e.g., system upgraded from an older version that didn't save hashes)
+        assertTrue(ListHashUtil.needsFullRewrite(list, null, 5));
+    }
+
     private List<Msg> createMsgList(int size) {
         List<Msg> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {

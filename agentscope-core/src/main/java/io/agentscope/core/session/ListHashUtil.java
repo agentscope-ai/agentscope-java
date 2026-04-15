@@ -158,7 +158,13 @@ public final class ListHashUtil {
             return true;
         }
 
-        // Case 2: Check if the previously existing elements were modified.
+        // Case 2: Missing hash but existing data found (e.g., version upgrade or corrupted hash)
+        // Must rewrite because we cannot verify unmodified state.
+        if (storedHash == null && existingCount > 0) {
+            return true;
+        }
+
+        // Case 3: Check if the previously existing elements were modified.
         List<? extends State> prefix = currentValues.subList(0, existingCount);
         String prefixHash = computeHash(prefix);
         return hasChanged(prefixHash, storedHash);
