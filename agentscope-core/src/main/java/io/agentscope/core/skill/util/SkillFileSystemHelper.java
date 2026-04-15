@@ -173,6 +173,8 @@ public final class SkillFileSystemHelper {
             return false;
         }
 
+        int size = skills.size();
+        int saveCount = 0;
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
@@ -182,7 +184,7 @@ public final class SkillFileSystemHelper {
                     if (!force) {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
-                        return false;
+                        continue; // Skip to the next skill if force=false
                     } else {
                         logger.info("Overwriting existing skill directory: {}", skillName);
                         deleteDirectory(skillDir);
@@ -215,10 +217,15 @@ public final class SkillFileSystemHelper {
                     }
                 }
 
+                saveCount++;
                 logger.info("Successfully saved skill: {}", skillName);
             }
+            boolean allSaved = (size == saveCount);
+            if (!allSaved) {
+                logger.warn("Not all skills were saved. Saved {} of {}", saveCount, size);
+            }
 
-            return true;
+            return allSaved;
         } catch (IOException e) {
             logger.error("Failed to save skills", e);
             throw new RuntimeException("Failed to save skills", e);
