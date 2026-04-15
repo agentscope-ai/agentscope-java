@@ -240,8 +240,7 @@ public class RedisSession implements Session {
             long existingCount = client.getListLength(listKey);
             // Determine if full rewrite is needed
             boolean needsFullRewrite =
-                    ListHashUtil.needsFullRewrite(
-                            currentHash, storedHash, values.size(), (int) existingCount);
+                    ListHashUtil.needsFullRewrite(values, storedHash, (int) existingCount);
             if (needsFullRewrite) {
                 // Delete and recreate the list
                 client.deleteKeys(listKey);
