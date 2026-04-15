@@ -19,7 +19,7 @@
     "ant-design-vue": "^4.0.8",
     "axios": "^1.13.5",
     "dayjs": "^1.11.10",
-    "dompurify": "^3.2.6",
+    "dompurify": "^3.3.2",
     "highlight.js": "^11.11.1",
     "marked": "^16.1.2",
     "nprogress": "^0.2.0",
@@ -52,7 +52,7 @@
     "npm-run-all2": "^6.1.1",
     "prettier": "^3.1.0",
     "typescript": "~5.3.3",
-    "vite": "^7.1.7",
+    "vite": "^7.3.2",
     "vite-plugin-checker": "^0.6.0",
     "vitest": "^3.2.4",
     "vue-tsc": "^1.8.25"
