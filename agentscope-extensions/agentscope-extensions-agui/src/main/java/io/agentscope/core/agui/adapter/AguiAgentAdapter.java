@@ -253,6 +253,10 @@ public class AguiAgentAdapter {
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof ToolResultBlock toolResult) {
                     String toolCallId = toolResult.getId();
+                    if (toolCallId == null) {
+                        toolCallId = UUID.randomUUID().toString();
+                    }
+
                     String result = extractToolResultText(toolResult);
 
                     boolean hasStarted = state.hasStartedToolCall(toolCallId);
@@ -396,7 +400,7 @@ public class AguiAgentAdapter {
 
         void endMessage(String messageId) {
             endedMessages.add(messageId);
-            if (messageId.equals(currentTextMessageId)) {
+            if (Objects.equals(messageId, currentTextMessageId)) {
                 currentTextMessageId = null;
             }
         }
@@ -448,7 +452,7 @@ public class AguiAgentAdapter {
 
         void endReasoningMessage(String messageId) {
             endedReasoningMessages.add(messageId);
-            if (messageId.equals(currentReasoningMessageId)) {
+            if (Objects.equals(messageId, currentReasoningMessageId)) {
                 currentReasoningMessageId = null;
             }
         }
