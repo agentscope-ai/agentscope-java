@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * AutoContextMemory - Intelligent context memory management system.
@@ -301,6 +302,10 @@ public class AutoContextMemory implements StateModule, Memory, ContextOffLoader 
 
         log.warn("All compression strategies exhausted but context still exceeds threshold");
         return false;
+    }
+
+    Mono<Boolean> compressIfNeededAsync() {
+        return Mono.fromCallable(this::compressIfNeeded).subscribeOn(Schedulers.boundedElastic());
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
