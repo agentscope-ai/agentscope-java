@@ -40,6 +40,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -311,6 +313,263 @@ class ReActAgentTest {
                 "Calculator should be called first");
         assertEquals(
                 TestConstants.TEST_TOOL_NAME, history.get(1), "Test tool should be called second");
+    }
+
+    @Test
+    @DisplayName("Should propagate current call metadata to tool execution")
+    void testToolCallMetadataFromCurrentCall() {
+        List<Map<String, Object>> capturedMetadata = new CopyOnWriteArrayList<>();
+        Toolkit metadataToolkit = new Toolkit();
+        metadataToolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_echo";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Echo current call metadata";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        capturedMetadata.add(param.getMetadata());
+                        return Mono.just(
+                                ToolResultBlock.of(TextBlock.builder().text("ok").build()));
+                    }
+                });
+
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                "metadata_echo", "meta_tool_1", Map.of()));
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("done")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ReActAgent metadataAgent =
+                ReActAgent.builder()
+                        .name("MetadataAgent")
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(metadataToolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        Msg userMsg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("call metadata tool").build())
+                        .metadata(Map.of("userId", "u-001", "tier", "pro"))
+                        .build();
+
+        metadataAgent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertEquals(1, capturedMetadata.size(), "Tool should be called exactly once");
+        assertEquals("u-001", capturedMetadata.get(0).get("userId"));
+        assertEquals("pro", capturedMetadata.get(0).get("tier"));
+    }
+
+    @Test
+    @DisplayName("Should merge metadata from all input messages")
+    void testToolCallMetadataMergesAllInputMessages() {
+        List<Map<String, Object>> capturedMetadata = new CopyOnWriteArrayList<>();
+        Toolkit metadataToolkit = new Toolkit();
+        metadataToolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_echo";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Echo merged metadata from all input messages";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        capturedMetadata.add(param.getMetadata());
+                        return Mono.just(
+                                ToolResultBlock.of(TextBlock.builder().text("ok").build()));
+                    }
+                });
+
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                "metadata_echo", "meta_tool_2", Map.of()));
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("done")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ReActAgent metadataAgent =
+                ReActAgent.builder()
+                        .name("MetadataAgent")
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(metadataToolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        Msg firstUser =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("first").build())
+                        .metadata(Map.of("userId", "u-old", "traceId", "trace-001"))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("assistant context").build())
+                        .metadata(Map.of("sessionId", "s-888"))
+                        .build();
+        Msg secondUser =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("second").build())
+                        .metadata(Map.of("userId", "u-new"))
+                        .build();
+
+        metadataAgent
+                .call(List.of(firstUser, assistantMsg, secondUser))
+                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertEquals(1, capturedMetadata.size(), "Tool should be called exactly once");
+        assertEquals("u-new", capturedMetadata.get(0).get("userId"));
+        assertEquals("trace-001", capturedMetadata.get(0).get("traceId"));
+        assertEquals("s-888", capturedMetadata.get(0).get("sessionId"));
+    }
+
+    @Test
+    @DisplayName("Should not fallback to history metadata on continuation call")
+    void testNoMetadataFallbackFromHistoryOnContinuation() {
+        List<Map<String, Object>> capturedMetadata = new CopyOnWriteArrayList<>();
+        Toolkit metadataToolkit = new Toolkit();
+        metadataToolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_echo";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Echo metadata in continuation";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        capturedMetadata.add(param.getMetadata());
+                        return Mono.just(
+                                ToolResultBlock.of(TextBlock.builder().text("ok").build()));
+                    }
+                });
+
+        final int[] callCount = {0};
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("first done")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            if (currentCall == 1) {
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                "metadata_echo", "meta_tool_3", Map.of()));
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("continue done")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ReActAgent metadataAgent =
+                ReActAgent.builder()
+                        .name("MetadataAgent")
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(metadataToolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        Msg firstTurn =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("first turn").build())
+                        .metadata(Map.of("userId", "u-history"))
+                        .build();
+
+        metadataAgent
+                .call(firstTurn)
+                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        metadataAgent.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertEquals(1, capturedMetadata.size(), "Tool should be called in continuation once");
+        assertTrue(
+                capturedMetadata.get(0).isEmpty(),
+                "Continuation call without input should not reuse history metadata");
     }
 
     @Test

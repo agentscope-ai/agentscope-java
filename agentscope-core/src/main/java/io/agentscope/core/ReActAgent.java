@@ -74,6 +74,7 @@ import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -262,17 +263,20 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        InvocationScope invocationScope = InvocationScope.of(resolveToolCallMetadata(msgs));
         Set<String> pendingIds = getPendingToolUseIds();
 
         // No pending tools -> normal processing
         if (pendingIds.isEmpty()) {
             addToMemory(msgs);
-            return executeIteration(0);
+            return executeIteration(0, invocationScope);
         }
 
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
-            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+            return hasPendingToolUse()
+                    ? acting(0, invocationScope)
+                    : executeIteration(0, invocationScope);
         }
 
         // Has pending tools + input -> check if user provided tool results
@@ -284,7 +288,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         if (!providedResults.isEmpty()) {
             // User provided tool results -> validate and add
             validateAndAddToolResults(msgs, pendingIds);
-            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+            return hasPendingToolUse()
+                    ? acting(0, invocationScope)
+                    : executeIteration(0, invocationScope);
         }
 
         // If PendingToolRecoveryHook is enabled, pending state should have been
@@ -443,8 +449,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
     // ==================== Core ReAct Loop ====================
 
-    private Mono<Msg> executeIteration(int iter) {
-        return reasoning(iter, false);
+    private Mono<Msg> executeIteration(int iter, InvocationScope invocationScope) {
+        return reasoning(iter, false, invocationScope);
     }
 
     /**
@@ -457,7 +463,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
      * @return Mono containing the final result message
      */
-    private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
+    private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters, InvocationScope invocationScope) {
         // Check maxIters unless ignoreMaxIters is set
         if (!ignoreMaxIters && iter >= maxIters) {
             return summarizing();
@@ -530,7 +536,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                     gotoMsgs.forEach(memory::addMessage);
                                 }
                                 // Continue to next iteration, ignoring maxIters for this entry
-                                return reasoning(iter + 1, true);
+                                return reasoning(iter + 1, true, invocationScope);
                             }
 
                             // Check finish conditions
@@ -539,7 +545,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                             }
 
                             // Continue to acting
-                            return checkInterruptedAsync().then(acting(iter));
+                            return checkInterruptedAsync().then(acting(iter, invocationScope));
                         })
                 .switchIfEmpty(
                         Mono.defer(
@@ -566,13 +572,13 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @param iter Current iteration number
      * @return Mono containing the final result message
      */
-    private Mono<Msg> acting(int iter) {
+    private Mono<Msg> acting(int iter, InvocationScope invocationScope) {
         // Extract only pending tool calls (those without results in memory)
         List<ToolUseBlock> pendingToolCalls = extractPendingToolCalls();
 
         if (pendingToolCalls.isEmpty()) {
             // No pending tools have been executed, continue to next iteration
-            return executeIteration(iter + 1);
+            return executeIteration(iter + 1, invocationScope);
         }
 
         // Forward tool chunks into ActingChunkEvent hooks without overwriting user callbacks.
@@ -581,7 +587,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         // Execute only pending tools (those without results in memory)
         return notifyPreActingHooks(pendingToolCalls)
-                .flatMap(this::executeToolCalls)
+                .flatMap(toolCalls -> executeToolCalls(toolCalls, invocationScope))
                 .flatMap(
                         results -> {
                             // Separate success and pending results
@@ -599,7 +605,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                 if (!pendingPairs.isEmpty()) {
                                     return Mono.just(buildSuspendedMsg(pendingPairs));
                                 }
-                                return executeIteration(iter + 1);
+                                return executeIteration(iter + 1, invocationScope);
                             }
 
                             // Process success results through hooks and add to memory
@@ -625,7 +631,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                                 }
 
                                                 // Continue next iteration
-                                                return executeIteration(iter + 1);
+                                                return executeIteration(iter + 1, invocationScope);
                                             });
                         });
     }
@@ -664,8 +670,13 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      * @return Mono containing list of (ToolUseBlock, ToolResultBlock) pairs
      */
     private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
-            List<ToolUseBlock> toolCalls) {
-        return toolkit.callTools(toolCalls, toolExecutionConfig, this, toolExecutionContext)
+            List<ToolUseBlock> toolCalls, InvocationScope invocationScope) {
+        return toolkit.callTools(
+                        toolCalls,
+                        toolExecutionConfig,
+                        this,
+                        toolExecutionContext,
+                        invocationScope.metadata())
                 .map(
                         results ->
                                 IntStream.range(0, toolCalls.size())
@@ -701,6 +712,31 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                                             .toList();
                             return Mono.just(errorResults);
                         });
+    }
+
+    private Map<String, Object> resolveToolCallMetadata(List<Msg> inputMsgs) {
+        if (inputMsgs == null || inputMsgs.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> mergedMetadata = new HashMap<>();
+        for (Msg msg : inputMsgs) {
+            Map<String, Object> metadata = msg.getMetadata();
+            if (metadata == null || metadata.isEmpty()) {
+                continue;
+            }
+            mergedMetadata.putAll(metadata);
+        }
+        return mergedMetadata.isEmpty() ? Map.of() : Map.copyOf(mergedMetadata);
+    }
+
+    private record InvocationScope(Map<String, Object> metadata) {
+        private static InvocationScope of(Map<String, Object> metadata) {
+            if (metadata == null || metadata.isEmpty()) {
+                return new InvocationScope(Map.of());
+            }
+            return new InvocationScope(Map.copyOf(metadata));
+        }
     }
 
     /**

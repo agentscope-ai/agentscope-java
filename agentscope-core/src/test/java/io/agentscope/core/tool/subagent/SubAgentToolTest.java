@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -426,6 +427,61 @@ class SubAgentToolTest {
 
         // Verify stream was called with custom options
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
+    }
+
+    @Test
+    @DisplayName("Should preserve metadata from ToolCallParam in user message")
+    void testMetadataPreservation() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("MetadataAgent");
+        when(mockAgent.getDescription()).thenReturn("Agent for metadata test");
+
+        // Capture the Msg passed to agent.call()
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> msgsCaptor = ArgumentCaptor.forClass(List.class);
+        when(mockAgent.call(msgsCaptor.capture()))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(TextBlock.builder().text("Response").build())
+                                        .build()));
+
+        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(false).build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        // Build input and metadata
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Hello with metadata");
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("userId", "1234567890");
+        metadata.put("sessionType", "premium");
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_metadataagent").input(input).build();
+
+        // Call with metadata
+        ToolResultBlock result =
+                tool.callAsync(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .input(input)
+                                        .metadata(metadata)
+                                        .build())
+                        .block();
+
+        assertNotNull(result);
+        // Verify agent.call was invoked
+        verify(mockAgent).call(any(List.class));
+
+        // Verify metadata was preserved in the message sent to the agent
+        List<Msg> capturedMsgs = msgsCaptor.getValue();
+        assertNotNull(capturedMsgs);
+        assertEquals(1, capturedMsgs.size());
+        Msg userMsg = capturedMsgs.get(0);
+        assertNotNull(userMsg.getMetadata());
+        assertEquals("1234567890", userMsg.getMetadata().get("userId"));
+        assertEquals("premium", userMsg.getMetadata().get("sessionType"));
     }
 
     // Helper methods

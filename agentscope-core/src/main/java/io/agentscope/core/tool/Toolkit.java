@@ -507,6 +507,28 @@ public class Toolkit {
             ExecutionConfig agentExecutionConfig,
             Agent agent,
             ToolExecutionContext agentContext) {
+        return callTools(toolCalls, agentExecutionConfig, agent, agentContext, Map.of());
+    }
+
+    /**
+     * Execute multiple tools asynchronously with agent-level context and call metadata.
+     *
+     * <p><b>Internal API - Not recommended for external use.</b> This method is primarily
+     * intended for use by {@link io.agentscope.core.ReActAgent} and other framework components.
+     *
+     * @param toolCalls List of tool calls to execute
+     * @param agentExecutionConfig Execution config from agent level (can be null)
+     * @param agent The agent making the calls (may be null)
+     * @param agentContext The agent-level tool execution context (may be null)
+     * @param metadata Tool-call level metadata (e.g., user context), may be empty
+     * @return Mono containing list of tool responses
+     */
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            Agent agent,
+            ToolExecutionContext agentContext,
+            Map<String, Object> metadata) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -515,7 +537,7 @@ public class Toolkit {
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
         return executor.executeAll(
-                toolCalls, config.isParallel(), effectiveConfig, agent, agentContext);
+                toolCalls, config.isParallel(), effectiveConfig, agent, agentContext, metadata);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
