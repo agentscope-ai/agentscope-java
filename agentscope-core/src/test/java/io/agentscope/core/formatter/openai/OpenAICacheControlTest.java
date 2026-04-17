@@ -255,10 +255,7 @@ class OpenAICacheControlTest {
             content.add(OpenAIContentPart.text("Describe this image"));
 
             List<OpenAIMessage> messages = new ArrayList<>();
-            messages.add(OpenAIMessage.builder()
-                    .role("user")
-                    .content(content)
-                    .build());
+            messages.add(OpenAIMessage.builder().role("user").content(content).build());
 
             formatter.applyCacheControl(messages);
 
@@ -276,10 +273,7 @@ class OpenAICacheControlTest {
             content.add(OpenAIContentPart.imageUrl("https://example.com/image.jpg"));
 
             List<OpenAIMessage> messages = new ArrayList<>();
-            messages.add(OpenAIMessage.builder()
-                    .role("user")
-                    .content(content)
-                    .build());
+            messages.add(OpenAIMessage.builder().role("user").content(content).build());
 
             formatter.applyCacheControl(messages);
 
@@ -298,10 +292,7 @@ class OpenAICacheControlTest {
             content.add(OpenAIContentPart.text("Another text"));
 
             List<OpenAIMessage> messages = new ArrayList<>();
-            messages.add(OpenAIMessage.builder()
-                    .role("assistant")
-                    .content(content)
-                    .build());
+            messages.add(OpenAIMessage.builder().role("assistant").content(content).build());
 
             formatter.applyCacheControl(messages);
 
@@ -317,10 +308,7 @@ class OpenAICacheControlTest {
             List<OpenAIContentPart> systemContent = new ArrayList<>();
             systemContent.add(OpenAIContentPart.text("System prompt"));
             List<OpenAIMessage> messages = new ArrayList<>();
-            messages.add(OpenAIMessage.builder()
-                    .role("system")
-                    .content(systemContent)
-                    .build());
+            messages.add(OpenAIMessage.builder().role("system").content(systemContent).build());
             messages.add(OpenAIMessage.builder().role("user").content("Hello").build());
 
             formatter.applyCacheControl(messages);
@@ -342,15 +330,22 @@ class OpenAICacheControlTest {
         void multimodalMetadataLastTextPart() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
-            ImageBlock imageBlock = ImageBlock.builder()
-                    .source(URLSource.builder().url("https://example.com/image.jpg").build())
-                    .build();
-            Msg msg = Msg.builder()
-                    .role(MsgRole.USER)
-                    .content(List.of(imageBlock,
-                            TextBlock.builder().text("What is this?").build()))
-                    .metadata(metadata)
-                    .build();
+            ImageBlock imageBlock =
+                    ImageBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/image.jpg")
+                                            .build())
+                            .build();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(
+                                    List.of(
+                                            imageBlock,
+                                            TextBlock.builder().text("What is this?").build()))
+                            .metadata(metadata)
+                            .build();
 
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
@@ -361,18 +356,24 @@ class OpenAICacheControlTest {
         }
 
         @Test
-        @DisplayName("should fall back to message level for multimodal when no text part via metadata")
+        @DisplayName(
+                "should fall back to message level for multimodal when no text part via metadata")
         void multimodalMetadataNoTextPart() {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put(MessageMetadataKeys.CACHE_CONTROL, true);
-            ImageBlock imageBlock = ImageBlock.builder()
-                    .source(URLSource.builder().url("https://example.com/image.jpg").build())
-                    .build();
-            Msg msg = Msg.builder()
-                    .role(MsgRole.USER)
-                    .content(List.of(imageBlock))
-                    .metadata(metadata)
-                    .build();
+            ImageBlock imageBlock =
+                    ImageBlock.builder()
+                            .source(
+                                    URLSource.builder()
+                                            .url("https://example.com/image.jpg")
+                                            .build())
+                            .build();
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(List.of(imageBlock))
+                            .metadata(metadata)
+                            .build();
 
             List<OpenAIMessage> result = formatter.format(List.of(msg));
 
@@ -388,10 +389,7 @@ class OpenAICacheControlTest {
             List<OpenAIContentPart> content = new ArrayList<>();
             content.add(OpenAIContentPart.imageUrl("https://example.com/image.jpg"));
             content.add(OpenAIContentPart.text("Describe this"));
-            OpenAIMessage openAIMsg = OpenAIMessage.builder()
-                    .role("user")
-                    .content(content)
-                    .build();
+            OpenAIMessage openAIMsg = OpenAIMessage.builder().role("user").content(content).build();
 
             // No metadata set on the source Msg, so cache_control must not be set
             Msg msg = Msg.builder().role(MsgRole.USER).content(List.of()).build();
