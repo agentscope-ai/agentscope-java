@@ -153,6 +153,72 @@ class SkillFileSystemHelperTest {
     }
 
     @Test
+    @DisplayName(
+            "Should save zero skills and leave file contents unchanged when all exist and force is"
+                    + " false")
+    void testSaveSkills_AllExistingSkills_ForceDisabled_NoSkillsSaved() throws IOException {
+        String originalTestSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+        String originalAnotherSkill =
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill skill1 = new AgentSkill("test-skill", "Updated Test", "Updated content 1", null);
+        AgentSkill skill2 =
+                new AgentSkill("another-skill", "Updated Another", "Updated content 2", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(skillsBaseDir, List.of(skill1, skill2), false);
+
+        // 0 out of 2 saved — no coverage at all
+        assertFalse(result);
+        assertEquals(
+                originalTestSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+        assertEquals(
+                originalAnotherSkill,
+                Files.readString(
+                        skillsBaseDir.resolve("another-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "another-skill SKILL.md must not be modified");
+    }
+
+    @Test
+    @DisplayName("Should save new skills while leaving existing ones unchanged when force is false")
+    void testSaveSkills_MixedSkills_ForceDisabled_NewSavedExistingUnchanged() throws IOException {
+        String originalContent =
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8);
+
+        AgentSkill existingSkill =
+                new AgentSkill("test-skill", "Updated Description", "Updated content", null);
+        AgentSkill newSkill = new AgentSkill("brand-new-skill", "Brand New", "New content", null);
+
+        boolean result =
+                SkillFileSystemHelper.saveSkills(
+                        skillsBaseDir, List.of(existingSkill, newSkill), false);
+
+        // 1 out of 2 saved — not all saved
+        assertFalse(result);
+
+        // existing skill must not be modified
+        assertEquals(
+                originalContent,
+                Files.readString(
+                        skillsBaseDir.resolve("test-skill/SKILL.md"), StandardCharsets.UTF_8),
+                "test-skill SKILL.md must not be modified");
+
+        // new skill must be saved correctly
+        AgentSkill loaded =
+                SkillFileSystemHelper.loadSkill(skillsBaseDir, "brand-new-skill", "source");
+        assertEquals("brand-new-skill", loaded.getName());
+        assertEquals("Brand New", loaded.getDescription());
+        assertEquals("New content", loaded.getSkillContent());
+    }
+
+    @Test
     @DisplayName("Should overwrite when skill exists and force is true")
     void testSaveSkills_ExistingSkill_ForceEnabled() {
         AgentSkill updatedSkill =

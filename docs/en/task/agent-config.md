@@ -254,10 +254,10 @@ In the `ReActAgent`'s reasoning phase (ReasoningPipeline), this configuration is
 **Default Configuration** (ExecutionConfig.MODEL_DEFAULTS):
 - Timeout: 5 minutes
 - Max attempts: 3 (initial + 2 retries)
-- Initial backoff: 1 second
-- Max backoff: 10 seconds
+- Initial backoff: 2 seconds
+- Max backoff: 30 seconds
 - Backoff multiplier: 2.0 (exponential)
-- Retry condition: all errors
+- Retry condition: retryable errors (429, 5xx, timeout, network IO errors)
 
 **Use Cases**:
 - Adjust model API timeout
@@ -460,7 +460,7 @@ Generally, there's no need to explicitly specify; the model will automatically s
 Provides the set of skills available to the Agent. It allows the Agent to load skills through tool functions and automatically injects skill hints via the Hook mechanism.
 
 ```java
-SkillBox skillBox = new SkillBox();
+SkillBox skillBox = new SkillBox(new Toolkit());
 .skillBox(skillBox)
 ```
 
@@ -563,7 +563,11 @@ public class ComprehensiveAgentExample {
     // 5. Define skill class
     public static class WeatherSkill extends AgentSkill {
         public WeatherSkill() {
-            super("weather", "weather", "weather", null);
+            super(AgentSkill.builder()
+                .name("weather")
+                .description("weather")
+                .skillContent("weather")
+                .build());
         }
     }
 
@@ -635,7 +639,7 @@ public class ComprehensiveAgentExample {
         // Step 5: Configure Skills
         // ============================================================
 
-        SkillBox skillBox = new SkillBox();
+        SkillBox skillBox = new SkillBox(new Toolkit());
         skillBox.registerSkill(new WeatherSkill());
 
         // ============================================================
