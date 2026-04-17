@@ -480,6 +480,9 @@ public class OpenAIMessageConverter {
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.
      *
+     * <p>For multimodal messages (content is an array), cache_control is added to the last text
+     * content item. For text-only messages, it is added at the message level.
+     *
      * @param msg the source message with metadata
      * @param result the converted OpenAI message
      */
@@ -489,7 +492,24 @@ public class OpenAIMessageConverter {
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            // Delegate to the formatter's logic for proper multimodal handling
+            // This ensures cache_control is set at the content-item level when needed
+            List<OpenAIContentPart> contentParts = result.getContentAsList();
+            if (contentParts != null && !contentParts.isEmpty()) {
+                // Multimodal: find the last text part
+                for (int i = contentParts.size() - 1; i >= 0; i--) {
+                    OpenAIContentPart part = contentParts.get(i);
+                    if ("text".equals(part.getType()) && part.getCacheControl() == null) {
+                        part.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+                        return;
+                    }
+                }
+                // No text part found, fall back to message level
+                result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            } else {
+                // Text-only: set at message level
+                result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            }
         }
     }
 }
