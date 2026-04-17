@@ -710,6 +710,78 @@ class OpenAIResponseParserTest {
         }
 
         @Test
+        @DisplayName("Should use stable synthetic id for streaming tool calls by index")
+        void testStreamingToolCallUsesStableSyntheticIdByIndex() {
+            // First chunk: fragment only (no id, no name), has index
+            OpenAIResponse firstChunk = new OpenAIResponse();
+            firstChunk.setObject("chat.completion.chunk");
+
+            OpenAIFunction firstFunction = new OpenAIFunction();
+            firstFunction.setName(null);
+            firstFunction.setArguments("{\"city\":");
+
+            OpenAIToolCall firstToolCall = new OpenAIToolCall();
+            firstToolCall.setId(null);
+            firstToolCall.setIndex(0);
+            firstToolCall.setType("function");
+            firstToolCall.setFunction(firstFunction);
+
+            OpenAIMessage firstDelta = new OpenAIMessage();
+            firstDelta.setToolCalls(List.of(firstToolCall));
+            firstDelta.setRole("assistant");
+
+            OpenAIChoice firstChoice = new OpenAIChoice();
+            firstChoice.setDelta(firstDelta);
+            firstChoice.setIndex(0);
+            firstChunk.setChoices(List.of(firstChoice));
+
+            ChatResponse firstResult = parser.parseResponse(firstChunk, startTime);
+            ToolUseBlock firstBlock =
+                    firstResult.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+            assertNotNull(firstBlock);
+            assertEquals("streaming_idx_0", firstBlock.getId());
+            assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, firstBlock.getName());
+
+            // Second chunk: same index, now with tool name, still no id
+            OpenAIResponse secondChunk = new OpenAIResponse();
+            secondChunk.setObject("chat.completion.chunk");
+
+            OpenAIFunction secondFunction = new OpenAIFunction();
+            secondFunction.setName("get_weather");
+            secondFunction.setArguments("\"Beijing\"}");
+
+            OpenAIToolCall secondToolCall = new OpenAIToolCall();
+            secondToolCall.setId(null);
+            secondToolCall.setIndex(0);
+            secondToolCall.setType("function");
+            secondToolCall.setFunction(secondFunction);
+
+            OpenAIMessage secondDelta = new OpenAIMessage();
+            secondDelta.setToolCalls(List.of(secondToolCall));
+            secondDelta.setRole("assistant");
+
+            OpenAIChoice secondChoice = new OpenAIChoice();
+            secondChoice.setDelta(secondDelta);
+            secondChoice.setIndex(0);
+            secondChunk.setChoices(List.of(secondChoice));
+
+            ChatResponse secondResult = parser.parseResponse(secondChunk, startTime);
+            ToolUseBlock secondBlock =
+                    secondResult.getContent().stream()
+                            .filter(block -> block instanceof ToolUseBlock)
+                            .map(block -> (ToolUseBlock) block)
+                            .findFirst()
+                            .orElse(null);
+            assertNotNull(secondBlock);
+            assertEquals("streaming_idx_0", secondBlock.getId());
+            assertEquals("get_weather", secondBlock.getName());
+        }
+
+        @Test
         @DisplayName("Should parse chunk with reasoning content")
         void testChunkWithReasoningContent() {
             OpenAIResponse response = new OpenAIResponse();

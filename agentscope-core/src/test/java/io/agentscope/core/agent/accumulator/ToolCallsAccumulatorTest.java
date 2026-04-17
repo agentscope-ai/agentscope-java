@@ -323,4 +323,33 @@ class ToolCallsAccumulatorTest {
         List<ToolUseBlock> allCalls = accumulator.getAllAccumulatedToolCalls();
         assertEquals(2, allCalls.size());
     }
+
+    @Test
+    @DisplayName("Should fallback to non-null name when only fragments are received")
+    void testOnlyFragmentsFallbackName() {
+        ToolUseBlock fragment1 =
+                ToolUseBlock.builder()
+                        .id("streaming_idx_0")
+                        .name("__fragment__")
+                        .content("{\"city\":")
+                        .build();
+        ToolUseBlock fragment2 =
+                ToolUseBlock.builder()
+                        .id("streaming_idx_0")
+                        .name("__fragment__")
+                        .content("\"Beijing\"}")
+                        .build();
+
+        accumulator.add(fragment1);
+        accumulator.add(fragment2);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        ToolUseBlock toolCall = result.get(0);
+
+        assertNotNull(toolCall.getName());
+        assertEquals("unknown_tool", toolCall.getName());
+        assertEquals("{\"city\":\"Beijing\"}", toolCall.getContent());
+        assertEquals("Beijing", toolCall.getInput().get("city"));
+    }
 }

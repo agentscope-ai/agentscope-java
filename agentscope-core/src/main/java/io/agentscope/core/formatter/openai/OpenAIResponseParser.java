@@ -461,8 +461,15 @@ public class OpenAIResponseParser {
                                         }
                                     }
 
-                                    if (toolCallId == null) {
-                                        toolCallId = "streaming_" + System.currentTimeMillis();
+                                    if (toolCallId == null || toolCallId.isEmpty()) {
+                                        // Use index as stable synthetic id so chunks from the same
+                                        // tool call can be consistently merged across stream
+                                        // updates.
+                                        if (toolIndex != null) {
+                                            toolCallId = "streaming_idx_" + toolIndex;
+                                        } else {
+                                            toolCallId = "streaming_" + System.currentTimeMillis();
+                                        }
                                     }
                                     if (toolName == null) {
                                         toolName = "";
@@ -538,7 +545,7 @@ public class OpenAIResponseParser {
 
                                         contentBlocks.add(
                                                 ToolUseBlock.builder()
-                                                        .id("")
+                                                        .id(toolCallId)
                                                         .name(FRAGMENT_PLACEHOLDER)
                                                         .input(new HashMap<>())
                                                         .content(arguments)
