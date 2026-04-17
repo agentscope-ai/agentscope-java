@@ -102,6 +102,7 @@ public class AguiAgentAdapter {
                             StreamOptions.builder()
                                     .eventTypes(EventType.ALL)
                                     .incremental(true)
+                                    .includeActingChunk(config.isEnableToolProgressStream())
                                     .build();
 
                     // Track state for event conversion
@@ -147,13 +148,13 @@ public class AguiAgentAdapter {
         EventType type = event.getType();
 
         if (type == EventType.REASONING || type == EventType.SUMMARY) {
+            String messageId = msg.getId();
+
             // Handle reasoning/summary events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
                     String text = textBlock.getText();
                     if (text != null && !text.isEmpty()) {
-                        String messageId = msg.getId();
-
                         // Start message if not started
                         if (!state.hasStartedMessage(messageId)) {
                             events.add(
@@ -161,21 +162,9 @@ public class AguiAgentAdapter {
                                             state.threadId, state.runId, messageId, "assistant"));
                             state.startMessage(messageId);
                         }
-
-                        if (!event.isLast()) {
-                            // In incremental mode, text is already the delta
-                            events.add(
-                                    new AguiEvent.TextMessageContent(
-                                            state.threadId, state.runId, messageId, text));
-                        } else {
-                            // End message if this is the last event
-                            if (!state.hasEndedMessage(messageId)) {
-                                events.add(
-                                        new AguiEvent.TextMessageEnd(
-                                                state.threadId, state.runId, messageId));
-                                state.endMessage(messageId);
-                            }
-                        }
+                        events.add(
+                                new AguiEvent.TextMessageContent(
+                                        state.threadId, state.runId, messageId, text));
                     }
                 } else if (block instanceof ThinkingBlock thinkingBlock) {
                     // Handle thinking blocks - convert to REASONING_* events (only if enabled)
@@ -183,8 +172,6 @@ public class AguiAgentAdapter {
                     if (config.isEnableReasoning()) {
                         String thinking = thinkingBlock.getThinking();
                         if (thinking != null && !thinking.isEmpty()) {
-                            String messageId = msg.getId();
-
                             // Start reasoning message if not started
                             if (!state.hasStartedReasoningMessage(messageId)) {
                                 events.add(
@@ -195,19 +182,9 @@ public class AguiAgentAdapter {
                                                 "reasoning"));
                                 state.startReasoningMessage(messageId);
                             }
-
-                            if (!event.isLast()) {
-                                // In incremental mode, thinking is already the delta
-                                events.add(
-                                        new AguiEvent.ReasoningMessageContent(
-                                                state.threadId, state.runId, messageId, thinking));
-                            } else {
-                                // End reasoning message if this is the last event
-                                events.add(
-                                        new AguiEvent.ReasoningMessageEnd(
-                                                state.threadId, state.runId, messageId));
-                                state.endReasoningMessage(messageId);
-                            }
+                            events.add(
+                                    new AguiEvent.ReasoningMessageContent(
+                                            state.threadId, state.runId, messageId, thinking));
                         }
                     }
                     // If reasoning is disabled, ThinkingBlock content is ignored (backward
@@ -248,7 +225,7 @@ public class AguiAgentAdapter {
                     }
 
                     // Emit tool call args if enabled
-                    if (config.isEmitToolCallArgs() && !event.isLast()) {
+                    if (config.isEmitToolCallArgs()) {
                         String args = toolUse.getContent();
                         if (args != null && !args.isEmpty()) {
                             events.add(
@@ -258,7 +235,25 @@ public class AguiAgentAdapter {
                     }
                 }
             }
-        } else if (type == EventType.TOOL_RESULT && event.isLast()) {
+
+            // Independent lifecycle check: prevents dropping the final data chunk
+            // and safely handles empty termination packets.
+            if (event.isLast()) {
+                if (state.hasStartedMessage(messageId) && !state.hasEndedMessage(messageId)) {
+                    events.add(
+                            new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
+                    state.endMessage(messageId);
+                }
+                if (config.isEnableReasoning()
+                        && state.hasStartedReasoningMessage(messageId)
+                        && !state.hasEndedReasoningMessage(messageId)) {
+                    events.add(
+                            new AguiEvent.ReasoningMessageEnd(
+                                    state.threadId, state.runId, messageId));
+                    state.endReasoningMessage(messageId);
+                }
+            }
+        } else if (type == EventType.TOOL_RESULT) {
             // Handle tool results
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof ToolResultBlock toolResult) {
@@ -267,7 +262,7 @@ public class AguiAgentAdapter {
                         toolCallId = UUID.randomUUID().toString();
                     }
 
-                    String result = extractToolResultText(toolResult);
+                    String resultText = extractToolResultText(toolResult);
 
                     boolean hasStarted = state.hasStartedToolCall(toolCallId);
                     if (!hasStarted) {
@@ -281,18 +276,57 @@ public class AguiAgentAdapter {
                         state.startToolCall(toolCallId);
                     }
 
-                    // Ensure ToolCallEnd is emitted to close arguments phase
-                    events.add(new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                    if (resultText != null && !resultText.isEmpty()) {
+                        if (config.isEnableToolProgressStream()) {
+                            // Handle the intermediate progress of tool execution
+                            // (borrowing from the Reasoning block)
+                            String thinkingMsgId = "tool-thinking-" + toolCallId;
 
-                    events.add(
-                            new AguiEvent.ToolCallResult(
-                                    state.threadId,
-                                    state.runId,
-                                    toolCallId,
-                                    result,
-                                    "tool",
-                                    msg.getId()));
-                    state.endToolCall(toolCallId);
+                            if (!state.hasStartedReasoningMessage(thinkingMsgId)) {
+                                events.add(
+                                        new AguiEvent.ReasoningMessageStart(
+                                                state.threadId,
+                                                state.runId,
+                                                thinkingMsgId,
+                                                "assistant"));
+                                state.startReasoningMessage(thinkingMsgId);
+                            }
+
+                            events.add(
+                                    new AguiEvent.ReasoningMessageContent(
+                                            state.threadId,
+                                            state.runId,
+                                            thinkingMsgId,
+                                            resultText));
+                        }
+                    }
+
+                    // Decouple termination logic from content extraction
+                    // to ensure the final progress chunk is emitted before closing.
+                    if (event.isLast()) {
+                        // Clear up the fabricated Reasoning blocks
+                        String thinkingMsgId = "tool-thinking-" + toolCallId;
+                        if (state.hasStartedReasoningMessage(thinkingMsgId)
+                                && !state.hasEndedReasoningMessage(thinkingMsgId)) {
+                            events.add(
+                                    new AguiEvent.ReasoningMessageEnd(
+                                            state.threadId, state.runId, thinkingMsgId));
+                            state.endReasoningMessage(thinkingMsgId);
+                        }
+
+                        // Send real tool call end and result events
+                        events.add(
+                                new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId));
+                        events.add(
+                                new AguiEvent.ToolCallResult(
+                                        state.threadId,
+                                        state.runId,
+                                        toolCallId,
+                                        resultText,
+                                        "tool",
+                                        msg.getId()));
+                        state.endToolCall(toolCallId);
+                    }
                 }
             }
         }
