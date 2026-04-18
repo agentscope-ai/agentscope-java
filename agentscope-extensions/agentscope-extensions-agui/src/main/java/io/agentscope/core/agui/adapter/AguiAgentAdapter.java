@@ -276,7 +276,7 @@ public class AguiAgentAdapter {
                         state.startToolCall(toolCallId);
                     }
 
-                    if (resultText != null && !resultText.isEmpty()) {
+                    if (!event.isLast() && resultText != null && !resultText.isEmpty()) {
                         if (config.isEnableToolProgressStream()) {
                             // Handle the intermediate progress of tool execution
                             // (borrowing from the Reasoning block)
