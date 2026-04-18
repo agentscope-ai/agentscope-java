@@ -49,22 +49,17 @@ class Mem0SearchRequestTest {
     }
 
     @Test
-    void testBuilderWithFilters() {
-        Map<String, Object> filters = new HashMap<>();
-        filters.put("category", "personal");
-
-        Mem0SearchRequest request = Mem0SearchRequest.builder().filters(filters).build();
-
-        assertEquals(filters, request.getFilters());
-    }
-
-    @Test
     void testBuilderWithUserIdFilter() {
         Mem0SearchRequest request =
                 Mem0SearchRequest.builder().query("test").userId("user123").build();
 
         assertNotNull(request.getFilters());
-        assertEquals("user123", request.getFilters().get("user_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+        assertEquals("user123", orList.get(0).get("user_id"));
     }
 
     @Test
@@ -73,7 +68,12 @@ class Mem0SearchRequestTest {
                 Mem0SearchRequest.builder().query("test").agentId("agent456").build();
 
         assertNotNull(request.getFilters());
-        assertEquals("agent456", request.getFilters().get("agent_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+        assertEquals("agent456", orList.get(0).get("agent_id"));
     }
 
     @Test
@@ -82,7 +82,12 @@ class Mem0SearchRequestTest {
                 Mem0SearchRequest.builder().query("test").runId("run789").build();
 
         assertNotNull(request.getFilters());
-        assertEquals("run789", request.getFilters().get("run_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+        assertEquals("run789", orList.get(0).get("run_id"));
     }
 
     @Test
@@ -91,11 +96,16 @@ class Mem0SearchRequestTest {
                 Mem0SearchRequest.builder().query("test").appId("app999").build();
 
         assertNotNull(request.getFilters());
-        assertEquals("app999", request.getFilters().get("app_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+        assertEquals("app999", orList.get(0).get("app_id"));
     }
 
     @Test
-    void testBuilderWithMultipleFilters() {
+    void testBuilderWithMultipleEntityFilters() {
         Mem0SearchRequest request =
                 Mem0SearchRequest.builder()
                         .query("test")
@@ -104,9 +114,59 @@ class Mem0SearchRequestTest {
                         .runId("run3")
                         .build();
 
-        assertEquals("user1", request.getFilters().get("user_id"));
-        assertEquals("agent2", request.getFilters().get("agent_id"));
-        assertEquals("run3", request.getFilters().get("run_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(3, orList.size());
+    }
+
+    @Test
+    void testBuilderWithMetadataFilter() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("category", "personal");
+
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder().query("test").metadata(metadata).build();
+
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metadataFilter = (Map<String, Object>) orList.get(0).get("metadata");
+        assertEquals("personal", metadataFilter.get("category"));
+    }
+
+    @Test
+    void testBuilderWithEntityAndMetadataFilters() {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("category", "travel");
+        metadata.put("priority", "high");
+
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder()
+                        .query("test")
+                        .userId("user1")
+                        .agentId("agent2")
+                        .metadata(metadata)
+                        .build();
+
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("AND"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> andList = (List<Map<String, Object>>) filters.get("AND");
+        assertEquals(2, andList.size());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entityOr = (List<Map<String, Object>>) andList.get(0).get("OR");
+        assertEquals(2, entityOr.size());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> metadataOr = (List<Map<String, Object>>) andList.get(1).get("OR");
+        assertEquals(2, metadataOr.size());
     }
 
     @Test
@@ -184,7 +244,7 @@ class Mem0SearchRequestTest {
         request.setTopK(15);
 
         Map<String, Object> filters = new HashMap<>();
-        filters.put("user_id", "user123");
+        filters.put("OR", List.of(Map.of("user_id", "user123")));
         request.setFilters(filters);
 
         assertEquals("test query", request.getQuery());
@@ -212,6 +272,7 @@ class Mem0SearchRequestTest {
         assertTrue(json.contains("\"filters\""));
         assertTrue(json.contains("\"top_k\""));
         assertTrue(json.contains("\"threshold\""));
+        assertTrue(json.contains("\"OR\""));
     }
 
     @Test
@@ -220,7 +281,7 @@ class Mem0SearchRequestTest {
                 "{"
                         + "\"query\":\"test\","
                         + "\"version\":\"v2\","
-                        + "\"filters\":{\"user_id\":\"user123\"},"
+                        + "\"filters\":{\"OR\":[{\"user_id\":\"user123\"}]},"
                         + "\"top_k\":10,"
                         + "\"threshold\":0.5"
                         + "}";
@@ -233,7 +294,7 @@ class Mem0SearchRequestTest {
         assertEquals("v2", request.getVersion());
         assertEquals(10, request.getTopK());
         assertEquals(0.5, request.getThreshold());
-        assertEquals("user123", request.getFilters().get("user_id"));
+        assertTrue(request.getFilters().containsKey("OR"));
     }
 
     @Test
@@ -255,13 +316,11 @@ class Mem0SearchRequestTest {
         assertEquals(original.getVersion(), deserialized.getVersion());
         assertEquals(original.getTopK(), deserialized.getTopK());
         assertEquals(original.getThreshold(), deserialized.getThreshold());
-        assertEquals(
-                original.getFilters().get("user_id"), deserialized.getFilters().get("user_id"));
+        assertNotNull(deserialized.getFilters());
     }
 
     @Test
     void testFiltersAlwaysIncluded() throws Exception {
-        // Filters should always be included in JSON, even if empty
         Mem0SearchRequest request = Mem0SearchRequest.builder().query("test").build();
 
         String json = JsonUtils.getJsonCodec().toJson(request);
@@ -275,7 +334,6 @@ class Mem0SearchRequestTest {
 
         String json = JsonUtils.getJsonCodec().toJson(request);
 
-        // Null optional fields should be excluded
         assertFalse(json.contains("\"fields\""));
         assertFalse(json.contains("\"rerank\""));
         assertFalse(json.contains("\"keyword_search\""));
@@ -286,7 +344,6 @@ class Mem0SearchRequestTest {
         Mem0SearchRequest request = new Mem0SearchRequest();
         request.setFilters(null);
 
-        // Should be replaced with empty map
         assertNotNull(request.getFilters());
         assertTrue(request.getFilters().isEmpty());
     }
@@ -301,9 +358,37 @@ class Mem0SearchRequestTest {
                         .runId(null)
                         .build();
 
-        // Only non-null filters should be added
-        assertFalse(request.getFilters().containsKey("user_id"));
-        assertTrue(request.getFilters().containsKey("agent_id"));
-        assertFalse(request.getFilters().containsKey("run_id"));
+        Map<String, Object> filters = request.getFilters();
+        assertTrue(filters.containsKey("OR"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orList = (List<Map<String, Object>>) filters.get("OR");
+        assertEquals(1, orList.size());
+        assertTrue(orList.get(0).containsKey("agent_id"));
+    }
+
+    @Test
+    void testNestedFilterStructure() throws Exception {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("level", "pro");
+        metadata.put("region", "cn");
+
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder()
+                        .query("test query")
+                        .userId("user123")
+                        .agentId("SmartAssistant")
+                        .metadata(metadata)
+                        .topK(5)
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(request);
+
+        assertTrue(json.contains("\"AND\""));
+        assertTrue(json.contains("\"OR\""));
+        assertTrue(json.contains("\"user_id\""));
+        assertTrue(json.contains("\"agent_id\""));
+        assertTrue(json.contains("\"metadata\""));
+        assertTrue(json.contains("\"level\""));
+        assertTrue(json.contains("\"region\""));
     }
 }

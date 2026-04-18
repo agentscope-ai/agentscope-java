@@ -17,6 +17,7 @@ package io.agentscope.core.memory.mem0;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,10 +29,35 @@ import java.util.Map;
  * to retrieve relevant memories based on a query string. The search uses semantic
  * similarity to find the most relevant memories.
  *
- * <p>The v2 API uses a filters object to specify search criteria (user_id, agent_id,
- * run_id, app_id, etc.), enabling proper memory isolation in multi-tenant scenarios.
- * The filters field is required by the API and will be sent as an empty object if no
- * filters are specified.
+ * <p>The v2 API requires filters to be structured with logical operators (AND, OR, NOT):
+ * <ul>
+ *   <li>Entity filters (user_id, agent_id, app_id, run_id) must be OR-connected
+ *       because a single memory cannot have multiple entity values</li>
+ *   <li>Metadata filters are OR-connected for multiple key-value pairs</li>
+ *   <li>Entity filters and metadata filters are AND-connected at the top level</li>
+ * </ul>
+ *
+ * <p>Example of correct filter structure:
+ * <pre>{@code
+ * {
+ *   "filters": {
+ *     "AND": [
+ *       {
+ *         "OR": [
+ *           { "user_id": "user123" },
+ *           { "agent_id": "agentA" }
+ *         ]
+ *       },
+ *       {
+ *         "OR": [
+ *           { "metadata": { "category": "travel" } },
+ *           { "metadata": { "priority": "high" } }
+ *         ]
+ *       }
+ *     ]
+ *   }
+ * }
+ * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class Mem0SearchRequest {
@@ -43,8 +69,8 @@ public class Mem0SearchRequest {
     private String version = "v2";
 
     /**
-     * Filters to apply to the search (user_id, agent_id, run_id, app_id, etc.).
-     * This field is required by the API. An empty map will be sent if no filters are specified.
+     * Filters to apply to the search using logical operators (AND, OR, NOT).
+     * This field is required by the API and must follow the nested structure.
      */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     private Map<String, Object> filters = new HashMap<>();
@@ -78,18 +104,12 @@ public class Mem0SearchRequest {
     @JsonProperty("project_id")
     private String projectId;
 
-    /** User identifier for filtering memories (optional). */
-    @JsonProperty("user_id")
-    private String userId;
-
     /** Default constructor for Jackson. */
     public Mem0SearchRequest() {
-        this.topK = 10; // Default value per v2 API spec
+        this.topK = 10;
         this.version = "v2";
-        this.filters = new HashMap<>(); // Ensure filters is never null
+        this.filters = new HashMap<>();
     }
-
-    // Getters and Setters
 
     public String getQuery() {
         return query;
@@ -179,32 +199,13 @@ public class Mem0SearchRequest {
         this.projectId = projectId;
     }
 
-    public String getUserId() {
-        return userId;
-    }
-
-    public void setUserId(String userId) {
-        this.userId = userId;
-        // Automatically sync to filters if set
-        if (userId != null && filters != null) {
-            filters.put("user_id", userId);
-        }
-    }
-
-    /**
-     * Creates a new builder for Mem0SearchRequest.
-     *
-     * @return A new builder instance
-     */
     public static Builder builder() {
         return new Builder();
     }
 
-    /** Builder for Mem0SearchRequest. */
     public static class Builder {
         private String query;
         private String version = "v2";
-        private Map<String, Object> filters = new HashMap<>();
         private Integer topK = 10;
         private List<String> fields;
         private Boolean rerank;
@@ -213,7 +214,12 @@ public class Mem0SearchRequest {
         private Double threshold;
         private String orgId;
         private String projectId;
+
         private String userId;
+        private String agentId;
+        private String runId;
+        private String appId;
+        private Map<String, Object> metadata = new HashMap<>();
 
         public Builder query(String query) {
             this.query = query;
@@ -225,66 +231,29 @@ public class Mem0SearchRequest {
             return this;
         }
 
-        public Builder filters(Map<String, Object> filters) {
-            this.filters = filters;
-            return this;
-        }
-
-        public Map<String, Object> getFilters() {
-            return this.filters;
-        }
-
-        /**
-         * Convenience method to add agent_id to filters.
-         *
-         * @param agentId The agent identifier
-         * @return This builder
-         */
-        public Builder agentId(String agentId) {
-            if (agentId != null) {
-                this.filters.put("agent_id", agentId);
-            }
-            return this;
-        }
-
-        /**
-         * Sets the user identifier.
-         *
-         * <p>This method sets the userId field and also adds it to filters for v2 API compatibility.
-         *
-         * @param userId The user identifier
-         * @return This builder
-         */
         public Builder userId(String userId) {
             this.userId = userId;
-            if (userId != null) {
-                this.filters.put("user_id", userId);
-            }
             return this;
         }
 
-        /**
-         * Convenience method to add run_id to filters.
-         *
-         * @param runId The run/session identifier
-         * @return This builder
-         */
+        public Builder agentId(String agentId) {
+            this.agentId = agentId;
+            return this;
+        }
+
         public Builder runId(String runId) {
-            if (runId != null) {
-                this.filters.put("run_id", runId);
-            }
+            this.runId = runId;
             return this;
         }
 
-        /**
-         * Convenience method to add app_id to filters.
-         *
-         * @param appId The application identifier
-         * @return This builder
-         */
         public Builder appId(String appId) {
-            if (appId != null) {
-                this.filters.put("app_id", appId);
+            this.appId = appId;
+            return this;
+        }
+
+        public Builder metadata(Map<String, Object> metadata) {
+            if (metadata != null) {
+                this.metadata.putAll(metadata);
             }
             return this;
         }
@@ -294,13 +263,6 @@ public class Mem0SearchRequest {
             return this;
         }
 
-        /**
-         * Convenience method for backward compatibility.
-         *
-         * @param limit Maximum number of results (maps to top_k)
-         * @return This builder
-         * @deprecated Use {@link #topK(Integer)} instead
-         */
         @Deprecated
         public Builder limit(Integer limit) {
             this.topK = limit;
@@ -346,7 +308,6 @@ public class Mem0SearchRequest {
             Mem0SearchRequest request = new Mem0SearchRequest();
             request.setQuery(query);
             request.setVersion(version);
-            request.setFilters(filters);
             request.setTopK(topK);
             request.setFields(fields);
             request.setRerank(rerank);
@@ -355,11 +316,79 @@ public class Mem0SearchRequest {
             request.setThreshold(threshold);
             request.setOrgId(orgId);
             request.setProjectId(projectId);
-            // Set userId after filters to ensure it's synced
-            if (userId != null) {
-                request.setUserId(userId);
-            }
+
+            request.setFilters(buildNestedFilters());
+
             return request;
+        }
+
+        private Map<String, Object> buildNestedFilters() {
+            List<Map<String, Object>> andConditions = new ArrayList<>();
+
+            List<Map<String, Object>> entityFilters = buildEntityFilters();
+            if (!entityFilters.isEmpty()) {
+                Map<String, Object> entityOr = new HashMap<>();
+                entityOr.put("OR", entityFilters);
+                andConditions.add(entityOr);
+            }
+
+            List<Map<String, Object>> metadataFilters = buildMetadataFilters();
+            if (!metadataFilters.isEmpty()) {
+                Map<String, Object> metadataOr = new HashMap<>();
+                metadataOr.put("OR", metadataFilters);
+                andConditions.add(metadataOr);
+            }
+
+            if (andConditions.isEmpty()) {
+                return new HashMap<>();
+            } else if (andConditions.size() == 1) {
+                return andConditions.get(0);
+            } else {
+                Map<String, Object> result = new HashMap<>();
+                result.put("AND", andConditions);
+                return result;
+            }
+        }
+
+        private List<Map<String, Object>> buildEntityFilters() {
+            List<Map<String, Object>> filters = new ArrayList<>();
+
+            if (userId != null && !userId.isEmpty()) {
+                Map<String, Object> filter = new HashMap<>();
+                filter.put("user_id", userId);
+                filters.add(filter);
+            }
+            if (agentId != null && !agentId.isEmpty()) {
+                Map<String, Object> filter = new HashMap<>();
+                filter.put("agent_id", agentId);
+                filters.add(filter);
+            }
+            if (runId != null && !runId.isEmpty()) {
+                Map<String, Object> filter = new HashMap<>();
+                filter.put("run_id", runId);
+                filters.add(filter);
+            }
+            if (appId != null && !appId.isEmpty()) {
+                Map<String, Object> filter = new HashMap<>();
+                filter.put("app_id", appId);
+                filters.add(filter);
+            }
+
+            return filters;
+        }
+
+        private List<Map<String, Object>> buildMetadataFilters() {
+            List<Map<String, Object>> filters = new ArrayList<>();
+
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                Map<String, Object> metadataFilter = new HashMap<>();
+                Map<String, Object> metadataValue = new HashMap<>();
+                metadataValue.put(entry.getKey(), entry.getValue());
+                metadataFilter.put("metadata", metadataValue);
+                filters.add(metadataFilter);
+            }
+
+            return filters;
         }
     }
 }
