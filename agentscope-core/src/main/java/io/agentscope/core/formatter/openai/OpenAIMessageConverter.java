@@ -337,7 +337,11 @@ public class OpenAIMessageConverter {
                     argsJson = toolUse.getContent();
                 } else {
                     try {
-                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
+                        // Sanitize null values before serialization to prevent errors
+                        // with APIs that don't handle null values in tool arguments
+                        Map<String, Object> sanitizedInput =
+                                JsonUtils.getJsonCodec().toMapWithSanitizedNulls(toolUse.getInput());
+                        argsJson = JsonUtils.getJsonCodec().toJson(sanitizedInput);
                     } catch (Exception e) {
                         String errorMsg =
                                 e.getMessage() != null

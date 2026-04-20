@@ -21,8 +21,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,6 +88,102 @@ public class JacksonJsonCodec implements JsonCodec {
      */
     public ObjectMapper getObjectMapper() {
         return objectMapper;
+    }
+
+    /**
+     * Converts an object to a Map with null values sanitized for use as tool arguments.
+     *
+     * <p>Null values are replaced with empty strings, and empty nested maps are also
+     * replaced with empty strings to prevent serialization issues with APIs that don't
+     * handle null values in JSON objects.
+     *
+     * @param obj the object to convert and sanitize
+     * @return a sanitized map with null values replaced by empty strings
+     */
+    public Map<String, Object> toMapWithSanitizedNulls(Object obj) {
+        if (obj == null) {
+            return Collections.emptyMap();
+        }
+        if (obj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> originalMap = (Map<String, Object>) obj;
+            return sanitizeToolArgumentsMap(originalMap);
+        }
+        // Try to convert to map
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> converted = convertValue(obj, Map.class);
+            return sanitizeToolArgumentsMap(converted);
+        } catch (JsonException e) {
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Recursively sanitizes a map for use as tool arguments.
+     *
+     * @param input the input map to sanitize
+     * @return a new map with null values replaced by empty strings
+     */
+    private Map<String, Object> sanitizeToolArgumentsMap(Map<String, Object> input) {
+        if (input == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> result = new HashMap<>();
+        for (Map.Entry<String, Object> entry : input.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) {
+                // Replace null with empty string
+                result.put(entry.getKey(), "");
+            } else if (value instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> nestedMap = (Map<String, Object>) value;
+                if (nestedMap.isEmpty()) {
+                    // Replace empty nested map with empty string
+                    result.put(entry.getKey(), "");
+                } else {
+                    result.put(entry.getKey(), sanitizeToolArgumentsMap(nestedMap));
+                }
+            } else if (value instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Object> list = (List<Object>) value;
+                result.put(entry.getKey(), sanitizeToolArgumentsList(list));
+            } else {
+                result.put(entry.getKey(), value);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Recursively sanitizes a list for use as tool arguments.
+     *
+     * @param input the input list to sanitize
+     * @return a new list with null values replaced by empty strings
+     */
+    private List<Object> sanitizeToolArgumentsList(List<Object> input) {
+        if (input == null) {
+            return Collections.emptyList();
+        }
+        List<Object> result = new ArrayList<>(input.size());
+        for (Object item : input) {
+            if (item == null) {
+                result.add("");
+            } else if (item instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> nestedMap = (Map<String, Object>) item;
+                if (nestedMap.isEmpty()) {
+                    result.add("");
+                } else {
+                    result.add(sanitizeToolArgumentsMap(nestedMap));
+                }
+            } else if (item instanceof List) {
+                result.add(sanitizeToolArgumentsList((List<Object>) item));
+            } else {
+                result.add(item);
+            }
+        }
+        return result;
     }
 
     @Override
