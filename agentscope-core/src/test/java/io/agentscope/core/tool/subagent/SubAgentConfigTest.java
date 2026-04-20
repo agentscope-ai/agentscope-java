@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.EventType;
@@ -158,6 +159,36 @@ class SubAgentConfigTest {
 
             assertNotNull(config.getSession());
             assertInstanceOf(InMemorySession.class, config.getSession());
+        }
+
+        @Test
+        @DisplayName("Should throw exception when adding reserved parameter name")
+        void testAddReservedParameterThrowsException() {
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addParameter("message", "string", "Invalid param", true),
+                    "Should throw IllegalArgumentException for reserved 'message'");
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addParameter("session_id", "string", "Invalid param", false),
+                    "Should throw IllegalArgumentException for reserved 'session_id'");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when parameter name is empty")
+        void testAddEmptyParameterNameThrowsException() {
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addParameter("", "string", "Invalid param", true));
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addParameter(null, "string", "Invalid param", true));
         }
 
         @Test

@@ -36,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -512,7 +513,7 @@ class SubAgentToolTest {
     }
 
     @Test
-    @DisplayName("Should extract custom parameters and inject them into Msg metadata")
+    @DisplayName("Should extract declared custom parameters and inject into Msg metadata")
     void testCustomParametersInjectedIntoMetadata() {
         Agent mockAgent = mock(Agent.class);
         when(mockAgent.getName()).thenReturn("TestAgent");
@@ -526,13 +527,21 @@ class SubAgentToolTest {
                                         .content(TextBlock.builder().text("Response").build())
                                         .build()));
 
-        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(false).build();
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addParameter("injectedUserId", "string", "User ID", true)
+                        .addParameter("injectedRole", "string", "Role", false)
+                        .build();
+
         SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
 
         Map<String, Object> input = new HashMap<>();
         input.put("message", "Hello");
         input.put("injectedUserId", "1001");
         input.put("injectedRole", "admin");
+        // Mixing an undeclared field
+        input.put("maliciousField", "hacked");
 
         ToolUseBlock toolUse =
                 ToolUseBlock.builder().id("1").name("call_testagent").input(input).build();
@@ -553,8 +562,61 @@ class SubAgentToolTest {
         assertNotNull(metadata, "Metadata should not be null");
         assertEquals("1001", metadata.get("injectedUserId"), "injectedUserId should match");
         assertEquals("admin", metadata.get("injectedRole"), "injectedRole should match");
+
+        assertFalse(
+                metadata.containsKey("maliciousField"),
+                "Undeclared parameters MUST be filtered out");
         assertFalse(metadata.containsKey("message"), "message should NOT be in metadata");
         assertFalse(metadata.containsKey("session_id"), "session_id should NOT be in metadata");
+    }
+
+    @Test
+    @DisplayName("Should prioritize ToolExecutionContext over LLM input for custom parameters")
+    void testToolExecutionContextPriorityOverLlmInput() {
+        Agent mockAgent = createMockAgent("PriorityAgent", "Test priority");
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .forwardEvents(false)
+                        .addParameter("tenantId", "string", "Tenant ID", true)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        // Simulate LLM attempting to pass forged tenantId
+        Map<String, Object> llmInput = new HashMap<>();
+        llmInput.put("message", "Do action");
+        llmInput.put("tenantId", "FAKE_TENANT_FROM_LLM");
+
+        ToolExecutionContext systemContext =
+                ToolExecutionContext.builder()
+                        .register("tenantId", "REAL_SYSTEM_TENANT_ID")
+                        .build();
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_priorityagent").input(llmInput).build();
+
+        // Simultaneously input LLM input and system context
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(llmInput)
+                                .context(systemContext)
+                                .build())
+                .block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+
+        Msg sentMsg = captor.getValue().get(0);
+        Map<String, Object> metadata = sentMsg.getMetadata();
+
+        assertNotNull(metadata);
+        assertEquals(
+                "REAL_SYSTEM_TENANT_ID",
+                metadata.get("tenantId"),
+                "System Context value MUST override LLM input");
     }
 
     // Helper methods

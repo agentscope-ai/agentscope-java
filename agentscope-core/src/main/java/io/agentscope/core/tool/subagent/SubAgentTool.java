@@ -27,13 +27,16 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,13 +51,17 @@ import reactor.core.publisher.Mono;
  * <p>Thread safety is ensured by using {@link SubAgentProvider} to create a fresh agent instance
  * for each new session.
  *
- * <p>The tool exposes two parameters:
+ * <p>By default, the tool exposes two core parameters:
  *
  * <ul>
  *   <li>{@code session_id} - Optional. Omit to start a new session, provide to continue an
  *       existing one.
  *   <li>{@code message} - Required. The message to send to the agent.
  * </ul>
+ *
+ * <p>Additionally, custom parameters defined in {@link SubAgentConfig} are exposed in the
+ * tool schema. At runtime, these parameters are extracted (prioritizing {@link ToolExecutionContext}
+ * over LLM input) and securely injected into the sub-agent's message {@code metadata}.
  */
 public class SubAgentTool implements AgentTool {
 
@@ -117,6 +124,8 @@ public class SubAgentTool implements AgentTool {
      * <ul>
      *   <li>Session ID generation for new conversations
      *   <li>Agent state loading for continued sessions
+     *   <li>Extraction of custom parameters from ToolExecutionContext and LLM input
+     *   <li>Secure injection of custom parameters into the message metadata
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
      * </ul>
@@ -144,11 +153,49 @@ public class SubAgentTool implements AgentTool {
                         }
 
                         // Extract custom external parameters (filter out system built-in keys)
-                        Map<String, Object> customMetadata = new HashMap<>();
-                        for (Map.Entry<String, Object> entry : input.entrySet()) {
-                            String key = entry.getKey();
-                            if (!PARAM_SESSION_ID.equals(key) && !PARAM_MESSAGE.equals(key)) {
-                                customMetadata.put(key, entry.getValue());
+                        Map<String, Object> finalMetadata = new HashMap<>();
+                        Map<String, Map<String, Object>> declaredCustomParams =
+                                config.getCustomParameters();
+
+                        if (declaredCustomParams != null && !declaredCustomParams.isEmpty()) {
+                            for (String paramName : declaredCustomParams.keySet()) {
+                                boolean injectedFromContext = false;
+
+                                // Prioritize obtaining from ToolExecutionContext
+                                ToolExecutionContext context = param.getContext();
+                                if (context != null) {
+                                    // sequentially try the standard JSON types that could be passed
+                                    // to the LLM
+                                    Object ctxValue = context.get(paramName, String.class);
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, Integer.class);
+                                    }
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, Boolean.class);
+                                    }
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, Double.class);
+                                    }
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, Map.class);
+                                    }
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, List.class);
+                                    }
+                                    if (ctxValue == null) {
+                                        ctxValue = context.get(paramName, Object.class);
+                                    }
+
+                                    if (ctxValue != null) {
+                                        finalMetadata.put(paramName, ctxValue);
+                                        injectedFromContext = true;
+                                    }
+                                }
+
+                                // Attempt to retrieve from input
+                                if (!injectedFromContext && input.containsKey(paramName)) {
+                                    finalMetadata.put(paramName, input.get(paramName));
+                                }
                             }
                         }
 
@@ -166,7 +213,7 @@ public class SubAgentTool implements AgentTool {
                                 Msg.builder()
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
-                                        .metadata(customMetadata)
+                                        .metadata(finalMetadata)
                                         .build();
 
                         logger.debug(
@@ -361,12 +408,16 @@ public class SubAgentTool implements AgentTool {
     /**
      * Builds the JSON schema for tool parameters.
      *
-     * <p>Creates a schema with two properties:
+     * <p>Creates a schema with two core properties:
      *
      * <ul>
      *   <li>{@code session_id} - Optional string for continuing existing conversations
      *   <li>{@code message} - Required string containing the message to send
      * </ul>
+     *
+     * <p>If custom parameters are defined in the configuration, they are merged into
+     * the properties map, and their required status is updated accordingly.
+     * The schema strictly disables {@code additionalProperties}.
      *
      * @return A map representing the JSON schema for tool parameters
      */
@@ -399,13 +450,15 @@ public class SubAgentTool implements AgentTool {
         }
 
         schema.put("properties", properties);
+        schema.put("additionalProperties", false);
 
-        List<String> requiredFields = new ArrayList<>();
+        // Prevent duplicate elements from appearing in the required array
+        Set<String> requiredFields = new LinkedHashSet<>();
         requiredFields.add(PARAM_MESSAGE);
         if (config.getRequiredCustomParameters() != null) {
             requiredFields.addAll(config.getRequiredCustomParameters());
         }
-        schema.put("required", requiredFields);
+        schema.put("required", new ArrayList<>(requiredFields));
 
         return schema;
     }

@@ -20,6 +20,7 @@ import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,13 +32,16 @@ import java.util.Map;
  * supports smart defaults that derive tool name and description from the agent itself.
  *
  * <p>Sub-agents operate in conversation mode, supporting multi-turn dialogue with session
- * management. The tool exposes two parameters:
+ * management. The tool exposes the following built-in parameters:
  *
  * <ul>
  *   <li>{@code message} - Required. The message to send to the agent.
  *   <li>{@code session_id} - Optional. Omit to start a new conversation, provide to continue
  *       an existing one.
  * </ul>
+ *
+ * <p>Users can also define additional custom parameters to be passed to the sub-agent via
+ * the {@link Builder#addParameter} methods.
  *
  * <p><b>Default Behavior:</b>
  *
@@ -54,11 +58,12 @@ import java.util.Map;
  * // Minimal configuration - uses all defaults
  * SubAgentConfig config = SubAgentConfig.defaults();
  *
- * // Custom configuration with persistent session
+ * // Custom configuration with persistent session and custom parameters
  * SubAgentConfig config = SubAgentConfig.builder()
  *     .toolName("ask_expert")
  *     .description("Ask the expert a question")
  *     .session(new JsonSession(Path.of("sessions")))
+ *     .addParameter("userId", "string", "The user ID", true)
  *     .build();
  * }</pre>
  */
@@ -166,7 +171,9 @@ public class SubAgentConfig {
      * @return A map of parameter names to their JSON schema definitions
      */
     public Map<String, Map<String, Object>> getCustomParameters() {
-        return customParameters;
+        return customParameters == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(customParameters);
     }
 
     /**
@@ -175,7 +182,9 @@ public class SubAgentConfig {
      * @return A list containing the names of required parameters
      */
     public List<String> getRequiredCustomParameters() {
-        return requiredCustomParameters;
+        return requiredCustomParameters == null
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(requiredCustomParameters);
     }
 
     /** Builder for SubAgentConfig. */
@@ -291,8 +300,20 @@ public class SubAgentConfig {
          * @param schema The JSON schema map definition for the parameter
          * @param required true if the parameter is required, false otherwise
          * @return This builder
+         * @throws IllegalArgumentException If the {@code name} is null, empty, or a reserved
+         * system parameter (e.g., "message" or "session_id").
          */
         public Builder addParameter(String name, Map<String, Object> schema, boolean required) {
+            if ("message".equals(name) || "session_id".equals(name)) {
+                throw new IllegalArgumentException(
+                        "Cannot use reserved parameter name: '"
+                                + name
+                                + "'. This is a built-in system parameter.");
+            }
+            if (name == null || name.trim().isEmpty()) {
+                throw new IllegalArgumentException("Parameter name cannot be null or empty.");
+            }
+
             this.customParameters.put(name, schema);
             if (required) {
                 this.requiredCustomParameters.add(name);

@@ -128,6 +128,9 @@ SubAgentConfig config = SubAgentConfig.builder()
 SubAgentTool tool = new SubAgentTool(agentProvider, config);
 ```
 
+**🔒 优先级注入**
+在运行时解析自定义参数时，框架会严格遵循 **“系统上下文优先于大模型输入”** 的原则。如果通过 `ToolExecutionContext` 在系统外部注入了参数（如 `userId`），它将**强制覆盖**大模型生成或幻觉出的同名参数。
+
 **2. 在子智能体中读取参数**
 当子智能体被调用时，自定义参数会被安全地挂载到输入消息的 `metadata` 中。您可以在子智能体的逻辑中这样提取：
 
