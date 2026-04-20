@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -493,6 +494,24 @@ class ReActAgentSummarizingTest {
                 hasToolResultForPendingTool,
                 "Memory should contain error result for pending tool call after summarizing");
 
+        Msg pendingToolResultMsg =
+                memoryMessages.stream()
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId)))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(pendingToolResultMsg, "Pending tool call should have a result message");
+        assertEquals(
+                MsgRole.TOOL,
+                pendingToolResultMsg.getRole(),
+                "Pending tool error result should be stored as TOOL message");
+
         // Verify the tool result indicates cancellation due to max iterations
         ToolResultBlock toolResult =
                 memoryMessages.stream()
@@ -562,5 +581,137 @@ class ReActAgentSummarizingTest {
 
         TextBlock secondText = (TextBlock) secondResponse.getFirstContentBlock();
         assertEquals("Hello! How can I help you today?", secondText.getText());
+    }
+
+    @Test
+    @DisplayName("Should add exactly one TOOL result for each pending tool during summarizing")
+    void testSummarizingAddsOneToolResultPerPendingTool() {
+        InMemoryMemory memory = new InMemoryMemory();
+        final String toolId1 = "call_pending_1";
+        final String toolId2 = "call_pending_2";
+
+        Msg pendingAssistantMsg =
+                Msg.builder()
+                        .name("TestAgent")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id(toolId1)
+                                                .input(Map.of("query", "weather"))
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .name("search_tool")
+                                                .id(toolId2)
+                                                .input(Map.of("query", "news"))
+                                                .build()))
+                        .build();
+        memory.addMessage(pendingAssistantMsg);
+
+        MockModel mockModel =
+                new MockModel(
+                        messages ->
+                                List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_summary")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Iteration limit"
+                                                                                    + " reached.")
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build()));
+
+        MockToolkit mockToolkit = new MockToolkit();
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .maxIters(1)
+                        .build();
+
+        Msg summaryResponse = invokeSummarizing(agent);
+        assertNotNull(summaryResponse, "Summary response should not be null");
+
+        List<Msg> memoryMessages = memory.getMessages();
+
+        long toolId1ToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId1)))
+                        .count();
+        long toolId2ToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() == MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId2)))
+                        .count();
+
+        assertEquals(
+                1L, toolId1ToolRoleCount, "toolId1 should have exactly one TOOL result message");
+        assertEquals(
+                1L, toolId2ToolRoleCount, "toolId2 should have exactly one TOOL result message");
+
+        long toolId1NonToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() != MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId1)))
+                        .count();
+        long toolId2NonToolRoleCount =
+                memoryMessages.stream()
+                        .filter(m -> m.getRole() != MsgRole.TOOL)
+                        .filter(
+                                m ->
+                                        m.getContentBlocks(ToolResultBlock.class).stream()
+                                                .anyMatch(
+                                                        tr ->
+                                                                tr.getId() != null
+                                                                        && tr.getId()
+                                                                                .equals(toolId2)))
+                        .count();
+
+        assertEquals(
+                0L, toolId1NonToolRoleCount, "toolId1 should not have non-TOOL result messages");
+        assertEquals(
+                0L, toolId2NonToolRoleCount, "toolId2 should not have non-TOOL result messages");
+    }
+
+    private static Msg invokeSummarizing(ReActAgent agent) {
+        try {
+            Method method = ReActAgent.class.getDeclaredMethod("summarizing");
+            method.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            reactor.core.publisher.Mono<Msg> mono =
+                    (reactor.core.publisher.Mono<Msg>) method.invoke(agent);
+            return mono.block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke summarizing()", e);
+        }
     }
 }

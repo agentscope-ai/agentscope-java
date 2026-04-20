@@ -737,24 +737,15 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
             for (ToolUseBlock toolUse : pendingTools) {
                 ToolResultBlock errorResult =
-                        ToolResultBlock.builder()
-                                .id(toolUse.getId())
-                                .output(
-                                        TextBlock.builder()
-                                                .text(
-                                                        "Error: Tool execution cancelled because"
-                                                                + " maximum iterations limit ("
-                                                                + maxIters
-                                                                + ") was reached")
-                                                .build())
-                                .build();
+                        buildErrorToolResult(
+                                toolUse.getId(),
+                                "Tool execution cancelled because maximum iterations limit ("
+                                        + maxIters
+                                        + ") was reached");
 
                 Msg errorResultMsg =
-                        Msg.builder()
-                                .name(getName())
-                                .role(MsgRole.ASSISTANT)
-                                .content(errorResult)
-                                .build();
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                errorResult, toolUse, getName());
                 memory.addMessage(errorResultMsg);
             }
         }
