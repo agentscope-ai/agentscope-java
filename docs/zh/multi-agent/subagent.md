@@ -110,39 +110,74 @@ TaskToolsBuilder.builder()
 
 ## 传递自定义上下文与参数
 
-在实际业务中，您可能需要向子智能体安全地透传外部系统上下文（如 `userId`、`tenantId`），而不是将它们硬编码到自然语言的 prompt 中。
+在实际业务中，可能需要向子智能体传递除 `message` 之外的额外参数（如 `userId`）。`SubAgentTool` 支持两种截然不同的参数注入方式：
 
-`SubAgentTool` 支持声明和接收自定义参数。这些参数可以通过大模型主动生成（如果暴露在 Schema 中），也可以通过 `ToolExecutionContext` 由系统外部安全注入，并最终存放在子智能体收到消息的 `metadata` 中。
+1. **大模型动态注入（业务变量）**：由大模型根据用户的聊天内容推断得出（如：翻译目标语言、分析深度）。
+2. **系统上下文注入（安全变量）**：由底层系统通过 `ToolExecutionContext` 注入，对大模型完全透明且不可篡改（如：`userId`、`tenantId`）。
 
-**1. 声明参数 (配置项)**
-通过 `SubAgentConfig` 暴露自定义参数（支持简单类型或完整的 JSON Schema）：
+### 1. 声明参数
+首先，通过 `SubAgentConfig` 声明自定义参数。框架严格区分两类参数以保证安全性与灵活性：
 
 ```java
 SubAgentConfig config = SubAgentConfig.builder()
-        // 声明一个必填的简单参数
-        .addParameter("userId", "string", "当前操作用户的 ID", true)
-        // 声明一个复杂的枚举参数
-        .addParameter("role", Map.of("type", "string", "enum", List.of("admin", "user")), false)
+        // 1. 声明业务变量（调用 addParameter：大模型可见，由 LLM 根据对话推断）
+        .addParameter("analysis_depth", Map.of("type", "string", "enum", List.of("basic", "detailed")), false)
+        // 2. 声明安全变量（调用 addSystemParameter：大模型不可见，严格由系统底层注入）
+        .addSystemParameter("userId")
         .build();
 
 SubAgentTool tool = new SubAgentTool(agentProvider, config);
 ```
 
-**🔒 优先级注入**
-在运行时解析自定义参数时，框架会严格遵循 **“系统上下文优先于大模型输入”** 的原则。如果通过 `ToolExecutionContext` 在系统外部注入了参数（如 `userId`），它将**强制覆盖**大模型生成或幻觉出的同名参数。
+### 2. 两种注入方式示例
 
-**2. 在子智能体中读取参数**
-当子智能体被调用时，自定义参数会被安全地挂载到输入消息的 `metadata` 中。您可以在子智能体的逻辑中这样提取：
+#### 方式一：大模型动态注入（业务变量）
+适用于**业务属性**。通过 `addParameter` 声明的变量（如 `analysis_depth`）会被渲染进传递给大模型的 JSON Schema 中。
+当用户说：*“帮我进行极其深入的代码审查”* 时，大模型会自动推断并生成如下调用：
+```json
+{
+  "message": "审查代码库",
+  "analysis_depth": "detailed" 
+}
+```
+
+💡 后端干预（兜底机制）：虽然业务变量由大模型推断，但框架同样允许后端通过 ToolExecutionContext 注入同名参数。如果系统处于降级模式或有特殊校验，底层注入的值将强行覆盖大模型的推断结果，保障系统的绝对控制权。
+
+#### 方式二：系统上下文注入（安全变量）
+适用于**敏感安全属性**（如 `userId`）。通过 `addSystemParameter` 声明的变量对大模型**完全隐身**。系统拦截器会在运行时直接将其安全塞入。
+```java
+// 在系统入口处注册上下文
+ToolExecutionContext context = ToolExecutionContext.builder()
+        .register("userId", String.class, "user_123") // 明确指定类型为 String.class
+        .build();
+
+// 执行时传入 context
+ToolCallParam param = ToolCallParam.builder()
+        .toolUseBlock(toolUseBlock)
+        .input(Map.of("message", "查一下我的订单"))
+        .context(context)
+        .build();
+
+tool.callAsync(param).subscribe();
+```
+
+> **🔒 安全与优先级**
+> 由于系统参数（如 `userId`）是通过 `addSystemParameter` 声明的，它不会出现在发送给大模型的 Schema 中。框架在运行时严格遵循 **“系统上下文绝对优先”** 的原则。即使黑客通过提示词注入（Prompt Injection）攻击，迫使大模型在输出的 JSON 中强行拼凑出 `"userId": "admin"`，底层框架也会**完全无视**并丢弃大模型传入的假值，严格只从 `ToolExecutionContext` 中提取真实的上下文，从根本上杜绝越权风险。
+
+### 3. 在子智能体中读取参数
+无论参数是通过哪种方式注入的，最终都会被安全地挂载到子智能体输入消息的 `metadata` 中。提取方式完全一致：
 
 ```java
 public Mono<Msg> call(List<Msg> messages) {
     Msg userMsg = messages.get(messages.size() - 1);
-    
-    // 从 metadata 中安全获取透传的上下文
     Map<String, Object> metadata = userMsg.getMetadata();
-    String userId = (String) metadata.get("userId");
     
-    // ... 基于 userId 执行特定逻辑 ...
+    // 获取系统注入的安全参数
+    String userId = (String) metadata.get("userId");
+    // 获取大模型注入的业务参数
+    String depth = (String) metadata.get("analysis_depth");
+    
+    // ... 基于这些参数执行特定逻辑 ...
 }
 ```
 

@@ -22,8 +22,10 @@ import io.agentscope.core.session.Session;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Configuration for sub-agent registration.
@@ -40,8 +42,16 @@ import java.util.Map;
  *       an existing one.
  * </ul>
  *
- * <p>Users can also define additional custom parameters to be passed to the sub-agent via
- * the {@link Builder#addParameter} methods.
+ * <p>Users can also define additional parameters to be passed to the sub-agent. The framework
+ * strictly separates these into two categories for security:
+ *
+ * <ul>
+ *   <li><b>Custom Parameters:</b> Added via {@link Builder#addParameter}. These are exposed to the
+ *       LLM in the tool schema, allowing the LLM to infer and generate values based on the conversation.
+ *   <li><b>System Parameters:</b> Added via {@link Builder#addSystemParameter}. These are strictly
+ *       injected by the system via {@code ToolExecutionContext}. They are completely transparent
+ *       (invisible) to the LLM, preventing prompt injection.
+ * </ul>
  *
  * <p><b>Default Behavior:</b>
  *
@@ -76,6 +86,7 @@ public class SubAgentConfig {
     private final Session session;
     private final Map<String, Map<String, Object>> customParameters;
     private final List<String> requiredCustomParameters;
+    private final Set<String> systemParameters;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -89,6 +100,8 @@ public class SubAgentConfig {
                 builder.requiredCustomParameters != null
                         ? builder.requiredCustomParameters
                         : new ArrayList<>();
+        this.systemParameters =
+                builder.systemParameters != null ? builder.systemParameters : new LinkedHashSet<>();
     }
 
     /**
@@ -187,6 +200,20 @@ public class SubAgentConfig {
                 : Collections.unmodifiableList(requiredCustomParameters);
     }
 
+    /**
+     * Gets the system parameters defined for the sub-agent tool.
+     *
+     * <p>System parameters are injected transparently via ToolExecutionContext
+     * and are NOT exposed to the LLM in the JSON schema.
+     *
+     * @return A set containing the names of system parameters
+     */
+    public Set<String> getSystemParameters() {
+        return systemParameters == null
+                ? Collections.emptySet()
+                : Collections.unmodifiableSet(systemParameters);
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -196,6 +223,7 @@ public class SubAgentConfig {
         private Session session;
         private Map<String, Map<String, Object>> customParameters = new HashMap<>();
         private List<String> requiredCustomParameters = new ArrayList<>();
+        private Set<String> systemParameters = new LinkedHashSet<>();
 
         private Builder() {}
 
@@ -318,6 +346,35 @@ public class SubAgentConfig {
             if (required) {
                 this.requiredCustomParameters.add(name);
             }
+            return this;
+        }
+
+        /**
+         * Adds a system parameter (e.g., userId) to be injected securely.
+         *
+         * <p>Unlike custom parameters, system parameters are completely invisible to the
+         * language model and will NOT be included in the generated JSON schema. They are
+         * extracted strictly from the {@link io.agentscope.core.tool.ToolExecutionContext}
+         * at runtime, preventing prompt injection attacks and LLM hallucination.
+         *
+         * @param name The name of the system parameter
+         * @return This builder
+         * @throws IllegalArgumentException If the {@code name} is null, empty, or a reserved
+         * system parameter (e.g., "message" or "session_id").
+         */
+        public Builder addSystemParameter(String name) {
+            if ("message".equals(name) || "session_id".equals(name)) {
+                throw new IllegalArgumentException(
+                        "Cannot use reserved parameter name: '"
+                                + name
+                                + "'. This is a built-in parameter.");
+            }
+            if (name == null || name.trim().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "System parameter name cannot be null or empty.");
+            }
+
+            this.systemParameters.add(name);
             return this;
         }
 

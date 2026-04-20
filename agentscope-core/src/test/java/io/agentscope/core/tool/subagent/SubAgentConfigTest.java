@@ -235,6 +235,32 @@ class SubAgentConfigTest {
         }
 
         @Test
+        @DisplayName("Should throw exception when adding reserved system parameter name")
+        void testAddReservedSystemParameterThrowsException() {
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addSystemParameter("message"),
+                    "Should throw IllegalArgumentException for reserved 'message'");
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> builder.addSystemParameter("session_id"),
+                    "Should throw IllegalArgumentException for reserved 'session_id'");
+        }
+
+        @Test
+        @DisplayName("Should throw exception when system parameter name is empty")
+        void testAddEmptySystemParameterNameThrowsException() {
+            SubAgentConfig.Builder builder = SubAgentConfig.builder();
+
+            assertThrows(IllegalArgumentException.class, () -> builder.addSystemParameter(""));
+
+            assertThrows(IllegalArgumentException.class, () -> builder.addSystemParameter(null));
+        }
+
+        @Test
         @DisplayName("Builder should be chainable")
         void testBuilderChaining() {
             SubAgentConfig.Builder builder = SubAgentConfig.builder();
@@ -246,6 +272,8 @@ class SubAgentConfigTest {
                             .forwardEvents(true)
                             .streamOptions(null)
                             .session(new InMemorySession())
+                            .addParameter("param", null, true)
+                            .addSystemParameter("sysParam")
                             .build();
 
             assertNotNull(config);
@@ -301,6 +329,14 @@ class SubAgentConfigTest {
             SubAgentConfig config = SubAgentConfig.builder().build();
             assertNotNull(config.getRequiredCustomParameters());
             assertTrue(config.getRequiredCustomParameters().isEmpty());
+        }
+
+        @Test
+        @DisplayName("getSystemParameters() should return empty set when not set")
+        void testGetSystemParametersEmpty() {
+            SubAgentConfig config = SubAgentConfig.builder().build();
+            assertNotNull(config.getSystemParameters());
+            assertTrue(config.getSystemParameters().isEmpty());
         }
     }
 

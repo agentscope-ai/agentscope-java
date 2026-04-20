@@ -59,9 +59,15 @@ import reactor.core.publisher.Mono;
  *   <li>{@code message} - Required. The message to send to the agent.
  * </ul>
  *
- * <p>Additionally, custom parameters defined in {@link SubAgentConfig} are exposed in the
- * tool schema. At runtime, these parameters are extracted (prioritizing {@link ToolExecutionContext}
- * over LLM input) and securely injected into the sub-agent's message {@code metadata}.
+ * <p>Additionally, the tool supports two categories of external parameters defined in
+ * {@link SubAgentConfig}:
+ * <ul>
+ *   <li><b>System Parameters:</b> Extracted strictly from {@link ToolExecutionContext}. These are
+ *       invisible to the LLM and completely tamper-proof.
+ *   <li><b>Custom Parameters:</b> Exposed in the tool schema for LLM inference. At runtime, these
+ *       are extracted with {@link ToolExecutionContext} taking precedence over LLM input.
+ * </ul>
+ * Both types of parameters are securely injected into the sub-agent's message {@code metadata}.
  */
 public class SubAgentTool implements AgentTool {
 
@@ -124,7 +130,8 @@ public class SubAgentTool implements AgentTool {
      * <ul>
      *   <li>Session ID generation for new conversations
      *   <li>Agent state loading for continued sessions
-     *   <li>Extraction of custom parameters from ToolExecutionContext and LLM input
+     *   <li>Extraction of external parameters with strict priority:
+     *       {@link ToolExecutionContext} (highest) &gt; LLM input (lowest)
      *   <li>Secure injection of custom parameters into the message metadata
      *   <li>Message execution (streaming or non-streaming based on config)
      *   <li>Agent state persistence after execution
@@ -152,47 +159,41 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
-                        // Extract custom external parameters (filter out system built-in keys)
+                        // Extract external parameters
                         Map<String, Object> finalMetadata = new HashMap<>();
+                        ToolExecutionContext context = param.getContext();
+
+                        // 1. Extract system parameters (Securely injected, invisible to LLM)
+                        Set<String> declaredSystemParams = config.getSystemParameters();
+                        if (declaredSystemParams != null && !declaredSystemParams.isEmpty()) {
+                            for (String paramName : declaredSystemParams) {
+                                Object ctxValue = extractFromContext(context, paramName);
+                                if (ctxValue != null) {
+                                    finalMetadata.put(paramName, ctxValue);
+                                } else {
+                                    logger.warn(
+                                            "System parameter '{}' was declared but not provided in"
+                                                    + " ToolExecutionContext",
+                                            paramName);
+                                }
+                            }
+                        }
+
+                        // 2. Extract custom parameters (LLM inferred, Context overrides LLM)
                         Map<String, Map<String, Object>> declaredCustomParams =
                                 config.getCustomParameters();
-
                         if (declaredCustomParams != null && !declaredCustomParams.isEmpty()) {
                             for (String paramName : declaredCustomParams.keySet()) {
                                 boolean injectedFromContext = false;
 
                                 // Prioritize obtaining from ToolExecutionContext
-                                ToolExecutionContext context = param.getContext();
-                                if (context != null) {
-                                    // sequentially try the standard JSON types that could be passed
-                                    // to the LLM
-                                    Object ctxValue = context.get(paramName, String.class);
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, Integer.class);
-                                    }
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, Boolean.class);
-                                    }
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, Double.class);
-                                    }
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, Map.class);
-                                    }
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, List.class);
-                                    }
-                                    if (ctxValue == null) {
-                                        ctxValue = context.get(paramName, Object.class);
-                                    }
-
-                                    if (ctxValue != null) {
-                                        finalMetadata.put(paramName, ctxValue);
-                                        injectedFromContext = true;
-                                    }
+                                Object ctxValue = extractFromContext(context, paramName);
+                                if (ctxValue != null) {
+                                    finalMetadata.put(paramName, ctxValue);
+                                    injectedFromContext = true;
                                 }
 
-                                // Attempt to retrieve from input
+                                // Attempt to retrieve from LLM input if not injected by context
                                 if (!injectedFromContext && input.containsKey(paramName)) {
                                     finalMetadata.put(paramName, input.get(paramName));
                                 }
@@ -246,6 +247,39 @@ public class SubAgentTool implements AgentTool {
                                 ToolResultBlock.error("Session setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Extracts a value from the ToolExecutionContext by trying standard JSON types.
+     *
+     * @param context   The execution context
+     * @param paramName The name of the parameter to extract
+     * @return The extracted value, or null if not found
+     */
+    private Object extractFromContext(ToolExecutionContext context, String paramName) {
+        if (context == null) {
+            return null;
+        }
+        Object ctxValue = context.get(paramName, String.class);
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Integer.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Boolean.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Double.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Map.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, List.class);
+        }
+        if (ctxValue == null) {
+            ctxValue = context.get(paramName, Object.class);
+        }
+        return ctxValue;
     }
 
     /**
