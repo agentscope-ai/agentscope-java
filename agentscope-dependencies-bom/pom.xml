@@ -105,7 +105,7 @@
         <spring.version>7.0.6</spring.version>
         <spring-boot.version>4.0.4</spring-boot.version>
         <nacos-client.version>3.2.1-2026.03.30</nacos-client.version>
-        <json-schema-validator.version>2.0.0</json-schema-validator.version>
+        <json-schema-validator.version>3.0.2</json-schema-validator.version>
         <jsonschema-generator.version>4.38.0</jsonschema-generator.version>
         <snakeyaml.version>2.6</snakeyaml.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
