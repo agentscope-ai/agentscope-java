@@ -108,6 +108,41 @@ TaskToolsBuilder.builder()
 
 **同步与后台**：默认 Task 工具会运行子智能体并返回其回复。若传入类似 `run_in_background=true` 的标志，工具会返回 `task_id`；编排智能体（或用户）之后可用 **TaskOutput** 传入该 `task_id` 获取结果。这需要 **TaskRepository** 存储进行中的任务。
 
+## 传递自定义上下文与参数
+
+在实际业务中，您可能需要向子智能体安全地透传外部系统上下文（如 `userId`、`tenantId`），而不是将它们硬编码到自然语言的 prompt 中。
+
+`SubAgentTool` 支持声明和接收自定义参数。这些参数可以通过大模型主动生成（如果暴露在 Schema 中），也可以通过 `ToolExecutionContext` 由系统外部安全注入，并最终存放在子智能体收到消息的 `metadata` 中。
+
+**1. 声明参数 (配置项)**
+通过 `SubAgentConfig` 暴露自定义参数（支持简单类型或完整的 JSON Schema）：
+
+```java
+SubAgentConfig config = SubAgentConfig.builder()
+        // 声明一个必填的简单参数
+        .addParameter("userId", "string", "当前操作用户的 ID", true)
+        // 声明一个复杂的枚举参数
+        .addParameter("role", Map.of("type", "string", "enum", List.of("admin", "user")), false)
+        .build();
+
+SubAgentTool tool = new SubAgentTool(agentProvider, config);
+```
+
+**2. 在子智能体中读取参数**
+当子智能体被调用时，自定义参数会被安全地挂载到输入消息的 `metadata` 中。您可以在子智能体的逻辑中这样提取：
+
+```java
+public Mono<Msg> call(List<Msg> messages) {
+    Msg userMsg = messages.get(messages.size() - 1);
+    
+    // 从 metadata 中安全获取透传的上下文
+    Map<String, Object> metadata = userMsg.getMetadata();
+    String userId = (String) metadata.get("userId");
+    
+    // ... 基于 userId 执行特定逻辑 ...
+}
+```
+
 ## 示例：技术尽调助手
 
 AgentScope 示例实现了一个**技术尽调助手**：一个编排智能体委托给四个子智能体。

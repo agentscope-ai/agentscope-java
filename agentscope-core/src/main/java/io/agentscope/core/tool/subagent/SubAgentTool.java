@@ -29,6 +29,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -142,6 +143,15 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
+                        // Extract custom external parameters (filter out system built-in keys)
+                        Map<String, Object> customMetadata = new HashMap<>();
+                        for (Map.Entry<String, Object> entry : input.entrySet()) {
+                            String key = entry.getKey();
+                            if (!PARAM_SESSION_ID.equals(key) && !PARAM_MESSAGE.equals(key)) {
+                                customMetadata.put(key, entry.getValue());
+                            }
+                        }
+
                         // Create agent for this session
                         final String finalSessionId = sessionId;
                         Agent agent = agentProvider.provide();
@@ -156,6 +166,7 @@ public class SubAgentTool implements AgentTool {
                                 Msg.builder()
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
+                                        .metadata(customMetadata)
                                         .build();
 
                         logger.debug(
@@ -381,8 +392,20 @@ public class SubAgentTool implements AgentTool {
         messageProp.put("description", "Message to send to the agent");
         properties.put(PARAM_MESSAGE, messageProp);
 
+        // Custom parameters
+        Map<String, Map<String, Object>> customParams = config.getCustomParameters();
+        if (customParams != null && !customParams.isEmpty()) {
+            properties.putAll(customParams);
+        }
+
         schema.put("properties", properties);
-        schema.put("required", List.of(PARAM_MESSAGE));
+
+        List<String> requiredFields = new ArrayList<>();
+        requiredFields.add(PARAM_MESSAGE);
+        if (config.getRequiredCustomParameters() != null) {
+            requiredFields.addAll(config.getRequiredCustomParameters());
+        }
+        schema.put("required", requiredFields);
 
         return schema;
     }

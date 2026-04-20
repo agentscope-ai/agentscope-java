@@ -19,6 +19,10 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Configuration for sub-agent registration.
@@ -31,7 +35,7 @@ import io.agentscope.core.session.Session;
  *
  * <ul>
  *   <li>{@code message} - Required. The message to send to the agent.
- *   <li>{@code conversation_id} - Optional. Omit to start a new conversation, provide to continue
+ *   <li>{@code session_id} - Optional. Omit to start a new conversation, provide to continue
  *       an existing one.
  * </ul>
  *
@@ -65,6 +69,8 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final Session session;
+    private final Map<String, Map<String, Object>> customParameters;
+    private final List<String> requiredCustomParameters;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -72,6 +78,12 @@ public class SubAgentConfig {
         this.forwardEvents = builder.forwardEvents;
         this.streamOptions = builder.streamOptions;
         this.session = builder.session != null ? builder.session : new InMemorySession();
+        this.customParameters =
+                builder.customParameters != null ? builder.customParameters : new HashMap<>();
+        this.requiredCustomParameters =
+                builder.requiredCustomParameters != null
+                        ? builder.requiredCustomParameters
+                        : new ArrayList<>();
     }
 
     /**
@@ -148,6 +160,24 @@ public class SubAgentConfig {
         return session;
     }
 
+    /**
+     * Gets the custom parameters defined for the sub-agent tool.
+     *
+     * @return A map of parameter names to their JSON schema definitions
+     */
+    public Map<String, Map<String, Object>> getCustomParameters() {
+        return customParameters;
+    }
+
+    /**
+     * Gets the list of required custom parameter names.
+     *
+     * @return A list containing the names of required parameters
+     */
+    public List<String> getRequiredCustomParameters() {
+        return requiredCustomParameters;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -155,6 +185,8 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private Session session;
+        private Map<String, Map<String, Object>> customParameters = new HashMap<>();
+        private List<String> requiredCustomParameters = new ArrayList<>();
 
         private Builder() {}
 
@@ -226,6 +258,45 @@ public class SubAgentConfig {
          */
         public Builder session(Session session) {
             this.session = session;
+            return this;
+        }
+
+        /**
+         * Adds a simple custom parameter to the tool's JSON schema.
+         *
+         * <p>This is a convenience method for adding basic parameters. For complex schemas
+         * (e.g., enums, arrays), use {@link #addParameter(String, Map, boolean)}.
+         *
+         * @param name The name of the parameter
+         * @param type The type of the parameter (e.g., "string", "integer")
+         * @param description The description of the parameter
+         * @param required true if the parameter is required, false otherwise
+         * @return This builder
+         */
+        public Builder addParameter(
+                String name, String type, String description, boolean required) {
+            Map<String, Object> prop = new HashMap<>();
+            prop.put("type", type);
+            prop.put("description", description);
+            return addParameter(name, prop, required);
+        }
+
+        /**
+         * Adds a custom parameter with a fully defined JSON schema.
+         *
+         * <p>This method allows for advanced JSON schema features like enums, nested objects,
+         * or arrays, enabling precise control over how the language model understands the parameter.
+         *
+         * @param name The name of the parameter
+         * @param schema The JSON schema map definition for the parameter
+         * @param required true if the parameter is required, false otherwise
+         * @return This builder
+         */
+        public Builder addParameter(String name, Map<String, Object> schema, boolean required) {
+            this.customParameters.put(name, schema);
+            if (required) {
+                this.requiredCustomParameters.add(name);
+            }
             return this;
         }
 

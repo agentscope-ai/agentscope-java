@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -477,6 +478,83 @@ class SubAgentToolTest {
                 "Truncated name must end with an underscore and an 8-character hash");
 
         assertFalse(generatedName.contains("__"));
+    }
+
+    @Test
+    @DisplayName("Should generate schema containing custom parameters")
+    void testSchemaWithCustomParameters() {
+        Agent mockAgent = createMockAgent("TestAgent", "Test");
+
+        SubAgentConfig config =
+                SubAgentConfig.builder()
+                        .addParameter("userId", "string", "The user ID", true)
+                        .addParameter("tenantId", "string", "The tenant ID", false)
+                        .build();
+
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> schema = tool.getParameters();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+
+        // Custom params should exist
+        assertTrue(properties.containsKey("userId"));
+        assertTrue(properties.containsKey("tenantId"));
+
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+
+        // Check required fields
+        assertTrue(required.contains("message"));
+        assertTrue(required.contains("userId")); // Custom required
+        assertFalse(required.contains("tenantId")); // Custom optional
+    }
+
+    @Test
+    @DisplayName("Should extract custom parameters and inject them into Msg metadata")
+    void testCustomParametersInjectedIntoMetadata() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("TestAgent");
+        when(mockAgent.getDescription()).thenReturn("Test");
+
+        when(mockAgent.call(any(List.class)))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(TextBlock.builder().text("Response").build())
+                                        .build()));
+
+        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(false).build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Hello");
+        input.put("injectedUserId", "1001");
+        input.put("injectedRole", "admin");
+
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_testagent").input(input).build();
+        tool.callAsync(ToolCallParam.builder().toolUseBlock(toolUse).input(input).build()).block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mockAgent).call(captor.capture());
+
+        List<Msg> capturedMessages = captor.getValue();
+        assertFalse(capturedMessages == null || capturedMessages.isEmpty());
+
+        Msg sentMsg = capturedMessages.get(0);
+        Map<String, Object> metadata = sentMsg.getMetadata();
+
+        // Verify if custom parameters are injected correctly
+        // and if system parameters are filtered
+        assertNotNull(metadata, "Metadata should not be null");
+        assertEquals("1001", metadata.get("injectedUserId"), "injectedUserId should match");
+        assertEquals("admin", metadata.get("injectedRole"), "injectedRole should match");
+        assertFalse(metadata.containsKey("message"), "message should NOT be in metadata");
+        assertFalse(metadata.containsKey("session_id"), "session_id should NOT be in metadata");
     }
 
     // Helper methods

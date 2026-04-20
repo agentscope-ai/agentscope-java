@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.subagent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -25,6 +26,9 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.Session;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -157,6 +161,49 @@ class SubAgentConfigTest {
         }
 
         @Test
+        @DisplayName("Should build config with simple custom parameter")
+        void testSimpleCustomParameter() {
+            SubAgentConfig config =
+                    SubAgentConfig.builder()
+                            .addParameter("userId", "string", "The user ID", true)
+                            .build();
+
+            assertNotNull(config.getCustomParameters());
+            assertEquals(1, config.getCustomParameters().size());
+
+            Map<String, Object> paramConfig = config.getCustomParameters().get("userId");
+            assertNotNull(paramConfig);
+            assertEquals("string", paramConfig.get("type"));
+            assertEquals("The user ID", paramConfig.get("description"));
+
+            assertNotNull(config.getRequiredCustomParameters());
+            assertTrue(config.getRequiredCustomParameters().contains("userId"));
+        }
+
+        @Test
+        @DisplayName("Should build config with schema custom parameter")
+        void testSchemaCustomParameter() {
+            Map<String, Object> enumSchema = new HashMap<>();
+            enumSchema.put("type", "string");
+            enumSchema.put("enum", List.of("admin", "user"));
+            enumSchema.put("description", "The user role");
+
+            SubAgentConfig config =
+                    SubAgentConfig.builder().addParameter("role", enumSchema, false).build();
+
+            assertNotNull(config.getCustomParameters());
+            assertEquals(1, config.getCustomParameters().size());
+
+            Map<String, Object> paramConfig = config.getCustomParameters().get("role");
+            assertNotNull(paramConfig);
+            assertEquals("string", paramConfig.get("type"));
+            assertTrue(paramConfig.containsKey("enum"));
+
+            assertNotNull(config.getRequiredCustomParameters());
+            assertFalse(config.getRequiredCustomParameters().contains("role"));
+        }
+
+        @Test
         @DisplayName("Builder should be chainable")
         void testBuilderChaining() {
             SubAgentConfig.Builder builder = SubAgentConfig.builder();
@@ -207,6 +254,22 @@ class SubAgentConfigTest {
 
             SubAgentConfig configWithNullSession = SubAgentConfig.builder().session(null).build();
             assertNotNull(configWithNullSession.getSession());
+        }
+
+        @Test
+        @DisplayName("getCustomParameters() should return empty map when not set")
+        void testGetCustomParametersEmpty() {
+            SubAgentConfig config = SubAgentConfig.builder().build();
+            assertNotNull(config.getCustomParameters());
+            assertTrue(config.getCustomParameters().isEmpty());
+        }
+
+        @Test
+        @DisplayName("getRequiredCustomParameters() should return empty list when not set")
+        void testGetRequiredCustomParametersEmpty() {
+            SubAgentConfig config = SubAgentConfig.builder().build();
+            assertNotNull(config.getRequiredCustomParameters());
+            assertTrue(config.getRequiredCustomParameters().isEmpty());
         }
     }
 
