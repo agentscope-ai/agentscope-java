@@ -415,7 +415,36 @@ public class Msg implements State {
             return null;
         }
         Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
-        return usage instanceof ChatUsage ? (ChatUsage) usage : null;
+        if (usage instanceof ChatUsage) {
+            return (ChatUsage) usage;
+        }
+        if (usage instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) usage;
+            ChatUsage chatUsage =
+                    ChatUsage.builder()
+                            .inputTokens(toInt(map.get("inputTokens")))
+                            .outputTokens(toInt(map.get("outputTokens")))
+                            .time(toDouble(map.get("time")))
+                            .build();
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+            return chatUsage;
+        }
+        return null;
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        return 0;
+    }
+
+    private static double toDouble(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        return 0.0;
     }
 
     /**
