@@ -27,11 +27,11 @@ import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
+import com.anthropic.models.messages.TextBlock;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -61,12 +61,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     @Test
     void testFormatSimpleUserMessage() {
-        Msg msg =
-                Msg.builder()
-                        .name("User")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello").build()))
-                        .build();
+        Msg msg = Msg.builder().name("User").role(MsgRole.USER).textContent("Hello").build();
 
         List<MessageParam> result = formatter.format(List.of(msg));
 
@@ -81,7 +76,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                 Msg.builder()
                         .name("System")
                         .role(MsgRole.SYSTEM)
-                        .content(List.of(TextBlock.builder().text("You are helpful").build()))
+                        .textContent("You are helpful")
                         .build();
 
         List<MessageParam> result = formatter.format(List.of(msg));
@@ -94,19 +89,10 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
 
     @Test
     void testFormatMultipleMessages() {
-        Msg userMsg =
-                Msg.builder()
-                        .name("User")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello").build()))
-                        .build();
+        Msg userMsg = Msg.builder().name("User").role(MsgRole.USER).textContent("Hello").build();
 
         Msg assistantMsg =
-                Msg.builder()
-                        .name("Assistant")
-                        .role(MsgRole.ASSISTANT)
-                        .content(List.of(TextBlock.builder().text("Hi").build()))
-                        .build();
+                Msg.builder().name("Assistant").role(MsgRole.ASSISTANT).textContent("Hi").build();
 
         List<MessageParam> result = formatter.format(List.of(userMsg, assistantMsg));
 
@@ -129,7 +115,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
         ContentBlock contentBlock = mock(ContentBlock.class);
-        var textBlock = mockTextBlock();
+        TextBlock textBlock = mockTextBlock();
 
         when(message.id()).thenReturn("msg_test");
         when(message.content()).thenReturn(List.of(contentBlock));
@@ -170,7 +156,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                 Msg.builder()
                         .name("System")
                         .role(MsgRole.SYSTEM)
-                        .content(List.of(TextBlock.builder().text("You are helpful").build()))
+                        .textContent("You are helpful")
                         .build();
 
         formatter.applySystemMessage(paramsBuilder, List.of(systemMsg));
@@ -204,12 +190,7 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
     void testApplySystemMessageWithNoSystemMessage() {
         MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder();
 
-        Msg userMsg =
-                Msg.builder()
-                        .name("User")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello").build()))
-                        .build();
+        Msg userMsg = Msg.builder().name("User").role(MsgRole.USER).textContent("Hello").build();
 
         formatter.applySystemMessage(paramsBuilder, List.of(userMsg));
 
@@ -450,7 +431,12 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
                                         ToolResultBlock.builder()
                                                 .id("tool_123")
                                                 .name("search")
-                                                .output(TextBlock.builder().text("Result").build())
+                                                .output(
+                                                        Msg.builder()
+                                                                .textContent("Result")
+                                                                .build()
+                                                                .getContent()
+                                                                .get(0))
                                                 .build()))
                         .build();
 

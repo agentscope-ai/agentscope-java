@@ -19,10 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.google.genai.types.Blob;
-import com.google.genai.types.Part;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiBlob;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -47,17 +46,17 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
                         .build();
         ImageBlock block = ImageBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
+        GeminiPart result = converter.convertToInlineDataPart(block);
 
         assertNotNull(result);
-        assertTrue(result.inlineData().isPresent());
-        Blob blob = result.inlineData().get();
-        assertTrue(blob.data().isPresent());
-        assertTrue(blob.mimeType().isPresent());
+        assertNotNull(result.getInlineData());
+        GeminiBlob blob = result.getInlineData();
+        assertNotNull(blob.getData());
+        assertNotNull(blob.getMimeType());
 
-        byte[] expectedData = "fake image content".getBytes();
-        assertArrayEquals(expectedData, blob.data().get());
-        assertEquals("image/png", blob.mimeType().get());
+        // "fake image content" -> "ZmFrZSBpbWFnZSBjb250ZW50"
+        assertEquals("ZmFrZSBpbWFnZSBjb250ZW50", blob.getData());
+        assertEquals("image/png", blob.getMimeType());
     }
 
     @Test
@@ -65,17 +64,17 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         URLSource source = URLSource.builder().url(tempImageFile.toString()).build();
         ImageBlock block = ImageBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
+        GeminiPart result = converter.convertToInlineDataPart(block);
 
         assertNotNull(result);
-        assertTrue(result.inlineData().isPresent());
-        Blob blob = result.inlineData().get();
-        assertTrue(blob.data().isPresent());
-        assertTrue(blob.mimeType().isPresent());
+        assertNotNull(result.getInlineData());
+        GeminiBlob blob = result.getInlineData();
+        assertNotNull(blob.getData());
+        assertNotNull(blob.getMimeType());
 
-        byte[] expectedData = "fake image content".getBytes();
-        assertArrayEquals(expectedData, blob.data().get());
-        assertEquals("image/png", blob.mimeType().get());
+        // "fake image content" -> "ZmFrZSBpbWFnZSBjb250ZW50"
+        assertEquals("ZmFrZSBpbWFnZSBjb250ZW50", blob.getData());
+        assertEquals("image/png", blob.getMimeType());
     }
 
     @Test
@@ -87,15 +86,15 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
                         .build();
         AudioBlock block = AudioBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
+        GeminiPart result = converter.convertToInlineDataPart(block);
 
         assertNotNull(result);
-        assertTrue(result.inlineData().isPresent());
-        Blob blob = result.inlineData().get();
+        assertNotNull(result.getInlineData());
+        GeminiBlob blob = result.getInlineData();
 
-        byte[] expectedData = "fake audio content".getBytes();
-        assertArrayEquals(expectedData, blob.data().get());
-        assertEquals("audio/mp3", blob.mimeType().get());
+        // "fake audio content" -> "ZmFrZSBhdWRpbyBjb250ZW50"
+        assertEquals("ZmFrZSBhdWRpbyBjb250ZW50", blob.getData());
+        assertEquals("audio/mp3", blob.getMimeType());
     }
 
     @Test
@@ -103,15 +102,15 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
         URLSource source = URLSource.builder().url(tempAudioFile.toString()).build();
         AudioBlock block = AudioBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
+        GeminiPart result = converter.convertToInlineDataPart(block);
 
         assertNotNull(result);
-        assertTrue(result.inlineData().isPresent());
-        Blob blob = result.inlineData().get();
+        assertNotNull(result.getInlineData());
+        GeminiBlob blob = result.getInlineData();
 
-        byte[] expectedData = "fake audio content".getBytes();
-        assertArrayEquals(expectedData, blob.data().get());
-        assertEquals("audio/mp3", blob.mimeType().get());
+        // "fake audio content" -> "ZmFrZSBhdWRpbyBjb250ZW50"
+        assertEquals("ZmFrZSBhdWRpbyBjb250ZW50", blob.getData());
+        assertEquals("audio/mp3", blob.getMimeType());
     }
 
     @Test
@@ -123,15 +122,15 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
                         .build();
         VideoBlock block = VideoBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
+        GeminiPart result = converter.convertToInlineDataPart(block);
 
         assertNotNull(result);
-        assertTrue(result.inlineData().isPresent());
-        Blob blob = result.inlineData().get();
+        assertNotNull(result.getInlineData());
+        GeminiBlob blob = result.getInlineData();
 
-        byte[] expectedData = "fake video content".getBytes();
-        assertArrayEquals(expectedData, blob.data().get());
-        assertEquals("video/mp4", blob.mimeType().get());
+        // "fake video content" -> "ZmFrZSB2aWRlbyBjb250ZW50"
+        assertEquals("ZmFrZSB2aWRlbyBjb250ZW50", blob.getData());
+        assertEquals("video/mp4", blob.getMimeType());
     }
 
     @Test
@@ -161,9 +160,10 @@ class GeminiMediaConverterTest extends GeminiFormatterTestBase {
                 Base64Source.builder().data(base64Encoded).mediaType("image/png").build();
         ImageBlock block = ImageBlock.builder().source(source).build();
 
-        Part result = converter.convertToInlineDataPart(block);
-        byte[] resultData = result.inlineData().get().data().get();
+        GeminiPart result = converter.convertToInlineDataPart(block);
+        String resultData = result.getInlineData().getData();
+        byte[] decodedBytes = Base64.getDecoder().decode(resultData);
 
-        assertArrayEquals(originalText.getBytes(), resultData);
+        assertArrayEquals(originalText.getBytes(), decodedBytes);
     }
 }
