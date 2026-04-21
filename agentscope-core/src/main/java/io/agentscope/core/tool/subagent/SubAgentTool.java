@@ -31,6 +31,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -422,9 +423,8 @@ public class SubAgentTool implements AgentTool {
     private String sanitizeName(String prefix, String originalName) {
         // Keep the underscore, replace other illegal characters with underscores uniformly,
         // merge consecutive underscores, and remove the first and last underscores
-        String safePart =
-                originalName
-                        .toLowerCase()
+        String lowerOriginal = originalName.toLowerCase(Locale.ROOT);
+        String safePart = lowerOriginal
                         .replaceAll("[^a-z0-9_-]+", "_")
                         .replaceAll("_+", "_")
                         .replaceAll("^_+|_+$", "");
@@ -434,9 +434,9 @@ public class SubAgentTool implements AgentTool {
         }
 
         String resolvedName = prefix + safePart;
-        boolean isPureEnglish = originalName.toLowerCase().matches("^[a-z0-9_-]+$");
+        boolean isInformationLost = lowerOriginal.matches("^[a-z0-9_\\-\\s]+$");
 
-        boolean needsHash = !isPureEnglish || resolvedName.length() > 64;
+        boolean needsHash = !isInformationLost || resolvedName.length() > 64;
 
         if (needsHash) {
             // Generate deterministic hash
