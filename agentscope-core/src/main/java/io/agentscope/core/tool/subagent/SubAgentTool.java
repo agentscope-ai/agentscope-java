@@ -424,7 +424,8 @@ public class SubAgentTool implements AgentTool {
         // Keep the underscore, replace other illegal characters with underscores uniformly,
         // merge consecutive underscores, and remove the first and last underscores
         String lowerOriginal = originalName.toLowerCase(Locale.ROOT);
-        String safePart = lowerOriginal
+        String safePart =
+                lowerOriginal
                         .replaceAll("[^a-z0-9_-]+", "_")
                         .replaceAll("_+", "_")
                         .replaceAll("^_+|_+$", "");
