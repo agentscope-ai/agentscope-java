@@ -39,6 +39,8 @@ import java.util.stream.Collectors;
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
+    private static final String UNKNOWN_TOOL_NAME = "unknown_tool";
+
     // Map to support multiple parallel tool calls
     // Key: tool identifier (ID, name, or index)
     private final Map<String, ToolCallBuilder> builders = new LinkedHashMap<>();
@@ -103,7 +105,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
-                    .name(name)
+                    .name(name != null ? name : UNKNOWN_TOOL_NAME)
                     .input(finalArgs)
                     .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
