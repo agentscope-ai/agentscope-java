@@ -317,6 +317,46 @@ class DashScopeToolsHelperComprehensiveTest {
     }
 
     @Test
+    void testConvertToolCallsWithInvalidJsonContent() {
+        // Simulate interrupted streaming: content is incomplete JSON
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_broken")
+                        .name("search")
+                        .input(Map.of("query", "test"))
+                        .content("{\"query\": \"hel")
+                        .build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        String argsJson = result.get(0).getFunction().getArguments();
+        // Should fall back to input serialization, not the broken content
+        assertTrue(argsJson.contains("query"));
+        assertTrue(argsJson.contains("test"));
+    }
+
+    @Test
+    void testConvertToolCallsWithNonObjectJsonContent() {
+        // Content is valid JSON but not an object (array)
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_array")
+                        .name("tool")
+                        .input(Map.of("key", "value"))
+                        .content("[1, 2, 3]")
+                        .build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        String argsJson = result.get(0).getFunction().getArguments();
+        // Should fall back to input since content is not a JSON object
+        assertTrue(argsJson.contains("key"));
+        assertTrue(argsJson.contains("value"));
+    }
+
+    @Test
     void testConvertToolCallsWithComplexArgs() {
         Map<String, Object> complexArgs = new HashMap<>();
         complexArgs.put("string", "value");
