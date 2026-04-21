@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agentscope.io/schema/agentscope.json",
+  "main": "text-to-sql",
+  "agents": {
+    "text-to-sql": {
+      "name": "Text-to-SQL",
+      "description": "Answers natural-language questions about the Chinook music store database by translating them into SQL and executing the queries.",
+      "workspace": ".agentscope/workspace",
+      "maxIters": 20
+    },
+    "schema-analyst": {
+      "name": "Schema Analyst",
+      "description": "Deep schema analysis and documentation specialist. Loaded on-demand from workspace/subagents/schema-analyst.md.",
+      "workspace": ".agentscope/workspace",
+      "maxIters": 10
+    }
+  },
+  "channels": {
+    "chatui": {
+      "defaultAgentId": "text-to-sql",
+      "dmScope": "MAIN"
+    }
+  }
+}

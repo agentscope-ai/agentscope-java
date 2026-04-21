@@ -25,6 +25,7 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHook;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -51,8 +52,7 @@ import reactor.core.publisher.Mono;
  * Unit tests for SkillHook.
  *
  * <p>
- * These tests verify that SkillHook correctly injects skill prompts during
- * PreReasoningEvent.
+ * These tests verify that SkillHook correctly injects skill prompts during {@link PreCallEvent}.
  */
 @Tag("unit")
 class SkillHookTest {
@@ -84,7 +84,7 @@ class SkillHookTest {
         // Verify skill is now active
         assertTrue(skillBox.isSkillActive(skill.getSkillId()), "Skill should be active");
 
-        // Create PreReasoningEvent with one user message
+        // Create PreCallEvent with one user message
         List<Msg> messages = new ArrayList<>();
         messages.add(
                 Msg.builder()
@@ -92,12 +92,10 @@ class SkillHookTest {
                         .content(TextBlock.builder().text("User query").build())
                         .build());
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+        PreCallEvent event = new PreCallEvent(testAgent, messages);
 
         // Act: Process event through hook
-        PreReasoningEvent result = skillHook.onEvent(event).block();
+        PreCallEvent result = skillHook.onEvent(event).block();
 
         // Assert: Skill prompt should be injected
         assertNotNull(result, "Event should be processed");
@@ -150,12 +148,10 @@ class SkillHookTest {
                         .content(TextBlock.builder().text("User query").build())
                         .build());
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+        PreCallEvent event = new PreCallEvent(testAgent, messages);
 
         // Act: Process event through hook
-        PreReasoningEvent result = skillHook.onEvent(event).block();
+        PreCallEvent result = skillHook.onEvent(event).block();
 
         // Assert: Skill prompt should be added for registered skills
         assertNotNull(result, "Event should be processed");
@@ -180,12 +176,10 @@ class SkillHookTest {
                         .content(TextBlock.builder().text("User query").build())
                         .build());
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+        PreCallEvent event = new PreCallEvent(testAgent, messages);
 
         // Act: Process event through hook
-        PreReasoningEvent result = skillHook.onEvent(event).block();
+        PreCallEvent result = skillHook.onEvent(event).block();
 
         // Assert: Should handle gracefully without adding prompt
         assertNotNull(result, "Event should be processed");
@@ -195,7 +189,10 @@ class SkillHookTest {
     @Test
     @DisplayName("Should return correct hook priority")
     void testHookPriority() {
-        assertEquals(55, skillHook.priority(), "Skill hook should have priority (55)");
+        assertEquals(
+                SkillHook.SKILL_HOOK_PRIORITY,
+                skillHook.priority(),
+                "Skill hook should use SKILL_HOOK_PRIORITY");
     }
 
     @Test
@@ -230,10 +227,8 @@ class SkillHookTest {
                 new PreReasoningEvent(
                         testAgent, "test-model", GenerateOptions.builder().build(), messages);
 
-        // Simulate AgentBase hook execution (SkillHook priority 55 > StructuredOutputHook
-        // priority 50)
+        // SkillHook only handles PreCall; structured output is applied on PreReasoning here.
         List<Hook> hooks = new ArrayList<>();
-        hooks.add(skillHook);
         hooks.add(new StructuredOutputHook(StructuredOutputReminder.TOOL_CHOICE, null, null));
 
         PreReasoningEvent result = notifyHooks(event, hooks).block();
@@ -255,24 +250,26 @@ class SkillHookTest {
         skillBox.registerSkill(skill);
         activateSkill(skill.getSkillId());
 
-        // Create PreReasoningEvent with multiple messages (no existing SYSTEM message)
+        // Create PreCallEvent with multiple messages (no existing SYSTEM message)
         List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("User query").build())
-                                .build(),
-                        Msg.builder()
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Assistant response").build())
-                                .build());
+                new ArrayList<>(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("User query").build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("Assistant response")
+                                                        .build())
+                                        .build()));
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+        PreCallEvent event = new PreCallEvent(testAgent, messages);
 
         // Act: Process event through hook
-        PreReasoningEvent result = skillHook.onEvent(event).block();
+        PreCallEvent result = skillHook.onEvent(event).block();
 
         // Assert: Skill prompt should be injected at the FIRST position
         assertNotNull(result, "Event should be processed");
@@ -309,28 +306,33 @@ class SkillHookTest {
         skillBox.registerSkill(skill);
         activateSkill(skill.getSkillId());
 
-        // Create PreReasoningEvent with an existing SYSTEM message
+        // Create PreCallEvent with an existing SYSTEM message
         List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text("System instruction").build())
-                                .build(),
-                        Msg.builder()
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("User query").build())
-                                .build(),
-                        Msg.builder()
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Assistant response").build())
-                                .build());
+                new ArrayList<>(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("System instruction")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("User query").build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("Assistant response")
+                                                        .build())
+                                        .build()));
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
+        PreCallEvent event = new PreCallEvent(testAgent, messages);
 
         // Act: Process event through hook
-        PreReasoningEvent result = skillHook.onEvent(event).block();
+        PreCallEvent result = skillHook.onEvent(event).block();
 
         // Assert: Should still have exactly 3 messages (merged, not added)
         assertNotNull(result, "Event should be processed");

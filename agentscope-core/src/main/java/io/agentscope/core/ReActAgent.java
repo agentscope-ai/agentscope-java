@@ -1218,6 +1218,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * @param hook The hook to add, must not be null
          * @return This builder instance for method chaining
          * @see Hook
+         * @see Hook#tools()
          */
         public Builder hook(Hook hook) {
             this.hooks.add(hook);
@@ -1233,6 +1234,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * @param hooks The list of hooks to add, must not be null
          * @return This builder instance for method chaining
          * @see Hook
+         * @see Hook#tools()
          */
         public Builder hooks(List<Hook> hooks) {
             this.hooks.addAll(hooks);
@@ -1373,7 +1375,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
          * <ul>
          *   <li>Skill loader tools will be automatically registered to the toolkit</li>
-         *   <li>A skill hook will be added to inject skill prompts and manage skill activation</li>
+         *   <li>A skill hook will be added to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
+         *       and manage skill activation</li>
          * </ul>
          * @param skillBox The skill box to use for this agent
          * @return This builder instance for method chaining
@@ -1538,6 +1541,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             // Deep copy toolkit to avoid state interference between agents
             Toolkit agentToolkit = this.toolkit.copy();
 
+            registerToolsFromHooks(agentToolkit);
+
             if (enableMetaTool) {
                 agentToolkit.registerMetaTool();
             }
@@ -1568,6 +1573,26 @@ public class ReActAgent extends StructuredOutputCapableAgent {
             }
 
             return new ReActAgent(this, agentToolkit);
+        }
+
+        /**
+         * Registers tool objects declared by hooks ({@link Hook#tools()}) on the agent toolkit.
+         *
+         * <p>Runs after {@link Toolkit#copy()} so hook-supplied tools are scoped to this agent
+         * instance without modifying the builder's original toolkit.
+         */
+        private void registerToolsFromHooks(Toolkit agentToolkit) {
+            for (Hook hook : hooks) {
+                List<Object> toolObjects = hook.tools();
+                if (toolObjects == null || toolObjects.isEmpty()) {
+                    continue;
+                }
+                for (Object toolObject : toolObjects) {
+                    if (toolObject != null) {
+                        agentToolkit.registerTool(toolObject);
+                    }
+                }
+            }
         }
 
         /**
@@ -1723,7 +1748,9 @@ public class ReActAgent extends StructuredOutputCapableAgent {
          * <p>This method automatically:
          * <ul>
          *   <li>Registers skill load tool to the toolkit
-         *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         *   <li>Adds the skill hook to inject skill prompts on {@link io.agentscope.core.hook.PreCallEvent}
+         *       (priority {@link io.agentscope.core.skill.SkillHook#SKILL_HOOK_PRIORITY}) and manage skill
+         *       activation
          *   <li>Uploads skill files to the upload directory if auto upload is enabled
          * </ul>
          */
