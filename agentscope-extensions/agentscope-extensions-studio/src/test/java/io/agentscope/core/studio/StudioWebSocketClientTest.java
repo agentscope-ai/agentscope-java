@@ -18,19 +18,34 @@ package io.agentscope.core.studio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.socket.client.Socket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -303,5 +318,313 @@ class StudioWebSocketClientTest {
         assertNotNull(clientWithSocket);
         assertEquals(true, clientWithSocket.isConnected());
         clientWithSocket.close();
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should log warning when socket is null")
+    void sendStreamEvent_WithNullSocket_ShouldLogWarning() {
+        // Client created without socket - should not throw
+        StudioWebSocketClient newClient = new StudioWebSocketClient(config);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+        newClient.sendStreamEvent(event);
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should log warning when socket is not connected")
+    void sendStreamEvent_WithDisconnectedSocket_ShouldLogWarning() {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(false);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        verify(mockSocket, never()).emit(any(), any());
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should return when event is null")
+    void sendStreamEvent_WithNullEvent_ShouldReturn() {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+
+        // Should not throw
+        socketClient.sendStreamEvent(null);
+
+        verify(mockSocket, never()).emit(any(), any());
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should emit event with TextBlock content")
+    void sendStreamEvent_WithTextBlock_ShouldEmit() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("TestAgent")
+                        .content(TextBlock.builder().text("Hello World").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, true);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        JSONObject payload = payloadCaptor.getValue();
+        assertEquals("AGENT_RESULT", payload.getString("eventType"));
+        assertTrue(payload.getBoolean("isLast"));
+        assertEquals("Hello World", payload.getString("text"));
+        assertEquals("ASSISTANT", payload.getString("role"));
+        assertEquals("TestAgent", payload.getString("name"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should emit event with ThinkingBlock content")
+    void sendStreamEvent_WithThinkingBlock_ShouldEmit() throws JSONException {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(ThinkingBlock.builder().thinking("Thinking process").build())
+                        .build();
+        Event event = new Event(EventType.REASONING, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        JSONObject payload = payloadCaptor.getValue();
+        assertEquals("REASONING", payload.getString("eventType"));
+        assertEquals("Thinking process", payload.getString("text"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should emit event with ToolResultBlock content")
+    void sendStreamEvent_WithToolResultBlock_ShouldEmit() throws JSONException {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        ToolResultBlock toolResult = ToolResultBlock.text("Tool output");
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(toolResult).build();
+        Event event = new Event(EventType.TOOL_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        JSONObject payload = payloadCaptor.getValue();
+        assertEquals("TOOL_RESULT", payload.getString("eventType"));
+        assertEquals("Tool output", payload.getString("text"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle event with null type")
+    void sendStreamEvent_WithNullType_ShouldUseUnknown() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+        Event event = new Event(null, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        assertEquals("UNKNOWN", payloadCaptor.getValue().getString("eventType"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle event with null msg")
+    void sendStreamEvent_WithNullMsg_ShouldEmitWithoutMsgFields() throws JSONException {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Event event = new Event(EventType.AGENT_RESULT, null, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        JSONObject payload = payloadCaptor.getValue();
+        assertEquals("AGENT_RESULT", payload.getString("eventType"));
+        assertFalse(payload.has("text"));
+        assertFalse(payload.has("role"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle msg with null name")
+    void sendStreamEvent_WithNullName_ShouldSkipName() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("test").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        assertFalse(payloadCaptor.getValue().has("name"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle TextBlock with null text")
+    void sendStreamEvent_WithNullText_ShouldSkipText() {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text(null).build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        assertFalse(payloadCaptor.getValue().has("text"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle TextBlock with empty text")
+    void sendStreamEvent_WithEmptyText_ShouldSkipText() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        assertFalse(payloadCaptor.getValue().has("text"));
+    }
+
+    @Test
+    @DisplayName("sendStreamEvent should handle multiple content blocks")
+    void sendStreamEvent_WithMultipleBlocks_ShouldConcatenate() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("First").build(),
+                                TextBlock.builder().text("Second").build(),
+                                ThinkingBlock.builder().thinking("Thinking").build())
+                        .build();
+        Event event = new Event(EventType.AGENT_RESULT, msg, false);
+
+        socketClient.sendStreamEvent(event);
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        String text = payloadCaptor.getValue().getString("text");
+        assertTrue(text.contains("First"));
+        assertTrue(text.contains("Second"));
+        assertTrue(text.contains("Thinking"));
+    }
+
+    @Test
+    @DisplayName("sendStreamCompleted should log warning when socket is null")
+    void sendStreamCompleted_WithNullSocket_ShouldLogWarning() {
+        StudioWebSocketClient newClient = new StudioWebSocketClient(config);
+
+        // Should not throw
+        newClient.sendStreamCompleted();
+    }
+
+    @Test
+    @DisplayName("sendStreamCompleted should log warning when socket is not connected")
+    void sendStreamCompleted_WithDisconnectedSocket_ShouldLogWarning() {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(false);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+
+        // Should not throw
+        socketClient.sendStreamCompleted();
+
+        verify(mockSocket, never()).emit(any(), any());
+    }
+
+    @Test
+    @DisplayName("sendStreamCompleted should emit completed event")
+    void sendStreamCompleted_WithConnectedSocket_ShouldEmit() throws Exception {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+
+        socketClient.sendStreamCompleted();
+
+        ArgumentCaptor<JSONObject> payloadCaptor = ArgumentCaptor.forClass(JSONObject.class);
+        verify(mockSocket, times(1)).emit(any(), payloadCaptor.capture());
+
+        assertEquals("completed", payloadCaptor.getValue().getString("status"));
+    }
+
+    @Test
+    @DisplayName("sendStreamCompleted should handle emit exception gracefully")
+    void sendStreamCompleted_WithEmitException_ShouldLogError() {
+        Socket mockSocket = mock(Socket.class);
+        when(mockSocket.connected()).thenReturn(true);
+        when(mockSocket.emit(any(), any())).thenThrow(new RuntimeException("Emit failed"));
+
+        StudioWebSocketClient socketClient = new StudioWebSocketClient(config, mockSocket);
+
+        // Should not throw
+        socketClient.sendStreamCompleted();
     }
 }

@@ -16,11 +16,16 @@
 package io.agentscope.core.studio;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.StreamableAgent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.tracing.telemetry.TelemetryTracer;
 import java.net.URI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -119,6 +124,32 @@ public class StudioManager {
         config = null;
         client = null;
         wsClient = null;
+    }
+
+    /**
+     * Stream agent events to Studio for real-time visualization and final message persistence.
+     *
+     * <p>This method invokes {@link StreamableAgent#stream(Msg, StreamOptions)} on the provided
+     * agent to obtain a {@link Flux} of {@link Event} instances, then forwards that stream to
+     * Studio via a {@link StudioStreamingBridge}. The bridge:
+     * @param agent the {@link StreamableAgent} to run; must not be {@code null}
+     * @param input the input {@link Msg} for this invocation (may be {@code null} for agents that
+     *     do not require an initial message)
+     * @param options optional {@link StreamOptions} controlling the agent's streaming behavior;
+     *     when {@code null}, {@link StreamOptions#defaults()} is used
+     * @return a {@link Mono} that completes when the event stream has been fully forwarded to
+     *     Studio and, if a final message exists, persisted; if Studio is not initialized,
+     *     this returns a {@link Mono#error(Throwable)} with {@link IllegalStateException}
+     */
+    public static Mono<Void> streamToStudio(
+            StreamableAgent agent, Msg input, StreamOptions options) {
+        if (!isInitialized() || client == null || wsClient == null) {
+            return Mono.error(new IllegalStateException("Studio is not initialized"));
+        }
+        StreamOptions effective = options != null ? options : StreamOptions.defaults();
+        Flux<Event> events = agent.stream(input, effective);
+        StudioStreamingBridge bridge = new StudioStreamingBridge(client, wsClient);
+        return bridge.forwardToStudio(events);
     }
 
     /**

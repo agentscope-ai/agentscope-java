@@ -15,7 +15,13 @@
  */
 package io.agentscope.core.studio;
 
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.util.JsonUtils;
 import io.socket.client.IO;
 import io.socket.client.Socket;
@@ -394,5 +400,128 @@ public class StudioWebSocketClient {
         public Map<String, Object> getStructuredInput() {
             return structuredInput;
         }
+    }
+
+    /**
+     * Sends a stream event to Studio in real-time.
+     *
+     * <p>This method delivers best-effort, non-guaranteed notifications over the
+     * existing Socket.IO connection. If the underlying WebSocket is {@code null}
+     * or not connected, the method logs a warning and returns without throwing
+     * an exception and without attempting any reconnection.
+     *
+     * @param event the agent event to forward to Studio; if {@code null}, the
+     *     call is ignored and no payload is emitted
+     */
+    public void sendStreamEvent(Event event) {
+        if (socket == null || !socket.connected()) {
+            logger.warn("Attempted to send stream event while WebSocket is not connected");
+            return;
+        }
+        if (event == null) {
+            return;
+        }
+
+        try {
+            JSONObject payload = new JSONObject();
+            EventType type = event.getType();
+            payload.put("eventType", type != null ? type.name() : "UNKNOWN");
+            payload.put("isLast", event.isLast());
+
+            Msg msg = event.getMessage();
+            if (msg != null) {
+                String text = extractTextFromMsg(msg);
+                if (text != null) {
+                    payload.put("text", text);
+                }
+                if (msg.getRole() != null) {
+                    payload.put("role", msg.getRole().name());
+                }
+                if (msg.getName() != null) {
+                    payload.put("name", msg.getName());
+                }
+                if (msg.getMetadata() != null) {
+                    String metadataJson = JsonUtils.getJsonCodec().toJson(msg.getMetadata());
+                    payload.put("metadata", new JSONObject(metadataJson));
+                }
+            }
+
+            socket.emit("studioStreamEvent", payload);
+        } catch (Exception e) {
+            logger.error("Failed to send stream event to Studio", e);
+        }
+    }
+
+    /**
+     * Sends a stream completed event to Studio.
+     *
+     * <p>This method delivers a best-effort completion signal over the
+     * existing Socket.IO connection. If the underlying WebSocket is {@code null}
+     * or not connected, the method logs a warning and returns without throwing
+     * an exception and without attempting any reconnection.
+     */
+    public void sendStreamCompleted() {
+        if (socket == null || !socket.connected()) {
+            logger.warn("Attempted to send streamCompleted while WebSocket is not connected");
+            return;
+        }
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("status", "completed");
+            socket.emit("studioStreamCompleted", payload);
+        } catch (Exception e) {
+            logger.error("Failed to send streamCompleted event to Studio", e);
+        }
+    }
+
+    /**
+     * Extracts text content from a Msg for streaming to Studio.
+     */
+    private String extractTextFromMsg(Msg msg) {
+        if (msg == null || msg.getContent() == null || msg.getContent().isEmpty()) {
+            return null;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (Object block : msg.getContent()) {
+            if (!(block instanceof ContentBlock)) {
+                continue;
+            }
+            if (block instanceof TextBlock) {
+                TextBlock tb = (TextBlock) block;
+                if (tb.getText() != null && !tb.getText().isEmpty()) {
+                    appendWithNewline(builder, tb.getText());
+                }
+            } else if (block instanceof ThinkingBlock) {
+                ThinkingBlock tb = (ThinkingBlock) block;
+                if (tb.getThinking() != null && !tb.getThinking().isEmpty()) {
+                    appendWithNewline(builder, tb.getThinking());
+                }
+            } else if (block instanceof ToolResultBlock) {
+                ToolResultBlock trb = (ToolResultBlock) block;
+                for (ContentBlock outputBlock : trb.getOutput()) {
+                    if (outputBlock instanceof TextBlock) {
+                        TextBlock otb = (TextBlock) outputBlock;
+                        if (otb.getText() != null && !otb.getText().isEmpty()) {
+                            appendWithNewline(builder, otb.getText());
+                        }
+                    } else if (outputBlock instanceof ThinkingBlock) {
+                        ThinkingBlock otb = (ThinkingBlock) outputBlock;
+                        if (otb.getThinking() != null && !otb.getThinking().isEmpty()) {
+                            appendWithNewline(builder, otb.getThinking());
+                        }
+                    }
+                }
+            }
+        }
+
+        return builder.length() > 0 ? builder.toString() : null;
+    }
+
+    private void appendWithNewline(StringBuilder builder, String text) {
+        if (builder.length() > 0) {
+            builder.append('\n');
+        }
+        builder.append(text);
     }
 }
