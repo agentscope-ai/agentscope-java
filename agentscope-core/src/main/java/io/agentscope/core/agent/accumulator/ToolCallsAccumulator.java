@@ -101,11 +101,23 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 }
             }
 
+            // Always validate rawContent is a legal JSON object before using it
+            // as content. This prevents persisting malformed JSON fragments
+            // (e.g. when streaming was interrupted mid-arguments).
+            String contentStr;
+            if (rawContentStr.isEmpty()) {
+                contentStr = "{}";
+            } else if (JsonUtils.isValidJsonObject(rawContentStr)) {
+                contentStr = rawContentStr;
+            } else {
+                contentStr = "{}";
+            }
+
             return ToolUseBlock.builder()
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
-                    .content(rawContentStr.isEmpty() ? "{}" : rawContentStr)
+                    .content(contentStr)
                     .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
