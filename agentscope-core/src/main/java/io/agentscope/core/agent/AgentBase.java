@@ -25,6 +25,8 @@ import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.shutdown.GracefulShutdownHook;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
@@ -100,6 +102,9 @@ public abstract class AgentBase implements StateModule, Agent {
                     List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
+    // Session key for tracing (set by loadFrom/loadIfExists)
+    private volatile SessionKey currentSessionKey;
+
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
@@ -158,6 +163,28 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final String getDescription() {
         return description != null ? description : Agent.super.getDescription();
+    }
+
+    /**
+     * Returns the current session key associated with this agent.
+     *
+     * <p>The session key is set when {@link #loadFrom(Session, SessionKey)} or {@link
+     * #loadIfExists(Session, SessionKey)} is called. It is used by tracing to populate the {@code
+     * gen_ai.session.id} attribute on spans.
+     *
+     * @return the current session key, or null if no session has been loaded
+     */
+    public SessionKey getCurrentSessionKey() {
+        return currentSessionKey;
+    }
+
+    /**
+     * Sets the current session key for this agent.
+     *
+     * @param sessionKey the session key to set
+     */
+    protected void setCurrentSessionKey(SessionKey sessionKey) {
+        this.currentSessionKey = sessionKey;
     }
 
     /**
