@@ -107,16 +107,6 @@ public class OpenAIResponseParser {
             if (response.getUsage() != null) {
                 OpenAIUsage openAIUsage = response.getUsage();
 
-                // Safe extraction of nested token details
-                Integer cachedTokens =
-                        openAIUsage.getPromptTokensDetails() != null
-                                ? openAIUsage.getPromptTokensDetails().getCachedTokens()
-                                : null;
-                Integer reasoningTokens =
-                        openAIUsage.getCompletionTokensDetails() != null
-                                ? openAIUsage.getCompletionTokensDetails().getReasoningTokens()
-                                : null;
-
                 usage =
                         ChatUsage.builder()
                                 .inputTokens((int) getSafePromptTokens(openAIUsage))
@@ -124,8 +114,18 @@ public class OpenAIResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
-                                .reasoningTokens(reasoningTokens)
-                                .cachedTokens(cachedTokens)
+                                .reasoningTokens(
+                                        openAIUsage.getCompletionTokensDetails() != null
+                                                ? openAIUsage
+                                                        .getCompletionTokensDetails()
+                                                        .getReasoningTokens()
+                                                : null)
+                                .cachedTokens(
+                                        openAIUsage.getPromptTokensDetails() != null
+                                                ? openAIUsage
+                                                        .getPromptTokensDetails()
+                                                        .getCachedTokens()
+                                                : null)
                                 .build();
             }
 
@@ -347,16 +347,6 @@ public class OpenAIResponseParser {
             if (response.getUsage() != null) {
                 OpenAIUsage openAIUsage = response.getUsage();
 
-                // Safe extraction of nested token details
-                Integer cachedTokens =
-                        openAIUsage.getPromptTokensDetails() != null
-                                ? openAIUsage.getPromptTokensDetails().getCachedTokens()
-                                : null;
-                Integer reasoningTokens =
-                        openAIUsage.getCompletionTokensDetails() != null
-                                ? openAIUsage.getCompletionTokensDetails().getReasoningTokens()
-                                : null;
-
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(
@@ -370,8 +360,18 @@ public class OpenAIResponseParser {
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
-                                .reasoningTokens(reasoningTokens)
-                                .cachedTokens(cachedTokens)
+                                .reasoningTokens(
+                                        openAIUsage.getCompletionTokensDetails() != null
+                                                ? openAIUsage
+                                                        .getCompletionTokensDetails()
+                                                        .getReasoningTokens()
+                                                : null)
+                                .cachedTokens(
+                                        openAIUsage.getPromptTokensDetails() != null
+                                                ? openAIUsage
+                                                        .getPromptTokensDetails()
+                                                        .getCachedTokens()
+                                                : null)
                                 .build();
             }
 
