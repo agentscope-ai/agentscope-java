@@ -78,6 +78,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -820,15 +821,33 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private List<Msg> prepareMessages() {
         List<Msg> messages = new ArrayList<>();
-        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+        StringBuilder sysPromptBuilder = new StringBuilder();
+        if (sysPrompt != null && !sysPrompt.isBlank()) {
+            sysPromptBuilder.append(sysPrompt);
+        }
+        List<Msg> nonSystemMessages = new ArrayList<>();
+        memory.getMessages().stream()
+                .filter(Objects::nonNull)
+                .forEach(
+                        msg -> {
+                            if (msg.getRole() == MsgRole.SYSTEM) {
+                                if (!sysPromptBuilder.isEmpty()) {
+                                    sysPromptBuilder.append("\n");
+                                }
+                                sysPromptBuilder.append(msg.getTextContent());
+                            } else {
+                                nonSystemMessages.add(msg);
+                            }
+                        });
+        if (!sysPromptBuilder.isEmpty()) {
             messages.add(
                     Msg.builder()
                             .name("system")
                             .role(MsgRole.SYSTEM)
-                            .content(TextBlock.builder().text(sysPrompt).build())
+                            .content(TextBlock.builder().text(sysPromptBuilder.toString()).build())
                             .build());
         }
-        messages.addAll(memory.getMessages());
+        messages.addAll(nonSystemMessages);
         return messages;
     }
 

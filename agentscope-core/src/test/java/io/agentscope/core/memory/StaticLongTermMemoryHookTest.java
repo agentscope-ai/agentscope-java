@@ -131,28 +131,108 @@ class StaticLongTermMemoryHookTest {
         PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
 
         when(mockLongTermMemory.retrieve(any(Msg.class)))
-                .thenReturn(Mono.just("User prefers dark mode"));
+                .thenReturn(Mono.just("Your name is Mike"));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         resultEvent -> {
                             List<Msg> messages = resultEvent.getInputMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+                            assertEquals(MsgRole.USER, messages.get(1).getRole());
                             assertTrue(
-                                    messages.get(1)
+                                    messages.get(0)
                                             .getTextContent()
                                             .contains("<long_term_memory>"));
                             assertTrue(
-                                    messages.get(1)
-                                            .getTextContent()
-                                            .contains("User prefers dark mode"));
+                                    messages.get(0).getTextContent().contains("Your name is Mike"));
                         })
                 .verifyComplete();
     }
 
     @Test
-    void testOnEventWithPreReasoningEventEmptyRetrieval() {
+    void testOnEventWithPreReasoningEventAndExistingSystemMessage() {
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("You are a helpful assistant.").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What do you know about me?").build())
+                        .build());
+
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
+
+        when(mockLongTermMemory.retrieve(any(Msg.class)))
+                .thenReturn(Mono.just("Your name is Mike"));
+
+        StepVerifier.create(hook.onEvent(event))
+                .assertNext(
+                        resultEvent -> {
+                            List<Msg> messages = resultEvent.getInputMessages();
+                            assertEquals(2, messages.size());
+                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+                            assertEquals(MsgRole.USER, messages.get(1).getRole());
+                            String systemText = messages.get(0).getTextContent();
+                            assertTrue(systemText.contains("You are a helpful assistant."));
+                            assertTrue(systemText.contains("<long_term_memory>"));
+                            assertTrue(systemText.contains("Your name is Mike"));
+                            assertTrue(
+                                    systemText.indexOf("You are a helpful assistant.")
+                                            < systemText.indexOf("<long_term_memory>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testOnEventWithPreReasoningEventAndMultipleSystemMessages() {
+        List<Msg> inputMessages = new ArrayList<>();
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("system")
+                        .content(TextBlock.builder().text("First system message").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("long_term_memory")
+                        .content(TextBlock.builder().text("Second system message").build())
+                        .build());
+        inputMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("What do you know about me?").build())
+                        .build());
+
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
+
+        when(mockLongTermMemory.retrieve(any(Msg.class)))
+                .thenReturn(Mono.just("Your name is Mike"));
+
+        StepVerifier.create(hook.onEvent(event))
+                .assertNext(
+                        resultEvent -> {
+                            List<Msg> messages = resultEvent.getInputMessages();
+                            assertEquals(3, messages.size());
+                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(MsgRole.USER, messages.get(2).getRole());
+                            String firstSystemText = messages.get(0).getTextContent();
+                            assertTrue(firstSystemText.contains("First system message"));
+                            assertTrue(firstSystemText.contains("<long_term_memory>"));
+                            assertTrue(firstSystemText.contains("Your name is Mike"));
+                            assertEquals("Second system message", messages.get(1).getTextContent());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testOnEventWithPreReasoningEventAndEmptyRetrieval() {
         List<Msg> inputMessages = new ArrayList<>();
         inputMessages.add(
                 Msg.builder()

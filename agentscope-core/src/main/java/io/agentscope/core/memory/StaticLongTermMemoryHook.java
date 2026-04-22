@@ -116,13 +116,15 @@ public class StaticLongTermMemoryHook implements Hook {
     }
 
     /**
-     * Handles PreReasoningEvent by retrieving relevant memories and injecting them.
+     * Handles PreCallEvent by retrieving relevant memories and injecting them.
      *
-     * <p>Retrieves memories relevant to the user's query and injects them as a system
-     * message at the beginning of the message list. The memories are wrapped in
-     * {@code <long_term_memory>} tags for clear identification.
+     * <p>Retrieves memories relevant to the user's query and injects them as part of
+     * the system message. If a system message already exists at the beginning of the
+     * message list, the memories are appended to it. Otherwise, a new system message
+     * is created with the memories. The memories are wrapped in {@code <long_term_memory>}
+     * tags for clear identification.
      *
-     * @param event the PreReasoningEvent
+     * @param event the PreCallEvent
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
@@ -144,20 +146,43 @@ public class StaticLongTermMemoryHook implements Hook {
                         memoryText -> {
                             // Wrap memory content in tags
                             String wrappedMemory = wrap(memoryText);
-
-                            // Create system message with retrieved memories
-                            Msg memoryMsg =
-                                    Msg.builder()
-                                            .role(MsgRole.SYSTEM)
-                                            .name("long_term_memory")
-                                            .content(
-                                                    TextBlock.builder().text(wrappedMemory).build())
-                                            .build();
-
-                            // Inject memory message at the beginning
                             List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.addAll(inputMessages);
-                            enhancedMessages.add(memoryMsg);
+
+                            if (!inputMessages.isEmpty()
+                                    && inputMessages.get(0).getRole() == MsgRole.SYSTEM) {
+                                Msg originalSystemMsg = inputMessages.get(0);
+                                String originalSystemText = originalSystemMsg.getTextContent();
+                                String newSystemText =
+                                        originalSystemText != null
+                                                ? originalSystemText + "\n\n" + wrappedMemory
+                                                : wrappedMemory;
+
+                                Msg newSystemMsg =
+                                        originalSystemMsg
+                                                .mutate()
+                                                .content(
+                                                        TextBlock.builder()
+                                                                .text(newSystemText)
+                                                                .build())
+                                                .build();
+
+                                enhancedMessages.add(newSystemMsg);
+                                enhancedMessages.addAll(
+                                        inputMessages.subList(1, inputMessages.size()));
+                            } else {
+                                enhancedMessages.add(
+                                        Msg.builder()
+                                                .role(MsgRole.SYSTEM)
+                                                .name("long_term_memory")
+                                                .content(
+                                                        TextBlock.builder()
+                                                                .text(wrappedMemory)
+                                                                .build())
+                                                .build());
+
+                                enhancedMessages.addAll(inputMessages);
+                            }
+
                             event.setInputMessages(enhancedMessages);
 
                             return Mono.just(event);

@@ -33,6 +33,17 @@ import java.util.stream.Collectors;
 public class TestUtils {
 
     /**
+     * Create a simple system message with text content.
+     */
+    public static Msg createSystemMessage(String name, String text) {
+        return Msg.builder()
+                .name(name)
+                .role(MsgRole.SYSTEM)
+                .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /**
      * Create a simple user message with text content.
      */
     public static Msg createUserMessage(String name, String text) {

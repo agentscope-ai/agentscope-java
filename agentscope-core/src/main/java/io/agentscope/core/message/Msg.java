@@ -110,6 +110,15 @@ public class Msg implements State {
     }
 
     /**
+     * Mutate a new message builder with the fields of the current message.
+     *
+     * @return A new builder instance
+     */
+    public Builder mutate() {
+        return new Builder(this);
+    }
+
+    /**
      * Creates a new message builder with a randomly generated ID.
      *
      * @return A new builder instance
@@ -516,6 +525,20 @@ public class Msg implements State {
          */
         public Builder() {
             randomId();
+        }
+
+        /**
+         * Creates a new builder based on the given message.
+         *
+         * @param msg The message to copy
+         */
+        public Builder(Msg msg) {
+            this.id = msg.id;
+            this.name = msg.name;
+            this.role = msg.role;
+            this.content = msg.content;
+            this.metadata = msg.metadata;
+            this.timestamp = msg.timestamp;
         }
 
         /**

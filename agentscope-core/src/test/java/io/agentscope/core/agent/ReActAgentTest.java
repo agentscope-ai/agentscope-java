@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -524,6 +525,36 @@ class ReActAgentTest {
                 allMessages.stream()
                         .anyMatch(m -> TestUtils.extractTextContent(m).contains("Second message")),
                 "Second message should be in memory");
+    }
+
+    @Test
+    @DisplayName("Should merge multiple system messages in memory")
+    void testMergeMultipleSystemMemoryMessages() {
+        Msg sysMsg1 = TestUtils.createSystemMessage("System", "First system message");
+        Msg sysMsg2 = TestUtils.createSystemMessage("System", "Second system message");
+        Msg userMsg1 = TestUtils.createUserMessage("User", "First user message");
+        Msg userMsg2 = TestUtils.createUserMessage("User", "Second user message");
+
+        agent.call(List.of(userMsg1, userMsg2, sysMsg1, sysMsg2))
+                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        List<Msg> messages = mockModel.getLastMessages();
+        assertEquals(3, messages.size(), "Memory should contain multiple messages");
+        assertSame(MsgRole.SYSTEM, messages.get(0).getRole(), "The First should be system message");
+        assertSame(MsgRole.USER, messages.get(1).getRole(), "The Second should be user message");
+        assertSame(MsgRole.USER, messages.get(2).getRole(), "The Third should be user message");
+        assertTrue(
+                TestUtils.extractTextContent(messages.get(0)).contains("First system message"),
+                "First system message should be merged");
+        assertTrue(
+                TestUtils.extractTextContent(messages.get(0)).contains("Second system message"),
+                "Second system message should be merged");
+        assertTrue(
+                TestUtils.extractTextContent(messages.get(1)).contains("First user message"),
+                "First user message should exists");
+        assertTrue(
+                TestUtils.extractTextContent(messages.get(2)).contains("Second user message"),
+                "Second user message should exists");
     }
 
     @Test
