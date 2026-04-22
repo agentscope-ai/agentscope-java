@@ -174,7 +174,11 @@ public class ReasoningContext {
 
         // Build metadata with accumulated ChatUsage
         Map<String, Object> metadata = new HashMap<>();
-        if (inputTokens > 0 || outputTokens > 0 || time > 0 || reasoningTokens != null || cachedTokens != null) {
+        if (inputTokens > 0
+                || outputTokens > 0
+                || time > 0
+                || reasoningTokens != null
+                || cachedTokens != null) {
             ChatUsage chatUsage =
                     ChatUsage.builder()
                             .inputTokens(inputTokens)
@@ -288,7 +292,11 @@ public class ReasoningContext {
      * @return ChatUsage with accumulated tokens, or null if no usage data
      */
     public ChatUsage getChatUsage() {
-        if (inputTokens > 0 || outputTokens > 0 || time > 0 || reasoningTokens != null || cachedTokens != null) {
+        if (inputTokens > 0
+                || outputTokens > 0
+                || time > 0
+                || reasoningTokens != null
+                || cachedTokens != null) {
             return ChatUsage.builder()
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)

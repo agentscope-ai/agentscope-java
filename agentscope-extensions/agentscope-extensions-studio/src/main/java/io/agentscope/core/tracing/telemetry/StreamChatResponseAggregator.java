@@ -79,7 +79,9 @@ final class StreamChatResponseAggregator {
             outputTokens.addAndGet(usage.getOutputTokens());
             time = usage.getTime();
             if (usage.getReasoningTokens() != null) {
-                reasoningTokens = (reasoningTokens == null ? 0 : reasoningTokens) + usage.getReasoningTokens();
+                reasoningTokens =
+                        (reasoningTokens == null ? 0 : reasoningTokens)
+                                + usage.getReasoningTokens();
             }
             if (usage.getCachedTokens() != null) {
                 cachedTokens = (cachedTokens == null ? 0 : cachedTokens) + usage.getCachedTokens();

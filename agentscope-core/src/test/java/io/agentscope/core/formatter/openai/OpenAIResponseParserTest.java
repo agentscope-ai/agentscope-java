@@ -346,6 +346,48 @@ class OpenAIResponseParserTest {
         assertEquals(0, result.getUsage().getOutputTokens());
     }
 
+    @Test
+    @DisplayName("Should parse usage including reasoning and cached tokens")
+    void testParseUsageWithAdvancedTokens() {
+        // Given
+        Instant startTime = Instant.now().minusSeconds(2);
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("test-usage-id");
+
+        // Mock nested usage details
+        OpenAIUsage.PromptTokensDetails promptDetails = new OpenAIUsage.PromptTokensDetails();
+        promptDetails.setCachedTokens(35);
+
+        OpenAIUsage.CompletionTokensDetails completionDetails =
+                new OpenAIUsage.CompletionTokensDetails();
+        completionDetails.setReasoningTokens(45);
+
+        OpenAIUsage usage = new OpenAIUsage();
+        usage.setPromptTokens(100);
+        usage.setCompletionTokens(150);
+        usage.setPromptTokensDetails(promptDetails);
+        usage.setCompletionTokensDetails(completionDetails);
+        response.setUsage(usage);
+
+        // Mock empty choice to avoid null pointers
+        OpenAIChoice choice = new OpenAIChoice();
+        OpenAIMessage message = new OpenAIMessage();
+        message.setContent("Test content");
+        choice.setMessage(message);
+        response.setChoices(List.of(choice));
+
+        // When
+        ChatResponse result = parser.parseCompletionResponse(response, startTime);
+
+        // Then
+        assertNotNull(result.getUsage());
+        assertEquals(100, result.getUsage().getInputTokens());
+        assertEquals(150, result.getUsage().getOutputTokens());
+        assertEquals(35, result.getUsage().getCachedTokens());
+        assertEquals(45, result.getUsage().getReasoningTokens());
+        assertTrue(result.getUsage().getTime() >= 2.0);
+    }
+
     @Nested
     @DisplayName("Streaming Error Handling Tests")
     class StreamingErrorTests {

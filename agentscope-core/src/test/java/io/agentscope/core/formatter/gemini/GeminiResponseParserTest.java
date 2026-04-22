@@ -438,4 +438,50 @@ class GeminiResponseParserTest {
         assertEquals("call-2", toolUse2.getId());
         assertTrue(toolUse2.getMetadata().isEmpty());
     }
+
+    @Test
+    void testParseUsageWithAdvancedTokens() {
+        // Given
+        Instant startTime = Instant.now().minusSeconds(1);
+
+        // Mock Gemini usage metadata
+        GenerateContentResponseUsageMetadata usageMetadata =
+                GenerateContentResponseUsageMetadata.builder()
+                        .promptTokenCount(100)
+                        .candidatesTokenCount(200) // This includes thinking tokens in Gemini
+                        .thoughtsTokenCount(50) // Reasoning tokens
+                        .cachedContentTokenCount(20) // Cached tokens
+                        .build();
+
+        Candidate candidate =
+                Candidate.builder()
+                        .content(
+                                Content.builder()
+                                        .role("model")
+                                        .parts(List.of(Part.builder().text("Test").build()))
+                                        .build())
+                        .build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("test-gemini-usage")
+                        .candidates(List.of(candidate))
+                        .usageMetadata(usageMetadata)
+                        .build();
+
+        // When
+        ChatResponse result = parser.parseResponse(response, startTime);
+
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.getUsage());
+        assertEquals(100, result.getUsage().getInputTokens());
+        // Verify that thinking tokens are subtracted from total candidate tokens
+        assertEquals(
+                150,
+                result.getUsage().getOutputTokens(),
+                "Output tokens should exclude thinking tokens");
+        assertEquals(50, result.getUsage().getReasoningTokens());
+        assertEquals(20, result.getUsage().getCachedTokens());
+    }
 }

@@ -87,9 +87,10 @@ public class AnthropicResponseParser {
         }
 
         // Parse usage
-        Integer cachedTokens = message.usage().cacheReadInputTokens().isPresent()
-                ? message.usage().cacheReadInputTokens().get().intValue()
-                : null;
+        Integer cachedTokens =
+                message.usage().cacheReadInputTokens().isPresent()
+                        ? message.usage().cacheReadInputTokens().get().intValue()
+                        : null;
 
         ChatUsage usage =
                 ChatUsage.builder()

@@ -235,10 +235,13 @@ public class StructuredOutputHook implements Hook {
                     totalOutput += usage.getOutputTokens();
                     totalTime += usage.getTime();
                     if (usage.getReasoningTokens() != null) {
-                        totalReasoning = (totalReasoning == null ? 0 : totalReasoning) + usage.getReasoningTokens();
+                        totalReasoning =
+                                (totalReasoning == null ? 0 : totalReasoning)
+                                        + usage.getReasoningTokens();
                     }
                     if (usage.getCachedTokens() != null) {
-                        totalCached = (totalCached == null ? 0 : totalCached) + usage.getCachedTokens();
+                        totalCached =
+                                (totalCached == null ? 0 : totalCached) + usage.getCachedTokens();
                     }
                 }
 

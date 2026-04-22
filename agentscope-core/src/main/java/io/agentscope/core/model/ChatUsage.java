@@ -50,7 +50,12 @@ public class ChatUsage {
      * @param reasoningTokens the number of tokens used for reasoning/thinking (can be null)
      * @param cachedTokens the number of tokens saved by prompt caching (can be null)
      */
-    public ChatUsage(int inputTokens, int outputTokens, double time, Integer reasoningTokens, Integer cachedTokens) {
+    public ChatUsage(
+            int inputTokens,
+            int outputTokens,
+            double time,
+            Integer reasoningTokens,
+            Integer cachedTokens) {
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
         this.time = time;
