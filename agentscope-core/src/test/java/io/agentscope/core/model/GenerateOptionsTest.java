@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -388,5 +388,90 @@ class GenerateOptionsTest {
         assertNotNull(options);
         assertEquals(2, options.getAdditionalQueryParams().size());
         assertEquals("v1", options.getAdditionalQueryParams().get("q1"));
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with endpoint path")
+    void testBuilderWithEndpointPath() {
+        GenerateOptions options =
+                GenerateOptions.builder().endpointPath("/v4/chat/completions").build();
+
+        assertNotNull(options);
+        assertEquals("/v4/chat/completions", options.getEndpointPath());
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with connection-level configuration")
+    void testBuilderWithConnectionLevelConfig() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .apiKey("test-api-key")
+                        .baseUrl("https://custom.api.com")
+                        .endpointPath("/custom/path")
+                        .modelName("custom-model")
+                        .stream(true)
+                        .build();
+
+        assertNotNull(options);
+        assertEquals("test-api-key", options.getApiKey());
+        assertEquals("https://custom.api.com", options.getBaseUrl());
+        assertEquals("/custom/path", options.getEndpointPath());
+        assertEquals("custom-model", options.getModelName());
+        assertEquals(Boolean.TRUE, options.getStream());
+    }
+
+    @Test
+    @DisplayName("Should merge endpoint path correctly")
+    void testMergeOptionsWithEndpointPath() {
+        GenerateOptions primary =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .endpointPath("/v4/chat/completions")
+                        .build();
+
+        GenerateOptions fallback =
+                GenerateOptions.builder()
+                        .temperature(0.5)
+                        .endpointPath("/v1/chat/completions")
+                        .build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertNotNull(merged);
+        assertEquals(0.8, merged.getTemperature());
+        assertEquals("/v4/chat/completions", merged.getEndpointPath());
+    }
+
+    @Test
+    @DisplayName("Should use fallback endpoint path when primary is null")
+    void testMergeOptionsWithNullPrimaryEndpointPath() {
+        GenerateOptions primary = GenerateOptions.builder().temperature(0.8).build();
+
+        GenerateOptions fallback =
+                GenerateOptions.builder().endpointPath("/v1/chat/completions").build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertNotNull(merged);
+        assertEquals(0.8, merged.getTemperature());
+        assertEquals("/v1/chat/completions", merged.getEndpointPath());
+    }
+
+    @Test
+    @DisplayName("Should have null endpoint path when not set")
+    void testNullEndpointPathWhenNotSet() {
+        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
+
+        assertNotNull(options);
+        assertNull(options.getEndpointPath());
+    }
+
+    @Test
+    @DisplayName("Should handle null endpoint path explicitly")
+    void testExplicitNullEndpointPath() {
+        GenerateOptions options = GenerateOptions.builder().endpointPath(null).build();
+
+        assertNotNull(options);
+        assertNull(options.getEndpointPath());
     }
 }

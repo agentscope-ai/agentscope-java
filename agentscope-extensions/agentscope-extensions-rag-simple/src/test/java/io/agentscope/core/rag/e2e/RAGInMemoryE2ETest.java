@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -40,6 +40,7 @@ import io.agentscope.core.rag.reader.ReaderInput;
 import io.agentscope.core.rag.reader.TextReader;
 import io.agentscope.core.rag.reader.WordReader;
 import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -476,7 +477,14 @@ class RAGInMemoryE2ETest {
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
         double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
 
-        List<Document> results = store.search(queryEmbedding, 3, 0.0).block();
+        List<Document> results =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(3)
+                                        .scoreThreshold(0.0)
+                                        .build())
+                        .block();
 
         assertNotNull(results);
         assertFalse(results.isEmpty(), "Search should return results");
@@ -773,8 +781,22 @@ class RAGInMemoryE2ETest {
         TextBlock queryBlock = TextBlock.builder().text(queryText).build();
         double[] queryEmbedding = embeddingModel.embed(queryBlock).block();
 
-        List<Document> resultsLowThreshold = store.search(queryEmbedding, 10, 0.3).block();
-        List<Document> resultsHighThreshold = store.search(queryEmbedding, 10, 0.8).block();
+        List<Document> resultsLowThreshold =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .scoreThreshold(0.3)
+                                        .build())
+                        .block();
+        List<Document> resultsHighThreshold =
+                store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(queryEmbedding)
+                                        .limit(10)
+                                        .scoreThreshold(0.8)
+                                        .build())
+                        .block();
 
         System.out.println("Query: " + queryText);
         System.out.println("Results with threshold 0.3: " + resultsLowThreshold.size());

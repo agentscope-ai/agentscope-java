@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,47 +23,60 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.session.SessionInfo;
-import io.agentscope.core.session.redis.redisson.RedissonSession;
-import io.agentscope.core.state.StateModule;
-import java.util.HashMap;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RBucket;
 import org.redisson.api.RKeys;
-import org.redisson.api.RMap;
+import org.redisson.api.RList;
+import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
+import org.redisson.api.options.KeysScanOptions;
+import org.redisson.client.codec.Codec;
 import reactor.test.StepVerifier;
 
 /**
- * Unit tests for {@link RedissonSession}.
+ * Unit tests for {@link RedisSession} with Redisson client.
  */
+@DisplayName("RedisSession with Redisson Tests")
+@SuppressWarnings({"unchecked", "rawtypes"})
 class RedissonSessionTest {
 
     private RedissonClient redissonClient;
-    // Use raw types to avoid Mockito generic erasure compilation issues
     private RBucket bucket;
-    private RMap metaMap;
+    private RList rList;
+    private RSet rSet;
     private RKeys keys;
 
     @BeforeEach
     void setUp() {
         redissonClient = mock(RedissonClient.class);
         bucket = mock(RBucket.class);
-        metaMap = mock(RMap.class);
+        rList = mock(RList.class);
+        rSet = mock(RSet.class);
         keys = mock(RKeys.class);
+        when(redissonClient.getBucket(anyString(), any(Codec.class))).thenReturn(bucket);
+        when(redissonClient.getList(anyString(), any(Codec.class))).thenReturn(rList);
+        when(redissonClient.getSet(anyString(), any(Codec.class))).thenReturn(rSet);
+        when(redissonClient.getKeys()).thenReturn(keys);
     }
 
     @Test
+    @DisplayName("Should build session with valid arguments")
     void testBuilderWithValidArguments() {
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
@@ -71,237 +84,251 @@ class RedissonSessionTest {
     }
 
     @Test
+    @DisplayName("Should throw exception when building with empty prefix")
     void testBuilderWithEmptyPrefix() {
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
-                        RedissonSession.builder()
+                        RedisSession.builder()
                                 .redissonClient(redissonClient)
                                 .keyPrefix("  ")
                                 .build());
     }
 
     @Test
-    void testSaveSessionStateStoresJsonAndMeta() {
-        when(redissonClient.getBucket(anyString(), any())).thenReturn(bucket);
-        when(redissonClient.getMap(anyString(), any(org.redisson.client.codec.Codec.class)))
-                .thenReturn(metaMap);
+    @DisplayName("Should save and get single state correctly")
+    void testSaveAndGetSingleState() {
+        String stateJson = "{\"value\":\"test_value\",\"count\":42}";
+        when(bucket.get()).thenReturn(stateJson);
 
-        StateModule module1 = mock(StateModule.class);
-        StateModule module2 = mock(StateModule.class);
-
-        Map<String, Object> state1 = new HashMap<>();
-        state1.put("key1", "value1");
-        Map<String, Object> state2 = new HashMap<>();
-        state2.put("key2", 42);
-
-        when(module1.stateDict()).thenReturn(state1);
-        when(module2.stateDict()).thenReturn(state2);
-
-        Map<String, StateModule> modules = new HashMap<>();
-        modules.put("module1", module1);
-        modules.put("module2", module2);
-
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
-        session.saveSessionState("session1", modules);
 
-        verify(redissonClient).getBucket(eq("agentscope:session:session1"), any());
-        verify(bucket).set(org.mockito.ArgumentMatchers.anyString());
-        verify(redissonClient)
-                .getMap(
-                        eq("agentscope:session:session1:meta"),
-                        any(org.redisson.client.codec.Codec.class));
-        verify(metaMap).put(org.mockito.ArgumentMatchers.eq("lastModified"), anyString());
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        TestState state = new TestState("test_value", 42);
+
+        // Save state
+        session.save(sessionKey, "testModule", state);
+
+        // Verify save operations
+        verify(bucket).set(anyString());
+        verify(rSet).add("testModule");
+
+        // Get state
+        Optional<TestState> loaded = session.get(sessionKey, "testModule", TestState.class);
+        assertTrue(loaded.isPresent());
+        assertEquals("test_value", loaded.get().value());
+        assertEquals(42, loaded.get().count());
     }
 
     @Test
-    void testLoadSessionStateRestoresModules() throws Exception {
-        String json =
-                """
-                {
-                  "module1": { "key1": "value1" },
-                  "module2": { "key2": 42 }
-                }
-                """;
-
-        when(redissonClient.getBucket(eq("agentscope:session:session1"), any())).thenReturn(bucket);
-        when(bucket.get()).thenReturn(json);
-
-        StateModule module1 = mock(StateModule.class);
-        StateModule module2 = mock(StateModule.class);
-
-        Map<String, StateModule> modules = new HashMap<>();
-        modules.put("module1", module1);
-        modules.put("module2", module2);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        session.loadSessionState("session1", false, modules);
-
-        verify(module1)
-                .loadStateDict(
-                        org.mockito.ArgumentMatchers.anyMap(),
-                        org.mockito.ArgumentMatchers.eq(false));
-        verify(module2)
-                .loadStateDict(
-                        org.mockito.ArgumentMatchers.anyMap(),
-                        org.mockito.ArgumentMatchers.eq(false));
-    }
-
-    @Test
-    void testLoadSessionStateAllowNotExistTrue() {
-        when(redissonClient.getBucket(eq("agentscope:session:missing"), any())).thenReturn(bucket);
-        when(bucket.get()).thenReturn(null);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        session.loadSessionState("missing", true, Map.of());
-    }
-
-    @Test
-    void testLoadSessionStateAllowNotExistFalse() {
-        when(redissonClient.getBucket(eq("agentscope:session:missing"), any())).thenReturn(bucket);
-        when(bucket.get()).thenReturn(null);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertThrows(
-                RuntimeException.class, () -> session.loadSessionState("missing", false, Map.of()));
-    }
-
-    @Test
-    void testSessionExists() {
-        when(redissonClient.getBucket(eq("agentscope:session:session1"), any())).thenReturn(bucket);
-        when(bucket.isExists()).thenReturn(true);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertTrue(session.sessionExists("session1"));
-    }
-
-    @Test
-    void testSessionDoesNotExist() {
-        when(redissonClient.getBucket(eq("agentscope:session:session1"), any())).thenReturn(bucket);
-        when(bucket.isExists()).thenReturn(false);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertFalse(session.sessionExists("session1"));
-    }
-
-    @Test
-    void testDeleteSession() {
-        when(redissonClient.getKeys()).thenReturn(keys);
-        when(keys.delete("agentscope:session:session1", "agentscope:session:session1:meta"))
-                .thenReturn(2L);
-
-        RedissonSession session =
-                RedissonSession.builder()
-                        .redissonClient(redissonClient)
-                        .keyPrefix("agentscope:session:")
-                        .build();
-        assertTrue(session.deleteSession("session1"));
-    }
-
-    @Test
-    void testListSessions() {
-        when(redissonClient.getKeys()).thenReturn(keys);
-        when(keys.getKeysByPattern("agentscope:session:*"))
+    @DisplayName("Should save and get list state correctly")
+    void testSaveAndGetListState() {
+        when(rList.size()).thenReturn(0);
+        when(rList.isEmpty()).thenReturn(false);
+        when(rList.iterator())
                 .thenReturn(
                         List.of(
-                                "agentscope:session:s1",
-                                "agentscope:session:s2",
-                                "agentscope:session:s1:meta"));
+                                        "{\"value\":\"value1\",\"count\":1}",
+                                        "{\"value\":\"value2\",\"count\":2}")
+                                .iterator());
+        when(rList.range(0, -1))
+                .thenReturn(
+                        List.of(
+                                "{\"value\":\"value1\",\"count\":1}",
+                                "{\"value\":\"value2\",\"count\":2}"));
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
-        List<String> sessions = session.listSessions();
 
-        assertEquals(List.of("s1", "s2"), sessions);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
+
+        // Save list state
+        session.save(sessionKey, "testList", states);
+
+        // Verify add was called
+        verify(rList, atLeast(1)).add(anyString());
+
+        // Get list state
+        List<TestState> loaded = session.getList(sessionKey, "testList", TestState.class);
+        assertEquals(2, loaded.size());
+        assertEquals("value1", loaded.get(0).value());
+        assertEquals("value2", loaded.get(1).value());
     }
 
     @Test
-    void testGetSessionInfo() {
-        String json =
-                """
-                {
-                  "module1": { "key1": "value1" },
-                  "module2": { "key2": 42 }
-                }
-                """;
+    @DisplayName("Should return empty for non-existent state")
+    void testGetNonExistentState() {
+        when(redissonClient.getBucket(
+                        eq("agentscope:session:non_existent:testModule"), any(Codec.class)))
+                .thenReturn(bucket);
+        when(bucket.get()).thenReturn(null);
 
-        when(redissonClient.getBucket(eq("agentscope:session:session1"), any())).thenReturn(bucket);
-        when(bucket.get()).thenReturn(json);
-
-        when(redissonClient.getMap(
-                        eq("agentscope:session:session1:meta"),
-                        any(org.redisson.client.codec.Codec.class)))
-                .thenReturn(metaMap);
-        when(metaMap.get("lastModified")).thenReturn("12345");
-
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
-        SessionInfo info = session.getSessionInfo("session1");
 
-        assertEquals("session1", info.getSessionId());
-        assertEquals(json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, info.getSize());
-        assertEquals(2, info.getComponentCount());
-        assertEquals(12345L, info.getLastModified());
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        Optional<TestState> state = session.get(sessionKey, "testModule", TestState.class);
+        assertFalse(state.isPresent());
     }
 
     @Test
+    @DisplayName("Should return empty list for non-existent list state")
+    void testGetNonExistentListState() {
+        when(redissonClient.getList(
+                        eq("agentscope:session:non_existent:testList:list"), any(Codec.class)))
+                .thenReturn(rList);
+        when(rList.isEmpty()).thenReturn(true);
+
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+        List<TestState> states = session.getList(sessionKey, "testList", TestState.class);
+        assertTrue(states.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return true when session exists")
+    void testSessionExists() {
+        when(keys.countExists("agentscope:session:session1:_keys")).thenReturn(1L);
+        when(rSet.size()).thenReturn(2);
+
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        assertTrue(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should return false when session does not exist")
+    void testSessionDoesNotExist() {
+        when(rSet.isExists()).thenReturn(false);
+
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        assertFalse(session.exists(sessionKey));
+    }
+
+    @Test
+    @DisplayName("Should delete session correctly")
+    void testDeleteSession() {
+        Set<String> trackedKeys = Set.of("module1", "module2:list");
+        when(rSet.iterator()).thenReturn(trackedKeys.iterator());
+
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+        session.delete(sessionKey);
+
+        // Verify iterator was called to get tracked keys
+        verify(rSet).iterator();
+    }
+
+    @Test
+    @DisplayName("Should list all session keys")
+    void testListSessionKeys() {
+        when(redissonClient.getKeys()).thenReturn(keys);
+        when(keys.getKeys(any(KeysScanOptions.class)))
+                .thenReturn(
+                        List.of(
+                                "agentscope:session:session1:_keys",
+                                "agentscope:session:session2:_keys"));
+
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
+        assertEquals(2, sessionKeys.size());
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session1")));
+        assertTrue(sessionKeys.contains(SimpleSessionKey.of("session2")));
+    }
+
+    @Test
+    @DisplayName("Should clear all sessions")
     void testClearAllSessions() {
         when(redissonClient.getKeys()).thenReturn(keys);
-        when(keys.getKeysByPattern("agentscope:session:*"))
+        when(keys.getKeys(any(KeysScanOptions.class)))
                 .thenReturn(
                         List.of(
-                                "agentscope:session:s1",
-                                "agentscope:session:s2",
-                                "agentscope:session:s1:meta",
-                                "agentscope:session:s2:meta"));
+                                "agentscope:session:s1:module1",
+                                "agentscope:session:s1:_keys",
+                                "agentscope:session:s2:module1",
+                                "agentscope:session:s2:_keys"));
 
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
 
-        StepVerifier.create(session.clearAllSessions()).expectNext(2).verifyComplete();
+        StepVerifier.create(session.clearAllSessions()).expectNext(4).verifyComplete();
     }
 
     @Test
+    @DisplayName("Should shutdown client when closing session")
     void testCloseShutsDownClient() {
-        RedissonSession session =
-                RedissonSession.builder()
+        RedisSession session =
+                RedisSession.builder()
                         .redissonClient(redissonClient)
                         .keyPrefix("agentscope:session:")
                         .build();
         session.close();
         verify(redissonClient).shutdown();
     }
+
+    @Test
+    @DisplayName("Should build session with cluster mode RedissonClient")
+    void testBuilderWithClusterRedissonClient() {
+        // Redisson uses the same RedissonClient interface for all modes
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+        assertNotNull(session);
+    }
+
+    @Test
+    @DisplayName("Should build session with sentinel mode RedissonClient")
+    void testBuilderWithSentinelRedissonClient() {
+        // Redisson uses the same RedissonClient interface for all modes
+        RedisSession session =
+                RedisSession.builder()
+                        .redissonClient(redissonClient)
+                        .keyPrefix("agentscope:session:")
+                        .build();
+        assertNotNull(session);
+    }
+
+    public record TestState(String value, int count) implements State {}
 }

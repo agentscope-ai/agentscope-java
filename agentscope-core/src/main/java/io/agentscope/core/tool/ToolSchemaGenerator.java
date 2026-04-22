@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,12 +15,10 @@
  */
 package io.agentscope.core.tool;
 
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,16 +33,6 @@ import java.util.Set;
 class ToolSchemaGenerator {
 
     /**
-     * Generate parameter schema for a method.
-     *
-     * @param method the method to generate schema for
-     * @return JSON Schema map in OpenAI format
-     */
-    Map<String, Object> generateParameterSchema(Method method) {
-        return generateParameterSchema(method, Collections.emptySet());
-    }
-
-    /**
      * Generate parameter schema for a method with excluded parameters.
      *
      * <p>
@@ -57,28 +45,34 @@ class ToolSchemaGenerator {
      *                      be null or empty)
      * @return JSON Schema map in OpenAI format
      */
+    @SuppressWarnings("unchecked")
     Map<String, Object> generateParameterSchema(Method method, Set<String> excludeParams) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
 
         Map<String, Object> properties = new HashMap<>();
         List<String> required = new ArrayList<>();
+        Map<String, Object> allDefs = new HashMap<>();
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
-            // Skip framework parameters like ToolEmitter and Agent - they should not be in
-            // the
-            // schema
-            if (param.getType() == ToolEmitter.class || param.getType() == Agent.class) {
+            // Only include parameters with @ToolParam annotation
+            ToolParam toolParam = param.getAnnotation(ToolParam.class);
+            if (toolParam == null) {
                 continue;
             }
 
-            ParameterInfo info = extractParameterInfo(param);
+            ParameterInfo info = extractParameterInfo(param, toolParam);
 
             // Skip excluded parameters (e.g., preset parameters)
             if (excludeParams != null && excludeParams.contains(info.name)) {
                 continue;
             }
+
+            // Hoist $defs from per-parameter schema to the root level so that
+            // $ref pointers like "#/$defs/TypeName" resolve against the document root.
+            hoistDefs(info.schema, "$defs", allDefs);
+            hoistDefs(info.schema, "definitions", allDefs);
 
             properties.put(info.name, info.schema);
             if (info.required) {
@@ -90,36 +84,44 @@ class ToolSchemaGenerator {
         if (!required.isEmpty()) {
             schema.put("required", required);
         }
+        if (!allDefs.isEmpty()) {
+            schema.put("$defs", allDefs);
+        }
 
         return schema;
     }
 
+    // TODO: putAll silently overwrites when different parameters define the same def key
+    //  (e.g. different classes with the same simple name under PLAIN_DEFINITION_KEYS).
+    //  Add value-equality check and fail-fast on true conflicts in a follow-up.
+    @SuppressWarnings("unchecked")
+    private void hoistDefs(
+            Map<String, Object> paramSchema, String key, Map<String, Object> target) {
+        Object raw = paramSchema.remove(key);
+        if (raw instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            target.putAll((Map<String, Object>) defs);
+        }
+    }
+
     /**
-     * Extract parameter information from a Parameter.
+     * Extract parameter information from a Parameter with @ToolParam annotation.
      *
      * @param param the parameter to extract info from
+     * @param toolParam the @ToolParam annotation
      * @return ParameterInfo containing name, schema, and required flag
      */
-    private ParameterInfo extractParameterInfo(Parameter param) {
-        ToolParam toolParam = param.getAnnotation(ToolParam.class);
+    private ParameterInfo extractParameterInfo(Parameter param, ToolParam toolParam) {
+        String paramName = toolParam.name();
 
-        // Use name from @ToolParam annotation, fallback to reflection-based name
-        String paramName = (toolParam != null) ? toolParam.name() : param.getName();
-
-        // Generate schema using JsonSchemaUtils with full type support (including
-        // generics)
+        // Generate schema using JsonSchemaUtils with full type support (including generics)
         Map<String, Object> paramSchema =
                 JsonSchemaUtils.generateSchemaFromType(param.getParameterizedType());
 
-        boolean required = false;
-        if (toolParam != null) {
-            if (!toolParam.description().isEmpty()) {
-                paramSchema.put("description", toolParam.description());
-            }
-            required = toolParam.required();
+        if (!toolParam.description().isEmpty()) {
+            paramSchema.put("description", toolParam.description());
         }
 
-        return new ParameterInfo(paramName, paramSchema, required);
+        return new ParameterInfo(paramName, paramSchema, toolParam.required());
     }
 
     /**

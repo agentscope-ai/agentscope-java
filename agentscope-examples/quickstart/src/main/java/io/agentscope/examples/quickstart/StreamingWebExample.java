@@ -1,8 +1,8 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -18,15 +18,10 @@ package io.agentscope.examples.quickstart;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
-import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionManager;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.session.Session;
 import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -89,7 +84,7 @@ public class StreamingWebExample {
         /**
          * Chat endpoint with SSE streaming.
          *
-         * @param message User message
+         * @param message   User message
          * @param sessionId Session ID (optional, defaults to "default")
          * @return Flux of streaming text chunks
          */
@@ -98,43 +93,29 @@ public class StreamingWebExample {
                 @RequestParam String message,
                 @RequestParam(defaultValue = "default") String sessionId) {
 
-            // Create agent components
-            InMemoryMemory memory = new InMemoryMemory();
-            Toolkit toolkit = new Toolkit();
-
             ReActAgent agent =
                     ReActAgent.builder()
                             .name("WebAgent")
-                            .sysPrompt(
-                                    "You are a helpful AI assistant. Provide clear and concise"
-                                            + " answers.")
-                            .toolkit(toolkit)
-                            .memory(memory)
                             .model(
                                     DashScopeChatModel.builder()
                                             .apiKey(apiKey)
                                             .modelName("qwen-plus")
-                                            .stream(true) // Enable streaming
-                                            .enableThinking(true)
-                                            .formatter(new DashScopeChatFormatter())
+                                            .stream(true)
                                             .build())
                             .build();
 
-            // Load session using SessionLoader (no more hardcoded strings!)
-            loadSessionWithLoader(sessionId, agent, memory);
+            Session session = new JsonSession(sessionPath);
+            agent.loadIfExists(session, sessionId);
 
             // Create user message
-            Msg userMsg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .content(TextBlock.builder().text(message).build())
-                            .build();
+            Msg userMsg = Msg.builder().textContent(message).build();
 
             // Configure streaming options - INCREMENTAL mode for SSE
             StreamOptions streamOptions =
                     StreamOptions.builder()
                             .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
                             .incremental(true)
+                            .includeReasoningResult(false)
                             .build();
 
             // Use stream() API instead of hooks
@@ -144,12 +125,7 @@ public class StreamingWebExample {
                     .doFinally(
                             signalType -> {
                                 // Save session after completion using SessionLoader
-                                saveSessionWithLoader(sessionId, agent, memory);
-                            })
-                    .doOnError(
-                            error -> {
-                                // Error handling
-                                System.err.println("Agent error: " + error.getMessage());
+                                agent.saveTo(session, sessionId);
                             })
                     .map(
                             event -> {
@@ -159,39 +135,12 @@ public class StreamingWebExample {
                     .filter(text -> text != null && !text.isEmpty());
         }
 
-        /** Health check endpoint. */
+        /**
+         * Health check endpoint.
+         */
         @GetMapping("/health")
         public String health() {
             return "OK";
-        }
-
-        /** Load session using SessionManager with automatic component naming. */
-        private void loadSessionWithLoader(
-                String sessionId, ReActAgent agent, InMemoryMemory memory) {
-            try {
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent)
-                        .addComponent(memory)
-                        .loadIfExists();
-            } catch (Exception e) {
-                System.err.println("Warning: Failed to load session: " + e.getMessage());
-            }
-        }
-
-        /** Save session using SessionManager with automatic component naming. */
-        private void saveSessionWithLoader(
-                String sessionId, ReActAgent agent, InMemoryMemory memory) {
-            try {
-                // Use SessionManager to save session with automatic component naming
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent)
-                        .addComponent(memory)
-                        .saveSession();
-            } catch (Exception e) {
-                System.err.println("Warning: Failed to save session: " + e.getMessage());
-            }
         }
     }
 }

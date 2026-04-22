@@ -1,0 +1,120 @@
+<!--
+  ~ Copyright 2024-2026 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HITL Chat</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="header-title">
+                    <h1>HITL Chat</h1>
+                    <p data-i18n="subtitle">Human-in-the-Loop Agent Demo</p>
+                </div>
+                <div class="lang-switch">
+                    <button id="lang-en" class="lang-btn active">EN</button>
+                    <button id="lang-zh" class="lang-btn">中文</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar">
+                <section class="panel">
+                    <h2 data-i18n="mcpServers">MCP Servers</h2>
+                    <div id="mcp-list" class="mcp-list"></div>
+                    <button id="add-mcp-btn" class="btn btn-primary" data-i18n="addMcpServer">+ Add MCP Server</button>
+                </section>
+
+                <section class="panel">
+                    <h2 data-i18n="availableTools">Available Tools</h2>
+                    <div id="tools-list" class="tools-list"></div>
+                </section>
+
+                <section class="panel">
+                    <h2 data-i18n="dangerousTools">Dangerous Tools</h2>
+                    <p class="hint" data-i18n="dangerousToolsHint">Check tools that require confirmation</p>
+                    <div id="dangerous-tools-list" class="dangerous-tools-list"></div>
+                    <button id="save-dangerous-tools-btn" class="btn btn-secondary" data-i18n="save">Save</button>
+                </section>
+            </aside>
+
+            <main class="chat-area">
+                <div id="chat-messages" class="chat-messages"></div>
+
+                <div class="input-area">
+                    <textarea id="message-input" data-i18n-placeholder="inputPlaceholder" placeholder="Type a message..." rows="2"></textarea>
+                    <div class="input-buttons">
+                        <button id="send-btn" class="btn btn-primary" data-i18n="send">Send</button>
+                        <button id="stop-btn" class="btn btn-warning hidden" data-i18n="stop">Stop</button>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <div id="mcp-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3 data-i18n="addMcpServerTitle">Add MCP Server</h3>
+                <form id="mcp-form">
+                    <div class="form-group">
+                        <label for="mcp-name" data-i18n="name">Name</label>
+                        <input type="text" id="mcp-name" data-i18n-placeholder="mcpNamePlaceholder" placeholder="e.g. filesystem" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mcp-transport" data-i18n="transportType">Transport Type</label>
+                        <select id="mcp-transport">
+                            <option value="STDIO" data-i18n="stdioOption">StdIO (Local Process)</option>
+                            <option value="SSE" data-i18n="sseOption">SSE (HTTP Server-Sent Events)</option>
+                            <option value="HTTP" data-i18n="httpOption">HTTP (Streamable HTTP)</option>
+                        </select>
+                    </div>
+                    <div id="stdio-options" class="transport-options">
+                        <div class="form-group">
+                            <label for="mcp-command" data-i18n="command">Command</label>
+                            <input type="text" id="mcp-command" data-i18n-placeholder="commandPlaceholder" placeholder="e.g. npx">
+                        </div>
+                        <div class="form-group">
+                            <label for="mcp-args" data-i18n="args">Arguments (comma separated)</label>
+                            <input type="text" id="mcp-args" data-i18n-placeholder="argsPlaceholder" placeholder="e.g. -y,@modelcontextprotocol/server-filesystem,/tmp">
+                        </div>
+                    </div>
+                    <div id="http-options" class="transport-options hidden">
+                        <div class="form-group">
+                            <label for="mcp-url">URL</label>
+                            <input type="text" id="mcp-url" data-i18n-placeholder="urlPlaceholder" placeholder="e.g. https://mcp.example.com/sse">
+                        </div>
+                        <div class="form-group">
+                            <label for="mcp-headers" data-i18n="headers">Headers (JSON)</label>
+                            <textarea id="mcp-headers" placeholder='{"Authorization": "Bearer token"}'></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="btn btn-primary" data-i18n="add">Add</button>
+                        <button type="button" id="cancel-mcp-btn" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+</body>
+</html>

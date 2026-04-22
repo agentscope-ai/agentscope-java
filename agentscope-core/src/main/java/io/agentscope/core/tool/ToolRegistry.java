@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -50,6 +50,9 @@ class ToolRegistry {
      * @param registered RegisteredToolFunction wrapper with metadata
      */
     void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.put(toolName, tool);
         registeredTools.put(toolName, registered);
     }
@@ -61,6 +64,9 @@ class ToolRegistry {
      * @return AgentTool or null if not found
      */
     AgentTool getTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return tools.get(name);
     }
 
@@ -71,6 +77,9 @@ class ToolRegistry {
      * @return RegisteredToolFunction or null if not found
      */
     RegisteredToolFunction getRegisteredTool(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
         return registeredTools.get(name);
     }
 
@@ -98,8 +107,27 @@ class ToolRegistry {
      * @param toolName Tool name to remove
      */
     void removeTool(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            throw new IllegalArgumentException("Tool name cannot be null or blank");
+        }
         tools.remove(toolName);
         registeredTools.remove(toolName);
+    }
+
+    /**
+     * Atomically remove a tool only if the current instance matches the expected one.
+     * Uses {@link ConcurrentHashMap#remove(Object, Object)} to avoid TOCTOU races.
+     *
+     * @param toolName Tool name to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    boolean removeToolIfSame(String toolName, AgentTool expected) {
+        boolean removed = tools.remove(toolName, expected);
+        if (removed) {
+            registeredTools.remove(toolName);
+        }
+        return removed;
     }
 
     /**
@@ -109,5 +137,19 @@ class ToolRegistry {
      */
     void removeTools(Set<String> toolNames) {
         toolNames.forEach(this::removeTool);
+    }
+
+    /**
+     * Copy all tools from this registry to another registry.
+     *
+     * @param target The target registry to copy tools to
+     */
+    void copyTo(ToolRegistry target) {
+        for (Map.Entry<String, AgentTool> entry : tools.entrySet()) {
+            String toolName = entry.getKey();
+            AgentTool tool = entry.getValue();
+            RegisteredToolFunction registered = registeredTools.get(toolName);
+            target.registerTool(toolName, tool, registered);
+        }
     }
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,8 +15,9 @@
  */
 package io.agentscope.core.memory.mem0;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.util.JsonCodec;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -30,20 +31,38 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * HTTP client for interacting with the Mem0 API.
+ *
+ * <p>Supports both Platform Mem0 and self-hosted Mem0 deployments:
+ * <ul>
+ *   <li><b>Platform Mem0:</b> Uses endpoints /v1/memories/ and /v2/memories/search/</li>
+ *   <li><b>Self-hosted Mem0:</b> Uses endpoints /memories and /memories/search</li>
+ * </ul>
+ *
+ * <p>By default, the client uses Platform Mem0 endpoints. To use self-hosted Mem0,
+ * specify "self-hosted" as the apiType parameter.
  */
 public class Mem0Client {
 
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    private static final String MEMORIES_ENDPOINT = "/v1/memories/";
-    private static final String SEARCH_ENDPOINT = "/v2/memories/search/";
+
+    // Platform Mem0 endpoints
+    private static final String PLATFORM_MEMORIES_ENDPOINT = "/v1/memories/";
+    private static final String PLATFORM_SEARCH_ENDPOINT = "/v2/memories/search/";
+
+    // Self-hosted Mem0 endpoints
+    private static final String SELF_HOSTED_MEMORIES_ENDPOINT = "/memories";
+    private static final String SELF_HOSTED_SEARCH_ENDPOINT = "/search";
 
     private final OkHttpClient httpClient;
     private final String apiBaseUrl;
     private final String apiKey;
-    private final ObjectMapper objectMapper;
+    private final Mem0ApiType apiType;
+    private final JsonCodec jsonCodec;
+    private final String addEndpoint;
+    private final String searchEndpoint;
 
     /**
-     * Creates a new Mem0Client with specified configuration.
+     * Creates a new Mem0Client with specified configuration (defaults to Platform Mem0).
      *
      * @param apiBaseUrl The base URL of the Mem0 API (e.g., "http://localhost:8000")
      * @param apiKey The API key for authentication (can be null for local deployments without
@@ -54,7 +73,7 @@ public class Mem0Client {
     }
 
     /**
-     * Creates a new Mem0Client with custom timeout.
+     * Creates a new Mem0Client with custom timeout (defaults to Platform Mem0).
      *
      * @param apiBaseUrl The base URL of the Mem0 API
      * @param apiKey The API key for authentication (can be null for local deployments without
@@ -62,20 +81,42 @@ public class Mem0Client {
      * @param timeout HTTP request timeout duration
      */
     public Mem0Client(String apiBaseUrl, String apiKey, Duration timeout) {
+        this(apiBaseUrl, apiKey, Mem0ApiType.PLATFORM, timeout);
+    }
+
+    /**
+     * Creates a new Mem0Client with API type specification.
+     *
+     * @param apiBaseUrl The base URL of the Mem0 API
+     * @param apiKey The API key for authentication (can be null for local deployments without
+     *     authentication)
+     * @param apiType API type enum
+     * @param timeout HTTP request timeout duration
+     */
+    public Mem0Client(String apiBaseUrl, String apiKey, Mem0ApiType apiType, Duration timeout) {
         this.apiBaseUrl =
                 apiBaseUrl.endsWith("/")
                         ? apiBaseUrl.substring(0, apiBaseUrl.length() - 1)
                         : apiBaseUrl;
         this.apiKey = apiKey;
-        this.objectMapper = new ObjectMapper();
-        // Enables serialization/deserialization of Java date/time types
-        this.objectMapper.registerModule(new JavaTimeModule());
+        this.apiType = apiType != null ? apiType : Mem0ApiType.PLATFORM;
+        this.jsonCodec = JsonUtils.getJsonCodec();
         this.httpClient =
                 new OkHttpClient.Builder()
                         .connectTimeout(Duration.ofSeconds(30))
                         .readTimeout(timeout)
                         .writeTimeout(Duration.ofSeconds(30))
                         .build();
+
+        // Select endpoints based on API type
+        if (this.apiType == Mem0ApiType.SELF_HOSTED) {
+            this.addEndpoint = SELF_HOSTED_MEMORIES_ENDPOINT;
+            this.searchEndpoint = SELF_HOSTED_SEARCH_ENDPOINT;
+        } else {
+            // Default to platform endpoints
+            this.addEndpoint = PLATFORM_MEMORIES_ENDPOINT;
+            this.searchEndpoint = PLATFORM_SEARCH_ENDPOINT;
+        }
     }
 
     /**
@@ -95,7 +136,7 @@ public class Mem0Client {
         return Mono.fromCallable(
                         () -> {
                             // Serialize request to JSON
-                            String json = objectMapper.writeValueAsString(request);
+                            String json = jsonCodec.toJson(request);
 
                             // Build HTTP request
                             Request.Builder requestBuilder =
@@ -106,7 +147,11 @@ public class Mem0Client {
 
                             // Add Authorization header only if apiKey is provided
                             if (apiKey != null && !apiKey.isEmpty()) {
-                                requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                if (apiType == Mem0ApiType.SELF_HOSTED) {
+                                    requestBuilder.addHeader("X-API-Key", apiKey);
+                                } else {
+                                    requestBuilder.addHeader("Authorization", "Token " + apiKey);
+                                }
                             }
 
                             Request httpRequest = requestBuilder.build();
@@ -129,6 +174,12 @@ public class Mem0Client {
 
                                 // Return raw response body
                                 return response.body().string();
+                            } catch (IOException e) {
+                                // Re-throw IOException as-is (it already contains status code info)
+                                throw e;
+                            } catch (Exception e) {
+                                // Wrap other exceptions
+                                throw new IOException("Mem0 API " + operationName + " failed", e);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -152,15 +203,7 @@ public class Mem0Client {
     private <T, R> Mono<R> executePost(
             String endpoint, T request, Class<R> responseType, String operationName) {
         return executePostRaw(endpoint, request, operationName)
-                .map(
-                        responseBody -> {
-                            try {
-                                return objectMapper.readValue(responseBody, responseType);
-                            } catch (IOException e) {
-                                throw new RuntimeException(
-                                        "Failed to parse response for " + operationName, e);
-                            }
-                        });
+                .map(responseBody -> jsonCodec.fromJson(responseBody, responseType));
     }
 
     /**
@@ -177,7 +220,7 @@ public class Mem0Client {
      * @return A Mono emitting the response with extracted memories
      */
     public Mono<Mem0AddResponse> add(Mem0AddRequest request) {
-        return executePost(MEMORIES_ENDPOINT, request, Mem0AddResponse.class, "add request");
+        return executePost(addEndpoint, request, Mem0AddResponse.class, "add request");
     }
 
     /**
@@ -187,40 +230,39 @@ public class Mem0Client {
      * memories relevant to the query string. Results are ordered by relevance score
      * (highest first).
      *
-     * <p>The v2 API returns a direct array of results, which this method wraps
-     * into a Mem0SearchResponse object for consistency with the existing API.
+     * <p>Automatically compatible with two Mem0 API response formats:
+     * <ul>
+     *   <li><b>format v1.1</b> — response is a JSON object with a {@code results} field
+     *       (e.g. {@code {"results": [...]}}), deserialized directly into
+     *       {@link Mem0SearchResponse}.</li>
+     *   <li><b>format v1.0</b> — response is a direct JSON array (e.g. {@code [...]}),
+     *       parsed as a list of results and wrapped into a {@link Mem0SearchResponse}.</li>
+     * </ul>
      *
      * <p>The metadata filters (agent_id, user_id, run_id) in the request ensure
      * that only memories from the specified context are returned.
-     *
-     * <p>The operation is performed asynchronously on the bounded elastic scheduler
-     * to avoid blocking the caller thread.
      *
      * @param request The search request containing query and filters
      * @return A Mono emitting the search response with relevant memories
      */
     public Mono<Mem0SearchResponse> search(Mem0SearchRequest request) {
-        return executePostRaw(SEARCH_ENDPOINT, request, "search request")
+        return executePostRaw(searchEndpoint, request, "search request")
                 .map(
                         responseBody -> {
-                            try {
-                                // Parse response as array
+                            // Support both response formats: direct array or object with results
+                            String trimmed = responseBody != null ? responseBody.trim() : "";
+                            if (trimmed.startsWith("[")) {
+                                // Response is a JSON array: parse as list and wrap in results
                                 List<Mem0SearchResult> results =
-                                        objectMapper.readValue(
+                                        jsonCodec.fromJson(
                                                 responseBody,
-                                                objectMapper
-                                                        .getTypeFactory()
-                                                        .constructCollectionType(
-                                                                List.class,
-                                                                Mem0SearchResult.class));
-
-                                // Wrap in Mem0SearchResponse for consistency
+                                                new TypeReference<List<Mem0SearchResult>>() {});
                                 Mem0SearchResponse searchResponse = new Mem0SearchResponse();
                                 searchResponse.setResults(results);
                                 return searchResponse;
-                            } catch (IOException e) {
-                                throw new RuntimeException("Failed to parse search response", e);
                             }
+                            // Response is an object (e.g. {"results": [...]})
+                            return jsonCodec.fromJson(responseBody, Mem0SearchResponse.class);
                         });
     }
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -26,8 +27,12 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,14 +40,19 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ReActAgent class.
@@ -473,9 +483,13 @@ class ReActAgentTest {
 
         // Get response with timeout
         // Verify it completes within reasonable time (not infinite loop)
-        agent.call(userMsg)
-                .timeout(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS))
-                .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        Msg response =
+                agent.call(userMsg)
+                        .timeout(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS))
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify max iterations generate reason was respected
+        assertEquals(GenerateReason.MAX_ITERATIONS, response.getGenerateReason());
 
         // Verify max iterations was respected
         assertTrue(
@@ -621,7 +635,8 @@ class ReActAgentTest {
         assertEquals(mockModel, agent.getModel());
 
         assertNotNull(agent.getToolkit(), "Toolkit should not be null");
-        assertEquals(mockToolkit, agent.getToolkit());
+        // Agent uses a copy of toolkit for state isolation, so we verify it's a Toolkit instance
+        assertInstanceOf(Toolkit.class, agent.getToolkit());
 
         assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
     }
@@ -688,6 +703,339 @@ class ReActAgentTest {
                 "Toolkit should have test tool");
     }
 
+    @Test
+    @DisplayName("Should emit ReasoningChunkEvent for ToolUseBlock during streaming")
+    void testStreamingToolUseChunkEvent() {
+        // Track received ToolUseBlock events
+        final List<ToolUseBlock> receivedToolUseBlocks = new CopyOnWriteArrayList<>();
+        final List<ToolUseBlock> accumulatedToolUseBlocks = new CopyOnWriteArrayList<>();
+
+        // Create a hook to capture ReasoningChunkEvent with ToolUseBlock
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
+                            Msg chunk = chunkEvent.getIncrementalChunk();
+                            if (chunk.hasContentBlocks(ToolUseBlock.class)) {
+                                ToolUseBlock tub = chunk.getFirstContentBlock(ToolUseBlock.class);
+                                receivedToolUseBlocks.add(tub);
+
+                                // Also capture accumulated
+                                Msg accumulated = chunkEvent.getAccumulated();
+                                if (accumulated.hasContentBlocks(ToolUseBlock.class)) {
+                                    accumulatedToolUseBlocks.add(
+                                            accumulated.getFirstContentBlock(ToolUseBlock.class));
+                                }
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to return streaming tool call chunks then finish
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // Return tool call with content (simulating streaming)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_stream_1")
+                                                                        .name("weather")
+                                                                        .content(
+                                                                                "{\"city\":\"Beijing\"}")
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "city",
+                                                                                        "Beijing"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            // Second call: return text response (finish)
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Weather retrieved")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .hook(captureHook)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "What's the weather in Beijing?");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify ToolUseBlock events were received
+        assertFalse(receivedToolUseBlocks.isEmpty(), "Should receive ToolUseBlock chunk events");
+
+        // Verify the tool use block has correct data
+        ToolUseBlock receivedTub = receivedToolUseBlocks.get(0);
+        assertEquals("call_stream_1", receivedTub.getId(), "Tool call ID should match");
+        assertEquals("weather", receivedTub.getName(), "Tool name should match");
+
+        // Verify accumulated data
+        assertFalse(accumulatedToolUseBlocks.isEmpty(), "Should have accumulated ToolUseBlock");
+        ToolUseBlock accumulatedTub = accumulatedToolUseBlocks.get(0);
+        assertEquals(
+                "call_stream_1", accumulatedTub.getId(), "Accumulated tool call ID should match");
+    }
+
+    @Test
+    @DisplayName("Should emit ReasoningChunkEvent for multiple parallel tool calls")
+    void testStreamingMultipleToolCallsChunkEvents() {
+        // Track received ToolUseBlock events by ID
+        final Map<String, List<ToolUseBlock>> receivedByToolId = new ConcurrentHashMap<>();
+
+        // Create a hook to capture ReasoningChunkEvent with ToolUseBlock
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent chunkEvent) {
+                            Msg accumulated = chunkEvent.getAccumulated();
+                            if (accumulated.hasContentBlocks(ToolUseBlock.class)) {
+                                ToolUseBlock tub =
+                                        accumulated.getFirstContentBlock(ToolUseBlock.class);
+                                receivedByToolId
+                                        .computeIfAbsent(
+                                                tub.getId(),
+                                                k ->
+                                                        new java.util.concurrent
+                                                                .CopyOnWriteArrayList<>())
+                                        .add(tub);
+                            }
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to return multiple tool calls then finish
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // Return two parallel tool calls
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_1")
+                                                                        .name("weather")
+                                                                        .content(
+                                                                                "{\"city\":\"Beijing\"}")
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "city",
+                                                                                        "Beijing"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build(),
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_2")
+                                                                        .name(
+                                                                                TestConstants
+                                                                                        .CALCULATOR_TOOL_NAME)
+                                                                        .content(
+                                                                                "{\"a\":1,\"b\":2}")
+                                                                        .input(
+                                                                                Map.of(
+                                                                                        "a",
+                                                                                        1,
+                                                                                        "b",
+                                                                                        2,
+                                                                                        "operation",
+                                                                                        "add"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            }
+                            // Second call: return text response (finish)
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("All tools executed")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .hook(captureHook)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "Get weather and calculate");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify events were received for both tool calls
+        assertTrue(receivedByToolId.containsKey("call_1"), "Should receive events for call_1");
+        assertTrue(receivedByToolId.containsKey("call_2"), "Should receive events for call_2");
+
+        // Verify tool names
+        ToolUseBlock call1 = receivedByToolId.get("call_1").get(0);
+        assertEquals("weather", call1.getName(), "First tool should be weather");
+
+        ToolUseBlock call2 = receivedByToolId.get("call_2").get(0);
+        assertEquals(
+                TestConstants.CALCULATOR_TOOL_NAME,
+                call2.getName(),
+                "Second tool should be calculator");
+    }
+
+    @Test
+    @DisplayName("Should include ChatUsage in accumulated message metadata when available")
+    void testChatUsageInAccumulatedMessageMetadata() {
+        // Track received ChatUsage from ReasoningChunkEvent
+        final java.util.List<ChatUsage> capturedChatUsages =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.List<Msg> capturedAccumulatedMsgs =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        // Create a hook to capture ReasoningChunkEvent and check metadata
+        io.agentscope.core.hook.Hook captureHook =
+                new io.agentscope.core.hook.Hook() {
+                    @Override
+                    public <T extends io.agentscope.core.hook.HookEvent>
+                            reactor.core.publisher.Mono<T> onEvent(T event) {
+                        if (event
+                                instanceof io.agentscope.core.hook.ReasoningChunkEvent chunkEvent) {
+                            // Capture accumulated message and check its metadata
+                            Msg accumulated = chunkEvent.getAccumulated();
+                            if (accumulated != null) {
+                                capturedAccumulatedMsgs.add(accumulated);
+
+                                // Capture ChatUsage from metadata
+                                Object usage =
+                                        accumulated
+                                                .getMetadata()
+                                                .get(
+                                                        io.agentscope.core.message
+                                                                .MessageMetadataKeys.CHAT_USAGE);
+                                if (usage instanceof ChatUsage) {
+                                    capturedChatUsages.add((ChatUsage) usage);
+                                }
+                            }
+                        }
+                        return reactor.core.publisher.Mono.just(event);
+                    }
+                };
+
+        // Setup model to return response with ChatUsage
+        MockModel modelWithUsage =
+                new MockModel(
+                        messages -> {
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Test response")
+                                                                    .build()))
+                                            .usage(new ChatUsage(100, 50, 1.5))
+                                            .build());
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(modelWithUsage)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .hook(captureHook)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "Test message");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify ChatUsage was captured in events
+        assertFalse(capturedChatUsages.isEmpty(), "Should capture ChatUsage from events");
+
+        // Verify ChatUsage values
+        ChatUsage capturedUsage = capturedChatUsages.get(0);
+        assertEquals(100, capturedUsage.getInputTokens(), "Input tokens should match");
+        assertEquals(50, capturedUsage.getOutputTokens(), "Output tokens should match");
+        assertEquals(1.5, capturedUsage.getTime(), "Time should match");
+
+        // Verify accumulated messages were captured
+        assertFalse(
+                capturedAccumulatedMsgs.isEmpty(),
+                "Should capture accumulated messages from events");
+
+        // Verify metadata contains CHAT_USAGE
+        Msg accumulatedMsg = capturedAccumulatedMsgs.get(0);
+        Object metadataUsage =
+                accumulatedMsg
+                        .getMetadata()
+                        .get(io.agentscope.core.message.MessageMetadataKeys.CHAT_USAGE);
+        assertNotNull(metadataUsage, "Accumulated message metadata should contain CHAT_USAGE");
+        assertTrue(
+                metadataUsage instanceof ChatUsage,
+                "Metadata CHAT_USAGE should be ChatUsage instance");
+
+        ChatUsage metadataChatUsage = (ChatUsage) metadataUsage;
+        assertEquals(100, metadataChatUsage.getInputTokens(), "Metadata input tokens should match");
+        assertEquals(
+                50, metadataChatUsage.getOutputTokens(), "Metadata output tokens should match");
+        assertEquals(1.5, metadataChatUsage.getTime(), "Metadata time should match");
+    }
+
     // Helper method to create tool call response
     private static ChatResponse createToolCallResponseHelper(
             String toolName, String toolCallId, Map<String, Object> arguments) {
@@ -698,6 +1046,7 @@ class ReActAgentTest {
                                         .name(toolName)
                                         .id(toolCallId)
                                         .input(arguments)
+                                        .content(JsonUtils.getJsonCodec().toJson(arguments))
                                         .build()))
                 .usage(new ChatUsage(8, 15, 23))
                 .build();

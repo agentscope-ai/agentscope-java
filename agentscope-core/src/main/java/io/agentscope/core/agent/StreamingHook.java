@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,9 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.SummaryChunkEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -63,14 +65,16 @@ class StreamingHook implements Hook {
             PostReasoningEvent e = (PostReasoningEvent) event;
             // postReasoning is called after streaming completes
             // This is the last/complete message
-            if (options.shouldStream(EventType.REASONING)) {
+            if (options.shouldStream(EventType.REASONING)
+                    && options.shouldIncludeReasoningEmission(false)) {
                 emitEvent(EventType.REASONING, e.getReasoningMessage(), true);
             }
             return Mono.just(event);
         } else if (event instanceof ReasoningChunkEvent) {
             ReasoningChunkEvent e = (ReasoningChunkEvent) event;
             // This is an intermediate chunk
-            if (options.shouldStream(EventType.REASONING)) {
+            if (options.shouldStream(EventType.REASONING)
+                    && options.shouldIncludeReasoningEmission(true)) {
                 // Use incremental or accumulated based on StreamOptions
                 Msg msgToEmit =
                         options.isIncremental() ? e.getIncrementalChunk() : e.getAccumulated();
@@ -88,9 +92,28 @@ class StreamingHook implements Hook {
         } else if (event instanceof ActingChunkEvent) {
             ActingChunkEvent e = (ActingChunkEvent) event;
             // Intermediate tool chunk
-            if (options.shouldStream(EventType.TOOL_RESULT)) {
+            if (options.shouldStream(EventType.TOOL_RESULT) && options.isIncludeActingChunk()) {
                 Msg toolMsg = createToolMessage(e.getChunk());
                 emitEvent(EventType.TOOL_RESULT, toolMsg, false);
+            }
+            return Mono.just(event);
+        } else if (event instanceof PostSummaryEvent) {
+            PostSummaryEvent e = (PostSummaryEvent) event;
+            // Summary generation completed
+            if (options.shouldStream(EventType.SUMMARY)
+                    && options.shouldIncludeSummaryEmission(false)) {
+                emitEvent(EventType.SUMMARY, e.getSummaryMessage(), true);
+            }
+            return Mono.just(event);
+        } else if (event instanceof SummaryChunkEvent) {
+            SummaryChunkEvent e = (SummaryChunkEvent) event;
+            // Intermediate summary chunk
+            if (options.shouldStream(EventType.SUMMARY)
+                    && options.shouldIncludeSummaryEmission(true)) {
+                // Use incremental or accumulated based on StreamOptions
+                Msg msgToEmit =
+                        options.isIncremental() ? e.getIncrementalChunk() : e.getAccumulated();
+                emitEvent(EventType.SUMMARY, msgToEmit, false);
             }
             return Mono.just(event);
         }

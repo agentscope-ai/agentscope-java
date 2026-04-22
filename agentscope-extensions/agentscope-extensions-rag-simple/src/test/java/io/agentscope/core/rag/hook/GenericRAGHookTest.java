@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.hook;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -101,17 +103,17 @@ class GenericRAGHookTest {
         assertNotNull(newHook);
         assertEquals(knowledge, newHook.getKnowledgeBase());
         assertNotNull(newHook.getDefaultConfig());
-        assertTrue(newHook.isEnableOnlyForUserQueries());
+        assertEquals(5, newHook.getDefaultConfig().getLimit());
+        assertEquals(0.5, newHook.getDefaultConfig().getScoreThreshold());
     }
 
     @Test
     @DisplayName("Should create GenericRAGHook with custom configuration")
     void testCreateWithCustomConfig() {
         RetrieveConfig config = RetrieveConfig.builder().limit(10).scoreThreshold(0.7).build();
-        GenericRAGHook newHook = new GenericRAGHook(knowledge, config, false);
+        GenericRAGHook newHook = new GenericRAGHook(knowledge, config);
         assertNotNull(newHook);
         assertEquals(config, newHook.getDefaultConfig());
-        assertTrue(!newHook.isEnableOnlyForUserQueries());
     }
 
     @Test
@@ -123,8 +125,7 @@ class GenericRAGHookTest {
     @Test
     @DisplayName("Should throw exception for null config")
     void testCreateNullConfig() {
-        assertThrows(
-                IllegalArgumentException.class, () -> new GenericRAGHook(knowledge, null, true));
+        assertThrows(IllegalArgumentException.class, () -> new GenericRAGHook(knowledge, null));
     }
 
     @Test
@@ -152,22 +153,26 @@ class GenericRAGHookTest {
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            assertTrue(result instanceof PreCallEvent);
-                            PreCallEvent preCallEvent = (PreCallEvent) result;
-                            List<Msg> enhancedMessages = preCallEvent.getInputMessages();
+                            assertInstanceOf(PreCallEvent.class, result);
+                            List<Msg> enhancedMessages = result.getInputMessages();
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
-                            // First message should be system message with knowledge
-                            Msg firstMsg = enhancedMessages.get(1);
-                            assertEquals(MsgRole.SYSTEM, firstMsg.getRole());
-                            assertTrue(firstMsg.getTextContent().contains("knowledge base"));
+                            // First message should be user message with question
+                            assertEquals(MsgRole.USER, enhancedMessages.get(0).getRole());
+                            // Second message should be user message with knowledge retrieval
+                            assertEquals(MsgRole.USER, enhancedMessages.get(1).getRole());
+                            assertTrue(
+                                    enhancedMessages
+                                            .get(1)
+                                            .getTextContent()
+                                            .contains("knowledge base"));
                         })
                 .verifyComplete();
     }
 
     @Test
-    @DisplayName("Should skip non-user messages when enableOnlyForUserQueries is true")
+    @DisplayName("Should skip non-user messages")
     void testSkipNonUserMessages() {
         // Create assistant message
         Msg assistantMsg =
@@ -186,40 +191,9 @@ class GenericRAGHookTest {
                         result -> {
                             PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
                             List<Msg> messages = preReasoningEvent.getInputMessages();
-                            // Should not add knowledge message
+                            // Should not add knowledge message (no user message to extract query
+                            // from)
                             assertEquals(1, messages.size());
-                        })
-                .verifyComplete();
-    }
-
-    @Test
-    @DisplayName("Should process all messages when enableOnlyForUserQueries is false")
-    void testProcessAllMessages() {
-        GenericRAGHook hookAll = new GenericRAGHook(knowledge, hook.getDefaultConfig(), false);
-
-        // Add documents
-        Document doc = createDocument("doc1", "Test content");
-        knowledge.addDocuments(List.of(doc)).block();
-
-        // Create assistant message
-        Msg assistantMsg =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Response").build())
-                        .build();
-
-        List<Msg> inputMessages = List.of(assistantMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
-
-        StepVerifier.create(hookAll.onEvent(event))
-                .assertNext(
-                        result -> {
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> messages = preReasoningEvent.getInputMessages();
-                            // Should try to extract query (may be empty)
-                            assertNotNull(messages);
                         })
                 .verifyComplete();
     }
@@ -373,7 +347,7 @@ class GenericRAGHookTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -667,6 +667,68 @@ class WriteFileToolTest {
         assertTrue(Files.exists(newFile));
         String content = Files.readString(newFile);
         assertEquals("New file content", content);
+    }
+
+    @Test
+    @DisplayName("Should handle relative path with baseDir correctly")
+    void testWriteTextFile_RelativePathWithBaseDir() throws IOException {
+        WriteFileTool tool = new WriteFileTool(tempDir.toString());
+
+        // Use relative path - should be resolved relative to baseDir
+        Mono<ToolResultBlock> result =
+                tool.writeTextFile("subdir/relative.txt", "Content from relative path", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Create and write")
+                                            && text.contains("successfully"),
+                                    "Should successfully create file with relative path");
+                        })
+                .verifyComplete();
+
+        // Verify file was created in the correct location (relative to baseDir)
+        Path expectedFile = tempDir.resolve("subdir/relative.txt");
+        assertTrue(
+                Files.exists(expectedFile),
+                "File should be created relative to baseDir: " + expectedFile);
+        String content = Files.readString(expectedFile);
+        assertEquals("Content from relative path", content);
+    }
+
+    @Test
+    @DisplayName("Should handle relative path when reading with baseDir")
+    void testInsertTextFile_RelativePathWithBaseDir() throws IOException {
+        // Create a test file using relative path
+        WriteFileTool tool = new WriteFileTool(tempDir.toString());
+        tool.writeTextFile("test_relative.txt", "Line 1\nLine 2\nLine 3", null).block();
+
+        // Insert content using relative path
+        Mono<ToolResultBlock> result = tool.insertTextFile("test_relative.txt", "Inserted Line", 2);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Insert content")
+                                            && text.contains("successfully"),
+                                    "Should successfully insert with relative path");
+                        })
+                .verifyComplete();
+
+        // Verify content was inserted correctly
+        Path expectedFile = tempDir.resolve("test_relative.txt");
+        List<String> lines = Files.readAllLines(expectedFile);
+        assertEquals(4, lines.size());
+        assertEquals("Line 1", lines.get(0));
+        assertEquals("Inserted Line", lines.get(1));
+        assertEquals("Line 2", lines.get(2));
+        assertEquals("Line 3", lines.get(3));
     }
 
     /**

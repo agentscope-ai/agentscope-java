@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@ package io.agentscope.core.tool.test;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import reactor.core.publisher.Mono;
 
@@ -137,7 +138,7 @@ public class SampleTools {
     @Tool(name = "async_delayed", description = "Async tool with simulated delay")
     public Mono<String> asyncDelayed(
             @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
-        return Mono.delay(java.time.Duration.ofMillis(delayMs))
+        return Mono.delay(Duration.ofMillis(delayMs))
                 .map(tick -> "Completed after " + delayMs + "ms");
     }
 

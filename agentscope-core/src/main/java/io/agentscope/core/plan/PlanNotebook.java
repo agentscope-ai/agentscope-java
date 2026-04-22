@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,9 +26,14 @@ import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import io.agentscope.core.plan.storage.PlanStorage;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.PlanNotebookState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -96,7 +101,7 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #recoverHistoricalPlan} - Recover a historical plan
  * </ul>
  */
-public class PlanNotebook {
+public class PlanNotebook implements StateModule {
 
     public static final String DESCRIPTION =
             "The plan-related tools. Activate this tool when you need to execute "
@@ -115,12 +120,18 @@ public class PlanNotebook {
     private final boolean needUserConfirm;
     private final Map<String, BiConsumer<PlanNotebook, Plan>> changeHooks;
 
+    /** Key prefix for storage, allows multiple instances to coexist in the same session. */
+    private String keyPrefix = "planNotebook";
+
     private PlanNotebook(Builder builder) {
         this.planToHint = builder.planToHint;
         this.storage = builder.storage;
         this.maxSubtasks = builder.maxSubtasks;
         this.needUserConfirm = builder.needUserConfirm;
         this.changeHooks = new ConcurrentHashMap<>();
+        if (builder.keyPrefix != null) {
+            this.keyPrefix = builder.keyPrefix;
+        }
     }
 
     /**
@@ -132,12 +143,44 @@ public class PlanNotebook {
         return new Builder();
     }
 
+    // ==================== StateModule Implementation ====================
+
+    /**
+     * Save PlanNotebook state to the session.
+     *
+     * <p>Always saves the current state, including when currentPlan is null, to ensure cleared
+     * state is persisted.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        // Always save, even when null, to ensure cleared state is persisted
+        session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
+    }
+
+    /**
+     * Load PlanNotebook state from the session.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        // Clear existing state first to avoid stale data
+        this.currentPlan = null;
+        session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
+                .ifPresent(state -> this.currentPlan = state.currentPlan());
+    }
+
     /** Builder for constructing PlanNotebook instances with customizable settings. */
     public static class Builder {
         private PlanToHint planToHint = new DefaultPlanToHint();
         private PlanStorage storage = new InMemoryPlanStorage();
         private Integer maxSubtasks = null;
         private boolean needUserConfirm = true;
+        private String keyPrefix = null;
 
         /**
          * Sets the strategy for converting plans to hints.
@@ -185,6 +228,19 @@ public class PlanNotebook {
          */
         public Builder needUserConfirm(boolean needUserConfirm) {
             this.needUserConfirm = needUserConfirm;
+            return this;
+        }
+
+        /**
+         * Sets the key prefix for state storage.
+         *
+         * <p>Use this when multiple PlanNotebook instances need to coexist in the same session.
+         *
+         * @param keyPrefix the prefix for storage keys (e.g., "mainPlan", "subPlan")
+         * @return This builder for method chaining
+         */
+        public Builder keyPrefix(String keyPrefix) {
+            this.keyPrefix = keyPrefix;
             return this;
         }
 
@@ -248,7 +304,15 @@ public class PlanNotebook {
         for (Map<String, Object> subtaskMap : subtasks) {
             subtaskList.add(mapToSubTask(subtaskMap));
         }
-
+        // Validate subtask count against maxSubtasks limit
+        // Check BEFORE creating the plan to enforce the configured limit
+        if (maxSubtasks != null && subtaskList.size() > maxSubtasks) {
+            return Mono.just(
+                    String.format(
+                            "Cannot create plan: the number of subtasks (%d) exceeds the maximum"
+                                    + " limit of %d. Please reduce the number of subtasks.",
+                            subtaskList.size(), maxSubtasks));
+        }
         Plan plan = new Plan(name, description, expectedOutcome, subtaskList);
 
         String message;
@@ -360,7 +424,7 @@ public class PlanNotebook {
     public static List<Map<String, Object>> subtasksToMaps(List<SubTask> subtasks) {
         List<Map<String, Object>> maps = new ArrayList<>();
         for (SubTask subtask : subtasks) {
-            Map<String, Object> map = new java.util.HashMap<>();
+            Map<String, Object> map = new HashMap<>();
             map.put("name", subtask.getName() != null ? subtask.getName() : "Unnamed Subtask");
             map.put(
                     "description",
@@ -383,7 +447,7 @@ public class PlanNotebook {
         if (subtask == null) {
             return null;
         }
-        Map<String, Object> map = new java.util.HashMap<>();
+        Map<String, Object> map = new HashMap<>();
         map.put("name", subtask.getName() != null ? subtask.getName() : "Unnamed Subtask");
         map.put("description", subtask.getDescription() != null ? subtask.getDescription() : "");
         map.put(
@@ -445,6 +509,16 @@ public class PlanNotebook {
                                 "Invalid subtask_idx '%d' for action 'add'. Must be between 0 and"
                                         + " %d.",
                                 subtaskIdx, subtasks.size()));
+            }
+            // Validate subtask count against maxSubtasks limit BEFORE adding
+            // Use >= because we check before addition: if already at limit, cannot add more
+            if (maxSubtasks != null && subtasks.size() >= maxSubtasks) {
+                return Mono.just(
+                        String.format(
+                                "Cannot add more subtasks: the current plan has reached the"
+                                        + " maximum limit of %d subtasks. Please delete some"
+                                        + " existing subtasks first.",
+                                maxSubtasks));
             }
         } else {
             if (subtaskIdx < 0 || subtaskIdx >= subtasks.size()) {
@@ -646,8 +720,11 @@ public class PlanNotebook {
             message =
                     String.format(
                             "Subtask (at index %d) named '%s' is marked as done successfully. "
-                                    + "The next subtask named '%s' is activated.",
-                            subtaskIdx, subtasks.get(subtaskIdx).getName(), nextSubtask.getName());
+                                    + "The next subtask (at index %d) named '%s' is activated.",
+                            subtaskIdx,
+                            subtasks.get(subtaskIdx).getName(),
+                            subtaskIdx + 1,
+                            nextSubtask.getName());
         } else {
             message =
                     String.format(
@@ -896,7 +973,7 @@ public class PlanNotebook {
      *     applicable
      */
     public Mono<Msg> getCurrentHint() {
-        String hintContent = planToHint.generateHint(currentPlan, needUserConfirm);
+        String hintContent = planToHint.generateHint(currentPlan, this);
         if (hintContent != null && !hintContent.isEmpty()) {
             return Mono.just(
                     Msg.builder()
@@ -924,6 +1001,37 @@ public class PlanNotebook {
      */
     public boolean isNeedUserConfirm() {
         return needUserConfirm;
+    }
+
+    /**
+     * Gets the maximum number of subtasks allowed per plan.
+     *
+     * @return maximum number of subtasks
+     */
+    public Integer getMaxSubtasks() {
+        return maxSubtasks;
+    }
+
+    /**
+     * Adds a change hook that will be triggered whenever the plan changes.
+     *
+     * <p>The hook receives the PlanNotebook instance and the current plan (which may be null if the
+     * plan was finished or cleared).
+     *
+     * @param id unique identifier for the hook (used for removal)
+     * @param hook the callback to execute when plan changes
+     */
+    public void addChangeHook(String id, BiConsumer<PlanNotebook, Plan> hook) {
+        changeHooks.put(id, hook);
+    }
+
+    /**
+     * Removes a previously registered change hook.
+     *
+     * @param id the identifier of the hook to remove
+     */
+    public void removeChangeHook(String id) {
+        changeHooks.remove(id);
     }
 
     private Mono<Void> triggerPlanChangeHooks() {

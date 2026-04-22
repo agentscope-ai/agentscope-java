@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,6 +34,7 @@ import io.a2a.spec.AgentCard;
 import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
@@ -251,6 +252,16 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
+        @DisplayName("Should set deployment properties with port only")
+        void testDeploymentPropertiesWithSingleArg() throws Exception {
+            AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
+            AgentScopeA2aServer.Builder result = builder.deploymentProperties(8080);
+
+            assertSame(builder, result);
+            assertNotNull(builder.build());
+        }
+
+        @Test
         @DisplayName("Should add agent registry")
         void testWithAgentRegistry() throws Exception {
             AgentRegistry agentRegistry = mock(AgentRegistry.class);
@@ -292,6 +303,7 @@ class AgentScopeA2aServerTest {
                             .pushSender(pushSender)
                             .executor(executor)
                             .deploymentProperties(deploymentProperties)
+                            .agentExecuteProperties(AgentExecuteProperties.builder().build())
                             .withAgentRegistry(agentRegistry);
 
             assertNotNull(result);

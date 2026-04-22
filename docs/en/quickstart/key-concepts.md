@@ -72,9 +72,11 @@ Message is the most fundamental data structure in AgentScope, used for:
 
 | Field | Description |
 |-------|-------------|
+| `id` | Unique message identifier (auto-generated UUID) |
 | `name` | Sender's name, used to distinguish identities in multi-agent scenarios |
 | `role` | Role: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL` |
 | `content` | List of content blocks, supports multiple types |
+| `timestamp` | Message timestamp |
 | `metadata` | Optional structured data |
 
 **Content types**:
@@ -84,6 +86,28 @@ Message is the most fundamental data structure in AgentScope, used for:
 - `ThinkingBlock` - Reasoning traces (for reasoning models)
 - `ToolUseBlock` - Tool invocation initiated by LLM
 - `ToolResultBlock` - Tool execution result
+
+**Response Metadata**:
+
+Messages returned by Agent contain additional metadata to help understand execution state:
+
+| Method | Description |
+|--------|-------------|
+| `getGenerateReason()` | Reason for message generation, used to determine next actions |
+| `getChatUsage()` | Token usage statistics (input/output tokens, time) |
+
+**GenerateReason Values**:
+
+| Value | Description |
+|-------|-------------|
+| `MODEL_STOP` | Task completed normally |
+| `TOOL_CALLS` | Model returned tool calls (internal tools, framework continues execution) |
+| `STRUCTURED_OUTPUT` | Structured output completed |
+| `TOOL_SUSPENDED` | Tool needs external execution, waiting for result |
+| `REASONING_STOP_REQUESTED` | Paused by Hook during Reasoning phase (HITL) |
+| `ACTING_STOP_REQUESTED` | Paused by Hook during Acting phase (HITL) |
+| `INTERRUPTED` | Agent was interrupted |
+| `MAX_ITERATIONS` | Maximum iterations reached |
 
 **Example**:
 
@@ -99,7 +123,7 @@ Msg imgMsg = Msg.builder()
     .name("user")
     .content(List.of(
         TextBlock.builder().text("What is in this image?").build(),
-        ImageBlock.builder().source(URLSource.of("https://example.com/photo.jpg")).build()
+        ImageBlock.builder().source(new URLSource("https://example.com/photo.jpg")).build()
     ))
     .build();
 ```
@@ -113,10 +137,11 @@ Msg imgMsg = Msg.builder()
 The Agent interface defines the core contract:
 
 ```java
-public interface Agent {
-    Mono<Msg> call(Msg msg);      // Process message and return response
-    Flux<Msg> stream(Msg msg);    // Stream response in real-time
-    void interrupt();             // Stop execution
+public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
+    String getAgentId();
+    String getName();
+    void interrupt();
+    void interrupt(Msg msg);
 }
 ```
 
@@ -151,7 +176,7 @@ ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .build())
     .sysPrompt("You are a helpful assistant.")
     .toolkit(toolkit)  // Optional: add tools
@@ -219,8 +244,13 @@ Formatter is responsible for converting AgentScope messages to the format requir
 - Identity handling in multi-agent scenarios
 
 **Built-in implementations**:
-- `DashScopeFormatter` - Alibaba Cloud DashScope (Qwen series)
-- `OpenAIFormatter` - OpenAI and compatible APIs
+- `DashScopeChatFormatter` - Alibaba Cloud DashScope (Qwen series)
+- `OpenAIChatFormatter` - OpenAI and compatible APIs
+- `AnthropicChatFormatter` - Anthropic (Claude series)
+- `GeminiChatFormatter` - Google Gemini
+- `OllamaChatFormatter` - Ollama local models
+- `DeepSeekFormatter` - DeepSeek
+- `GLMFormatter` - GLM (Zhipu)
 
 > Formatter is automatically selected based on Model type; manual configuration is usually not needed.
 
@@ -234,12 +264,20 @@ Hook provides extension points at key nodes of the ReAct loop through an event m
 
 | Event Type | Trigger Point | Modifiable |
 |------------|---------------|------------|
+| `PreCallEvent` | Before agent starts processing | ✓ |
+| `PostCallEvent` | After agent completes processing | ✓ |
 | `PreReasoningEvent` | Before calling LLM | ✓ |
 | `PostReasoningEvent` | After LLM returns | ✓ |
+| `ReasoningChunkEvent` | During LLM streaming output | - |
 | `PreActingEvent` | Before executing tool | ✓ |
 | `PostActingEvent` | After tool execution | ✓ |
-| `ReasoningChunkEvent` | During streaming output | - |
+| `ActingChunkEvent` | During tool streaming output | - |
+| `PreSummaryEvent` | Before summary generation | ✓ |
+| `PostSummaryEvent` | After summary generation | ✓ |
+| `SummaryChunkEvent` | During summary streaming output | - |
 | `ErrorEvent` | When error occurs | - |
+
+**Hook Priority**: Hooks execute in priority order (lower value = higher priority), default is 100.
 
 **Example**:
 
@@ -248,16 +286,25 @@ Hook loggingHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         return switch (event) {
-            case PreReasoningEvent e -> {
-                System.out.println("Starting reasoning...");
+            case PreCallEvent e -> {
+                System.out.println("Agent starting...");
                 yield Mono.just(event);
             }
             case ReasoningChunkEvent e -> {
-                System.out.print(e.getChunk().getTextContent());  // Print streaming output
+                System.out.print(e.getIncrementalChunk().getTextContent());  // Print streaming output
+                yield Mono.just(event);
+            }
+            case PostCallEvent e -> {
+                System.out.println("Completed: " + e.getFinalMessage().getTextContent());
                 yield Mono.just(event);
             }
             default -> Mono.just(event);
         };
+    }
+
+    @Override
+    public int priority() {
+        return 50;  // High priority
     }
 };
 
@@ -275,9 +322,10 @@ ReActAgent agent = ReActAgent.builder()
 
 **Problem solved**: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.
 
-AgentScope separates "initialization" from "state":
-- `saveState()` - Export current state as a serializable Map
-- `loadState()` - Restore from saved state
+AgentScope separates "initialization" from "state" through the `StateModule` interface:
+- `saveTo(Session, SessionKey)` - Save current state to Session
+- `loadFrom(Session, SessionKey)` - Restore state from Session
+- `loadIfExists(Session, SessionKey)` - Restore state from Session if it exists
 
 **Session** provides persistent storage across runs:
 

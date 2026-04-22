@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.VDBStoreBase;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -148,7 +149,13 @@ public class SimpleKnowledge implements Knowledge {
                 .embed(queryBlock)
                 .flatMap(
                         queryEmbedding ->
-                                embeddingStore.search(queryEmbedding, config.getLimit(), null))
+                                embeddingStore.search(
+                                        SearchDocumentDto.builder()
+                                                .vectorName(config.getVectorName())
+                                                .queryEmbedding(queryEmbedding)
+                                                .limit(config.getLimit())
+                                                .scoreThreshold(null)
+                                                .build()))
                 .flatMap(
                         results ->
                                 Flux.fromIterable(results)

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,9 +24,11 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -89,7 +91,7 @@ public class MockModel implements Model {
      * Create a mock model that calls a tool.
      */
     public static MockModel withToolCall(
-            String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
+            String toolName, String toolCallId, Map<String, Object> arguments) {
         MockModel model = new MockModel("");
         model.responsesToReturn.clear();
         model.responsesToReturn.add(createToolCallResponse(toolName, toolCallId, arguments));
@@ -196,7 +198,7 @@ public class MockModel implements Model {
     private static ChatResponse createTextResponse(String text) {
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
-                .content(java.util.List.of(TextBlock.builder().text(text).build()))
+                .content(List.of(TextBlock.builder().text(text).build()))
                 .usage(new ChatUsage(10, 20, 30))
                 .build();
     }
@@ -204,24 +206,26 @@ public class MockModel implements Model {
     private static ChatResponse createThinkingResponse(String thinking) {
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
-                .content(java.util.List.of(ThinkingBlock.builder().thinking(thinking).build()))
+                .content(List.of(ThinkingBlock.builder().thinking(thinking).build()))
                 .usage(new ChatUsage(5, 10, 15))
                 .build();
     }
 
     private static ChatResponse createToolCallResponse(
-            String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
+            String toolName, String toolCallId, Map<String, Object> arguments) {
+        Map<String, Object> args = arguments != null ? arguments : new HashMap<>();
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
                 .content(
-                        java.util.List.of(
+                        List.of(
                                 ToolUseBlock.builder()
                                         .name(toolName)
                                         .id(
                                                 toolCallId != null
                                                         ? toolCallId
                                                         : UUID.randomUUID().toString())
-                                        .input(arguments != null ? arguments : new HashMap<>())
+                                        .input(args)
+                                        .content(JsonUtils.getJsonCodec().toJson(args))
                                         .build()))
                 .usage(new ChatUsage(8, 15, 23))
                 .build();

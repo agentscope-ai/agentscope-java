@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,9 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -206,7 +208,7 @@ public class McpTool implements AgentTool {
      * @return parameters map in AgentScope format
      */
     public static Map<String, Object> convertMcpSchemaToParameters(
-            McpSchema.JsonSchema inputSchema) {
+            McpSchema.JsonSchema inputSchema, Set<String> excludeParams) {
         Map<String, Object> parameters = new HashMap<>();
 
         if (inputSchema == null) {
@@ -215,17 +217,36 @@ public class McpTool implements AgentTool {
             parameters.put("required", new ArrayList<>());
             return parameters;
         }
+        Map<String, Object> properties =
+                inputSchema.properties() != null
+                        ? new HashMap<>(inputSchema.properties())
+                        : new HashMap<>();
+        List<String> required =
+                inputSchema.required() != null
+                        ? new ArrayList<>(inputSchema.required())
+                        : new ArrayList<>();
+
+        // Exclude preset parameters from the schema
+        if (excludeParams != null) {
+            required.removeAll(excludeParams);
+            properties.keySet().removeAll(excludeParams);
+        }
 
         parameters.put("type", inputSchema.type() != null ? inputSchema.type() : "object");
-        parameters.put(
-                "properties",
-                inputSchema.properties() != null ? inputSchema.properties() : new HashMap<>());
-        parameters.put(
-                "required",
-                inputSchema.required() != null ? inputSchema.required() : new ArrayList<>());
+        parameters.put("properties", properties);
+        parameters.put("required", required);
 
         if (inputSchema.additionalProperties() != null) {
             parameters.put("additionalProperties", inputSchema.additionalProperties());
+        }
+
+        // Preserve $defs and definitions for $ref resolution
+        if (inputSchema.defs() != null && !inputSchema.defs().isEmpty()) {
+            parameters.put("$defs", new HashMap<>(inputSchema.defs()));
+        }
+
+        if (inputSchema.definitions() != null && !inputSchema.definitions().isEmpty()) {
+            parameters.put("definitions", new HashMap<>(inputSchema.definitions()));
         }
 
         return parameters;

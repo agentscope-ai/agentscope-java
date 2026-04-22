@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.rag.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
@@ -23,6 +22,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
+import io.agentscope.core.util.JsonUtils;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.DataType;
@@ -30,6 +31,8 @@ import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.database.request.CreateDatabaseReq;
+import io.milvus.v2.service.database.response.ListDatabasesResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
 import io.milvus.v2.service.vector.request.SearchReq;
@@ -40,6 +43,7 @@ import io.milvus.v2.service.vector.response.SearchResp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -64,15 +68,16 @@ import reactor.core.scheduler.Schedulers;
  * <dependency>
  *     <groupId>io.milvus</groupId>
  *     <artifactId>milvus-sdk-java</artifactId>
- *     <version>2.5.9</version>
+ *     <version>2.6.16</version>
  * </dependency>
  * }</pre>
  *
  * <p>Example usage:
  * <pre>{@code
- * // Using builder with authentication and timeout options (recommended)
+ * // Using builder with authentication and timeout options
  * try (MilvusStore store = MilvusStore.builder()
  *         .uri("http://localhost:19530")
+ *         .databaseName("my_database")
  *         .collectionName("my_collection")
  *         .dimensions(1024)
  *         .token("root:Milvus")
@@ -81,12 +86,6 @@ import reactor.core.scheduler.Schedulers;
  *     store.add(document).block();
  *     List<Document> results = store.search(queryEmbedding, 5).block();
  *     // Store is automatically closed here
- * }
- *
- * // Using static factory method (simpler, uses defaults)
- * try (MilvusStore store = MilvusStore.create("http://localhost:19530", "my_collection", 1024)) {
- *     store.add(document).block();
- *     List<Document> results = store.search(queryEmbedding, 5).block();
  * }
  * }</pre>
  *
@@ -103,7 +102,6 @@ import reactor.core.scheduler.Schedulers;
 public class MilvusStore implements VDBStoreBase, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(MilvusStore.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Gson GSON = new Gson();
 
     // Field names for Milvus collection schema
@@ -112,12 +110,15 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private static final String FIELD_DOC_ID = "doc_id";
     private static final String FIELD_CHUNK_ID = "chunk_id";
     private static final String FIELD_CONTENT = "content";
+    private static final String FIELD_PAYLOAD = "payload";
 
     // Default configuration values
+    private static final String DEFAULT_DATABASE_NAME = "default";
     private static final long DEFAULT_CONNECT_TIMEOUT_MS = 30000L;
 
     private final String uri;
     private final String collectionName;
+    private final String databaseName;
     private final int dimensions;
     private final IndexParam.MetricType metricType;
     private final MilvusClientV2 milvusClient;
@@ -135,6 +136,8 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         this.collectionName = builder.collectionName;
         this.dimensions = builder.dimensions;
         this.metricType = builder.metricType;
+        this.databaseName = builder.databaseName;
+        Map<String, String> databaseProperties = builder.databaseProperties;
         String token = builder.token;
         String username = builder.username;
         String password = builder.password;
@@ -163,6 +166,12 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             tempClient = new MilvusClientV2(config);
 
             log.debug("Initialized Milvus client: uri={}, collection={}", uri, collectionName);
+
+            // Ensure database exists
+            if (!DEFAULT_DATABASE_NAME.equals(databaseName)) {
+                ensureDatabase(tempClient, databaseProperties);
+            }
+            tempClient.useDatabase(databaseName);
 
             // Ensure collection exists
             ensureCollection(tempClient);
@@ -194,7 +203,9 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * @param dimensions the dimension of vectors that will be stored
      * @return a new MilvusStore instance
      * @throws VectorStoreException if initialization fails
+     * @deprecated Use {@link MilvusStore#builder()} instead
      */
+    @Deprecated(since = "1.0.11", forRemoval = true)
     public static MilvusStore create(String uri, String collectionName, int dimensions)
             throws VectorStoreException {
         return builder().uri(uri).collectionName(collectionName).dimensions(dimensions).build();
@@ -248,7 +259,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     }
 
     @Override
-    public Mono<List<Document>> search(double[] queryEmbedding, int limit, Double scoreThreshold) {
+    public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
+        double[] queryEmbedding = searchDocumentDto.getQueryEmbedding();
+        int limit = searchDocumentDto.getLimit();
+        Double scoreThreshold = searchDocumentDto.getScoreThreshold();
         if (queryEmbedding == null) {
             return Mono.error(new IllegalArgumentException("Query embedding cannot be null"));
         }
@@ -349,7 +363,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         try {
             // Check if collection exists
             HasCollectionReq hasCollectionReq =
-                    HasCollectionReq.builder().collectionName(collectionName).build();
+                    HasCollectionReq.builder()
+                            .databaseName(databaseName)
+                            .collectionName(collectionName)
+                            .build();
             boolean exists = client.hasCollection(hasCollectionReq);
 
             if (exists) {
@@ -363,6 +380,32 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         } catch (Exception e) {
             throw new VectorStoreException(
                     "Failed to ensure collection exists: " + collectionName, e);
+        }
+    }
+
+    /**
+     * Ensures the database exists, creating it if necessary.
+     *
+     * @param client the MilvusClientV2 to use
+     * @throws VectorStoreException if database creation fails
+     */
+    private void ensureDatabase(MilvusClientV2 client, Map<String, String> databaseProperties)
+            throws VectorStoreException {
+        try {
+            // Check if database exists
+            ListDatabasesResp listDatabasesResp = client.listDatabases();
+            boolean exists = listDatabasesResp.getDatabaseNames().contains(databaseName);
+            if (exists) {
+                log.debug("DatabaseName '{}' already exists", databaseName);
+                return;
+            }
+
+            // Create database
+            createDatabase(client, databaseProperties);
+            log.debug("Created database '{}'", databaseName);
+        } catch (Exception e) {
+            throw new VectorStoreException(
+                    "Failed to ensure databaseName exists: " + databaseName, e);
         }
     }
 
@@ -414,6 +457,10 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
                         .maxLength(65535)
                         .build());
 
+        // Add payload field for storing custom payload as JSON
+        schema.addField(
+                AddFieldReq.builder().fieldName(FIELD_PAYLOAD).dataType(DataType.JSON).build());
+
         // Create index parameters for vector field
         List<IndexParam> indexParams = new ArrayList<>();
         indexParams.add(
@@ -426,12 +473,28 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         // Create the collection with schema and index
         CreateCollectionReq createCollectionReq =
                 CreateCollectionReq.builder()
+                        .databaseName(databaseName)
                         .collectionName(collectionName)
                         .collectionSchema(schema)
                         .indexParams(indexParams)
                         .build();
 
         client.createCollection(createCollectionReq);
+    }
+
+    /**
+     * Creates a new database with the specified properties.
+     *
+     * @param client             the MilvusClientV2 to use
+     * @param databaseProperties the properties for the database
+     */
+    private void createDatabase(MilvusClientV2 client, Map<String, String> databaseProperties) {
+        CreateDatabaseReq createDatabaseReq =
+                CreateDatabaseReq.builder()
+                        .databaseName(databaseName)
+                        .properties(databaseProperties)
+                        .build();
+        client.createDatabase(createDatabaseReq);
     }
 
     /**
@@ -467,18 +530,32 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             // Serialize content to JSON string
             String contentJson;
             try {
-                contentJson = OBJECT_MAPPER.writeValueAsString(metadata.getContent());
+                contentJson = JsonUtils.getJsonCodec().toJson(metadata.getContent());
             } catch (Exception e) {
                 log.warn("Failed to serialize content, using text representation", e);
                 contentJson = metadata.getContentText();
             }
             row.addProperty(FIELD_CONTENT, contentJson);
 
+            // Add custom payload fields as dynamic fields
+            Map<String, Object> customPayload = metadata.getPayload();
+            if (customPayload != null && !customPayload.isEmpty()) {
+                JsonObject payloadObject = GSON.toJsonTree(customPayload).getAsJsonObject();
+                row.add(FIELD_PAYLOAD, payloadObject);
+            } else {
+                row.add(FIELD_PAYLOAD, new JsonObject());
+            }
+
             rows.add(row);
         }
 
         // Insert data
-        InsertReq insertReq = InsertReq.builder().collectionName(collectionName).data(rows).build();
+        InsertReq insertReq =
+                InsertReq.builder()
+                        .databaseName(databaseName)
+                        .collectionName(collectionName)
+                        .data(rows)
+                        .build();
 
         InsertResp insertResp = milvusClient.insert(insertReq);
         log.debug(
@@ -491,7 +568,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * Searches for similar documents in Milvus.
      *
      * @param queryEmbedding the query embedding vector
-     * @param limit the maximum number of results
+     * @param limit          the maximum number of results
      * @param scoreThreshold optional minimum score threshold
      * @return a list of documents with scores set
      */
@@ -508,12 +585,17 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         // Build search request
         SearchReq.SearchReqBuilder searchBuilder =
                 SearchReq.builder()
+                        .databaseName(databaseName)
                         .collectionName(collectionName)
                         .data(Collections.singletonList(queryVector))
-                        .topK(limit)
+                        .limit(limit)
                         .outputFields(
                                 Arrays.asList(
-                                        FIELD_ID, FIELD_DOC_ID, FIELD_CHUNK_ID, FIELD_CONTENT));
+                                        FIELD_ID,
+                                        FIELD_DOC_ID,
+                                        FIELD_CHUNK_ID,
+                                        FIELD_CONTENT,
+                                        FIELD_PAYLOAD));
 
         SearchReq searchReq = searchBuilder.build();
 
@@ -553,7 +635,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * Reconstructs a Document from Milvus search result.
      *
      * @param result the search result from Milvus
-     * @param score the similarity score
+     * @param score  the similarity score
      * @return the reconstructed Document, or null if reconstruction fails
      */
     private Document reconstructDocumentFromResult(SearchResp.SearchResult result, double score) {
@@ -568,14 +650,30 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             // Deserialize content
             ContentBlock content;
             try {
-                content = OBJECT_MAPPER.readValue(contentJson, ContentBlock.class);
+                content = JsonUtils.getJsonCodec().fromJson(contentJson, ContentBlock.class);
             } catch (Exception e) {
                 log.debug("Failed to deserialize ContentBlock, creating TextBlock from content", e);
                 content = TextBlock.builder().text(contentJson).build();
             }
 
-            // Create metadata and document
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
+            // Deserialize custom payload from payload field
+            Map<String, Object> customPayload = new HashMap<>();
+            Object payloadObj = entity.get(FIELD_PAYLOAD);
+            if (payloadObj != null) {
+                String payloadJson = String.valueOf(payloadObj);
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> deserializedPayload =
+                            JsonUtils.getJsonCodec().fromJson(payloadJson, Map.class);
+                    customPayload = deserializedPayload;
+                } catch (Exception e) {
+                    log.warn("Failed to deserialize payload, using empty map", e);
+                }
+            }
+
+            // Create metadata and document with payload
+            DocumentMetadata metadata =
+                    new DocumentMetadata(content, docId, chunkId, customPayload);
             Document document = new Document(metadata);
             document.setScore(score);
 
@@ -595,6 +693,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private boolean deleteDocumentFromMilvus(String docId) {
         DeleteReq deleteReq =
                 DeleteReq.builder()
+                        .databaseName(databaseName)
                         .collectionName(collectionName)
                         .filter(FIELD_DOC_ID + " in [\"" + docId + "\"]")
                         .build();
@@ -640,6 +739,15 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      */
     public IndexParam.MetricType getMetricType() {
         return metricType;
+    }
+
+    /**
+     * Gets the database name.
+     *
+     * @return the database name
+     */
+    public String getDatabaseName() {
+        return databaseName;
     }
 
     /**
@@ -721,6 +829,8 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         private String password;
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private IndexParam.MetricType metricType = IndexParam.MetricType.COSINE;
+        private String databaseName = DEFAULT_DATABASE_NAME;
+        private Map<String, String> databaseProperties;
 
         private Builder() {}
 
@@ -823,6 +933,28 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         }
 
         /**
+         * Sets the database name.
+         *
+         * @param databaseName the database name
+         * @return this builder
+         */
+        public Builder databaseName(String databaseName) {
+            this.databaseName = databaseName;
+            return this;
+        }
+
+        /**
+         * Sets the database properties.
+         *
+         * @param databaseProperties the database properties
+         * @return this builder
+         */
+        public Builder databaseProperties(Map<String, String> databaseProperties) {
+            this.databaseProperties = databaseProperties;
+            return this;
+        }
+
+        /**
          * Builds a new MilvusStore instance.
          *
          * <p>The client connection is established immediately during construction. If the
@@ -830,7 +962,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
          *
          * @return a new MilvusStore instance
          * @throws IllegalArgumentException if required parameters are invalid
-         * @throws VectorStoreException if client initialization or collection creation fails
+         * @throws VectorStoreException     if client initialization or collection creation fails
          */
         public MilvusStore build() throws VectorStoreException {
             if (uri == null || uri.trim().isEmpty()) {
@@ -845,7 +977,9 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             if (metricType == null) {
                 throw new IllegalArgumentException("Metric type cannot be null");
             }
-
+            if (databaseName == null || databaseName.trim().isEmpty()) {
+                throw new IllegalArgumentException("Database name cannot be null or empty");
+            }
             return new MilvusStore(this);
         }
     }

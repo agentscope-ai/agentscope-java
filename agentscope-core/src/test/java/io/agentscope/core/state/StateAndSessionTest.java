@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,7 +17,6 @@ package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -26,18 +25,23 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionInfo;
+import io.agentscope.core.session.Session;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class StateAndSessionTest {
 
     @Test
-    public void testStateModuleBasicFunctionality() {
+    public void testMemorySaveToAndLoadFrom() {
+        InMemorySession session = new InMemorySession();
+        SessionKey sessionKey = SimpleSessionKey.of("test_session");
+
         InMemoryMemory memory = new InMemoryMemory();
 
         // Add some messages
@@ -55,14 +59,15 @@ public class StateAndSessionTest {
                         .content(TextBlock.builder().text("Hi there!").build())
                         .build());
 
-        // Test state serialization
-        Map<String, Object> state = memory.stateDict();
-        assertNotNull(state);
-        assertTrue(state.containsKey("messages"));
+        // Save state using new API
+        memory.saveTo(session, sessionKey);
 
-        // Test state deserialization
+        // Verify session exists
+        assertTrue(session.exists(sessionKey));
+
+        // Load state into new memory
         InMemoryMemory newMemory = new InMemoryMemory();
-        newMemory.loadStateDict(state);
+        newMemory.loadFrom(session, sessionKey);
 
         assertEquals(2, newMemory.getMessages().size());
         assertEquals(
@@ -75,6 +80,9 @@ public class StateAndSessionTest {
 
     @Test
     public void testAgentStateManagement() {
+        InMemorySession session = new InMemorySession();
+        SessionKey sessionKey = SimpleSessionKey.of("agent_session");
+
         // Create agent components
         OpenAIChatModel model =
                 OpenAIChatModel.builder().modelName("gpt-3.5-turbo").apiKey("test-key").build();
@@ -99,24 +107,35 @@ public class StateAndSessionTest {
                         .content(TextBlock.builder().text("What's 2+2?").build())
                         .build());
 
-        // Test agent state serialization
-        Map<String, Object> agentState = agent.stateDict();
-        assertNotNull(agentState);
-        assertTrue(agentState.containsKey("id"));
-        assertTrue(agentState.containsKey("name"));
-        assertTrue(agentState.containsKey("memory"));
+        // Save agent state
+        agent.saveTo(session, sessionKey);
 
-        // Verify nested memory state is included
-        @SuppressWarnings("unchecked")
-        Map<String, Object> memoryState = (Map<String, Object>) agentState.get("memory");
-        assertNotNull(memoryState);
-        assertTrue(memoryState.containsKey("messages"));
+        // Verify session exists
+        assertTrue(session.exists(sessionKey));
+
+        // Create new agent and load state
+        InMemoryMemory newMemory = new InMemoryMemory();
+        ReActAgent newAgent =
+                ReActAgent.builder()
+                        .name("EmptyAgent")
+                        .sysPrompt("Empty")
+                        .model(model)
+                        .toolkit(new Toolkit())
+                        .memory(newMemory)
+                        .build();
+
+        newAgent.loadFrom(session, sessionKey);
+
+        // Verify state was restored - only memory state is restored
+        // Agent name is configuration, not runtime state
+        assertEquals(1, newMemory.getMessages().size());
     }
 
     @Test
     public void testJsonSessionSaveAndLoad(@TempDir Path tempDir) throws Exception {
         // Create session manager
         JsonSession session = new JsonSession(tempDir.resolve("sessions"));
+        SessionKey sessionKey = SimpleSessionKey.of("test_session_123");
 
         // Create agent components
         InMemoryMemory memory = new InMemoryMemory();
@@ -139,17 +158,11 @@ public class StateAndSessionTest {
                         .memory(memory)
                         .build();
 
-        // Save session
-        Map<String, StateModule> components =
-                Map.of(
-                        "agent", agent,
-                        "memory", memory);
-
-        String sessionId = "test_session_123";
-        session.saveSessionState(sessionId, components);
+        // Save agent state directly
+        agent.saveTo(session, sessionKey);
 
         // Verify session exists
-        assertTrue(session.sessionExists(sessionId));
+        assertTrue(session.exists(sessionKey));
 
         // Create new components to load into
         InMemoryMemory newMemory = new InMemoryMemory();
@@ -162,92 +175,83 @@ public class StateAndSessionTest {
                         .memory(newMemory)
                         .build();
 
-        Map<String, StateModule> newComponents =
-                Map.of(
-                        "agent", newAgent,
-                        "memory", newMemory);
+        // Load agent state directly
+        newAgent.loadFrom(session, sessionKey);
 
-        // Load session
-        session.loadSessionState(sessionId, newComponents);
-
-        // Verify state was restored
-        assertEquals("TestAgent", newAgent.getName());
+        // Verify state was restored - only memory state is restored
+        // Agent name is configuration, not runtime state
         assertEquals(1, newMemory.getMessages().size());
         assertEquals(
                 "Hello world",
                 ((TextBlock) newMemory.getMessages().get(0).getFirstContentBlock()).getText());
 
-        // Test session info
-        SessionInfo info = session.getSessionInfo(sessionId);
-        assertEquals(sessionId, info.getSessionId());
-        assertTrue(info.getSize() > 0);
-        assertEquals(2, info.getComponentCount());
-
         // Test session listing
-        assertTrue(session.listSessions().contains(sessionId));
+        Set<SessionKey> sessionKeys = session.listSessionKeys();
+        assertTrue(sessionKeys.stream().anyMatch(k -> k.toString().contains("test_session_123")));
 
         // Test session deletion
-        assertTrue(session.deleteSession(sessionId));
-        assertFalse(session.sessionExists(sessionId));
+        session.delete(sessionKey);
+        assertFalse(session.exists(sessionKey));
     }
 
     @Test
-    public void testStateRegistration() {
+    public void testStateModuleSaveToAndLoadFrom() {
+        InMemorySession session = new InMemorySession();
+        SessionKey sessionKey = SimpleSessionKey.of("test_session");
+
         TestStateModule module = new TestStateModule();
         module.setValue("test_value");
 
-        // Register custom attribute
-        module.registerState("value");
+        // Save state
+        module.saveTo(session, sessionKey);
 
-        // Test state serialization includes registered attribute
-        Map<String, Object> state = module.stateDict();
-        assertTrue(state.containsKey("value"));
-        assertEquals("test_value", state.get("value"));
+        // Verify state was saved
+        Optional<TestState> loaded = session.get(sessionKey, "testModule_value", TestState.class);
+        assertTrue(loaded.isPresent());
+        assertEquals("test_value", loaded.get().value());
 
-        // Test state deserialization
+        // Load into new module
         TestStateModule newModule = new TestStateModule();
-        newModule.registerState("value");
-        newModule.loadStateDict(state);
+        newModule.loadFrom(session, sessionKey);
 
         assertEquals("test_value", newModule.getValue());
-
-        // Test unregistration
-        assertTrue(module.unregisterState("value"));
-        assertFalse(module.isAttributeRegistered("value"));
-
-        Map<String, Object> stateAfterUnregister = module.stateDict();
-        assertFalse(stateAfterUnregister.containsKey("value"));
     }
 
     @Test
-    public void testCustomSerialization() {
+    public void testLoadIfExistsReturnsFalseForNonExistent() {
+        InMemorySession session = new InMemorySession();
+        SessionKey sessionKey = SimpleSessionKey.of("non_existent");
+
         TestStateModule module = new TestStateModule();
-        module.setValue("original");
+        module.setValue("original_value");
 
-        // Register with custom serialization
-        module.registerState(
-                "value",
-                value -> "serialized_" + value,
-                value -> value.toString().replace("serialized_", ""));
+        // loadIfExists should return false for non-existent session
+        boolean loaded = module.loadIfExists(session, sessionKey);
+        assertFalse(loaded);
 
-        Map<String, Object> state = module.stateDict();
-        assertEquals("serialized_original", state.get("value"));
-
-        // Test deserialization
-        TestStateModule newModule = new TestStateModule();
-        newModule.registerState(
-                "value",
-                value -> "serialized_" + value,
-                value -> value.toString().replace("serialized_", ""));
-
-        newModule.loadStateDict(state);
-        assertEquals("original", newModule.getValue());
+        // Original value should be preserved
+        assertEquals("original_value", module.getValue());
     }
 
-    /**
-     * Test StateModule implementation for testing purposes.
-     */
-    private static class TestStateModule extends StateModuleBase {
+    @Test
+    public void testLoadIfExistsReturnsTrueForExisting() {
+        InMemorySession session = new InMemorySession();
+        SessionKey sessionKey = SimpleSessionKey.of("existing_session");
+
+        TestStateModule module = new TestStateModule();
+        module.setValue("saved_value");
+        module.saveTo(session, sessionKey);
+
+        // Create new module and loadIfExists
+        TestStateModule newModule = new TestStateModule();
+        boolean loaded = newModule.loadIfExists(session, sessionKey);
+        assertTrue(loaded);
+
+        assertEquals("saved_value", newModule.getValue());
+    }
+
+    /** Test StateModule implementation for testing purposes. */
+    private static class TestStateModule implements StateModule {
         private String value;
 
         public String getValue() {
@@ -257,5 +261,19 @@ public class StateAndSessionTest {
         public void setValue(String value) {
             this.value = value;
         }
+
+        @Override
+        public void saveTo(Session session, SessionKey sessionKey) {
+            session.save(sessionKey, "testModule_value", new TestState(value));
+        }
+
+        @Override
+        public void loadFrom(Session session, SessionKey sessionKey) {
+            session.get(sessionKey, "testModule_value", TestState.class)
+                    .ifPresent(state -> this.value = state.value());
+        }
     }
+
+    /** Simple state record for testing. */
+    public record TestState(String value) implements State {}
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,13 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -307,6 +311,124 @@ class DashScopeMessageConverterTest {
     }
 
     @Test
+    void testConvertMessageWithUrlImageBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/image.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("http://example.com/image.png", dsMsg.getContentAsList().get(0).getImage());
+        assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
+        assertEquals("oss://example.com/image.png", dsMsg.getContentAsList().get(2).getImage());
+    }
+
+    @Test
+    void testConvertMessageWithUrlVideoBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/video.mp4")
+                                                                .build())
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals(
+                "http://example.com/video.mp4", dsMsg.getContentAsList().get(0).getVideoAsString());
+        assertEquals(
+                "https://example.com/video.mp4",
+                dsMsg.getContentAsList().get(1).getVideoAsString());
+        assertEquals(
+                "oss://example.com/video.mp4", dsMsg.getContentAsList().get(2).getVideoAsString());
+    }
+
+    @Test
+    void testConvertMessageWithUrlAudioBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/audio.wav")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/audio.wav")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/audio.wav")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("http://example.com/audio.wav", dsMsg.getContentAsList().get(0).getAudio());
+        assertEquals("https://example.com/audio.wav", dsMsg.getContentAsList().get(1).getAudio());
+        assertEquals("oss://example.com/audio.wav", dsMsg.getContentAsList().get(2).getAudio());
+    }
+
+    @Test
     void testConvertToolResultFromSystemRole() {
         // Tool result can also come from SYSTEM role
         ToolResultBlock toolResult =
@@ -364,5 +486,81 @@ class DashScopeMessageConverterTest {
         assertEquals(2, dsMsg.getToolCalls().size());
         assertEquals("tool_a", dsMsg.getToolCalls().get(0).getFunction().getName());
         assertEquals("tool_b", dsMsg.getToolCalls().get(1).getFunction().getName());
+    }
+
+    // ==================== Tool Call Content Priority Tests ====================
+
+    @Test
+    void testToolCallUsesContentFieldWhenPresent() {
+        // Create a ToolUseBlock with both content (raw string) and input map
+        // The content field should be used preferentially
+        String rawContent = "{\"city\":\"Beijing\",\"unit\":\"celsius\"}";
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_content_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Shanghai", "unit", "fahrenheit"))
+                        .content(rawContent)
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should use the content field (raw string) instead of serializing input map
+        assertEquals(rawContent, dsMsg.getToolCalls().get(0).getFunction().getArguments());
+    }
+
+    @Test
+    void testToolCallFallbackToInputMapWhenContentNull() {
+        // Create a ToolUseBlock with only input map (content is null)
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_fallback_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Beijing"))
+                        .content(null)
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should serialize the input map since content is null
+        String args = dsMsg.getToolCalls().get(0).getFunction().getArguments();
+        assertNotNull(args);
+        assertTrue(args.contains("city"));
+        assertTrue(args.contains("Beijing"));
+    }
+
+    @Test
+    void testToolCallFallbackToInputMapWhenContentEmpty() {
+        // Create a ToolUseBlock with empty content string
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder()
+                        .id("call_empty_content_test")
+                        .name("get_weather")
+                        .input(Map.of("city", "Shanghai"))
+                        .content("")
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolUse)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, false);
+
+        assertEquals("assistant", dsMsg.getRole());
+        assertNotNull(dsMsg.getToolCalls());
+        assertEquals(1, dsMsg.getToolCalls().size());
+        // Should serialize the input map since content is empty
+        String args = dsMsg.getToolCalls().get(0).getFunction().getArguments();
+        assertNotNull(args);
+        assertTrue(args.contains("city"));
+        assertTrue(args.contains("Shanghai"));
     }
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,12 +15,11 @@
  */
 package io.agentscope.core.memory;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
@@ -30,23 +29,51 @@ import java.util.stream.Collectors;
  *
  * This implementation stores messages in memory using thread-safe collections
  * and provides state serialization/deserialization for session management.
- *
- * Uses Jackson ObjectMapper for complete serialization of all message types,
- * using JSON format for serialization.
  */
-public class InMemoryMemory extends StateModuleBase implements Memory {
+public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    /** Key prefix for storage. */
+    private static final String KEY_PREFIX = "memory";
 
     /**
-     * Constructor that registers the messages list for state management.
+     * Constructor for InMemoryMemory.
      */
-    public InMemoryMemory() {
-        super();
-        // Register messages for custom serialization
-        registerState("messages", this::serializeMessages, this::deserializeMessages);
+    public InMemoryMemory() {}
+
+    // ==================== StateModule Implementation ====================
+
+    /**
+     * Save memory state to the session.
+     *
+     * <p>Passes the full message list to the session, including the case where the list is empty.
+     * The Session implementation is responsible for incremental storage (e.g., JsonSession appends
+     * only new items based on file line count).
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        // Always save, even when empty, to ensure cleared state is persisted
+        session.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
     }
+
+    /**
+     * Load memory state from the session.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        List<Msg> loaded = session.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
+        messages.clear();
+        messages.addAll(loaded);
+    }
+
+    // ==================== Memory Interface Implementation ====================
 
     /**
      * Adds a message to the in-memory message list.
@@ -96,74 +123,5 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     @Override
     public void clear() {
         messages.clear();
-    }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "memory" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "memory";
-    }
-
-    /**
-     * Serialize messages to a JSON-compatible format using Jackson.
-     * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
-     * are properly serialized with their complete data.
-     */
-    private Object serializeMessages(Object messages) {
-        if (messages instanceof List<?>) {
-            @SuppressWarnings("unchecked")
-            List<Msg> msgList = (List<Msg>) messages;
-            return msgList.stream()
-                    .map(
-                            msg -> {
-                                try {
-                                    // Convert Msg to Map using ObjectMapper to handle all
-                                    // ContentBlock types
-                                    return OBJECT_MAPPER.convertValue(
-                                            msg, new TypeReference<Map<String, Object>>() {});
-                                } catch (Exception e) {
-                                    throw new RuntimeException(
-                                            "Failed to serialize message: " + msg, e);
-                                }
-                            })
-                    .collect(Collectors.toList());
-        }
-        return messages;
-    }
-
-    /**
-     * Deserialize messages from a JSON-compatible format using Jackson.
-     * This properly reconstructs all ContentBlock types from their JSON representations.
-     */
-    private Object deserializeMessages(Object data) {
-        if (data instanceof List<?>) {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> msgDataList = (List<Map<String, Object>>) data;
-
-            List<Msg> restoredMessages =
-                    msgDataList.stream()
-                            .map(
-                                    msgData -> {
-                                        try {
-                                            // Convert Map back to Msg using ObjectMapper
-                                            return OBJECT_MAPPER.convertValue(msgData, Msg.class);
-                                        } catch (Exception e) {
-                                            throw new RuntimeException(
-                                                    "Failed to deserialize message: " + msgData, e);
-                                        }
-                                    })
-                            .toList();
-
-            // Replace current messages with restored ones
-            messages.clear();
-            messages.addAll(restoredMessages);
-
-            return messages;
-        }
-        return data;
     }
 }

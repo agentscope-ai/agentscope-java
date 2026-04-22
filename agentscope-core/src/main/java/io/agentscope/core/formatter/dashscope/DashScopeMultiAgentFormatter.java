@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,6 +33,7 @@ import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -361,6 +362,31 @@ public class DashScopeMultiAgentFormatter
         MessageGroup(GroupType type, List<Msg> messages) {
             this.type = type;
             this.messages = messages;
+        }
+    }
+
+    /**
+     * Apply cache control to DashScope messages.
+     *
+     * <p>Adds <code>cache_control: {"type": "ephemeral"}</code> to all system messages and the last
+     * message in the list. Messages that already have cache_control set (e.g., via manual metadata
+     * marking) will not be overwritten.
+     *
+     * @param messages the list of formatted DashScope messages
+     */
+    public void applyCacheControl(List<DashScopeMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        Map<String, String> ephemeral = DashScopeChatFormatter.getEphemeralCacheControl();
+        for (DashScopeMessage msg : messages) {
+            if ("system".equals(msg.getRole()) && msg.getCacheControl() == null) {
+                msg.setCacheControl(ephemeral);
+            }
+        }
+        DashScopeMessage lastMsg = messages.get(messages.size() - 1);
+        if (lastMsg.getCacheControl() == null) {
+            lastMsg.setCacheControl(ephemeral);
         }
     }
 }

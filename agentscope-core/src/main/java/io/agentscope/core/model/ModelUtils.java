@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,6 +18,7 @@ package io.agentscope.core.model;
 import java.time.Duration;
 import java.util.function.Predicate;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.util.retry.Retry;
 
@@ -28,6 +29,8 @@ import reactor.util.retry.Retry;
  * including timeout and retry logic for model API calls.
  */
 public final class ModelUtils {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ModelUtils.class);
 
     private ModelUtils() {
         // Utility class - prevent instantiation
@@ -61,7 +64,6 @@ public final class ModelUtils {
      * @param defaultOptions default options to use if options is null
      * @param modelName the name of the model for error messages and logging
      * @param provider the provider name (e.g., "dashscope", "openai") for error messages
-     * @param logger the logger instance for debug and warning messages
      * @return wrapped Flux with timeout and retry applied
      */
     public static Flux<ChatResponse> applyTimeoutAndRetry(
@@ -69,8 +71,7 @@ public final class ModelUtils {
             GenerateOptions options,
             GenerateOptions defaultOptions,
             String modelName,
-            String provider,
-            Logger logger) {
+            String provider) {
 
         // Merge options: per-request options (primary) override default options (fallback)
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
@@ -89,7 +90,7 @@ public final class ModelUtils {
                                                 "Model request timeout after " + timeout,
                                                 modelName,
                                                 provider)));
-                logger.debug("Applied timeout: {} for model: {}", timeout, modelName);
+                LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
             }
 
             // Apply retry if configured (maxAttempts > 1 means retry is enabled)
@@ -117,15 +118,16 @@ public final class ModelUtils {
                                 .filter(retryOn)
                                 .doBeforeRetry(
                                         signal ->
-                                                logger.warn(
+                                                LOG.warn(
                                                         "Retrying model request (attempt {}/{}) due"
                                                                 + " to: {}",
                                                         signal.totalRetriesInARow() + 1,
                                                         maxAttempts - 1,
-                                                        signal.failure().getMessage()));
+                                                        signal.failure().getMessage(),
+                                                        signal.failure()));
 
                 responseFlux = responseFlux.retryWhen(retrySpec);
-                logger.debug(
+                LOG.debug(
                         "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
                         maxAttempts,
                         initialBackoff,

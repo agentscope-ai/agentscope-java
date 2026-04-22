@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -40,6 +40,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -633,10 +635,12 @@ class DashScopeChatFormatterGroundTruthTest {
         // Pattern for lines like "- The returned audio can be found at:
         // /var/folders/.../tmpXXX.wav"
         // Replace the actual temp path with a placeholder
-        return text.replaceAll(
-                        "(The returned (audio|image|video) can be found at: )/[^\\n]+",
-                        "$1<TEMP_FILE>")
-                .replaceAll("\\s+", " ")
-                .trim();
+        Pattern pattern =
+                Pattern.compile(
+                        "(The returned (audio|image|video) can be found at: )[^\\n]+",
+                        Pattern.MULTILINE);
+        Matcher matcher = pattern.matcher(text);
+        String result = matcher.replaceAll("$1<TEMP_FILE>");
+        return result.replaceAll("\\s+", " ").trim();
     }
 }

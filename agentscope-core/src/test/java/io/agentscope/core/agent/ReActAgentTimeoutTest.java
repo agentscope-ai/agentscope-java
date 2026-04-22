@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,9 +34,11 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -231,6 +233,7 @@ class ReActAgentTimeoutTest {
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 // Return a response with a tool call to slow_tool
+                Map<String, Object> input = Map.of("input", "test");
                 return Flux.just(
                         new ChatResponse(
                                 "test-id",
@@ -238,7 +241,8 @@ class ReActAgentTimeoutTest {
                                         ToolUseBlock.builder()
                                                 .id("tool-call-1")
                                                 .name("slow_tool")
-                                                .input(Map.of("input", "test"))
+                                                .input(input)
+                                                .content(JsonUtils.getJsonCodec().toJson(input))
                                                 .build()),
                                 null,
                                 null,
@@ -261,14 +265,14 @@ class ReActAgentTimeoutTest {
      */
     private Model createModelWithToolCallThenResponse() {
         return new Model() {
-            private final java.util.concurrent.atomic.AtomicBoolean firstCall =
-                    new java.util.concurrent.atomic.AtomicBoolean(true);
+            private final AtomicBoolean firstCall = new AtomicBoolean(true);
 
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 if (firstCall.compareAndSet(true, false)) {
                     // First call: return a tool call
+                    Map<String, Object> input = Map.of("input", "test");
                     return Flux.just(
                             new ChatResponse(
                                     "test-id-1",
@@ -276,7 +280,8 @@ class ReActAgentTimeoutTest {
                                             ToolUseBlock.builder()
                                                     .id("tool-call-1")
                                                     .name("slow_tool")
-                                                    .input(Map.of("input", "test"))
+                                                    .input(input)
+                                                    .content(JsonUtils.getJsonCodec().toJson(input))
                                                     .build()),
                                     null,
                                     null,

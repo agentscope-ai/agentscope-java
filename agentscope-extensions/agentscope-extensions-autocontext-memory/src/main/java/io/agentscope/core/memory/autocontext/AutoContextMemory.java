@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,12 +26,19 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StateModule;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -70,7 +77,7 @@ import reactor.core.publisher.Mono;
  *   <li>Original Memory Storage: Stores complete, uncompressed message history</li>
  * </ul>
  */
-public class AutoContextMemory extends StateModuleBase implements Memory, ContextOffLoader {
+public class AutoContextMemory implements StateModule, Memory, ContextOffLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
 
@@ -108,6 +115,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     private Model model;
 
     /**
+     * Optional PlanNotebook instance for plan-aware compression.
+     * When provided, compression prompts will be adjusted based on current plan state
+     * to preserve plan-related information.
+     *
+     * <p>Note: This field is set via {@link #attachPlanNote(PlanNotebook)} method,
+     * typically called after ReActAgent is created and has a PlanNotebook instance.
+     */
+    private PlanNotebook planNotebook;
+
+    /**
+     * Custom prompt configuration from AutoContextConfig.
+     * If null, default prompts from {@link Prompts} will be used.
+     */
+    private final PromptConfig customPrompt;
+
+    /**
      * Creates a new AutoContextMemory instance with the specified configuration and model.
      *
      * @param autoContextConfig the configuration for auto context management
@@ -116,22 +139,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public AutoContextMemory(AutoContextConfig autoContextConfig, Model model) {
         this.model = model;
         this.autoContextConfig = autoContextConfig;
+        this.customPrompt = autoContextConfig.getCustomPrompt();
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
         compressionEvents = new ArrayList<>();
-        registerState(
-                "workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
-        registerState(
-                "originalMemoryStorage",
-                MsgUtils::serializeMsgList,
-                MsgUtils::deserializeToMsgList);
-        registerState(
-                "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
-        registerState(
-                "compressionEvents",
-                MsgUtils::serializeCompressionEventList,
-                MsgUtils::deserializeToCompressionEventList);
     }
 
     @Override
@@ -142,6 +154,33 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
     @Override
     public List<Msg> getMessages() {
+        // Read-only: return a copy of working memory messages without triggering compression
+        return new ArrayList<>(workingMemoryStorage);
+    }
+
+    /**
+     * Compresses the working memory if thresholds are reached.
+     *
+     * <p>This method checks if compression is needed based on message count and token count
+     * thresholds, and applies compression strategies if necessary. The compression modifies
+     * the working memory storage in place.
+     *
+     * <p>This method should be called at a deterministic point in the execution flow,
+     * typically via a PreReasoningHook, to ensure compression happens before LLM reasoning.
+     *
+     * <p>Compression strategies are applied in order until one succeeds:
+     * <ol>
+     *   <li>Compress previous round tool invocations</li>
+     *   <li>Offload previous round large messages (with lastKeep protection)</li>
+     *   <li>Offload previous round large messages (without lastKeep protection)</li>
+     *   <li>Summarize previous round conversations</li>
+     *   <li>Summarize and offload current round large messages</li>
+     *   <li>Summarize current round messages</li>
+     * </ol>
+     *
+     * @return true if compression was performed, false if no compression was needed
+     */
+    public boolean compressIfNeeded() {
         List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
         // Check if compression is needed
@@ -151,7 +190,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         boolean tokenCounterReached = calculateToken >= thresholdToken;
 
         if (!msgCountReached && !tokenCounterReached) {
-            return new ArrayList<>(workingMemoryStorage);
+            return false;
         }
 
         // Compression triggered - log threshold information
@@ -167,16 +206,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int toolIters = 5;
         boolean toolCompressed = false;
         int compressionCount = 0;
+        int cursorStartIndex = 0;
         while (toolIters > 0) {
             toolIters--;
             List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
-                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
+                    extractPrevToolMsgsForCompress(
+                            currentMsgs, autoContextConfig.getLastKeep(), cursorStartIndex);
             if (toolMsgIndices != null) {
-                summaryToolsMessages(currentMsgs, toolMsgIndices);
-                replaceWorkingMessage(currentMsgs);
-                toolCompressed = true;
-                compressionCount++;
+                boolean actuallyCompressed = summaryToolsMessages(currentMsgs, toolMsgIndices);
+                if (actuallyCompressed) {
+                    replaceWorkingMessage(currentMsgs);
+                    toolCompressed = true;
+                    compressionCount++;
+                    cursorStartIndex = toolMsgIndices.first() + 1;
+                } else {
+                    cursorStartIndex = toolMsgIndices.second() + 1;
+                }
             } else {
                 break;
             }
@@ -184,9 +230,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         if (toolCompressed) {
             log.info(
                     "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
-            return new ArrayList<>(workingMemoryStorage);
+            return true;
         } else {
-            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
+            log.info(
+                    "Strategy 1: SKIPPED - No compressible tool invocations found (or skipped due"
+                            + " to low tokens)");
         }
 
         // Strategy 2: Offload previous round large messages (with lastKeep protection)
@@ -198,7 +246,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             log.info(
                     "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
                             + " protection)");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
         }
@@ -210,7 +259,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
         if (hasOffloaded) {
             log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 3: SKIPPED - No large messages found");
         }
@@ -220,7 +270,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
         if (hasSummarized) {
             log.info("Strategy 4: APPLIED - Summarized previous round conversations");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
         }
@@ -231,7 +282,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 summaryCurrentRoundLargeMessages(currentContextMessages);
         if (currentRoundLargeSummarized) {
             log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 5: SKIPPED - No current round large messages found");
         }
@@ -241,13 +293,14 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
         if (currentRoundSummarized) {
             log.info("Strategy 6: APPLIED - Summarized current round messages");
-            return replaceWorkingMessage(currentContextMessages);
+            replaceWorkingMessage(currentContextMessages);
+            return true;
         } else {
             log.info("Strategy 6: SKIPPED - No current round messages to summarize");
         }
 
         log.warn("All compression strategies exhausted but context still exceeds threshold");
-        return new ArrayList<>(workingMemoryStorage);
+        return false;
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
@@ -443,6 +496,16 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         for (int i = rawMessages.size() - 1; i > latestUserIndex; i--) {
             Msg msg = rawMessages.get(i);
+
+            // Skip already compressed messages to avoid double compression
+            if (MsgUtils.isCompressedMessage(msg)) {
+                log.debug(
+                        "Skipping already compressed message at index {} to avoid double"
+                                + " compression",
+                        i);
+                continue;
+            }
+
             String textContent = msg.getTextContent();
 
             // Check if message content exceeds threshold
@@ -505,11 +568,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_LARGE_MESSAGE_FORMAT;
         String offloadHint =
                 offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
                         : "";
 
         List<Msg> newMessages = new ArrayList<>();
@@ -520,8 +581,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .content(
                                 TextBlock.builder()
                                         .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START)
+                                                PromptProvider.getCurrentRoundLargeMessagePrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.add(message);
@@ -531,11 +592,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -566,17 +627,16 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         }
 
         // Create summary message preserving original role and name
+        String summaryContent = block != null ? block.getTextContent() : "";
+        String finalContent = summaryContent;
+        if (!offloadHint.isEmpty()) {
+            finalContent = summaryContent + "\n" + offloadHint;
+        }
+
         return Msg.builder()
                 .role(message.getRole())
                 .name(message.getName())
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : "",
-                                                offloadHint))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -606,6 +666,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         offloadContext.put(uuid, messages);
     }
 
+    @Override
     public List<Msg> reload(String uuid) {
         List<Msg> messages = offloadContext.get(uuid);
         return messages != null ? messages : new ArrayList<>();
@@ -627,53 +688,71 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("current_round_compress");
 
+        // Filter out plan-related tool calls before compression
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from current round"
+                            + " compression",
+                    messages.size() - filteredMessages.size());
+        }
+
         // Calculate original character count (including TextBlock, ToolUseBlock, ToolResultBlock)
-        int originalCharCount = MsgUtils.calculateMessagesCharCount(messages);
+        // Use filtered messages for character count calculation
+        int originalCharCount = MsgUtils.calculateMessagesCharCount(filteredMessages);
 
         // Get compression ratio and calculate target character count
         double compressionRatio = autoContextConfig.getCurrentRoundCompressionRatio();
         int compressionRatioPercent = (int) Math.round(compressionRatio * 100);
         int targetCharCount = (int) Math.round(originalCharCount * compressionRatio);
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_FORMAT;
         String offloadHint =
                 offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
                         : "";
 
-        // Build prompts with character count information
-        String promptStart =
+        // Build character count requirement message
+        String charRequirement =
                 String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START,
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_CHAR_REQUIREMENT,
                         originalCharCount,
                         targetCharCount,
                         (double) compressionRatioPercent,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        targetCharCount);
-        String promptEnd =
-                String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_END,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        originalCharCount,
-                        targetCharCount);
+                        (double) compressionRatioPercent);
 
         List<Msg> newMessages = new ArrayList<>();
+        // First message: main compression prompt (without character count requirement)
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptStart).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                PromptProvider.getCurrentRoundCompressPrompt(
+                                                        customPrompt))
+                                        .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
+        // Message list end marker
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptEnd).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
+                                        .build())
                         .build());
+        // Character count requirement (placed after message list end)
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text(charRequirement).build())
+                        .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -708,6 +787,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         if (offloadUuid != null) {
             compressMeta.put("offloaduuid", offloadUuid);
         }
+        // Mark this as a compressed current round message to avoid being treated as a real
+        // assistant response
+        compressMeta.put("compressed_current_round", true);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
         if (block != null && block.getChatUsage() != null) {
@@ -720,11 +802,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 .name("assistant")
                 .content(
                         TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : "",
-                                                offloadHint))
+                                .text((block != null ? block.getTextContent() : "") + offloadHint)
                                 .build())
                 .metadata(metadata)
                 .build();
@@ -734,9 +812,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      * Summarize current round of conversation messages.
      *
      * @param rawMessages the list of messages to process
+     * @param toolMsgIndices the pair of start and end indices
      * @return true if summary was actually performed, false otherwise
      */
-    private void summaryToolsMessages(
+    private boolean summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
@@ -751,6 +830,24 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         for (int i = startIndex; i <= endIndex; i++) {
             toolsMsg.add(rawMessages.get(i));
         }
+
+        // Check if original token count is sufficient for compression
+        // Skip compression if tokens are below threshold to avoid compression overhead
+        int originalTokens = TokenCounterUtil.calculateToken(toolsMsg);
+        int threshold = autoContextConfig.getMinCompressionTokenThreshold();
+        if (originalTokens < threshold) {
+            log.info(
+                    "Skipping tool invocation compression: original tokens ({}) is below threshold"
+                            + " ({})",
+                    originalTokens,
+                    threshold);
+            return false;
+        }
+
+        log.info(
+                "Proceeding with tool invocation compression: original tokens: {}, threshold: {}",
+                originalTokens,
+                threshold);
 
         // Normal compression flow for non-plan tools
         String uuid = UUID.randomUUID().toString();
@@ -776,6 +873,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 metadata);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
+
+        return true;
     }
 
     /**
@@ -856,10 +955,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             int userIndex = pair.first();
             int assistantIndex = pair.second();
 
-            // Messages to summarize: between user and assistant (inclusive of assistant)
-            // This includes all messages after user (tools, etc.) and the assistant message itself
-            int startIndex = userIndex + 1;
-            int endIndex = assistantIndex; // Include assistant message in summary
+            // Messages to summarize: from user to assistant (inclusive of both)
+            // Include user message for context, but we'll only remove messages after user
+            int startIndex = userIndex + 1; // Messages to remove start after user
+            int endIndex = assistantIndex; // Include assistant message in removal
 
             // If no messages between user and assistant (including assistant), skip
             if (startIndex > endIndex) {
@@ -871,24 +970,50 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 continue;
             }
 
+            // Include user message in messagesToSummarize for context, but keep it in the final
+            // list
             List<Msg> messagesToSummarize = new ArrayList<>();
+            messagesToSummarize.add(rawMessages.get(userIndex)); // Include user message for context
             for (int i = startIndex; i <= endIndex; i++) {
                 messagesToSummarize.add(rawMessages.get(i));
             }
 
             log.info(
-                    "Summarizing round {}: indices [{}, {}], messageCount={}",
+                    "Summarizing round {}: user at index {}, messages [{}, {}], totalCount={}"
+                            + " (includes user message for context)",
                     pairIdx + 1,
+                    userIndex,
                     startIndex,
                     endIndex,
                     messagesToSummarize.size());
 
-            // Step 4: Offload original messages if contextOffLoader is available
+            // Step 4: Check if original token count is sufficient for compression
+            // Skip compression if tokens are below threshold to avoid compression overhead
+            int originalTokens = TokenCounterUtil.calculateToken(messagesToSummarize);
+            int threshold = autoContextConfig.getMinCompressionTokenThreshold();
+            if (originalTokens < threshold) {
+                log.info(
+                        "Skipping conversation summary for round {}: original tokens ({}) is below"
+                                + " threshold ({})",
+                        pairIdx + 1,
+                        originalTokens,
+                        threshold);
+                continue;
+            }
+
+            log.info(
+                    "Proceeding with conversation summary for round {}: original tokens: {},"
+                            + " threshold: {}",
+                    pairIdx + 1,
+                    originalTokens,
+                    threshold);
+
+            // Step 5: Offload original messages if contextOffLoader is available
             String uuid = UUID.randomUUID().toString();
             offload(uuid, messagesToSummarize);
             log.info("Offloaded messages to be summarized: uuid={}", uuid);
 
-            // Step 5: Generate summary
+            // Step 6: Generate summary
             Msg summaryMsg = summaryPreviousRoundConversation(messagesToSummarize, uuid);
 
             // Build metadata for compression event
@@ -908,7 +1033,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                     summaryMsg,
                     metadata);
 
-            // Step 6: Remove the messages between user and assistant (including assistant), then
+            // Step 7: Remove the messages between user and assistant (including assistant), then
             // replace with summary
             // Since we're processing from back to front, the indices are still accurate
             // for the current pair (indices of pairs after this one have already been adjusted)
@@ -948,16 +1073,18 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      * @return a summary message
      */
     private Msg summaryPreviousRoundConversation(List<Msg> messages, String offloadUuid) {
+        // Filter out plan-related tool calls (user messages are preserved by
+        // filterPlanRelatedToolCalls)
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from previous round"
+                            + " conversation summary",
+                    messages.size() - filteredMessages.size());
+        }
+
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("conversation_summary");
-
-        String summaryContentFormat =
-                Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT
-                        + (offloadUuid != null
-                                ? String.format(
-                                        Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_OFFLOAD_HINT,
-                                        offloadUuid)
-                                : "");
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -967,22 +1094,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .content(
                                 TextBlock.builder()
                                         .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START)
+                                                PromptProvider.getPreviousRoundSummaryPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -1017,16 +1144,25 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
+        // Build the final message content:
+        // 1. LLM generated summary (contains ASSISTANT summary + tool compression)
+        // 2. Context offload tag with UUID at the end
+        String summaryContent = block != null ? block.getTextContent() : "";
+        String offloadTag =
+                offloadUuid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUuid)
+                        : "";
+
+        // Combine: summary content + newline + UUID tag
+        String finalContent = summaryContent;
+        if (!offloadTag.isEmpty()) {
+            finalContent = finalContent + "\n" + offloadTag;
+        }
+
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : ""))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -1092,6 +1228,99 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             Msg msg = rawMessages.get(i);
             String textContent = msg.getTextContent();
 
+            // ASSISTANT messages with ToolUseBlock (tool_calls) must NOT be offloaded as a plain
+            // text stub. Doing so strips the ToolUseBlock, leaving the subsequent TOOL result
+            // messages without a preceding tool_calls assistant message, which violates the API
+            // constraint: "messages with role 'tool' must be a response to a preceding message
+            // with 'tool_calls'". These pairs are handled exclusively by Strategy 1.
+            if (MsgUtils.isToolUseMessage(msg)) {
+                continue;
+            }
+
+            // TOOL result messages can have their output content offloaded, but the
+            // ToolResultBlock structure (id, name) MUST be preserved so that the API formatter
+            // can still emit the correct tool_call_id / name fields. We handle them separately.
+            if (MsgUtils.isToolResultMessage(msg)) {
+                ToolResultBlock originalResult = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (originalResult != null) {
+                    // Use the ToolResultBlock output text for size checking, because
+                    // Msg.getTextContent() only extracts top-level TextBlocks and returns
+                    // empty string for TOOL messages whose content is a ToolResultBlock.
+                    String outputText =
+                            originalResult.getOutput().stream()
+                                    .filter(TextBlock.class::isInstance)
+                                    .map(TextBlock.class::cast)
+                                    .map(TextBlock::getText)
+                                    .collect(Collectors.joining("\n"));
+                    if (outputText.length() > threshold) {
+                        String toolResultUuid = UUID.randomUUID().toString();
+                        List<Msg> offloadMsg = new ArrayList<>();
+                        offloadMsg.add(msg);
+                        offload(toolResultUuid, offloadMsg);
+                        log.info(
+                                "Offloaded large tool result message: index={}, size={} chars,"
+                                        + " uuid={}",
+                                i,
+                                outputText.length(),
+                                toolResultUuid);
+
+                        String preview =
+                                outputText.length() > autoContextConfig.offloadSinglePreview
+                                        ? outputText.substring(
+                                                        0, autoContextConfig.offloadSinglePreview)
+                                                + "..."
+                                        : outputText;
+                        String offloadHint =
+                                preview
+                                        + "\n"
+                                        + String.format(
+                                                Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, toolResultUuid);
+
+                        // Preserve ToolResultBlock structure (id, name, metadata) so the API
+                        // formatter can emit the correct tool_call_id / name, and downstream
+                        // consumers retain semantic flags (e.g. agentscope_suspended) after
+                        // offloading.  Only the output text is replaced with the offload hint.
+                        ToolResultBlock compressedResult =
+                                ToolResultBlock.of(
+                                        originalResult.getId(),
+                                        originalResult.getName(),
+                                        TextBlock.builder().text(offloadHint).build(),
+                                        originalResult.getMetadata());
+
+                        Map<String, Object> trCompressMeta = new HashMap<>();
+                        trCompressMeta.put("offloaduuid", toolResultUuid);
+                        Map<String, Object> trMetadata = new HashMap<>();
+                        trMetadata.put("_compress_meta", trCompressMeta);
+
+                        Msg replacementToolMsg =
+                                Msg.builder()
+                                        .role(msg.getRole())
+                                        .name(msg.getName())
+                                        .content(compressedResult)
+                                        .metadata(trMetadata)
+                                        .build();
+
+                        int tokenBefore = TokenCounterUtil.calculateToken(List.of(msg));
+                        int tokenAfter =
+                                TokenCounterUtil.calculateToken(List.of(replacementToolMsg));
+                        Map<String, Object> trEventMetadata = new HashMap<>();
+                        trEventMetadata.put("inputToken", tokenBefore);
+                        trEventMetadata.put("outputToken", tokenAfter);
+                        trEventMetadata.put("time", 0.0);
+
+                        String eventType =
+                                lastKeep
+                                        ? CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION
+                                        : CompressionEvent.LARGE_MESSAGE_OFFLOAD;
+                        recordCompressionEvent(eventType, i, i, rawMessages, null, trEventMetadata);
+
+                        rawMessages.set(i, replacementToolMsg);
+                        hasOffloaded = true;
+                    }
+                }
+                continue;
+            }
+
             String uuid = null;
             // Check if message content exceeds threshold
             if (textContent != null && textContent.length() > threshold) {
@@ -1118,7 +1347,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                     + "..."
                             : textContent;
 
-            String offloadHint = String.format(Prompts.LARGE_MESSAGE_OFFLOAD_FORMAT, preview, uuid);
+            String offloadHint =
+                    preview + "\n" + String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, uuid);
 
             // Build metadata with compression information
             // Note: This method only offloads without LLM compression, so tokens are 0
@@ -1174,22 +1404,27 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      * Extract tool messages from raw messages for compression.
      *
      * <p>This method finds consecutive tool invocation messages in historical conversations
-     * that can be compressed. It searches for sequences of more than  consecutive tool messages
-     * before the latest assistant message.
+     * that can be compressed. It searches, using a cursor-based {@code searchStartIndex},
+     * for sequences of more than a minimum number of consecutive tool messages that appear
+     * before the latest assistant message that should be preserved.
      *
      * <p>Strategy:
-     * 1. If rawMessages has less than lastKeep messages, return null
-     * 2. Find the latest assistant message and protect it and all messages after it
-     * 3. Search from the beginning for the oldest consecutive tool messages (more than minConsecutiveToolMessages consecutive)
-     *    that can be compressed
-     * 4. If no assistant message is found, protect the last N messages (lastKeep)
+     * 1. If {@code rawMessages} has less than {@code lastKeep} messages, return {@code null}.
+     * 2. Identify the latest assistant message and treat it and all messages after it as
+     *    protected content that will not be compressed.
+     * 3. Starting from {@code searchStartIndex}, search for the oldest range of consecutive
+     *    tool messages (more than {@code minConsecutiveToolMessages} consecutive) that lies
+     *    entirely before the protected region and can be compressed.
+     * 4. If no eligible assistant message or compressible tool-message sequence is found
+     *    in the searchable range, return {@code null}.
      *
      * @param rawMessages all raw messages
      * @param lastKeep number of recent messages to keep uncompressed
-     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or null if none found
+     * @param searchStartIndex the index to start searching from (used as a cursor)
+     * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or {@code null} if none found
      */
     private Pair<Integer, Integer> extractPrevToolMsgsForCompress(
-            List<Msg> rawMessages, int lastKeep) {
+            List<Msg> rawMessages, int lastKeep, int searchStartIndex) {
         if (rawMessages == null || rawMessages.isEmpty()) {
             return null;
         }
@@ -1223,8 +1458,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int consecutiveCount = 0;
         int startIndex = -1;
         int endIndex = -1;
-
-        for (int i = 0; i < searchEndIndex; i++) {
+        int actualStart = Math.max(0, searchStartIndex);
+        for (int i = actualStart; i < searchEndIndex; i++) {
             Msg msg = rawMessages.get(i);
             if (MsgUtils.isToolMessage(msg)) {
                 if (consecutiveCount == 0) {
@@ -1344,15 +1579,17 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      */
     private Msg compressToolsInvocation(List<Msg> messages, String offloadUUid) {
 
+        // Filter out plan-related tool calls before compression
+        List<Msg> filteredMessages = MsgUtils.filterPlanRelatedToolCalls(messages);
+        if (filteredMessages.size() < messages.size()) {
+            log.info(
+                    "Filtered out {} plan-related tool call messages from tool invocation"
+                            + " compression",
+                    messages.size() - filteredMessages.size());
+        }
+
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("tool_compress");
-        String compressContentFormat =
-                Prompts.COMPRESSED_TOOL_INVOCATION_FORMAT
-                        + ((offloadUUid != null)
-                                ? String.format(
-                                        Prompts.COMPRESSED_TOOL_INVOCATION_OFFLOAD_HINT,
-                                        offloadUUid)
-                                : "");
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
                 Msg.builder()
@@ -1360,19 +1597,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_START)
+                                        .text(
+                                                PromptProvider.getPreviousRoundToolCompressPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
-        newMessages.addAll(messages);
+        newMessages.addAll(filteredMessages);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
         Msg block =
                 model.stream(newMessages, null, options)
                         .concatMap(chunk -> processChunk(chunk, context))
@@ -1406,16 +1647,25 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
+        // Build the final message content:
+        // 1. LLM generated compressed tool invocation content
+        // 2. Context offload tag with UUID at the end
+        String compressedContent = block != null ? block.getTextContent() : "";
+        String offloadTag =
+                offloadUUid != null
+                        ? String.format(Prompts.CONTEXT_OFFLOAD_TAG_FORMAT, offloadUUid)
+                        : "";
+
+        // Combine: compressed content + newline + UUID tag
+        String finalContent = compressedContent;
+        if (!offloadTag.isEmpty()) {
+            finalContent = finalContent + "\n" + offloadTag;
+        }
+
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
-                .content(
-                        TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                compressContentFormat,
-                                                block != null ? block.getTextContent() : ""))
-                                .build())
+                .content(TextBlock.builder().text(finalContent).build())
                 .metadata(metadata)
                 .build();
     }
@@ -1428,6 +1678,139 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public void clear() {
         workingMemoryStorage.clear();
         originalMemoryStorage.clear();
+    }
+
+    /**
+     * Attaches a PlanNotebook instance to enable plan-aware compression.
+     *
+     * <p>This method should be called after the ReActAgent is created and has a PlanNotebook.
+     * When a PlanNotebook is attached, compression operations will automatically include
+     * plan context information to preserve plan-related information during compression.
+     *
+     * <p>This method can be called multiple times to update or replace the PlanNotebook.
+     * Passing null will detach the current PlanNotebook and disable plan-aware compression.
+     *
+     * @param planNotebook the PlanNotebook instance to attach, or null to detach
+     */
+    public void attachPlanNote(PlanNotebook planNotebook) {
+        this.planNotebook = planNotebook;
+        if (planNotebook != null) {
+            log.debug("PlanNotebook attached to AutoContextMemory for plan-aware compression");
+        } else {
+            log.debug("PlanNotebook detached from AutoContextMemory");
+        }
+    }
+
+    /**
+     * Gets the current plan state information for compression context.
+     *
+     * <p>This method generates a generic plan-aware hint message that is fixed to be placed
+     * <b>after</b> the messages that need to be compressed. The content uses "above messages"
+     * terminology to refer to the messages that appear before this hint in the message list.
+     *
+     * @return Plan state information as a formatted string, or null if no plan is active
+     */
+    private String getPlanStateContext() {
+        if (planNotebook == null) {
+            return null;
+        }
+
+        Plan currentPlan = planNotebook.getCurrentPlan();
+        if (currentPlan == null) {
+            return null;
+        }
+
+        // Build simplified plan state information
+        StringBuilder planContext = new StringBuilder();
+
+        // 1. Task overall goal
+        if (currentPlan.getDescription() != null && !currentPlan.getDescription().isEmpty()) {
+            planContext.append("Goal: ").append(currentPlan.getDescription()).append("\n");
+        }
+
+        // 2. Current progress
+        List<SubTask> subtasks = currentPlan.getSubtasks();
+        if (subtasks != null && !subtasks.isEmpty()) {
+            List<SubTask> inProgressTasks =
+                    subtasks.stream()
+                            .filter(st -> st.getState() == SubTaskState.IN_PROGRESS)
+                            .collect(Collectors.toList());
+
+            if (!inProgressTasks.isEmpty()) {
+                planContext.append("Current Progress: ");
+                for (int i = 0; i < inProgressTasks.size(); i++) {
+                    if (i > 0) {
+                        planContext.append(", ");
+                    }
+                    planContext.append(inProgressTasks.get(i).getName());
+                }
+                planContext.append("\n");
+            }
+
+            // Count completed tasks for context
+            long doneCount =
+                    subtasks.stream().filter(st -> st.getState() == SubTaskState.DONE).count();
+            long totalCount = subtasks.size();
+
+            if (totalCount > 0) {
+                planContext.append(
+                        String.format(
+                                "Progress: %d/%d subtasks completed\n", doneCount, totalCount));
+            }
+        }
+
+        // 3. Appropriate supplement to task plan context
+        if (currentPlan.getExpectedOutcome() != null
+                && !currentPlan.getExpectedOutcome().isEmpty()) {
+            planContext
+                    .append("Expected Outcome: ")
+                    .append(currentPlan.getExpectedOutcome())
+                    .append("\n");
+        }
+
+        return planContext.toString();
+    }
+
+    /**
+     * Creates a hint message containing plan context information for compression.
+     *
+     * <p>This hint message is placed <b>after</b> the compression scope marker
+     * (COMPRESSION_MESSAGE_LIST_END) at the end of the message list. This placement leverages the
+     * model's attention mechanism (recency effect), ensuring compression guidelines are fresh in the
+     * model's context during generation.
+     *
+     * @return A USER message containing plan context, or null if no plan is active
+     */
+    private Msg createPlanAwareHintMessage() {
+        String planContext = getPlanStateContext();
+        if (planContext == null) {
+            return null;
+        }
+
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("user")
+                .content(
+                        TextBlock.builder()
+                                .text("<plan_aware_hint>\n" + planContext + "\n</plan_aware_hint>")
+                                .build())
+                .build();
+    }
+
+    /**
+     * Adds plan-aware hint message to the message list if a plan is active.
+     *
+     * <p>This method creates and adds a plan-aware hint message to the provided message list if
+     * there is an active plan. The hint message is added at the end of the list to leverage the
+     * recency effect of the model's attention mechanism.
+     *
+     * @param newMessages the message list to which the hint message should be added
+     */
+    private void addPlanAwareHintIfNeeded(List<Msg> newMessages) {
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
     }
 
     /**
@@ -1543,5 +1926,78 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      */
     public List<CompressionEvent> getCompressionEvents() {
         return compressionEvents;
+    }
+
+    // ==================== StateModule API ====================
+
+    /**
+     * Save memory state to the session.
+     *
+     * <p>Saves working memory and original memory messages to the session storage.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        session.save(
+                sessionKey,
+                "autoContextMemory_workingMessages",
+                new ArrayList<>(workingMemoryStorage));
+        session.save(
+                sessionKey,
+                "autoContextMemory_originalMessages",
+                new ArrayList<>(originalMemoryStorage));
+
+        // Save offload context (critical for reload functionality)
+        if (!offloadContext.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_offloadContext",
+                    new OffloadContextState(new HashMap<>(offloadContext)));
+        }
+
+        if (!compressionEvents.isEmpty()) {
+            session.save(
+                    sessionKey,
+                    "autoContextMemory_compressionEvents",
+                    new ArrayList<>(compressionEvents));
+        }
+    }
+
+    /**
+     * Load memory state from the session.
+     *
+     * <p>Loads working memory and original memory messages from the session storage.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        List<Msg> loadedWorking =
+                session.getList(sessionKey, "autoContextMemory_workingMessages", Msg.class);
+        workingMemoryStorage.clear();
+        workingMemoryStorage.addAll(loadedWorking);
+
+        List<Msg> loadedOriginal =
+                session.getList(sessionKey, "autoContextMemory_originalMessages", Msg.class);
+        originalMemoryStorage.clear();
+        originalMemoryStorage.addAll(loadedOriginal);
+
+        // Load offload context
+        session.get(sessionKey, "autoContextMemory_offloadContext", OffloadContextState.class)
+                .ifPresent(
+                        state -> {
+                            offloadContext.clear();
+                            offloadContext.putAll(state.offloadContext());
+                        });
+
+        // Load compression context events
+        List<CompressionEvent> compressEvents =
+                session.getList(
+                        sessionKey, "autoContextMemory_compressionEvents", CompressionEvent.class);
+        compressionEvents.clear();
+        compressionEvents.addAll(compressEvents);
     }
 }

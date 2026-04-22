@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,16 +18,30 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Integration test for ToolEmitter functionality with Hooks.
@@ -73,11 +87,13 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Create a ToolUseBlock
+        Map<String, Object> input = Map.of("input", "test-data");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-1")
                         .name("stream_task")
-                        .input(Map.of("input", "test-data"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         // Call the tool
@@ -126,11 +142,13 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Call the tool
+        Map<String, Object> input = Map.of("input", "hello");
         ToolUseBlock toolUseBlock =
                 ToolUseBlock.builder()
                         .id("test-call-2")
                         .name("simple_task")
-                        .input(Map.of("input", "hello"))
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
         ToolResultBlock finalResponse =
@@ -178,20 +196,24 @@ class ToolEmitterIntegrationTest {
                 });
 
         // Call task_a
+        Map<String, Object> inputA = Map.of("data", "x");
         ToolUseBlock toolA =
                 ToolUseBlock.builder()
                         .id("call-a")
                         .name("task_a")
-                        .input(Map.of("data", "x"))
+                        .input(inputA)
+                        .content(JsonUtils.getJsonCodec().toJson(inputA))
                         .build();
         toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
 
         // Call task_b
+        Map<String, Object> inputB = Map.of("data", "y");
         ToolUseBlock toolB =
                 ToolUseBlock.builder()
                         .id("call-b")
                         .name("task_b")
-                        .input(Map.of("data", "y"))
+                        .input(inputB)
+                        .content(JsonUtils.getJsonCodec().toJson(inputB))
                         .build();
         toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolB).build()).block();
 
@@ -207,8 +229,164 @@ class ToolEmitterIntegrationTest {
         assertEquals("call-b", capturedToolUseBlocks.get(2).getId());
     }
 
-    // NOTE: ActingChunkEvent hook testing is covered in ReActAgentTest and HookEventTest
-    // This integration test focuses on ToolEmitter→Toolkit callback, not hook integration
+    @Test
+    @DisplayName("ToolEmitter should work after Toolkit copy")
+    void testToolEmitterWithCopiedToolkit() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "task_a", description = "Task A")
+                    public ToolResultBlock taskA(
+                            @ToolParam(name = "data") String data, ToolEmitter emitter) {
+                        emitter.emit(ToolResultBlock.text("A: Started"));
+                        emitter.emit(ToolResultBlock.text("A: Processing"));
+                        return ToolResultBlock.text("A: Done");
+                    }
+                });
+        var copiedToolkit = toolkit.copy();
+        copiedToolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    capturedChunks.add(chunk);
+                    capturedToolUseBlocks.add(toolUse);
+                });
+
+        // Call task_a
+        Map<String, Object> inputA = Map.of("data", "x");
+        ToolUseBlock toolA =
+                ToolUseBlock.builder()
+                        .id("call-a")
+                        .name("task_a")
+                        .input(inputA)
+                        .content(JsonUtils.getJsonCodec().toJson(inputA))
+                        .build();
+        copiedToolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
+
+        // Verify chunks
+        assertEquals(2, capturedChunks.size());
+        assertEquals("A: Started", extractText(capturedChunks.get(0)));
+        assertEquals("A: Processing", extractText(capturedChunks.get(1)));
+
+        // Verify tool use blocks
+        assertEquals("call-a", capturedToolUseBlocks.get(0).getId());
+        assertEquals("call-a", capturedToolUseBlocks.get(1).getId());
+    }
+
+    @Test
+    @DisplayName("ReActAgent should preserve user chunk callback while emitting ActingChunkEvent")
+    void testReActAgentPreservesUserChunkCallback() {
+        toolkit.registerTool(new StreamingTool());
+
+        List<String> userChunks = new CopyOnWriteArrayList<>();
+        toolkit.setChunkCallback((toolUse, chunk) -> userChunks.add(extractText(chunk)));
+
+        List<String> hookChunks = new CopyOnWriteArrayList<>();
+        Hook captureHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ActingChunkEvent actingChunkEvent) {
+                            hookChunks.add(extractText(actingChunkEvent.getChunk()));
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        AtomicInteger modelCallCount = new AtomicInteger(0);
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            if (modelCallCount.getAndIncrement() == 0) {
+                                return List.of(createToolCallResponse());
+                            }
+                            return List.of(createTextResponse("final-response"));
+                        });
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("Issue870Agent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .hook(captureHook)
+                        .build();
+
+        Msg response = agent.call(createUserMessage()).block();
+
+        assertNotNull(response);
+        assertEquals("final-response", extractText(response));
+        assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), userChunks);
+        assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), hookChunks);
+    }
+
+    @Test
+    @DisplayName("Internal chunk callback failure should not block user callback")
+    void testInternalChunkCallbackFailureDoesNotBlockUserCallback() {
+        toolkit.registerTool(new StreamingTool());
+
+        List<String> userChunks = new CopyOnWriteArrayList<>();
+        toolkit.setChunkCallback((toolUse, chunk) -> userChunks.add(extractText(chunk)));
+        toolkit.setInternalChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("boom");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+        assertEquals(List.of("chunk:1:demo", "chunk:2:demo"), userChunks);
+    }
+
+    @Test
+    @DisplayName("User chunk callback failure should not interrupt tool execution")
+    void testUserChunkCallbackFailureDoesNotInterruptToolExecution() {
+        toolkit.registerTool(new StreamingTool());
+        toolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("user callback failure");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+    }
+
+    @Test
+    @DisplayName("Internal chunk callback failure should not interrupt tool execution")
+    void testInternalChunkCallbackFailureDoesNotInterruptToolExecution() {
+        toolkit.registerTool(new StreamingTool());
+        toolkit.setInternalChunkCallback(
+                (toolUse, chunk) -> {
+                    throw new IllegalStateException("internal callback failure");
+                });
+
+        ToolResultBlock finalResponse =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                createToolCall(
+                                                        "stream_task", Map.of("input", "demo")))
+                                        .build())
+                        .block();
+
+        assertNotNull(finalResponse);
+        assertEquals("tool-result:demo", extractText(finalResponse));
+    }
 
     /**
      * Helper method to extract text from ToolResultBlock.
@@ -219,5 +397,52 @@ class ToolEmitterIntegrationTest {
         if (outputs.isEmpty()) return "";
         TextBlock block = (TextBlock) outputs.get(0);
         return block.getText();
+    }
+
+    private String extractText(Msg msg) {
+        return ((TextBlock) msg.getContent().get(0)).getText();
+    }
+
+    private Msg createUserMessage() {
+        return Msg.builder()
+                .name("User")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text("Use the streaming tool").build())
+                .build();
+    }
+
+    private ChatResponse createToolCallResponse() {
+        return ChatResponse.builder()
+                .content(List.of(createToolCall("stream_task", Map.of("input", "demo"))))
+                .usage(new ChatUsage(8, 15, 23))
+                .build();
+    }
+
+    private ChatResponse createTextResponse(String text) {
+        return ChatResponse.builder()
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .usage(new ChatUsage(10, 20, 30))
+                .build();
+    }
+
+    private ToolUseBlock createToolCall(String name, Map<String, Object> input) {
+        return ToolUseBlock.builder()
+                .id("call-1")
+                .name(name)
+                .input(input)
+                .content(JsonUtils.getJsonCodec().toJson(input))
+                .build();
+    }
+
+    static class StreamingTool {
+
+        @Tool(name = "stream_task", description = "Emit streaming chunks and return a final result")
+        public ToolResultBlock execute(
+                @ToolParam(name = "input", description = "Input text") String input,
+                ToolEmitter emitter) {
+            emitter.emit(ToolResultBlock.text("chunk:1:" + input));
+            emitter.emit(ToolResultBlock.text("chunk:2:" + input));
+            return ToolResultBlock.text("tool-result:" + input);
+        }
     }
 }

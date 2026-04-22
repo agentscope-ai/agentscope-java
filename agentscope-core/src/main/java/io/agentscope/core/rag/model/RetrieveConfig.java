@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,11 +29,13 @@ public class RetrieveConfig {
 
     private final int limit;
     private final double scoreThreshold;
+    private final String vectorName;
     private final List<Msg> conversationHistory;
 
     private RetrieveConfig(Builder builder) {
         this.limit = builder.limit;
         this.scoreThreshold = builder.scoreThreshold;
+        this.vectorName = builder.vectorName;
         this.conversationHistory = builder.conversationHistory;
     }
 
@@ -56,6 +58,15 @@ public class RetrieveConfig {
     }
 
     /**
+     * Gets the vector name for retrieval.
+     *
+     * @return the vector name, or null if not set
+     */
+    public String getVectorName() {
+        return vectorName;
+    }
+
+    /**
      * Gets the conversation history for context-aware retrieval.
      *
      * <p>This is an optional field used by knowledge bases that support multi-turn
@@ -65,6 +76,19 @@ public class RetrieveConfig {
      */
     public List<Msg> getConversationHistory() {
         return conversationHistory;
+    }
+
+    /**
+     * Mutate the current instance to a new builder.
+     *
+     * @return a new builder with the same values of this instance
+     */
+    public Builder mutate() {
+        return new Builder()
+                .limit(this.limit)
+                .scoreThreshold(this.scoreThreshold)
+                .vectorName(this.vectorName)
+                .conversationHistory(this.conversationHistory);
     }
 
     /**
@@ -83,6 +107,7 @@ public class RetrieveConfig {
 
         private int limit = 5;
         private double scoreThreshold = 0.5;
+        private String vectorName;
         private List<Msg> conversationHistory;
 
         /**
@@ -110,6 +135,17 @@ public class RetrieveConfig {
                 throw new IllegalArgumentException("Score threshold must be between 0.0 and 1.0");
             }
             this.scoreThreshold = scoreThreshold;
+            return this;
+        }
+
+        /**
+         * Sets the vector name for retrieval.
+         *
+         * @param vectorName the vector name (can be null)
+         * @return this builder for chaining
+         */
+        public Builder vectorName(String vectorName) {
+            this.vectorName = vectorName;
             return this;
         }
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -41,7 +41,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>Extracts the query from user messages</li>
  *   <li>Retrieves relevant documents from the knowledge base</li>
- *   <li>Injects the retrieved knowledge as a system message</li>
+ *   <li>Injects the retrieved knowledge as a user message</li>
  *   <li>Modifies the input messages to include the knowledge context</li>
  * </ol>
  *
@@ -60,7 +60,6 @@ import reactor.core.publisher.Mono;
  * <p>Configuration options:
  * <ul>
  *   <li>{@code defaultConfig} - Retrieval configuration (limit, score threshold)</li>
- *   <li>{@code enableOnlyForUserQueries} - Only retrieve for user messages (default: true)</li>
  * </ul>
  */
 public class GenericRAGHook implements Hook {
@@ -69,7 +68,6 @@ public class GenericRAGHook implements Hook {
 
     private final Knowledge knowledge;
     private final RetrieveConfig defaultConfig;
-    private final boolean enableOnlyForUserQueries;
 
     /**
      * Creates a GenericRAGHook with default configuration.
@@ -78,14 +76,13 @@ public class GenericRAGHook implements Hook {
      * <ul>
      *   <li>Limit: 5 documents</li>
      *   <li>Score threshold: 0.5</li>
-     *   <li>Only for user queries: true</li>
      * </ul>
      *
      * @param knowledge the knowledge base to retrieve from
      * @throws IllegalArgumentException if knowledgeBase is null
      */
     public GenericRAGHook(Knowledge knowledge) {
-        this(knowledge, RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build(), true);
+        this(knowledge, RetrieveConfig.builder().build());
     }
 
     /**
@@ -93,11 +90,9 @@ public class GenericRAGHook implements Hook {
      *
      * @param knowledge the knowledge base to retrieve from
      * @param defaultConfig the default retrieval configuration
-     * @param enableOnlyForUserQueries if true, only retrieve for user messages
      * @throws IllegalArgumentException if knowledgeBase is null
      */
-    public GenericRAGHook(
-            Knowledge knowledge, RetrieveConfig defaultConfig, boolean enableOnlyForUserQueries) {
+    public GenericRAGHook(Knowledge knowledge, RetrieveConfig defaultConfig) {
         if (knowledge == null) {
             throw new IllegalArgumentException("Knowledge base cannot be null");
         }
@@ -106,7 +101,6 @@ public class GenericRAGHook implements Hook {
         }
         this.knowledge = knowledge;
         this.defaultConfig = defaultConfig;
-        this.enableOnlyForUserQueries = enableOnlyForUserQueries;
     }
 
     @Override
@@ -126,7 +120,7 @@ public class GenericRAGHook implements Hook {
     }
 
     /**
-     * Handles PreReasoningEvent by retrieving knowledge and enhancing messages.
+     * Handles PreCallEvent by retrieving knowledge and enhancing messages.
      *
      * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
@@ -137,15 +131,7 @@ public class GenericRAGHook implements Hook {
             return Mono.just(event);
         }
 
-        // If enabled, only retrieve for user queries
-        if (enableOnlyForUserQueries) {
-            Msg lastMsg = inputMessages.get(inputMessages.size() - 1);
-            if (lastMsg.getRole() != MsgRole.USER) {
-                return Mono.just(event);
-            }
-        }
-
-        // Extract query text from messages
+        // Extract query text from messages (finds the last user message from back to front)
         String query = extractQueryFromMessages(inputMessages);
         if (query == null || query.trim().isEmpty()) {
             return Mono.just(event);
@@ -178,13 +164,19 @@ public class GenericRAGHook implements Hook {
     /**
      * Extracts query text from message list.
      *
-     * <p>Prioritizes the last user message as the query source.
+     * <p>Finds the last user message as the query source (not just the last message, which could be
+     * ASSISTANT or TOOL in ReAct loops).
      *
      * @param messages the message list
      * @return the extracted query text, or empty string if no user message found
      */
     private String extractQueryFromMessages(List<Msg> messages) {
-        // Find the last user message
+        if (messages == null || messages.isEmpty()) {
+            return "";
+        }
+
+        // Find the last user message (not just the last message, which could be
+        // ASSISTANT or TOOL in ReAct loops)
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
             if (msg.getRole() == MsgRole.USER) {
@@ -206,8 +198,8 @@ public class GenericRAGHook implements Hook {
         String knowledgeContent = buildKnowledgeContent(retrievedDocs);
 
         return Msg.builder()
-                .name("system")
-                .role(MsgRole.SYSTEM)
+                .name("user")
+                .role(MsgRole.USER)
                 .content(TextBlock.builder().text(knowledgeContent).build())
                 .build();
     }
@@ -252,14 +244,5 @@ public class GenericRAGHook implements Hook {
      */
     public RetrieveConfig getDefaultConfig() {
         return defaultConfig;
-    }
-
-    /**
-     * Checks if retrieval is enabled only for user queries.
-     *
-     * @return true if only enabled for user queries
-     */
-    public boolean isEnableOnlyForUserQueries() {
-        return enableOnlyForUserQueries;
     }
 }

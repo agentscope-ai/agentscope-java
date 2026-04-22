@@ -229,6 +229,6 @@ DashScopeChatModel.builder()
 
 ## More Resources
 
-- **Complete Example Code**: [VisionExample.java](../../examples/src/main/java/io/agentscope/examples/VisionExample.java)
+- **Complete Example Code**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
 - **Message Mechanism**: [message.md](../quickstart/message.md) - Learn about message structure
 - **Model Configuration**: [model.md](./model.md) - Learn about model configuration options

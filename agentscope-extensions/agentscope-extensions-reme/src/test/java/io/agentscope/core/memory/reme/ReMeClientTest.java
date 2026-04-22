@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.util.JsonException;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -217,9 +219,7 @@ class ReMeClientTest {
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("Failed to parse response")
-                                        || error
-                                                instanceof
-                                                com.fasterxml.jackson.core.JsonProcessingException)
+                                        || error instanceof JsonException)
                 .verify();
     }
 
@@ -378,9 +378,7 @@ class ReMeClientTest {
                 .expectErrorMatches(
                         error ->
                                 error.getMessage().contains("Failed to parse response")
-                                        || error
-                                                instanceof
-                                                com.fasterxml.jackson.core.JsonProcessingException)
+                                        || error instanceof JsonException)
                 .verify();
     }
 
@@ -511,7 +509,7 @@ class ReMeClientTest {
                 new MockResponse()
                         .setBody("{\"status\":\"success\"}")
                         .setResponseCode(200)
-                        .setBodyDelay(1000, java.util.concurrent.TimeUnit.MILLISECONDS));
+                        .setBodyDelay(1000, TimeUnit.MILLISECONDS));
 
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -84,7 +84,7 @@ public interface LongTermMemory {
      * @param msgs List of messages to record (null entries are filtered out)
      * @return A Mono that completes when recording is finished
      */
-    public abstract Mono<Void> record(List<Msg> msgs);
+    Mono<Void> record(List<Msg> msgs);
 
     /**
      * Retrieves relevant information from long-term memory based on the input message.
@@ -103,5 +103,5 @@ public interface LongTermMemory {
      * @param msg The message to use as a query for memory retrieval
      * @return A Mono emitting the retrieved memory text (may be empty)
      */
-    public abstract Mono<String> retrieve(Msg msg);
+    Mono<String> retrieve(Msg msg);
 }

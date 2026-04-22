@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -27,24 +27,30 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>1.0.3-SNAPSHOT</revision>
-        <java.version>17</java.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
-        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
-        <maven-site-plugin.version>4.0.0-M13</maven-site-plugin.version>
-        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
-        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
-        <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
-        <flatten-maven-plugin.version>1.5.0</flatten-maven-plugin.version>
-        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <revision>1.0.12-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <argLine>-Xms512m -Xmx1024m</argLine>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <java.version>17</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+
+        <spotless.version>3.4.0</spotless.version>
+        <jacoco.version>0.8.14</jacoco.version>
+        <google-java-format.version>1.28.0</google-java-format.version>
+
+        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+        <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
 
         <maven.deploy.skip>false</maven.deploy.skip>
-        <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
+        <argLine>-Xms512m -Xmx1024m</argLine>
     </properties>
 
     <modules>
@@ -72,7 +78,7 @@
     <licenses>
         <license>
             <name>Apache 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
@@ -100,6 +106,17 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
@@ -116,6 +133,13 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-dependencies-bom</artifactId>
+                <version>${revision}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-bom</artifactId>
                 <version>${revision}</version>
                 <type>pom</type>
                 <scope>import</scope>
@@ -171,11 +195,12 @@
                     <!-- define a language-specific format -->
                     <java>
                         <removeUnusedImports />
-                        <removeWildcardImports />
+                        <forbidWildcardImports />
+                        <formatAnnotations />
                         <importOrder />
                         <!-- apply a specific flavor of google-java-format and reflow long strings -->
                         <googleJavaFormat>
-                            <version>1.28.0</version>
+                            <version>${google-java-format.version}</version>
                             <style>AOSP</style>
                             <reflowLongStrings>true</reflowLongStrings>
                             <formatJavadoc>false</formatJavadoc>
@@ -189,6 +214,7 @@
                 <version>${maven-javadoc-plugin.version}</version>
                 <configuration>
                     <doclint>all,-missing</doclint>
+                    <source>17</source>
                 </configuration>
                 <executions>
                     <execution>
@@ -264,7 +290,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
+                <version>${jacoco.version}</version>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>
@@ -334,9 +360,35 @@
                             <publishingServerId>central</publishingServerId>
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
-                                <artifact>agentscope-examples-quickstart</artifact>
-                                <artifact>agentscope-examples-werewolf</artifact>
-                                <artifact>agentscope-examples-advanced</artifact>
+                                <artifact>a2a</artifact>
+                                <artifact>advanced</artifact>
+                                <artifact>agui</artifact>
+                                <artifact>boba-tea-shop</artifact>
+                                <artifact>supervisor-agent</artifact>
+                                <artifact>business-mcp-server</artifact>
+                                <artifact>business-sub-agent</artifact>
+                                <artifact>consult-sub-agent</artifact>
+                                <artifact>chat-completions-web</artifact>
+                                <artifact>chat-tts</artifact>
+                                <artifact>hitl-chat</artifact>
+                                <artifact>micronaut</artifact>
+                                <artifact>model-request-compression</artifact>
+                                <artifact>plan-notebook</artifact>
+                                <artifact>quarkus</artifact>
+                                <artifact>quickstart</artifact>
+                                <artifact>werewolf</artifact>
+                                <artifact>werewolf-hitl</artifact>
+                                <artifact>a2a-rocketmq</artifact>
+                                <artifact>agentscope-client</artifact>
+                                <artifact>agentscope-server</artifact>
+                                <artifact>graceful-shutdown</artifact>
+                                <artifact>handoffs</artifact>
+                                <artifact>pipeline</artifact>
+                                <artifact>routing</artifact>
+                                <artifact>skills</artifact>
+                                <artifact>subagent</artifact>
+                                <artifact>supervisor</artifact>
+                                <artifact>workflow</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

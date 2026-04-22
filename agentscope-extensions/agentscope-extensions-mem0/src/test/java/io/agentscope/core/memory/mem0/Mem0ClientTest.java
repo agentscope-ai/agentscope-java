@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -186,10 +187,7 @@ class Mem0ClientTest {
                         .build();
 
         StepVerifier.create(client.add(request))
-                .expectErrorMatches(
-                        error ->
-                                error.getMessage().contains("Failed to parse response")
-                                        && error.getMessage().contains("add request"))
+                .expectErrorMatches(error -> error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 
@@ -278,8 +276,7 @@ class Mem0ClientTest {
                 Mem0SearchRequest.builder().query("test").userId("user1").build();
 
         StepVerifier.create(client.search(request))
-                .expectErrorMatches(
-                        error -> error.getMessage().contains("Failed to parse search response"))
+                .expectErrorMatches(error -> error.getMessage().contains("Failed to deserialize"))
                 .verify();
     }
 
@@ -361,7 +358,7 @@ class Mem0ClientTest {
                 new MockResponse()
                         .setBody("{\"results\":[]}")
                         .setResponseCode(200)
-                        .setBodyDelay(1000, java.util.concurrent.TimeUnit.MILLISECONDS));
+                        .setBodyDelay(1000, TimeUnit.MILLISECONDS));
 
         Mem0AddRequest request =
                 Mem0AddRequest.builder()
@@ -374,5 +371,492 @@ class Mem0ClientTest {
         StepVerifier.create(shortTimeoutClient.add(request)).expectError().verify();
 
         shortTimeoutClient.shutdown();
+    }
+
+    // ==================== Self-hosted Mode Tests ====================
+
+    @Test
+    void testConstructorWithSelfHostedApiType() {
+        String baseUrl = "http://localhost:8000";
+        Mem0Client client =
+                new Mem0Client(baseUrl, "key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+        assertNotNull(client);
+    }
+
+    @Test
+    void testAddRequestWithSelfHostedEndpoint() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        // Mock successful response
+        String responseJson =
+                "{"
+                        + "\"results\":["
+                        + "{\"memory\":\"User prefers dark mode\",\"id\":\"mem_123\"}"
+                        + "],"
+                        + "\"message\":\"Successfully added memory\""
+                        + "}";
+
+        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+
+        // Create request
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(
+                                        Mem0Message.builder()
+                                                .role("user")
+                                                .content("I prefer dark mode")
+                                                .build()))
+                        .userId("user123")
+                        .build();
+
+        // Execute and verify
+        StepVerifier.create(selfHostedClient.add(request))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response);
+                            assertNotNull(response.getResults());
+                            assertEquals(1, response.getResults().size());
+                            assertEquals("Successfully added memory", response.getMessage());
+                        })
+                .verifyComplete();
+
+        // Verify request uses self-hosted endpoint
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("POST", recordedRequest.getMethod());
+        assertTrue(recordedRequest.getPath().contains("/memories"));
+        assertTrue(!recordedRequest.getPath().contains("/v1/memories")); // Should not use v1
+        // Self-hosted mode should use X-API-Key header instead of Authorization
+        assertEquals("test-api-key", recordedRequest.getHeader("X-API-Key"));
+        assertEquals(null, recordedRequest.getHeader("Authorization"));
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testSearchRequestWithSelfHostedEndpoint() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        // Mock self-hosted search response (wrapped in {"results": [...]})
+        String responseJson =
+                "{"
+                        + "\"results\":["
+                        + "{"
+                        + "\"id\":\"mem_123\","
+                        + "\"memory\":\"User prefers dark mode\","
+                        + "\"user_id\":\"user_456\","
+                        + "\"score\":0.95"
+                        + "}"
+                        + "]"
+                        + "}";
+
+        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+
+        // Create request
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder()
+                        .query("preferences")
+                        .userId("user_456")
+                        .topK(10)
+                        .build();
+
+        // Execute and verify
+        StepVerifier.create(selfHostedClient.search(request))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response);
+                            assertNotNull(response.getResults());
+                            assertEquals(1, response.getResults().size());
+                            assertEquals("mem_123", response.getResults().get(0).getId());
+                            assertEquals(
+                                    "User prefers dark mode",
+                                    response.getResults().get(0).getMemory());
+                            assertEquals(0.95, response.getResults().get(0).getScore());
+                        })
+                .verifyComplete();
+
+        // Verify request uses self-hosted endpoint
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("POST", recordedRequest.getMethod());
+        assertTrue(recordedRequest.getPath().contains("/search"));
+        assertTrue(!recordedRequest.getPath().contains("/v2/memories/search")); // Should not use v2
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testSearchRequestWithSelfHostedEmptyResults() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        // Mock self-hosted empty response (wrapped format)
+        String responseJson = "{\"results\":[]}";
+        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder().query("test").userId("user1").build();
+
+        StepVerifier.create(selfHostedClient.search(request))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response);
+                            assertNotNull(response.getResults());
+                            assertEquals(0, response.getResults().size());
+                        })
+                .verifyComplete();
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testSearchRequestWithSelfHostedMultipleResults() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        // Mock self-hosted response with multiple results (wrapped format)
+        String responseJson =
+                "{"
+                        + "\"results\":["
+                        + "{\"id\":\"mem_1\",\"memory\":\"First memory\",\"score\":0.95},"
+                        + "{\"id\":\"mem_2\",\"memory\":\"Second memory\",\"score\":0.85},"
+                        + "{\"id\":\"mem_3\",\"memory\":\"Third memory\",\"score\":0.75}"
+                        + "]"
+                        + "}";
+
+        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+
+        Mem0SearchRequest request = Mem0SearchRequest.builder().query("test").topK(3).build();
+
+        StepVerifier.create(selfHostedClient.search(request))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response.getResults());
+                            assertEquals(3, response.getResults().size());
+                            assertEquals("mem_1", response.getResults().get(0).getId());
+                            assertEquals("mem_2", response.getResults().get(1).getId());
+                            assertEquals("mem_3", response.getResults().get(2).getId());
+                        })
+                .verifyComplete();
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testPlatformModeUsesCorrectEndpoints() throws Exception {
+        // Explicitly create platform client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client platformClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
+
+        // Mock response
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(platformClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses platform endpoint
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertTrue(recordedRequest.getPath().contains("/v1/memories"));
+
+        platformClient.shutdown();
+    }
+
+    @Test
+    void testPlatformModeSearchUsesCorrectEndpoint() throws Exception {
+        // Explicitly create platform client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client platformClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
+
+        // Mock platform search response (direct array)
+        String responseJson =
+                "[" + "{\"id\":\"mem_1\",\"memory\":\"Test memory\",\"score\":0.9}" + "]";
+        mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
+
+        Mem0SearchRequest request = Mem0SearchRequest.builder().query("test").build();
+
+        StepVerifier.create(platformClient.search(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses platform endpoint
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertTrue(recordedRequest.getPath().contains("/v2/memories/search"));
+
+        platformClient.shutdown();
+    }
+
+    @Test
+    void testDefaultModeIsPlatform() throws Exception {
+        // Default constructor should use platform endpoints
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client defaultClient = new Mem0Client(baseUrl, "test-api-key");
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(defaultClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses platform endpoint (default)
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertTrue(recordedRequest.getPath().contains("/v1/memories"));
+
+        defaultClient.shutdown();
+    }
+
+    // ==================== Authentication Header Tests ====================
+
+    @Test
+    void testPlatformModeUsesAuthorizationTokenHeader() throws Exception {
+        // Explicitly create platform client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client platformClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(platformClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses Authorization: Token header
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("Token test-api-key", recordedRequest.getHeader("Authorization"));
+        // Should not have X-API-Key header
+        assertEquals(null, recordedRequest.getHeader("X-API-Key"));
+
+        platformClient.shutdown();
+    }
+
+    @Test
+    void testSelfHostedModeUsesXApiKeyHeader() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(selfHostedClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses X-API-Key header
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("test-api-key", recordedRequest.getHeader("X-API-Key"));
+        // Should not have Authorization header
+        assertEquals(null, recordedRequest.getHeader("Authorization"));
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testSelfHostedModeSearchUsesXApiKeyHeader() throws Exception {
+        // Create self-hosted client
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(
+                        baseUrl, "test-api-key", Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        mockServer.enqueue(new MockResponse().setBody("{\"results\":[]}").setResponseCode(200));
+
+        Mem0SearchRequest request =
+                Mem0SearchRequest.builder().query("test").userId("user1").build();
+
+        StepVerifier.create(selfHostedClient.search(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify request uses X-API-Key header
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals("test-api-key", recordedRequest.getHeader("X-API-Key"));
+        // Should not have Authorization header
+        assertEquals(null, recordedRequest.getHeader("Authorization"));
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testPlatformModeWithoutApiKeyNoAuthHeader() throws Exception {
+        // Create platform client without API key
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client platformClient =
+                new Mem0Client(baseUrl, null, Mem0ApiType.PLATFORM, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(platformClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify no auth headers
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals(null, recordedRequest.getHeader("Authorization"));
+        assertEquals(null, recordedRequest.getHeader("X-API-Key"));
+
+        platformClient.shutdown();
+    }
+
+    @Test
+    void testSelfHostedModeWithoutApiKeyNoAuthHeader() throws Exception {
+        // Create self-hosted client without API key
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client selfHostedClient =
+                new Mem0Client(baseUrl, null, Mem0ApiType.SELF_HOSTED, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(selfHostedClient.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify no auth headers
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertEquals(null, recordedRequest.getHeader("Authorization"));
+        assertEquals(null, recordedRequest.getHeader("X-API-Key"));
+
+        selfHostedClient.shutdown();
+    }
+
+    @Test
+    void testApiTypeNullDefaultsToPlatform() throws Exception {
+        // Test that passing null apiType defaults to PLATFORM
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client clientWithNullApiType =
+                new Mem0Client(baseUrl, "test-key", null, Duration.ofSeconds(60));
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody("{\"results\":[],\"message\":\"Success\"}")
+                        .setResponseCode(200));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        StepVerifier.create(clientWithNullApiType.add(request))
+                .assertNext(response -> assertNotNull(response))
+                .verifyComplete();
+
+        // Verify it uses platform endpoint (default)
+        RecordedRequest recordedRequest = mockServer.takeRequest();
+        assertTrue(recordedRequest.getPath().contains("/v1/memories"));
+        // Verify it uses Authorization: Token header (platform style)
+        assertEquals("Token test-key", recordedRequest.getHeader("Authorization"));
+
+        clientWithNullApiType.shutdown();
+    }
+
+    @Test
+    void testExecutePostRawWithInvalidResponse() {
+        // Test exception handling in executePostRaw when response body cannot be read
+        String baseUrl = mockServer.url("/").toString();
+        Mem0Client client = new Mem0Client(baseUrl, "test-key", Duration.ofSeconds(60));
+
+        // Enqueue a response that will cause an error
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("{\"error\":\"Internal server error\"}"));
+
+        Mem0AddRequest request =
+                Mem0AddRequest.builder()
+                        .messages(
+                                List.of(Mem0Message.builder().role("user").content("Test").build()))
+                        .userId("user1")
+                        .build();
+
+        // Verify the error message contains operation name
+        StepVerifier.create(client.add(request))
+                .expectErrorMatches(
+                        error ->
+                                error.getMessage().contains("Mem0 API add request failed")
+                                        && error.getMessage().contains("status 500"))
+                .verify();
+
+        client.shutdown();
     }
 }

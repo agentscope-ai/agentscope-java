@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,12 @@ public class FileToolUtils {
      * Validate that the given file path is within the base directory.
      * This prevents path traversal attacks and unauthorized file access.
      *
+     * <p>When baseDir is specified:
+     * <ul>
+     *   <li>Relative paths are resolved relative to baseDir</li>
+     *   <li>Absolute paths are validated to be within baseDir</li>
+     * </ul>
+     *
      * @param filePath The file path to validate
      * @param baseDir The base directory to restrict access to (null means no restriction)
      * @return The normalized absolute path if valid
@@ -45,7 +51,17 @@ public class FileToolUtils {
             throw new IOException("File path cannot be null or empty.");
         }
 
-        Path path = Paths.get(filePath).toAbsolutePath().normalize();
+        Path inputPath = Paths.get(filePath);
+
+        // If baseDir is specified, relative paths should be resolved relative to baseDir
+        Path path;
+        if (baseDir != null && !inputPath.isAbsolute()) {
+            // Relative path: resolve relative to baseDir
+            path = baseDir.resolve(inputPath).normalize();
+        } else {
+            // Absolute path or no baseDir: convert to absolute path
+            path = inputPath.toAbsolutePath().normalize();
+        }
 
         // If baseDir is specified, ensure the path is within it
         if (baseDir != null) {

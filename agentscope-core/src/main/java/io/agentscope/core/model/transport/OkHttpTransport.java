@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,25 @@ package io.agentscope.core.model.transport;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import okhttp3.ConnectionPool;
+import okhttp3.Credentials;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -87,16 +102,100 @@ public class OkHttpTransport implements HttpTransport {
     }
 
     private OkHttpClient buildClient(HttpTransportConfig config) {
-        return new OkHttpClient.Builder()
-                .connectTimeout(config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
-                .connectionPool(
-                        new ConnectionPool(
-                                config.getMaxIdleConnections(),
-                                config.getKeepAliveDuration().toMillis(),
-                                TimeUnit.MILLISECONDS))
-                .build();
+        OkHttpClient.Builder builder =
+                new OkHttpClient.Builder()
+                        .connectTimeout(
+                                config.getConnectTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .readTimeout(config.getReadTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .writeTimeout(config.getWriteTimeout().toMillis(), TimeUnit.MILLISECONDS)
+                        .connectionPool(
+                                new ConnectionPool(
+                                        config.getMaxIdleConnections(),
+                                        config.getKeepAliveDuration().toMillis(),
+                                        TimeUnit.MILLISECONDS));
+
+        // Configure SSL (optionally ignore certificate verification)
+        if (config.isIgnoreSsl()) {
+            log.error(
+                    "SSL certificate verification has been disabled for this WebSocket client. This"
+                        + " configuration must only be used for local development or testing with"
+                        + " self-signed certificates. Do not disable SSL verification in production"
+                        + " environments, as it exposes connections to man-in-the-middle attacks.");
+            builder =
+                    builder.sslSocketFactory(
+                                    createTrustAllSslSocketFactory(), createTrustAllTrustManager())
+                            .hostnameVerifier((hostname, session) -> true);
+        }
+
+        // Configure proxy
+        if (config.getProxyConfig() != null) {
+            ProxyConfig proxyConfig = config.getProxyConfig();
+
+            if (proxyConfig.getNonProxyHosts() != null
+                    && !proxyConfig.getNonProxyHosts().isEmpty()) {
+                builder.proxySelector(new NonProxyHostsSelector(proxyConfig));
+            } else {
+                builder.proxy(proxyConfig.toJavaProxy());
+            }
+
+            if (proxyConfig.hasAuthentication()) {
+                final String username = proxyConfig.getUsername();
+                final String password = proxyConfig.getPassword();
+                builder.proxyAuthenticator(
+                        (route, response) -> {
+                            if (response.request().header("Proxy-Authorization") != null) {
+                                return null; // Avoid infinite retry
+                            }
+                            String credential = Credentials.basic(username, password);
+                            return response.request()
+                                    .newBuilder()
+                                    .header("Proxy-Authorization", credential)
+                                    .build();
+                        });
+            }
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Create a trust-all SSL socket factory.
+     *
+     * @return the SSL socket factory
+     */
+    private static SSLSocketFactory createTrustAllSslSocketFactory() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(
+                    null, new TrustManager[] {createTrustAllTrustManager()}, new SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            throw new RuntimeException("Failed to create trust-all SSL socket factory", e);
+        }
+    }
+
+    /**
+     * Create a trust-all X509 trust manager.
+     *
+     * @return the trust manager
+     */
+    private static X509TrustManager createTrustAllTrustManager() {
+        return new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                // Trust all certificates
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
     }
 
     @Override
@@ -113,7 +212,14 @@ public class OkHttpTransport implements HttpTransport {
     @Override
     public Flux<String> stream(HttpRequest request) {
         Request okHttpRequest = buildOkHttpRequest(request);
+        log.debug(
+                "Streaming request: method={}, url={}",
+                okHttpRequest.method(),
+                okHttpRequest.url());
 
+        boolean isNdjson =
+                TransportConstants.STREAM_FORMAT_NDJSON.equals(
+                        request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
         return Flux.<String>create(
                         sink -> {
                             Response response = null;
@@ -123,6 +229,10 @@ public class OkHttpTransport implements HttpTransport {
 
                                 if (!response.isSuccessful()) {
                                     String errorBody = getResponseBodyString(response);
+                                    log.error(
+                                            "HTTP error: status={}, body={}",
+                                            response.code(),
+                                            errorBody);
                                     sink.error(
                                             new HttpTransportException(
                                                     "HTTP request failed with status "
@@ -151,6 +261,12 @@ public class OkHttpTransport implements HttpTransport {
 
                                     // Skip empty lines
                                     if (line.isEmpty()) {
+                                        continue;
+                                    }
+
+                                    // Handle NDJSON format
+                                    if (isNdjson) {
+                                        sink.next(line);
                                         continue;
                                     }
 
@@ -188,7 +304,7 @@ public class OkHttpTransport implements HttpTransport {
                                 closeQuietly(response);
                             }
                         })
-                .publishOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
@@ -345,6 +461,35 @@ public class OkHttpTransport implements HttpTransport {
                 return new OkHttpTransport(existingClient, config);
             }
             return new OkHttpTransport(config);
+        }
+    }
+
+    /**
+     * ProxySelector that respects non-proxy hosts configuration.
+     */
+    private static class NonProxyHostsSelector extends ProxySelector {
+        private final ProxyConfig proxyConfig;
+        private final List<Proxy> proxyList;
+
+        NonProxyHostsSelector(ProxyConfig proxyConfig) {
+            this.proxyConfig = proxyConfig;
+            this.proxyList = Collections.singletonList(proxyConfig.toJavaProxy());
+        }
+
+        @Override
+        public List<Proxy> select(URI uri) {
+            if (uri == null || uri.getHost() == null) {
+                return proxyList;
+            }
+            if (proxyConfig.shouldBypass(uri.getHost())) {
+                return Collections.singletonList(Proxy.NO_PROXY);
+            }
+            return proxyList;
+        }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+            log.warn("Proxy connection failed: uri={}, address={}", uri, sa, ioe);
         }
     }
 }

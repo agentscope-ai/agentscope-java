@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.plan.hint;
 
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.SubTask;
 
@@ -43,16 +44,18 @@ public class DefaultPlanToHint implements PlanToHint {
     private static final String IMPORTANT_RULES_SEPARATOR = "Important Rules: \n";
 
     private static final String RULE_WAIT_FOR_CONFIRMATION =
-            "⚠️ CRITICAL - WAIT FOR USER CONFIRMATION:\n"
-                    + "You MUST NOT execute any subtask until the user explicitly confirms.\n"
-                    + "- DO NOT call 'update_subtask_state' to start execution\n"
-                    + "- DO NOT proceed with any task in the plan\n"
-                    + "- ONLY present the plan and ASK user: \"Should I proceed with this plan?\"\n"
-                    + "- Wait for explicit commands like: \"execute\", \"go ahead\", \"start\","
-                    + " \"proceed\", \"yes\", \"ok\", \"do it\", \"run\", \"begin\"\n"
+            "⚠️ WAIT FOR USER CONFIRMATION:\n"
+                    + "- Present the plan and confirm with user before execution\n"
+                    + "- If user's request already implies execution intent (e.g., \"execute\","
+                    + " \"execute the plan\"), proceed directly without asking\n"
+                    + "- Otherwise, ask: \"Should I proceed with this plan?\"\n"
+                    + "- Start execution only after user confirms (e.g., \"yes\", \"go ahead\","
+                    + " \"proceed\", \"do it\")\n"
                     + "- If user says anything else (questions, modifications, unrelated topics),"
-                    + " respond accordingly but DO NOT start execution\n"
-                    + "- VIOLATION of this rule is a critical error\n";
+                    + " respond accordingly but DO NOT start execution\n";
+
+    private static final String RULE_SUBTASK_LIMIT =
+            "- Subtask Limit: Ensure the plan consists of no more than {max_subtasks} subtasks\n";
 
     private static final String RULE_COMMON =
             "- Update before processing each subtask: When processing each subtask, call"
@@ -67,7 +70,8 @@ public class DefaultPlanToHint implements PlanToHint {
                 + " especially when the original plan conflicts with the latest queried plan,"
                 + " follow the latest queried plan without considering the initial requirements.\n"
                 + "- Do not modify plan: Do not modify or amend the plan without a clear plan"
-                + " modification instruction from user\n";
+                + " modification instruction from user\n"
+                + "- Language consistency: Respond to users in the same language as the plan\n";
 
     private static final String NO_PLAN =
             "If the user's query is complex (e.g. programming a website, game or app), or requires"
@@ -154,20 +158,32 @@ public class DefaultPlanToHint implements PlanToHint {
      * </ul>
      *
      * @param plan The current plan, or null if no plan exists
-     * @param needUserConfirm Whether to include the "wait for user confirmation" rule in hints
+     * @param planNotebook related planNoteBook configuration
      * @return A formatted hint message wrapped in system-hint tags, or null if no hint is
      *     applicable
      */
     @Override
-    public String generateHint(Plan plan, boolean needUserConfirm) {
+    public String generateHint(Plan plan, PlanNotebook planNotebook) {
         String hint;
-        String confirmationRule = needUserConfirm ? RULE_WAIT_FOR_CONFIRMATION : "";
+        String confirmationRule =
+                planNotebook.isNeedUserConfirm() ? RULE_WAIT_FOR_CONFIRMATION : "";
 
         if (plan == null) {
-            hint =
-                    needUserConfirm
-                            ? NO_PLAN + IMPORTANT_RULES_SEPARATOR + confirmationRule
-                            : NO_PLAN;
+            // no plan description with optional append rules
+            StringBuilder appendRules = new StringBuilder();
+            if (planNotebook.isNeedUserConfirm()) {
+                appendRules.append(confirmationRule);
+            }
+            if (planNotebook.getMaxSubtasks() != null) {
+                appendRules.append(
+                        RULE_SUBTASK_LIMIT.replace(
+                                "{max_subtasks}", String.valueOf(planNotebook.getMaxSubtasks())));
+            }
+            if (appendRules.isEmpty()) {
+                hint = NO_PLAN;
+            } else {
+                hint = NO_PLAN + IMPORTANT_RULES_SEPARATOR + appendRules;
+            }
         } else {
             // Count subtasks by state
             int nTodo = 0;

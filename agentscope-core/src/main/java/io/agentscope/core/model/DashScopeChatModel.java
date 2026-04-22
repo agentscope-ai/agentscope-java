@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model using native HTTP API.
@@ -36,11 +37,8 @@ import reactor.core.publisher.Flux;
  * <p>This implementation uses direct HTTP calls to DashScope API via OkHttp,
  * without depending on the DashScope Java SDK.
  *
- * <p>Supports both text and vision models through automatic endpoint routing:
- * <ul>
- *   <li>Vision models (names starting with "qvq" or containing "-vl") use MultiModalGeneration API
- *   <li>Text models use TextGeneration API
- * </ul>
+ * <p>Supports both text and vision models through automatic endpoint routing.
+ * Use {@link EndpointType} to explicitly control the endpoint selection.
  *
  * <p>Features:
  * <ul>
@@ -59,6 +57,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final boolean stream;
     private final Boolean enableThinking; // nullable
     private final Boolean enableSearch; // nullable
+    private final EndpointType endpointType;
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
 
@@ -66,26 +65,10 @@ public class DashScopeChatModel extends ChatModelBase {
     private final DashScopeHttpClient httpClient;
 
     /**
-     * Check if model requires MultiModal API based on model name.
+     * Creates a new DashScope chat model instance with automatic API type detection.
      *
-     * <p>Model names starting with "qvq" or containing "-vl" use the MultiModal API:
-     * <ul>
-     *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-7b) → MultiModal API</li>
-     *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen-vl-max) → MultiModal API</li>
-     *   <li>All other models → Text Generation API</li>
-     * </ul>
-     *
-     * @return true if model requires MultiModal API
-     */
-    private boolean requiresMultiModalApi() {
-        if (modelName == null) {
-            return false;
-        }
-        return modelName.startsWith("qvq") || modelName.contains("-vl");
-    }
-
-    /**
-     * Creates a new DashScope chat model instance.
+     * <p>This constructor maintains backward compatibility. API type defaults to AUTO,
+     * which detects the endpoint based on model name.
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
@@ -96,6 +79,8 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param baseUrl custom base URL for DashScope API (null for default)
      * @param formatter the message formatter to use (null for default DashScope formatter)
      * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
      */
     public DashScopeChatModel(
             String apiKey,
@@ -106,7 +91,53 @@ public class DashScopeChatModel extends ChatModelBase {
             GenerateOptions defaultOptions,
             String baseUrl,
             Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
-            HttpTransport httpTransport) {
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                null,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     */
+    public DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey) {
         this.modelName = modelName;
         // Thinking mode requires streaming; override stream setting if needed
         if (enableThinking != null && enableThinking && !stream) {
@@ -117,6 +148,7 @@ public class DashScopeChatModel extends ChatModelBase {
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
+        this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
@@ -129,6 +161,8 @@ public class DashScopeChatModel extends ChatModelBase {
                         .transport(transport)
                         .apiKey(apiKey)
                         .baseUrl(baseUrl)
+                        .publicKeyId(publicKeyId)
+                        .publicKey(publicKey)
                         .build();
     }
 
@@ -161,14 +195,20 @@ public class DashScopeChatModel extends ChatModelBase {
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
-        log.debug(
-                "DashScope API call: model={}, multimodal={}", modelName, requiresMultiModalApi());
+        if (log.isDebugEnabled()) {
+            boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
+            log.debug(
+                    "DashScope API call: model={}, endpointType={}, multimodal={}",
+                    modelName,
+                    endpointType,
+                    useMultimodal);
+        }
 
         Flux<ChatResponse> responseFlux = streamWithHttpClient(messages, tools, options);
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "dashscope", log);
+                responseFlux, options, defaultOptions, modelName, "dashscope");
     }
 
     /**
@@ -179,10 +219,10 @@ public class DashScopeChatModel extends ChatModelBase {
     private Flux<ChatResponse> streamWithHttpClient(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant start = Instant.now();
-        boolean useMultimodal = requiresMultiModalApi();
+        boolean useMultimodal = httpClient.requiresMultimodalApi(modelName, endpointType);
 
-        // Get effective options
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        // Merge options with defaultOptions (options takes precedence)
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
         ToolChoice toolChoice = effectiveOptions.getToolChoice();
 
         // Format messages using formatter
@@ -228,25 +268,49 @@ public class DashScopeChatModel extends ChatModelBase {
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
 
+        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
+        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
+            if (formatter instanceof DashScopeChatFormatter chatFmt) {
+                chatFmt.applyCacheControl(request.getInput().getMessages());
+            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
+                multiFmt.applyCacheControl(request.getInput().getMessages());
+            }
+        }
+
+        // Set endpoint type for endpoint selection
+        request.setEndpointType(endpointType);
+
         if (stream) {
             // Streaming mode
-            return httpClient.stream(request)
+            return httpClient.stream(
+                            request,
+                            effectiveOptions.getAdditionalHeaders(),
+                            effectiveOptions.getAdditionalBodyParams(),
+                            effectiveOptions.getAdditionalQueryParams())
                     .map(response -> formatter.parseResponse(response, start));
         } else {
             // Non-streaming mode
             return Flux.defer(
-                    () -> {
-                        try {
-                            DashScopeResponse response = httpClient.call(request);
-                            ChatResponse chatResponse = formatter.parseResponse(response, start);
-                            return Flux.just(chatResponse);
-                        } catch (Exception e) {
-                            log.error("DashScope HTTP client error: {}", e.getMessage(), e);
-                            return Flux.error(
-                                    new RuntimeException(
-                                            "DashScope API call failed: " + e.getMessage(), e));
-                        }
-                    });
+                            () -> {
+                                try {
+                                    DashScopeResponse response =
+                                            httpClient.call(
+                                                    request,
+                                                    effectiveOptions.getAdditionalHeaders(),
+                                                    effectiveOptions.getAdditionalBodyParams(),
+                                                    effectiveOptions.getAdditionalQueryParams());
+                                    ChatResponse chatResponse =
+                                            formatter.parseResponse(response, start);
+                                    return Flux.just(chatResponse);
+                                } catch (Exception e) {
+                                    log.error("DashScope HTTP client error: {}", e.getMessage(), e);
+                                    return Flux.error(
+                                            new ModelException(
+                                                    "DashScope API call failed: " + e.getMessage(),
+                                                    e));
+                                }
+                            })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
     }
 
@@ -264,16 +328,19 @@ public class DashScopeChatModel extends ChatModelBase {
                         + ".defaultOptions(GenerateOptions.builder().thinkingBudget(1000).build())");
         }
 
-        if (Boolean.TRUE.equals(enableThinking)) {
-            request.getParameters().setEnableThinking(true);
-            if (options.getThinkingBudget() != null) {
-                request.getParameters().setThinkingBudget(options.getThinkingBudget());
-            }
+        if (enableThinking != null) {
+            // Explicitly assign value for thinking mode
+            request.getParameters().setEnableThinking(enableThinking);
+        }
+
+        if (Boolean.TRUE.equals(enableThinking) && options.getThinkingBudget() != null) {
+            request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
         // Model-specific settings for search mode
-        if (Boolean.TRUE.equals(enableSearch)) {
-            request.getParameters().setEnableSearch(Boolean.TRUE);
+        if (enableSearch != null) {
+            // Explicitly assign value for search mode
+            request.getParameters().setEnableSearch(enableSearch);
         }
     }
 
@@ -293,10 +360,12 @@ public class DashScopeChatModel extends ChatModelBase {
         private boolean stream = true;
         private Boolean enableThinking;
         private Boolean enableSearch;
+        private EndpointType endpointType;
         private GenerateOptions defaultOptions = null;
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
         private HttpTransport httpTransport;
+        private boolean enableEncrypt = false;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -312,14 +381,11 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets the model name to use.
          *
-         * <p>The model name determines which API is used:
-         * <ul>
-         *   <li>Vision models (qvq* or *-vl*) → MultiModal API</li>
-         *   <li>Text models → Text Generation API</li>
-         * </ul>
+         * <p>The model name determines which API is used when endpointType is AUTO.
          *
          * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
          * @return this builder instance
+         * @see DashScopeHttpClient#isMultimodalModel(String)
          */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -365,6 +431,19 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableSearch(Boolean enableSearch) {
             this.enableSearch = enableSearch;
+            return this;
+        }
+
+        /**
+         * Sets the endpoint type to use for endpoint routing.
+         *
+         * @param endpointType the endpoint type to use (null for AUTO)
+         * @return this builder instance
+         * @see EndpointType
+         * @see DashScopeHttpClient#isMultimodalModel(String)
+         */
+        public Builder endpointType(EndpointType endpointType) {
+            this.endpointType = endpointType;
             return this;
         }
 
@@ -433,16 +512,63 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets whether encryption should be enabled.
+         *
+         * <p>When enabled, the model will automatically fetch the latest RSA public key from
+         * DashScope API and use it to encrypt requests and responses using AES-GCM with RSA key
+         * exchange, following Aliyun's encryption protocol. This enables secure access to Aliyun
+         * models while complying with enterprise security policies (e.g., TLS encryption,
+         * token-based authentication).
+         *
+         * <p>If fetching the public key fails during build(), an exception will be thrown to
+         * prevent creating a model with incorrect encryption configuration.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("qwen-max")
+         *     .enableEncrypt(true)
+         *     .build();
+         * }</pre>
+         *
+         * @param enableEncrypt true to enable encryption (will fetch public key automatically),
+         *     false to disable encryption
+         * @return this builder instance
+         */
+        public Builder enableEncrypt(boolean enableEncrypt) {
+            this.enableEncrypt = enableEncrypt;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
          * applied.
          *
+         * <p>If encryption is enabled, this method will automatically fetch the public key
+         * from DashScope API. If the fetch fails, an exception will be thrown.
+         *
          * @return configured DashScopeChatModel instance
+         * @throws DashScopeHttpClient.DashScopeHttpException if encryption is enabled and
+         *     public key fetching fails
          */
         public DashScopeChatModel build() {
             GenerateOptions effectiveOptions =
                     ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
+
+            String finalPublicKeyId = null;
+            String finalPublicKey = null;
+
+            if (enableEncrypt) {
+                HttpTransport transport =
+                        httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+                DashScopeHttpClient.PublicKeyResult publicKeyResult =
+                        DashScopeHttpClient.fetchPublicKey(apiKey, baseUrl, transport);
+                finalPublicKeyId = publicKeyResult.publicKeyId();
+                finalPublicKey = publicKeyResult.publicKey();
+            }
 
             return new DashScopeChatModel(
                     apiKey,
@@ -450,10 +576,13 @@ public class DashScopeChatModel extends ChatModelBase {
                     stream,
                     enableThinking,
                     enableSearch,
+                    endpointType,
                     effectiveOptions,
                     baseUrl,
                     formatter,
-                    httpTransport);
+                    httpTransport,
+                    finalPublicKeyId,
+                    finalPublicKey);
         }
     }
 }

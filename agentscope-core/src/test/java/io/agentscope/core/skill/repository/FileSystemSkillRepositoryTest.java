@@ -1,0 +1,344 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.skill.repository;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.core.skill.AgentSkill;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * Unit tests for FileSystemSkillRepository.
+ *
+ * <p>Tests file system based skill repository functionality including loading, saving,
+ * deleting skills and managing nested resource structures.
+ *
+ * <p>Tagged as "unit" - fast running tests without external dependencies.
+ */
+@Tag("unit")
+@DisplayName("FileSystemSkillRepository Unit Tests")
+class FileSystemSkillRepositoryTest {
+
+    @TempDir Path tempDir;
+
+    private Path skillsBaseDir;
+    private FileSystemSkillRepository repository;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        skillsBaseDir = tempDir.resolve("skills");
+        Files.createDirectories(skillsBaseDir);
+
+        // Create a sample skill directory structure
+        createSampleSkill("test-skill", "Test Skill", "This is a test skill");
+        createSampleSkill("another-skill", "Another Skill", "This is another skill");
+
+        repository = new FileSystemSkillRepository(skillsBaseDir);
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Cleanup is handled by @TempDir
+    }
+
+    // ==================== Constructor Tests ====================
+
+    @Test
+    @DisplayName("Should create repository with valid base directory")
+    void testConstructor_ValidBaseDir() {
+        assertNotNull(repository);
+        assertEquals("filesystem", repository.getRepositoryInfo().getType());
+        assertTrue(repository.getRepositoryInfo().isWritable());
+    }
+
+    @Test
+    @DisplayName("Should throw exception when base directory is null")
+    void testConstructor_NullBaseDir() {
+        assertThrows(IllegalArgumentException.class, () -> new FileSystemSkillRepository(null));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when base directory does not exist")
+    void testConstructor_NonExistentBaseDir() {
+        Path nonExistent = tempDir.resolve("non-existent");
+        assertThrows(
+                IllegalArgumentException.class, () -> new FileSystemSkillRepository(nonExistent));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when base directory is a file")
+    void testConstructor_BaseDirIsFile() throws IOException {
+        Path file = tempDir.resolve("file.txt");
+        Files.writeString(file, "content");
+        assertThrows(IllegalArgumentException.class, () -> new FileSystemSkillRepository(file));
+    }
+
+    @Test
+    @DisplayName("Should not throw exception when base directory is empty")
+    void testConstructor_EmptyBaseDir() throws IOException {
+        Path emptyDir = tempDir.resolve("empty");
+        Files.createDirectories(emptyDir);
+        FileSystemSkillRepository fileSystemSkillRepository =
+                new FileSystemSkillRepository(emptyDir);
+        assertNotNull(fileSystemSkillRepository);
+    }
+
+    @Test
+    @DisplayName("Should transform relative path to absolute in constructor")
+    void testConstructor_RelativePath() throws IOException {
+        Path relativePath = Path.of("relative-skills");
+        Files.createDirectories(relativePath);
+
+        try {
+            FileSystemSkillRepository fileSystemSkillRepository =
+                    new FileSystemSkillRepository(relativePath);
+            assertNotNull(fileSystemSkillRepository);
+            assertEquals(
+                    relativePath.toAbsolutePath().normalize().toString(),
+                    fileSystemSkillRepository.getRepositoryInfo().getLocation());
+        } finally {
+            if (Files.exists(relativePath)) {
+                Files.delete(relativePath);
+            }
+        }
+    }
+
+    // ==================== getSource Tests ====================
+
+    @Test
+    @DisplayName("Should return default source with format: filesystem-parent_child")
+    void testGetSource_DefaultSource() {
+        assertTrue(repository.getSource().matches("filesystem-[^_]+_skills"));
+    }
+
+    @Test
+    @DisplayName("Should return custom source when provided")
+    void testGetSource_CustomSource() {
+        FileSystemSkillRepository repo =
+                new FileSystemSkillRepository(skillsBaseDir, true, "custom-source");
+        assertEquals("custom-source", repo.getSource());
+    }
+
+    @Test
+    @DisplayName("Should use default source when null")
+    void testGetSource_Null() {
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(skillsBaseDir, true, null);
+        assertTrue(repo.getSource().startsWith("filesystem-"));
+    }
+
+    // ==================== buildDefaultSourceSuffix Tests ====================
+
+    @Test
+    @DisplayName("Should build source: parent_child")
+    void testBuildSourceSuffix_TwoLevels() throws IOException {
+        Path dir = tempDir.resolve("parent").resolve("child");
+        Files.createDirectories(dir);
+        assertEquals("filesystem-parent_child", new FileSystemSkillRepository(dir).getSource());
+    }
+
+    @Test
+    @DisplayName("Should use last two levels for deep paths")
+    void testBuildSourceSuffix_DeepPath() throws IOException {
+        Path dir = tempDir.resolve("a/b/c/d");
+        Files.createDirectories(dir);
+        assertEquals("filesystem-c_d", new FileSystemSkillRepository(dir).getSource());
+    }
+
+    @Test
+    @DisplayName("Should preserve special chars in path")
+    void testBuildSourceSuffix_SpecialChars() throws IOException {
+        Path dir = tempDir.resolve("my-project").resolve("skills_v1.0");
+        Files.createDirectories(dir);
+        assertEquals(
+                "filesystem-my-project_skills_v1.0",
+                new FileSystemSkillRepository(dir).getSource());
+    }
+
+    // ==================== getRepositoryInfo Tests ====================
+
+    @Test
+    @DisplayName("Should return correct repository info")
+    void testGetRepositoryInfo() {
+        AgentSkillRepositoryInfo info = repository.getRepositoryInfo();
+        assertNotNull(info);
+        assertEquals("filesystem", info.getType());
+        assertEquals(skillsBaseDir.toString(), info.getLocation());
+        assertTrue(info.isWritable());
+    }
+
+    // ==================== Writeable Tests ====================
+
+    @Test
+    @DisplayName("Should have writeable true by default")
+    void testWriteable_DefaultTrue() {
+        assertTrue(repository.isWriteable());
+        assertTrue(repository.getRepositoryInfo().isWritable());
+    }
+
+    @Test
+    @DisplayName("Should update writeable flag")
+    void testSetWriteable() {
+        repository.setWriteable(false);
+        assertFalse(repository.isWriteable());
+        assertFalse(repository.getRepositoryInfo().isWritable());
+
+        repository.setWriteable(true);
+        assertTrue(repository.isWriteable());
+        assertTrue(repository.getRepositoryInfo().isWritable());
+    }
+
+    @Test
+    @DisplayName("Should not save when repository is read-only")
+    void testSave_ReadOnly() {
+        repository.setWriteable(false);
+        assertFalse(repository.save(null, false));
+    }
+
+    @Test
+    @DisplayName("Should not delete when repository is read-only")
+    void testDelete_ReadOnly() {
+        repository.setWriteable(false);
+        assertFalse(repository.delete("test-skill"));
+    }
+
+    // ==================== Save Tests ====================
+
+    @Test
+    @DisplayName("Should save a new skill successfully")
+    void testSave_NewSkill() {
+        AgentSkill skill = new AgentSkill("new-skill", "New Skill", "New skill content", null);
+
+        assertTrue(repository.save(List.of(skill), false));
+        assertTrue(repository.skillExists("new-skill"));
+
+        AgentSkill loaded = repository.getSkill("new-skill");
+        assertNotNull(loaded);
+        assertEquals("new-skill", loaded.getName());
+        assertEquals("New Skill", loaded.getDescription());
+        assertTrue(loaded.getSkillContent().contains("New skill content"));
+    }
+
+    @Test
+    @DisplayName("Should save skill with resources")
+    void testSave_WithResources() {
+        Map<String, String> resources =
+                Map.of(
+                        "references/guide.md", "# Guide\nSome guide content",
+                        "config.json", "{\"key\": \"value\"}");
+        AgentSkill skill =
+                new AgentSkill(
+                        "resource-skill", "Resource Skill", "Skill with resources", resources);
+
+        assertTrue(repository.save(List.of(skill), false));
+
+        AgentSkill loaded = repository.getSkill("resource-skill");
+        assertNotNull(loaded);
+        assertTrue(loaded.getResources().containsKey("references/guide.md"));
+        assertTrue(loaded.getResources().containsKey("config.json"));
+        assertEquals("{\"key\": \"value\"}", loaded.getResources().get("config.json"));
+    }
+
+    @Test
+    @DisplayName("Should fail to save existing skill without force")
+    void testSave_ExistingWithoutForce() {
+        AgentSkill skill = new AgentSkill("test-skill", "Updated", "Updated content", null);
+
+        assertFalse(repository.save(List.of(skill), false));
+    }
+
+    @Test
+    @DisplayName("Should overwrite existing skill with force")
+    void testSave_ExistingWithForce() {
+        AgentSkill skill = new AgentSkill("test-skill", "Updated Skill", "Updated content", null);
+
+        assertTrue(repository.save(List.of(skill), true));
+
+        AgentSkill loaded = repository.getSkill("test-skill");
+        assertNotNull(loaded);
+        assertEquals("Updated Skill", loaded.getDescription());
+        assertTrue(loaded.getSkillContent().contains("Updated content"));
+    }
+
+    @Test
+    @DisplayName("Should return false when saving null list")
+    void testSave_NullList() {
+        assertFalse(repository.save(null, false));
+    }
+
+    @Test
+    @DisplayName("Should return false when saving empty list")
+    void testSave_EmptyList() {
+        assertFalse(repository.save(Collections.emptyList(), false));
+    }
+
+    @Test
+    @DisplayName("Should save multiple skills at once")
+    void testSave_MultipleSkills() {
+        AgentSkill skill1 = new AgentSkill("multi-skill-1", "Multi 1", "Content 1", null);
+        AgentSkill skill2 = new AgentSkill("multi-skill-2", "Multi 2", "Content 2", null);
+
+        assertTrue(repository.save(List.of(skill1, skill2), false));
+        assertTrue(repository.skillExists("multi-skill-1"));
+        assertTrue(repository.skillExists("multi-skill-2"));
+    }
+
+    @Test
+    @DisplayName("Saved skill source should not contain colon to avoid Windows path issues")
+    void testSave_SourceHasNoColon() {
+        AgentSkill skill = new AgentSkill("colon-test-skill", "Colon Test", "Content", null);
+
+        assertTrue(repository.save(List.of(skill), false));
+
+        String source = repository.getSource();
+        assertFalse(source.contains(":"), "Source '" + source + "' should not contain colon");
+        assertTrue(source.startsWith("filesystem-"));
+    }
+
+    private void createSampleSkill(String name, String description, String content)
+            throws IOException {
+        Path skillDir = skillsBaseDir.resolve(name);
+        Files.createDirectories(skillDir);
+
+        String skillMd =
+                "---\n"
+                        + "name: "
+                        + name
+                        + "\n"
+                        + "description: "
+                        + description
+                        + "\n"
+                        + "---\n"
+                        + content;
+
+        Files.writeString(skillDir.resolve("SKILL.md"), skillMd, StandardCharsets.UTF_8);
+    }
+}

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,18 +15,17 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
-import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.tool.subagent.SubAgentProvider;
+import io.agentscope.core.tool.subagent.SubAgentTool;
 import java.lang.reflect.Method;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,7 +52,7 @@ import reactor.core.publisher.Mono;
  *   <li>ToolSchemaGenerator: Generates JSON schemas for tool parameters</li>
  *   <li>ToolMethodInvoker: Handles method invocation and parameter conversion</li>
  *   <li>ToolResultConverter: Converts method results to ToolResultBlock</li>
- *   <li>ParallelToolExecutor: Handles parallel/sequential tool execution</li>
+ *   <li>ToolExecutor: Handles parallel/sequential tool execution with validation</li>
  * </ul>
  *
  * <p><b>Features:</b>
@@ -64,7 +63,7 @@ import reactor.core.publisher.Mono;
  *   <li>MCP (Model Context Protocol) client support for external tool providers</li>
  * </ul>
  */
-public class Toolkit extends StateModuleBase {
+public class Toolkit {
 
     private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
 
@@ -73,12 +72,10 @@ public class Toolkit extends StateModuleBase {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
-    private final ToolResultConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
-    private final ParallelToolExecutor executor;
+    private final ToolExecutor executor;
 
     /**
      * Create a Toolkit with default configuration (sequential execution using Reactor).
@@ -94,8 +91,7 @@ public class Toolkit extends StateModuleBase {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        this.responseConverter = new ToolResultConverter(objectMapper);
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        this.methodInvoker = new ToolMethodInvoker(new DefaultToolResultConverter());
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -107,27 +103,17 @@ public class Toolkit extends StateModuleBase {
                                         tool, groupName, null, mcpClientName, presetParameters));
 
         // Create executor based on configuration
-        if (config.hasCustomExecutor()) {
-            this.executor = new ParallelToolExecutor(this, config.getExecutorService());
+        if (config != null && config.hasCustomExecutor()) {
+            this.executor =
+                    new ToolExecutor(
+                            this,
+                            toolRegistry,
+                            groupManager,
+                            this.config,
+                            config.getExecutorService());
         } else {
-            this.executor = new ParallelToolExecutor(this);
+            this.executor = new ToolExecutor(this, toolRegistry, groupManager, this.config);
         }
-
-        // Register state management for activeGroups with custom serialization
-        // Since we don't have an activeGroups field, we provide functions to get/set from
-        // groupManager
-        registerState(
-                "activeGroups",
-                obj -> groupManager.getActiveGroups(), // toJson: get from groupManager
-                obj -> {
-                    // fromJson: set to groupManager
-                    if (obj instanceof List) {
-                        @SuppressWarnings("unchecked")
-                        List<String> groups = (List<String>) obj;
-                        groupManager.setActiveGroups(groups);
-                    }
-                    return obj;
-                });
     }
 
     /**
@@ -240,8 +226,7 @@ public class Toolkit extends StateModuleBase {
 
         // Create registered wrapper with preset parameters
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(
-                        tool, groupName, extendedModel, mcpClientName, presetParameters);
+                new RegisteredToolFunction(tool, extendedModel, mcpClientName, presetParameters);
 
         // Register in toolRegistry
         toolRegistry.registerTool(toolName, tool, registered);
@@ -276,6 +261,68 @@ public class Toolkit extends StateModuleBase {
         return toolRegistry.getToolNames();
     }
 
+    // ==================== External Tool Support ====================
+
+    /**
+     * Register an external tool using only its schema definition.
+     *
+     * <p>External tools are tools that will be executed outside the framework. When a model
+     * returns a call to an external tool, the framework will not execute it but instead
+     * return the tool call to the user via a message with
+     * {@link io.agentscope.core.message.GenerateReason#TOOL_SUSPENDED}.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * ToolSchema schema = ToolSchema.builder()
+     *     .name("query_database")
+     *     .description("Query external database")
+     *     .parameters(Map.of(
+     *         "type", "object",
+     *         "properties", Map.of("sql", Map.of("type", "string")),
+     *         "required", List.of("sql")
+     *     ))
+     *     .build();
+     *
+     * toolkit.registerSchema(schema);
+     * }</pre>
+     *
+     * @param schema The tool schema containing name, description, and parameters
+     * @throws NullPointerException if schema is null
+     * @see SchemaOnlyTool
+     * @see #isExternalTool(String)
+     */
+    public void registerSchema(ToolSchema schema) {
+        registerAgentTool(new SchemaOnlyTool(schema));
+    }
+
+    /**
+     * Register multiple external tools using their schema definitions.
+     *
+     * @param schemas List of tool schemas to register
+     * @throws NullPointerException if schemas is null
+     * @see #registerSchema(ToolSchema)
+     */
+    public void registerSchemas(List<ToolSchema> schemas) {
+        if (schemas != null) {
+            schemas.forEach(this::registerSchema);
+        }
+    }
+
+    /**
+     * Check if a tool is an external tool (schema-only, requires user execution).
+     *
+     * <p>External tools are registered using {@link #registerSchema(ToolSchema)} and should
+     * be executed outside the framework. When this method returns true, the framework will
+     * skip execution and return the tool call to the user.
+     *
+     * @param toolName The name of the tool to check
+     * @return true if the tool is an external tool (SchemaOnlyTool), false otherwise
+     */
+    public boolean isExternalTool(String toolName) {
+        AgentTool tool = getTool(toolName);
+        return tool instanceof SchemaOnlyTool;
+    }
+
     /**
      * Get tool schemas as ToolSchema objects.
      * Updated to respect active tool groups.
@@ -304,6 +351,9 @@ public class Toolkit extends StateModuleBase {
                         ? toolAnnotation.description()
                         : "Tool: " + toolName;
 
+        // Parse custom converter from annotation
+        ToolResultConverter customConverter = parseConverterFromAnnotation(toolAnnotation);
+
         AgentTool tool =
                 new AgentTool() {
                     @Override
@@ -328,7 +378,9 @@ public class Toolkit extends StateModuleBase {
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        return methodInvoker.invokeAsync(toolObject, method, param);
+                        // Pass custom converter to method invoker
+                        return methodInvoker.invokeAsync(
+                                toolObject, method, param, customConverter);
                     }
                 };
 
@@ -336,19 +388,73 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Parses and instantiates converter from @Tool annotation.
+     *
+     * @param toolAnnotation The Tool annotation
+     * @return A ToolResultConverter instance, or null to use default
+     */
+    private ToolResultConverter parseConverterFromAnnotation(Tool toolAnnotation) {
+        if (toolAnnotation == null) {
+            return null;
+        }
+
+        try {
+            Class<? extends ToolResultConverter> converterClass = toolAnnotation.converter();
+            // If explicitly set to DefaultToolResultConverter, return null to use the default
+            if (converterClass == DefaultToolResultConverter.class) {
+                return null;
+            }
+            return instantiateConverter(converterClass);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to create converter from @Tool annotation", e);
+        }
+    }
+
+    /**
+     * Instantiates a converter class with proper constructor resolution. Tries: 1) no-arg
+     * constructor, 2) constructor with ObjectMapper
+     *
+     * @param clazz The converter class to instantiate
+     * @return A new converter instance
+     */
+    private ToolResultConverter instantiateConverter(Class<? extends ToolResultConverter> clazz)
+            throws Exception {
+        // Try no-arg constructor first
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(
+                    "Converter " + clazz.getName() + " must have either a no-arg constructor");
+        }
+    }
+
+    /**
      * Set the chunk callback for streaming tool responses.
      *
-     * <p>This is an internal method used by ReActAgent to receive streaming updates from tool
-     * executions. When tools emit progress updates via ToolEmitter, this callback will be invoked
-     * with the tool use block and the incremental result chunk.
-     *
-     * <p><b>Note:</b> This method is primarily intended for internal framework use. Most users
-     * should not need to call this directly as it is automatically configured by the agent.
+     * <p>This callback is preserved when the toolkit is deep-copied and will be invoked whenever
+     * tools emit progress updates via ToolEmitter. When the toolkit is used by ReActAgent, the
+     * user callback is invoked in addition to the framework's internal chunk callback.
      *
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
-        methodInvoker.setChunkCallback(callback);
+        executor.setChunkCallback(callback);
+    }
+
+    /**
+     * Set the framework-internal chunk callback for streaming tool responses.
+     *
+     * <p>This method is used by ReActAgent to forward tool chunks into ActingChunkEvent hooks
+     * without overwriting any user callback configured via {@link #setChunkCallback(BiConsumer)}.
+     *
+     * <p><b>Internal API - Not recommended for external use.</b> This method is intended for
+     * framework components such as {@link io.agentscope.core.ReActAgent}. External callers should
+     * use {@link #setChunkCallback(BiConsumer)} instead.
+     *
+     * @param callback Internal callback to invoke when tools emit chunks via ToolEmitter
+     */
+    public void setInternalChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        executor.setInternalChunkCallback(callback);
     }
 
     /**
@@ -376,79 +482,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        // TODO replace with executeToolCore
-        return TracerRegistry.get().callTool(this, param, () -> executeToolCore(param));
-    }
-
-    /**
-     * Core tool execution logic (called by both public API and ParallelToolExecutor).
-     *
-     * <p>This is the single source of truth for tool execution business logic. Package-private for
-     * internal use.
-     *
-     * @param param Tool call parameters containing all execution information
-     * @return Mono containing ToolResultBlock
-     */
-    Mono<ToolResultBlock> executeToolCore(ToolCallParam param) {
-        ToolUseBlock toolCall = param.getToolUseBlock();
-        AgentTool tool = getTool(toolCall.getName());
-        if (tool == null) {
-            return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
-        }
-
-        // Check if tool is in active group
-        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
-        if (registered != null) {
-            String groupName = registered.getGroupName();
-            if (!groupManager.isInActiveGroup(groupName)) {
-                String errorMsg =
-                        String.format(
-                                "Unauthorized tool call: '%s' is not available (group '%s' is not"
-                                        + " active)",
-                                toolCall.getName(), groupName != null ? groupName : "ungrouped");
-                logger.warn(errorMsg);
-                return Mono.just(ToolResultBlock.error(errorMsg));
-            }
-        }
-
-        // Merge preset parameters with provided input
-        // Preset parameters have lower priority and can be overridden by param.input
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
-        // If param already has merged input, use it; otherwise merge from toolUseBlock
-        if (param.getInput() != null && !param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (toolCall.getInput() != null) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-
-        // Merge context with toolkit's default context
-        // Ensure toolkit default context is always included as the base
-        ToolExecutionContext toolkitContext = config.getDefaultContext();
-        ToolExecutionContext finalContext =
-                ToolExecutionContext.merge(param.getContext(), toolkitContext);
-
-        // Build final execution param with merged input and context
-        ToolCallParam executionParam =
-                ToolCallParam.builder()
-                        .toolUseBlock(toolCall)
-                        .input(mergedInput)
-                        .agent(param.getAgent())
-                        .context(finalContext)
-                        .build();
-
-        return tool.callAsync(executionParam)
-                .onErrorResume(
-                        e -> {
-                            String errorMsg =
-                                    e.getMessage() != null
-                                            ? e.getMessage()
-                                            : e.getClass().getSimpleName();
-                            return Mono.just(
-                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
-                        });
+        return executor.execute(param);
     }
 
     /**
@@ -480,7 +514,7 @@ public class Toolkit extends StateModuleBase {
                         ExecutionConfig.mergeConfigs(
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
-        return executor.executeTools(
+        return executor.executeAll(
                 toolCalls, config.isParallel(), effectiveConfig, agent, agentContext);
     }
 
@@ -568,6 +602,21 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Atomically remove a tool only if the registered instance is the expected one.
+     *
+     * @param toolName Name of the tool to remove
+     * @param expected The expected AgentTool instance (identity comparison)
+     * @return true if the tool was removed, false if it was already replaced or absent
+     */
+    public boolean removeToolIfSame(String toolName, AgentTool expected) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return false;
+        }
+        return toolRegistry.removeToolIfSame(toolName, expected);
+    }
+
+    /**
      * Remove tool groups and all tools within them.
      *
      * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning
@@ -597,6 +646,17 @@ public class Toolkit extends StateModuleBase {
      */
     public List<String> getActiveGroups() {
         return groupManager.getActiveGroups();
+    }
+
+    /**
+     * Set the active tool groups.
+     *
+     * <p>This method is typically called by ReActAgent when restoring state from a session.
+     *
+     * @param groups List of group names to set as active
+     */
+    public void setActiveGroups(List<String> groups) {
+        groupManager.setActiveGroups(groups);
     }
 
     /**
@@ -647,14 +707,29 @@ public class Toolkit extends StateModuleBase {
         logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
+    // ==================== Deep Copy ====================
+
     /**
-     * Get the component name for session management.
+     * Create a deep copy of this toolkit.
      *
-     * @return "toolkit" as the standard component name
+     * <p>Note: User-defined chunk callbacks are preserved during copy so they continue to work
+     * when the toolkit is passed into ReActAgent.Builder and copied internally.
+     *
+     * @return A new Toolkit instance with copied state
      */
-    @Override
-    public String getComponentName() {
-        return "toolkit";
+    public Toolkit copy() {
+        Toolkit copy = new Toolkit(this.config);
+
+        // Copy all registered tools
+        this.toolRegistry.copyTo(copy.toolRegistry);
+
+        // Copy all tool groups and their states
+        this.groupManager.copyTo(copy.groupManager);
+
+        // Preserve user-defined chunk callbacks across toolkit copies (Issue #870)
+        copy.executor.setChunkCallback(this.executor.getChunkCallback());
+
+        return copy;
     }
 
     /**
@@ -668,6 +743,8 @@ public class Toolkit extends StateModuleBase {
         private Object toolObject;
         private AgentTool agentTool;
         private McpClientWrapper mcpClientWrapper;
+        private SubAgentProvider<?> subAgentProvider;
+        private SubAgentConfig subAgentConfig;
         private String groupName;
         private Map<String, Map<String, Object>> presetParameters;
         private ExtendedModel extendedModel;
@@ -685,11 +762,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration tool(Object toolObject) {
-            if (this.agentTool != null || this.mcpClientWrapper != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
-            }
             this.toolObject = toolObject;
             return this;
         }
@@ -701,11 +773,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration agentTool(AgentTool agentTool) {
-            if (this.toolObject != null || this.mcpClientWrapper != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
-            }
             this.agentTool = agentTool;
             return this;
         }
@@ -717,12 +784,77 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            if (this.toolObject != null || this.agentTool != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
-            }
             this.mcpClientWrapper = mcpClientWrapper;
+            return this;
+        }
+
+        /**
+         * Register a sub-agent as a tool with default configuration.
+         *
+         * <p>The tool name and description are derived from the agent's properties. Uses a single
+         * "task" string parameter by default.
+         *
+         * <p>Example:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(() -> ReActAgent.builder()
+         *         .name("ResearchAgent")
+         *         .model(model)
+         *         .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each invocation)
+         * @return This builder for chaining
+         */
+        public ToolRegistration subAgent(SubAgentProvider<?> provider) {
+            return subAgent(provider, null);
+        }
+
+        /**
+         * Register a sub-agent as a tool with custom configuration.
+         *
+         * <p>Sub-agents support multi-turn conversation with session-based state management. The
+         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
+         * for continuing existing conversations).
+         *
+         * <p>Example with custom tool name and description:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Expert").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .toolName("ask_expert")
+         *             .description("Ask the domain expert a question")
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * <p>Example with persistent session for cross-process conversations:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .session(new JsonSession(Path.of("sessions")))
+         *             .forwardEvents(true)
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each session)
+         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
+         *     derived from agent name, InMemorySession for state, events forwarded)
+         * @return This builder for chaining
+         * @see SubAgentConfig
+         * @see SubAgentConfig#defaults()
+         */
+        public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
+            this.subAgentProvider = provider;
+            this.subAgentConfig = config;
             return this;
         }
 
@@ -799,9 +931,27 @@ public class Toolkit extends StateModuleBase {
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient() or subAgent() was set
+         * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or subAgent().
          */
         public void apply() {
+            int toolCount = 0;
+            if (toolObject != null) toolCount++;
+            if (agentTool != null) toolCount++;
+            if (mcpClientWrapper != null) toolCount++;
+            if (subAgentProvider != null) toolCount++;
+
+            if (toolCount == 0) {
+                throw new IllegalStateException(
+                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
+                                + " apply()");
+            }
+            if (toolCount > 1) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+
             if (toolObject != null) {
                 toolkit.registerTool(toolObject, groupName, extendedModel, presetParameters);
             } else if (agentTool != null) {
@@ -820,9 +970,9 @@ public class Toolkit extends StateModuleBase {
                                 groupName,
                                 presetParameters)
                         .block();
-            } else {
-                throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), or mcpClient() before apply()");
+            } else if (subAgentProvider != null) {
+                SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
+                toolkit.registerAgentTool(subAgentTool, groupName, extendedModel, null, null);
             }
         }
     }

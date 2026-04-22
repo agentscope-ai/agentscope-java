@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,17 +21,24 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.IndexParam;
+import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.database.request.CreateDatabaseReq;
+import io.milvus.v2.service.database.response.ListDatabasesResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
 import io.milvus.v2.service.vector.request.SearchReq;
@@ -64,6 +71,7 @@ class MilvusStoreTest {
 
     private static final String TEST_URI = "http://localhost:19530";
     private static final String TEST_COLLECTION = "test_collection";
+    private static final String TEST_DATABASE = "test_database";
     private static final int TEST_DIMENSIONS = 3;
 
     private MilvusStore store;
@@ -279,6 +287,73 @@ class MilvusStoreTest {
         assertNotNull(builder);
     }
 
+    @Test
+    @DisplayName("Should allow null database name")
+    void testBuilderNullDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(null);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should allow empty database name")
+    void testBuilderEmptyDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName("");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should allow blank database name")
+    void testBuilderBlankDatabaseName() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName("  ");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should create store with database properties")
+    void testBuilderDatabaseProperties() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(TEST_DATABASE)
+                        .databaseProperties(Map.of("database.replica.number", "1"));
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    @DisplayName("Should create store with empty properties")
+    void testBuilderEmptyDatabaseProperties() {
+        MilvusStore.Builder builder =
+                MilvusStore.builder()
+                        .uri(TEST_URI)
+                        .collectionName(TEST_COLLECTION)
+                        .dimensions(TEST_DIMENSIONS)
+                        .databaseName(TEST_DATABASE)
+                        .databaseProperties(Map.of());
+
+        assertNotNull(builder);
+    }
+
     // ==================== Mock-based Functional Tests ====================
 
     private MilvusStore createMockStore() throws VectorStoreException {
@@ -292,6 +367,33 @@ class MilvusStoreTest {
                     .uri(TEST_URI)
                     .collectionName(TEST_COLLECTION)
                     .dimensions(TEST_DIMENSIONS)
+                    .build();
+        }
+    }
+
+    private MilvusStore createMockStoreWithDatabase(
+            String databaseName, Map<String, String> databaseProperties)
+            throws VectorStoreException {
+        try (MockedConstruction<MilvusClientV2> ignored =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            return MilvusStore.builder()
+                    .uri(TEST_URI)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .databaseName(databaseName)
+                    .databaseProperties(databaseProperties)
                     .build();
         }
     }
@@ -325,6 +427,214 @@ class MilvusStoreTest {
                             .build();
             assertNotNull(store);
             store.close();
+        }
+    }
+
+    @Test
+    @DisplayName("Should create new database when not exists")
+    void testBuildWithNewDatabase() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, null);
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with existing database")
+    void testBuildWithExistingDatabase() throws VectorStoreException {
+        store = createMockStoreWithDatabase("default", null);
+        assertNotNull(store);
+        assertEquals("default", store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with database properties")
+    void testBuildWithDatabaseProperties() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, Map.of("database.replica.number", "1"));
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should create store with empty database properties")
+    void testBuildWithEmptyDatabaseProperties() throws VectorStoreException {
+        store = createMockStoreWithDatabase(TEST_DATABASE, Map.of());
+        assertNotNull(store);
+        assertEquals(TEST_DATABASE, store.getDatabaseName());
+    }
+
+    @Test
+    @DisplayName("Should use default if databaseName not defined")
+    void testUseDefaultDatabase() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was not called
+            verify(client, never()).listDatabases();
+            // Verify createDatabase was not called
+            verify(client, never()).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use default database
+            verify(client).useDatabase("default");
+        }
+    }
+
+    @Test
+    @DisplayName("Should create new database when not exists")
+    void testCreateNewDatabase() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName(TEST_DATABASE)
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was called
+            verify(client).listDatabases();
+            // Verify createDatabase was called
+            verify(client).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use new database
+            verify(client).useDatabase(TEST_DATABASE);
+        }
+    }
+
+    @Test
+    @DisplayName("Should not create new database when exists")
+    void testNotCreateDatabaseIfExists() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("exists_database"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("exists_database")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify listDatabases was called
+            verify(client).listDatabases();
+            // Verify createDatabase was not called
+            verify(client, never()).createDatabase(any(CreateDatabaseReq.class));
+            // Verify use default database
+            verify(client).useDatabase("exists_database");
+        }
+    }
+
+    @Test
+    @DisplayName("Should create new collection when not exists")
+    void testCreateNewCollection() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(false);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                            doNothing().when(mock).createCollection(any(CreateCollectionReq.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("default")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify createCollection was called
+            verify(client).createCollection(any(CreateCollectionReq.class));
+        }
+    }
+
+    @Test
+    @DisplayName("Should not create new collection when exists")
+    void testNotCreateCollectionIfExists() throws Exception {
+        try (MockedConstruction<MilvusClientV2> mockConstruction =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            ListDatabasesResp listDatabasesResp = mock(ListDatabasesResp.class);
+                            when(listDatabasesResp.getDatabaseNames())
+                                    .thenReturn(List.of("default"));
+                            when(mock.listDatabases()).thenReturn(listDatabasesResp);
+
+                            doNothing().when(mock).createDatabase(any(CreateDatabaseReq.class));
+                            doNothing().when(mock).useDatabase(any(String.class));
+                        })) {
+            MilvusStore store =
+                    MilvusStore.builder()
+                            .uri(TEST_URI)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .databaseName("default")
+                            .databaseProperties(Map.of())
+                            .build();
+
+            assertNotNull(store);
+            MilvusClientV2 client = mockConstruction.constructed().get(0);
+            // Verify createCollection was called
+            verify(client, never()).createCollection(any(CreateCollectionReq.class));
         }
     }
 
@@ -538,7 +848,9 @@ class MilvusStoreTest {
     void testSearchNullQueryEmbedding() throws VectorStoreException {
         store = createMockStoreForSearch();
 
-        StepVerifier.create(store.search(null, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(null).limit(10).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -549,7 +861,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] wrongDimensionQuery = new double[] {1.0, 2.0}; // Wrong dimension
 
-        StepVerifier.create(store.search(wrongDimensionQuery, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(wrongDimensionQuery)
+                                        .limit(10)
+                                        .build()))
                 .expectError(VectorStoreException.class)
                 .verify();
     }
@@ -560,7 +877,9 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 0, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(0).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -571,7 +890,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, -1, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(-1)
+                                        .build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -582,7 +906,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -597,7 +926,13 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, 0.5))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.5)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -608,7 +943,13 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, 0.0))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.0)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -619,7 +960,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearchWithResults();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -638,7 +984,13 @@ class MilvusStoreTest {
         double[] query = new double[] {1.0, 0.0, 0.0};
 
         // Score threshold higher than result score (0.9)
-        StepVerifier.create(store.search(query, 10, 0.95))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.95)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results);
@@ -655,7 +1007,12 @@ class MilvusStoreTest {
 
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .expectError(VectorStoreException.class)
                 .verify();
     }
@@ -666,7 +1023,12 @@ class MilvusStoreTest {
         store = createMockStoreForSearch();
         double[] query = new double[] {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 10000, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10000)
+                                        .build()))
                 .assertNext(Assertions::assertNotNull)
                 .verifyComplete();
     }
@@ -756,5 +1118,188 @@ class MilvusStoreTest {
         store.close();
 
         StepVerifier.create(store.delete("doc-1")).expectError(VectorStoreException.class).verify();
+    }
+
+    // ==================== Payload Functionality Tests ====================
+
+    private MilvusStore createMockStoreForPayloadTest() throws VectorStoreException {
+        try (MockedConstruction<MilvusClientV2> ignored =
+                mockConstruction(
+                        MilvusClientV2.class,
+                        (mock, context) -> {
+                            when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+
+                            // Mock insert
+                            InsertResp insertResp = mock(InsertResp.class);
+                            when(insertResp.getInsertCnt()).thenReturn(1L);
+                            when(mock.insert(any(InsertReq.class))).thenReturn(insertResp);
+
+                            // Mock search with payload
+                            SearchResp.SearchResult mockResult =
+                                    mock(SearchResp.SearchResult.class);
+                            when(mockResult.getScore()).thenReturn(0.95f);
+
+                            Map<String, Object> entity = new HashMap<>();
+                            entity.put("doc_id", "doc-payload-test");
+                            entity.put("chunk_id", "0");
+                            entity.put(
+                                    "content",
+                                    "{\"type\":\"text\",\"text\":\"Test document content\"}");
+                            entity.put(
+                                    "payload",
+                                    "{\"filename\":\"report.pdf\",\"department\":\"Engineering\",\"author\":\"John"
+                                        + " Doe\",\"priority\":1,\"tags\":[\"urgent\",\"quarterly\"],\"custom\":{\"author\":\"Alice\",\"version\":2,\"active\":true,\"tags\":[\"important\",\"reviewed\"]}}");
+                            when(mockResult.getEntity()).thenReturn(entity);
+
+                            SearchResp searchResp = mock(SearchResp.class);
+                            when(searchResp.getSearchResults())
+                                    .thenReturn(List.of(List.of(mockResult)));
+                            when(mock.search(any(SearchReq.class))).thenReturn(searchResp);
+                        })) {
+            return MilvusStore.builder()
+                    .uri(TEST_URI)
+                    .collectionName(TEST_COLLECTION)
+                    .dimensions(TEST_DIMENSIONS)
+                    .build();
+        }
+    }
+
+    @Test
+    @DisplayName("Should store and load document with custom payload")
+    void testDocumentWithPayload() throws VectorStoreException {
+        store = createMockStoreForPayloadTest();
+
+        // Create document with custom payload
+        TextBlock content = TextBlock.builder().text("Test document content").build();
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("filename", "report.pdf");
+        payload.put("department", "Engineering");
+        payload.put("author", "John Doe");
+        payload.put("priority", 1);
+        payload.put("tags", List.of("urgent", "quarterly"));
+
+        // Create custom object
+        CustomObject customObject = new CustomObject();
+        customObject.setAuthor("Alice");
+        customObject.setVersion(2);
+        customObject.setActive(true);
+        customObject.setTags(List.of("important", "reviewed"));
+        payload.put("custom", customObject);
+
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-payload-test", "0", payload);
+        Document doc = new Document(metadata);
+        doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
+
+        // Add document
+        StepVerifier.create(store.add(List.of(doc))).verifyComplete();
+
+        // Search for the document
+        double[] query = new double[] {1.0, 0.0, 0.0};
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
+                .assertNext(
+                        results -> {
+                            assertNotNull(results, "Search results should not be null");
+                            assertEquals(1, results.size(), "Should find exactly one document");
+
+                            Document retrievedDoc = results.get(0);
+                            assertNotNull(retrievedDoc, "Retrieved document should not be null");
+
+                            // Verify payload fields are correctly loaded
+                            assertEquals(
+                                    "report.pdf",
+                                    retrievedDoc.getPayloadValue("filename"),
+                                    "Filename should match");
+                            assertEquals(
+                                    "Engineering",
+                                    retrievedDoc.getPayloadValue("department"),
+                                    "Department should match");
+                            assertEquals(
+                                    "John Doe",
+                                    retrievedDoc.getPayloadValue("author"),
+                                    "Author should match");
+                            assertEquals(
+                                    1,
+                                    retrievedDoc.getPayloadValue("priority"),
+                                    "Priority should match");
+
+                            // Verify tags list
+                            Object tagsObj = retrievedDoc.getPayloadValue("tags");
+                            assertNotNull(tagsObj, "Tags should not be null");
+                            assertTrue(tagsObj instanceof List, "Tags should be a List");
+                            @SuppressWarnings("unchecked")
+                            List<String> tags = (List<String>) tagsObj;
+                            assertEquals(2, tags.size(), "Should have 2 tags");
+                            assertTrue(tags.contains("urgent"), "Should contain 'urgent' tag");
+                            assertTrue(
+                                    tags.contains("quarterly"), "Should contain 'quarterly' tag");
+
+                            // Verify payload key existence
+                            assertTrue(
+                                    retrievedDoc.hasPayloadKey("filename"),
+                                    "Should have filename key");
+                            assertFalse(
+                                    retrievedDoc.hasPayloadKey("nonexistent"),
+                                    "Should not have nonexistent key");
+
+                            // Verify content is preserved
+                            assertEquals(
+                                    "Test document content",
+                                    retrievedDoc.getMetadata().getContentText(),
+                                    "Content should match");
+
+                            // Verify custom object using getPayloadValueAs
+                            CustomObject retrievedCustom =
+                                    retrievedDoc.getPayloadValueAs("custom", CustomObject.class);
+                            assertNotNull(retrievedCustom, "Custom object should not be null");
+                        })
+                .verifyComplete();
+    }
+
+    /**
+     * Custom object for testing payload serialization
+     */
+    static class CustomObject {
+        private String author;
+        private int version;
+        private boolean active;
+        private List<String> tags;
+
+        public String getAuthor() {
+            return author;
+        }
+
+        public void setAuthor(String author) {
+            this.author = author;
+        }
+
+        public int getVersion() {
+            return version;
+        }
+
+        public void setVersion(int version) {
+            this.version = version;
+        }
+
+        public boolean isActive() {
+            return active;
+        }
+
+        public void setActive(boolean active) {
+            this.active = active;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+
+        public void setTags(List<String> tags) {
+            this.tags = tags;
+        }
     }
 }

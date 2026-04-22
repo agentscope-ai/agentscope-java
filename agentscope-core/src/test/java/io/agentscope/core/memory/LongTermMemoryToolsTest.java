@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,6 +28,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -136,7 +138,7 @@ class LongTermMemoryToolsTest {
     void testRecordToMemoryWithEmptyStringsInContent() {
         when(mockMemory.record(anyList())).thenReturn(Mono.empty());
 
-        List<String> content = java.util.Arrays.asList("Valid content", "", null, "Another valid");
+        List<String> content = Arrays.asList("Valid content", "", null, "Another valid");
 
         StepVerifier.create(tools.recordToMemory("thinking", content))
                 .expectNext("Successfully recorded to long-term memory")
@@ -153,7 +155,7 @@ class LongTermMemoryToolsTest {
     @Test
     void testRecordToMemoryWithOnlyEmptyAndNullContent() {
         // Test with only empty strings and null (no valid content), and no thinking
-        List<String> content = java.util.Arrays.asList("", null, "");
+        List<String> content = Arrays.asList("", null, "");
 
         StepVerifier.create(tools.recordToMemory(null, content))
                 .expectNext("No valid content to record")
@@ -274,10 +276,10 @@ class LongTermMemoryToolsTest {
 
         List<Msg> messages = captor.getValue();
         // First message (thinking) should be ASSISTANT role
-        assertEquals(io.agentscope.core.message.MsgRole.ASSISTANT, messages.get(0).getRole());
+        assertEquals(MsgRole.ASSISTANT, messages.get(0).getRole());
         // Content messages should be USER role
-        assertEquals(io.agentscope.core.message.MsgRole.USER, messages.get(1).getRole());
-        assertEquals(io.agentscope.core.message.MsgRole.USER, messages.get(2).getRole());
+        assertEquals(MsgRole.USER, messages.get(1).getRole());
+        assertEquals(MsgRole.USER, messages.get(2).getRole());
     }
 
     @Test

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,6 +35,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -312,8 +313,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should handle tool result with Base64 image")
     void testToolResultWithBase64Image() {
-        String base64Data =
-                java.util.Base64.getEncoder().encodeToString("fake image data".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image data".getBytes());
 
         ImageBlock imageBlock =
                 ImageBlock.builder()
@@ -436,7 +436,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert ImageBlock to inline data part")
     void testConvertImageBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake image".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
 
         ImageBlock imageBlock =
                 ImageBlock.builder()
@@ -462,7 +462,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert AudioBlock to inline data part")
     void testConvertAudioBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake audio".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake audio".getBytes());
 
         AudioBlock audioBlock =
                 AudioBlock.builder()
@@ -485,7 +485,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should convert VideoBlock to inline data part")
     void testConvertVideoBlock() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake video".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake video".getBytes());
 
         VideoBlock videoBlock =
                 VideoBlock.builder()
@@ -550,7 +550,7 @@ class GeminiMessageConverterTest {
     @Test
     @DisplayName("Should handle mixed content types")
     void testMixedContentTypes() {
-        String base64Data = java.util.Base64.getEncoder().encodeToString("fake image".getBytes());
+        String base64Data = Base64.getEncoder().encodeToString("fake image".getBytes());
 
         Msg msg =
                 Msg.builder()
@@ -874,5 +874,147 @@ class GeminiMessageConverterTest {
         // The signature should be attached to the Part
         assertTrue(part.thoughtSignature().isPresent());
         assertArrayEquals(signature, part.thoughtSignature().get());
+    }
+
+    @Test
+    @DisplayName("Should use content field when present for tool call arguments")
+    void testToolCallUsesContentFieldWhenPresent() {
+        // Create a ToolUseBlock with both content (raw string) and input map
+        // The content field should be used preferentially
+        String rawContent = "{\"city\":\"Beijing\",\"unit\":\"celsius\"}";
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Shanghai");
+        inputMap.put("unit", "fahrenheit");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_content_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content(rawContent)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the content field (parsed from raw string) instead of input map
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Beijing", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is null")
+    void testToolCallFallbackToInputMapWhenContentNull() {
+        // Create a ToolUseBlock with only input map (content is null)
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Beijing");
+        inputMap.put("unit", "celsius");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_fallback_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content(null)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the input map since content is null
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Beijing", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is empty")
+    void testToolCallFallbackToInputMapWhenContentEmpty() {
+        // Create a ToolUseBlock with empty content string
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Shanghai");
+        inputMap.put("unit", "fahrenheit");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_empty_content_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content("")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should use the input map since content is empty
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Shanghai", args.get("city"));
+        assertEquals("fahrenheit", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to input map when content is invalid JSON")
+    void testToolCallFallbackToInputMapWhenContentInvalidJson() {
+        // Create a ToolUseBlock with invalid JSON content
+        Map<String, Object> inputMap = new HashMap<>();
+        inputMap.put("city", "Tokyo");
+        inputMap.put("unit", "celsius");
+
+        ToolUseBlock toolBlock =
+                ToolUseBlock.builder()
+                        .id("call_invalid_json_test")
+                        .name("get_weather")
+                        .input(inputMap)
+                        .content("{invalid json}")
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+
+        // Should fallback to input map since content is invalid JSON
+        Map<String, Object> args = part.functionCall().get().args().get();
+        assertEquals("Tokyo", args.get("city"));
+        assertEquals("celsius", args.get("unit"));
     }
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,13 @@ package io.agentscope.core.formatter.dashscope.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import java.io.IOException;
 
 /**
  * DashScope API response DTO.
@@ -47,6 +54,7 @@ public class DashScopeResponse {
 
     /** The output containing choices. */
     @JsonProperty("output")
+    @JsonDeserialize(using = DashScopeOutputDeserializer.class)
     private DashScopeOutput output;
 
     /** Token usage statistics. */
@@ -110,5 +118,46 @@ public class DashScopeResponse {
      */
     public boolean isError() {
         return code != null && !code.isEmpty();
+    }
+
+    /**
+     * Custom deserializer for DashScopeOutput that handles both string (encrypted) and object
+     * (decrypted) values.
+     *
+     * <p>When the output field is a string (encrypted), it returns null since the value should
+     * have been decrypted by decryptResponse() before deserialization. If it's still a string at
+     * this point, it means decryption failed or wasn't performed, so we skip it.
+     */
+    static class DashScopeOutputDeserializer extends JsonDeserializer<DashScopeOutput> {
+
+        @Override
+        public DashScopeOutput deserialize(JsonParser p, DeserializationContext ctxt)
+                throws IOException {
+            JsonToken token = p.currentToken();
+            if (token == JsonToken.VALUE_NULL) {
+                return null;
+            } else if (token == JsonToken.VALUE_STRING) {
+                // String value indicates encrypted output that wasn't decrypted.
+                // Skip the string value (read and discard) and return null.
+                // The decryptResponse() method should have handled this, but if decryption
+                // failed or wasn't performed, we gracefully handle it here.
+                p.getValueAsString(); // Read and skip the string value
+                return null;
+            } else if (token == JsonToken.START_OBJECT) {
+                // Object value - normal deserialization
+                // Use readTree and treeToValue for standard deserialization
+                // This handles the case where output is a decrypted JSON object
+                JsonNode node = p.getCodec().readTree(p);
+                if (node == null || node.isNull() || !node.isObject()) {
+                    return null;
+                }
+                return p.getCodec().treeToValue(node, DashScopeOutput.class);
+            }
+            // Unexpected token type
+            throw new IOException(
+                    "Cannot deserialize DashScopeOutput from token: "
+                            + token
+                            + ". Expected object or string.");
+        }
     }
 }

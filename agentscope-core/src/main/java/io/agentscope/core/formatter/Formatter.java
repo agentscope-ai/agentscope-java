@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -80,6 +80,26 @@ public interface Formatter<TReq, TResp, TParams> {
     void applyTools(TParams paramsBuilder, List<ToolSchema> tools);
 
     /**
+     * Apply tool schemas to provider-specific request parameters with provider compatibility handling.
+     *
+     * <p>This method allows formatters to detect the provider from baseUrl/modelName and adjust
+     * tool definitions for compatibility (e.g., removing unsupported parameters like 'strict').
+     *
+     * <p>The default implementation delegates to {@code applyTools(TParams, List)}.
+     * Formatters that support provider-specific tool handling should override this method.
+     *
+     * @param paramsBuilder Provider-specific request parameters builder
+     * @param tools Tool schemas to apply (may be null or empty)
+     * @param baseUrl API base URL for provider detection (null for default)
+     * @param modelName Model name for provider detection fallback (null)
+     */
+    default void applyTools(
+            TParams paramsBuilder, List<ToolSchema> tools, String baseUrl, String modelName) {
+        // Default implementation: delegate to the simpler method
+        applyTools(paramsBuilder, tools);
+    }
+
+    /**
      * Apply tool choice configuration to provider-specific request parameters.
      *
      * <p>This method controls how the model uses tools. The default implementation does nothing,
@@ -91,5 +111,25 @@ public interface Formatter<TReq, TResp, TParams> {
     default void applyToolChoice(TParams paramsBuilder, ToolChoice toolChoice) {
         // Default implementation: do nothing
         // Subclasses can override to provide provider-specific behavior
+    }
+
+    /**
+     * Apply tool choice configuration to provider-specific request parameters with provider detection.
+     *
+     * <p>This method allows formatters to detect the provider from baseUrl/modelName and adjust
+     * tool_choice format or gracefully degrade when the provider doesn't support certain options.
+     *
+     * <p>The default implementation delegates to {@code applyToolChoice(TParams, ToolChoice)}.
+     * Formatters that support provider-specific tool_choice handling should override this method.
+     *
+     * @param paramsBuilder Provider-specific request parameters builder
+     * @param toolChoice Tool choice configuration (null means provider default)
+     * @param baseUrl API base URL for provider detection (null for default)
+     * @param modelName Model name for provider detection fallback (null)
+     */
+    default void applyToolChoice(
+            TParams paramsBuilder, ToolChoice toolChoice, String baseUrl, String modelName) {
+        // Default implementation: delegate to the simpler method
+        applyToolChoice(paramsBuilder, toolChoice);
     }
 }

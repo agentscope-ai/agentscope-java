@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -22,9 +23,12 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.shutdown.GracefulShutdownHook;
+import io.agentscope.core.shutdown.GracefulShutdownManager;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +47,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModule.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -52,7 +56,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>AgentBase provides infrastructure (hooks, subscriptions, interrupt, state) but not domain
  *       logic</li>
  *   <li>Memory management is delegated to concrete agents that need it (e.g., ReActAgent)</li>
- *   <li>State management is inherited from StateModuleBase</li>
+ *   <li>State management implements StateModule interface</li>
  *   <li>Interrupt mechanism uses reactive patterns: subclasses call checkInterruptedAsync()
  *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
  *   <li>Observe pattern: agents can receive messages without generating a reply</li>
@@ -83,7 +87,7 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
-public abstract class AgentBase extends StateModuleBase implements Agent {
+public abstract class AgentBase implements StateModule, Agent {
 
     private final String agentId;
     private final String name;
@@ -91,12 +95,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
-    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
+    private static final List<Hook> systemHooks =
+            new CopyOnWriteArrayList<>(
+                    List.of(new GracefulShutdownHook(GracefulShutdownManager.getInstance())));
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    // Hook non-null
+    private static final Comparator<Hook> HOOK_COMPARATOR = Comparator.comparingInt(Hook::priority);
+    private final AtomicReference<InterruptSource> interruptSource =
+            new AtomicReference<>(InterruptSource.USER);
 
     /**
      * Constructor for AgentBase.
@@ -126,18 +136,13 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
-        super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
-
-        // Register basic agent state
-        registerState("id", obj -> this.agentId, obj -> obj);
-        registerState("name", obj -> this.name, obj -> obj);
-        registerState("description", obj -> this.description, obj -> obj);
+        sortHooks();
     }
 
     @Override
@@ -165,24 +170,22 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
-
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(this::doCall)
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(this::doCall)
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
     }
 
     /**
@@ -196,24 +199,55 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
-        if (!running.compareAndSet(false, true) && checkRunning) {
-            return Mono.error(
-                    new IllegalStateException(
-                            "Agent is still running, please wait for it to finish"));
-        }
-        resetInterruptFlag();
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(
+                                                                m ->
+                                                                        doCall(
+                                                                                m,
+                                                                                structuredOutputClass))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
+    }
 
-        return TracerRegistry.get()
-                .callAgent(
-                        this,
-                        msgs,
-                        () ->
-                                notifyPreCall(msgs)
-                                        .flatMap(m -> doCall(m, structuredOutputClass))
-                                        .flatMap(this::notifyPostCall)
-                                        .onErrorResume(
-                                                createErrorHandler(msgs.toArray(new Msg[0]))))
-                .doFinally(signalType -> running.set(false));
+    /**
+     * Process multiple input messages and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
+     *
+     * @param msgs Input messages
+     * @param schema com.fasterxml.jackson.databind.JsonNode instance defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
+        return Mono.using(
+                this::acquireExecution,
+                resource ->
+                        TracerRegistry.get()
+                                .callAgent(
+                                        this,
+                                        msgs,
+                                        () ->
+                                                notifyPreCall(msgs)
+                                                        .flatMap(m -> doCall(m, schema))
+                                                        .flatMap(this::notifyPostCall)
+                                                        .onErrorResume(
+                                                                createErrorHandler(
+                                                                        msgs.toArray(new Msg[0])))),
+                this::releaseExecution,
+                true);
     }
 
     /**
@@ -240,6 +274,21 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         "Structured output not supported by " + getClass().getSimpleName()));
     }
 
+    /**
+     * Internal implementation for processing multiple messages with structured output.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param msgs Input messages
+     * @param outputSchema com.fasterxml.jackson.databind.JsonNode instance defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + outputSchema.asText()));
+    }
+
     public static void addSystemHook(Hook hook) {
         systemHooks.add(hook);
     }
@@ -254,6 +303,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public void interrupt() {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
     }
 
@@ -265,10 +315,21 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public void interrupt(Msg msg) {
+        interruptSource.set(InterruptSource.USER);
         interruptFlag.set(true);
         if (msg != null) {
             userInterruptMessage.set(msg);
         }
+    }
+
+    /**
+     * Interrupt execution with explicit source.
+     *
+     * @param source interruption source
+     */
+    public void interrupt(InterruptSource source) {
+        interruptSource.set(source != null ? source : InterruptSource.SYSTEM);
+        interruptFlag.set(true);
     }
 
     /**
@@ -312,6 +373,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     protected void resetInterruptFlag() {
         interruptFlag.set(false);
         userInterruptMessage.set(null);
+        interruptSource.set(InterruptSource.USER);
     }
 
     /**
@@ -322,9 +384,45 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     private InterruptContext createInterruptContext() {
         return InterruptContext.builder()
-                .source(InterruptSource.USER)
+                .source(interruptSource.get())
                 .userMessage(userInterruptMessage.get())
                 .build();
+    }
+
+    /**
+     * Acquire execution resources for a {@code call()} invocation.
+     * Used as the {@code resourceSupplier} in {@link Mono#using} to guarantee that
+     * {@link #releaseExecution} is always called on completion, error, or cancellation.
+     *
+     * @return this agent instance
+     */
+    private AgentBase acquireExecution() {
+        if (checkRunning && !running.compareAndSet(false, true)) {
+            throw new IllegalStateException("Agent is still running, please wait for it to finish");
+        }
+        try {
+            resetInterruptFlag();
+            GracefulShutdownManager.getInstance().ensureAcceptingRequests();
+            GracefulShutdownManager.getInstance().registerRequest(this);
+        } catch (RuntimeException ex) {
+            if (checkRunning) {
+                running.set(false);
+            }
+            throw ex;
+        }
+        return this;
+    }
+
+    /**
+     * Release execution resources after a {@code call()} invocation.
+     * Used as the {@code resourceCleanup} in {@link Mono#using} — guaranteed to run
+     * regardless of how the reactive chain terminates (success, error, or cancel).
+     *
+     * @param resource the agent instance (ignored, uses {@code this})
+     */
+    private void releaseExecution(AgentBase resource) {
+        running.set(false);
+        GracefulShutdownManager.getInstance().unregisterRequest(this);
     }
 
     /**
@@ -354,6 +452,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     protected AtomicBoolean getInterruptFlag() {
         return interruptFlag;
+    }
+
+    /**
+     * Get current interruption source.
+     *
+     * @return interruption source
+     */
+    protected InterruptSource getInterruptSource() {
+        return interruptSource.get();
     }
 
     /**
@@ -404,13 +511,46 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Add a hook to this agent dynamically.
+     *
+     * <p>Hooks can be added during agent execution to provide temporary functionality.
+     * This is commonly used for structured output handling or other short-lived behaviors.
+     *
+     * @param hook The hook to add
+     */
+    protected void addHook(Hook hook) {
+        if (hook != null) {
+            hooks.add(hook);
+            sortHooks();
+        }
+    }
+
+    private void sortHooks() {
+        this.hooks.sort(HOOK_COMPARATOR);
+    }
+
+    /**
+     * Remove a hook from this agent dynamically.
+     *
+     * <p>Hooks should be removed when they are no longer needed to avoid memory leaks
+     * and unintended side effects.
+     *
+     * @param hook The hook to remove
+     */
+    protected void removeHook(Hook hook) {
+        if (hook != null) {
+            hooks.remove(hook);
+        }
+    }
+
+    /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
      *
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        return hooks;
     }
 
     /**
@@ -553,31 +693,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Stream execution events in real-time as the agent processes the input.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options) {
-        return stream(List.of(msg), options);
-    }
-
-    /**
-     * Stream execution events in real-time as the agent processes the input with structured output.
-     *
-     * @param msg Input message
-     * @param options Stream configuration options
-     * @param structuredModel Optional class defining the structure of the output
-     * @return Flux of events emitted during execution
-     */
-    @Override
-    public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
-        return stream(List.of(msg), options, structuredModel);
-    }
-
-    /**
      * Stream with multiple input messages.
      *
      * @param msgs Input messages
@@ -604,6 +719,19 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Stream with multiple input messages using a JSON schema.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param schema JSON schema defining the structure of the response
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+        return createEventStream(options, () -> call(msgs, schema));
+    }
+
+    /**
      * Helper method to create an event stream with proper hook lifecycle management.
      *
      * <p>This method handles the common logic for streaming events during agent execution,
@@ -620,52 +748,50 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Flux of events emitted during execution
      */
     private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
-        return Flux.<Event>create(
-                        sink -> {
-                            // Create streaming hook with options
-                            StreamingHook streamingHook = new StreamingHook(sink, options);
+        return Flux.deferContextual(
+                ctxView ->
+                        Flux.<Event>create(
+                                        sink -> {
+                                            // Create streaming hook with options
+                                            StreamingHook streamingHook =
+                                                    new StreamingHook(sink, options);
 
-                            // Add temporary hook
-                            hooks.add(streamingHook);
+                                            // Add temporary hook
+                                            addHook(streamingHook);
 
-                            // Execute call and manage hook lifecycle
-                            callSupplier
-                                    .get()
-                                    .doFinally(
-                                            signalType -> {
-                                                // Remove temporary hook
-                                                hooks.remove(streamingHook);
-                                            })
-                                    .subscribe(
-                                            finalMsg -> {
-                                                Event finalEvent =
-                                                        new Event(
-                                                                EventType.AGENT_RESULT,
-                                                                finalMsg,
-                                                                true);
-                                                sink.next(finalEvent);
+                                            // Use Mono.defer to ensure trace context propagation
+                                            // while maintaining streaming hook functionality
+                                            Mono.defer(() -> callSupplier.get())
+                                                    .contextWrite(
+                                                            context -> context.putAll(ctxView))
+                                                    .doFinally(
+                                                            signalType -> {
+                                                                // Remove temporary hook
+                                                                hooks.remove(streamingHook);
+                                                            })
+                                                    .subscribe(
+                                                            finalMsg -> {
+                                                                if (options.shouldStream(
+                                                                        EventType.AGENT_RESULT)) {
+                                                                    sink.next(
+                                                                            new Event(
+                                                                                    EventType
+                                                                                            .AGENT_RESULT,
+                                                                                    finalMsg,
+                                                                                    true));
+                                                                }
 
-                                                // Complete the stream
-                                                sink.complete();
-                                            },
-                                            sink::error);
-                        },
-                        FluxSink.OverflowStrategy.BUFFER)
-                .publishOn(Schedulers.boundedElastic());
+                                                                // Complete the stream
+                                                                sink.complete();
+                                                            },
+                                                            sink::error);
+                                        },
+                                        FluxSink.OverflowStrategy.BUFFER)
+                                .publishOn(Schedulers.boundedElastic()));
     }
 
     @Override
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
-    }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "agent" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "agent";
     }
 }

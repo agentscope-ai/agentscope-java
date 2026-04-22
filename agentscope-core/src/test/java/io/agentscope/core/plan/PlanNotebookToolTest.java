@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -354,7 +354,7 @@ class PlanNotebookToolTest {
 
         assertNotNull(hint);
         assertNotNull(hint.getTextContent());
-        assertTrue(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+        assertTrue(hint.getTextContent().contains("Update before processing each subtask"));
     }
 
     @Test
@@ -489,5 +489,321 @@ class PlanNotebookToolTest {
 
         assertNotNull(result);
         assertTrue(result.contains("no active plan") || result.contains("There is no"));
+    }
+
+    // Tests for maxSubtasks configuration
+
+    @Test
+    void testCreatePlanExceedsMaxSubtasks() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+
+        String result =
+                limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("exceeds the maximum limit"));
+        assertTrue(result.contains("3"));
+        assertNull(limitedNotebook.getCurrentPlan());
+    }
+
+    @Test
+    void testCreatePlanAtMaxSubtasksLimit() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+
+        String result =
+                limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertNotNull(limitedNotebook.getCurrentPlan());
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testCreatePlanBelowMaxSubtasksLimit() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(5).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+
+        String result =
+                limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testReviseCurrentPlanAddExceedsMaxSubtasks() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        // Create plan with 3 subtasks (at limit)
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Try to add another subtask
+        String result =
+                limitedNotebook
+                        .reviseCurrentPlan(
+                                3,
+                                "add",
+                                PlanNotebook.subtaskToMap(
+                                        new SubTask("NewTask", "Desc", "Outcome")))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("reached the maximum limit"));
+        assertTrue(result.contains("3"));
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testReviseCurrentPlanAddAtMaxSubtasksLimit() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(5).build();
+
+        // Create plan with 4 subtasks (one below limit)
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Add one more (should succeed, reaching limit)
+        String result =
+                limitedNotebook
+                        .reviseCurrentPlan(
+                                4,
+                                "add",
+                                PlanNotebook.subtaskToMap(
+                                        new SubTask("Task5", "Desc5", "Outcome5")))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(5, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testReviseCurrentPlanAddBelowMaxSubtasksLimit() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(5).build();
+
+        // Create plan with 2 subtasks
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        subtasks.add(new SubTask("Task2", "Desc2", "Outcome2"));
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Add one more (should succeed)
+        String result =
+                limitedNotebook
+                        .reviseCurrentPlan(
+                                2,
+                                "add",
+                                PlanNotebook.subtaskToMap(
+                                        new SubTask("Task3", "Desc3", "Outcome3")))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testReviseCurrentPlanDeleteThenAddWithinLimit() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        // Create plan with 3 subtasks (at limit)
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Delete one, then add one (should succeed)
+        limitedNotebook.reviseCurrentPlan(0, "delete", null).block();
+        String result =
+                limitedNotebook
+                        .reviseCurrentPlan(
+                                2,
+                                "add",
+                                PlanNotebook.subtaskToMap(
+                                        new SubTask("NewTask", "Desc", "Outcome")))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testMaxSubtasksNullAllowsUnlimitedSubtasks() {
+        PlanNotebook unlimitedNotebook =
+                PlanNotebook.builder().build(); // maxSubtasks defaults to null
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+
+        String result =
+                unlimitedNotebook
+                        .createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks)
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(10, unlimitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    @Test
+    void testReviseCurrentPlanReviseDoesNotCheckMaxSubtasks() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Revise (replace) should work as it doesn't change count
+        String result =
+                limitedNotebook
+                        .reviseCurrentPlan(
+                                0,
+                                "revise",
+                                PlanNotebook.subtaskToMap(
+                                        new SubTask(
+                                                "UpdatedTask", "UpdatedDesc", "UpdatedOutcome")))
+                        .block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(3, limitedNotebook.getCurrentPlan().getSubtasks().size());
+        assertEquals(
+                "UpdatedTask", limitedNotebook.getCurrentPlan().getSubtasks().get(0).getName());
+    }
+
+    @Test
+    void testReviseCurrentPlanDeleteDoesNotCheckMaxSubtasks() {
+        PlanNotebook limitedNotebook = PlanNotebook.builder().maxSubtasks(3).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            subtasks.add(new SubTask("Task" + i, "Desc" + i, "Outcome" + i));
+        }
+        limitedNotebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Delete should work as it reduces count
+        String result = limitedNotebook.reviseCurrentPlan(0, "delete", null).block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("successfully"));
+        assertEquals(2, limitedNotebook.getCurrentPlan().getSubtasks().size());
+    }
+
+    // ==================== Change Hook Tests ====================
+
+    @Test
+    void testChangeHookTriggeredOnAllPlanMutations() {
+        int[] callCount = {0};
+        Plan[] capturedPlan = {null};
+        notebook.addChangeHook(
+                "testHook",
+                (nb, plan) -> {
+                    callCount[0]++;
+                    capturedPlan[0] = plan;
+                });
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+
+        // createPlan
+        notebook.createPlanWithSubTasks("Test Plan", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0], "createPlan");
+        assertEquals("Test Plan", capturedPlan[0].getName());
+
+        // updatePlanInfo
+        notebook.updatePlanInfo("New Name", null, null).block();
+        assertEquals(2, callCount[0], "updatePlanInfo");
+
+        // reviseCurrentPlan (add)
+        notebook.reviseCurrentPlan(
+                        1,
+                        "add",
+                        PlanNotebook.subtaskToMap(new SubTask("Task2", "Desc2", "Outcome2")))
+                .block();
+        assertEquals(3, callCount[0], "reviseCurrentPlan add");
+
+        // reviseCurrentPlan (revise)
+        notebook.reviseCurrentPlan(
+                        0,
+                        "revise",
+                        PlanNotebook.subtaskToMap(new SubTask("Updated", "Desc", "Outcome")))
+                .block();
+        assertEquals(4, callCount[0], "reviseCurrentPlan revise");
+
+        // reviseCurrentPlan (delete)
+        notebook.reviseCurrentPlan(1, "delete", null).block();
+        assertEquals(5, callCount[0], "reviseCurrentPlan delete");
+
+        // updateSubtaskState
+        notebook.updateSubtaskState(0, "in_progress").block();
+        assertEquals(6, callCount[0], "updateSubtaskState");
+
+        // finishSubtask
+        notebook.finishSubtask(0, "Done").block();
+        assertEquals(7, callCount[0], "finishSubtask");
+
+        // finishPlan
+        notebook.finishPlan("done", "All done").block();
+        assertEquals(8, callCount[0], "finishPlan");
+    }
+
+    @Test
+    void testRemoveChangeHookStopsNotifications() {
+        int[] callCount = {0};
+        notebook.addChangeHook("testHook", (nb, plan) -> callCount[0]++);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan 1", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0]);
+
+        notebook.removeChangeHook("testHook");
+        notebook.createPlanWithSubTasks("Plan 2", "Desc", "Outcome", subtasks).block();
+        assertEquals(1, callCount[0], "Hook should not be called after removal");
+    }
+
+    @Test
+    void testMultipleHooksAndIdOverwrite() {
+        int[] count1 = {0};
+        int[] count2 = {0};
+        int[] count3 = {0};
+
+        notebook.addChangeHook("hook1", (nb, plan) -> count1[0]++);
+        notebook.addChangeHook("hook2", (nb, plan) -> count2[0]++);
+        // Overwrite hook1
+        notebook.addChangeHook("hook1", (nb, plan) -> count3[0]++);
+
+        List<SubTask> subtasks = List.of(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Test Plan", "Desc", "Outcome", subtasks).block();
+
+        assertEquals(0, count1[0], "Original hook1 should be overwritten");
+        assertEquals(1, count2[0], "hook2 should be called");
+        assertEquals(1, count3[0], "New hook1 should be called");
     }
 }

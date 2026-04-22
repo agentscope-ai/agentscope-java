@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@ package io.agentscope.core.rag.store;
 
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -107,6 +108,7 @@ public class InMemoryStore implements VDBStoreBase {
                                         document.getEmbedding(), document.getEmbedding().length);
                         Document docCopy = new Document(document.getMetadata());
                         docCopy.setEmbedding(embeddingCopy);
+                        docCopy.setVectorName(document.getVectorName());
                         documents.put(document.getId(), docCopy);
                     }
                     return null;
@@ -114,8 +116,12 @@ public class InMemoryStore implements VDBStoreBase {
     }
 
     @Override
-    public Mono<List<Document>> search(
-            final double[] queryEmbedding, final int limit, final Double scoreThreshold) {
+    public Mono<List<Document>> search(SearchDocumentDto searchDocumentDto) {
+        String vectorName = searchDocumentDto.getVectorName();
+        double[] queryEmbedding = searchDocumentDto.getQueryEmbedding();
+        int limit = searchDocumentDto.getLimit();
+        Double scoreThreshold = searchDocumentDto.getScoreThreshold();
+
         try {
             validateDimensions(queryEmbedding, "Query embedding");
         } catch (Exception e) {
@@ -136,6 +142,10 @@ public class InMemoryStore implements VDBStoreBase {
 
                     // Calculate similarity for all documents
                     for (Document doc : documents.values()) {
+                        if (vectorName != null && !vectorName.equals(doc.getVectorName())) {
+                            continue;
+                        }
+
                         double similarity =
                                 DistanceCalculator.cosineSimilarity(
                                         queryEmbedding, doc.getEmbedding());

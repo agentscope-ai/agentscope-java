@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
@@ -43,13 +43,11 @@ import org.junit.jupiter.api.Test;
 class RAGFlowClientRequestTest {
 
     private MockWebServer mockWebServer;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
         mockWebServer = new MockWebServer();
         mockWebServer.start();
-        objectMapper = new ObjectMapper();
     }
 
     @AfterEach
@@ -80,9 +78,9 @@ class RAGFlowClientRequestTest {
         System.out.println("-".repeat(70));
 
         Map<String, Object> parsed =
-                objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {});
-        String prettyJson =
-                objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(parsed);
+                JsonUtils.getJsonCodec()
+                        .fromJson(body, new TypeReference<Map<String, Object>>() {});
+        String prettyJson = JsonUtils.getJsonCodec().toPrettyJson(parsed);
         System.out.println("Request Body:");
         System.out.println(prettyJson);
         System.out.println("=".repeat(70) + "\n");

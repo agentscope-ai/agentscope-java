@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -98,6 +100,15 @@ class SimpleKnowledgeTest {
 
         // Size() returns -1 for SimpleKnowledge, check vector store instead
         assertEquals(2, vectorStore.size());
+    }
+
+    @Test
+    @DisplayName("Should add documents to knowledge base with vector name")
+    void testAddWithVectorName() {
+        Document doc1 = createDocument("doc1", "Content 1");
+        doc1.setVectorName("test-vector");
+        StepVerifier.create(knowledgeBase.addDocuments(List.of(doc1))).verifyComplete();
+        assertEquals(1, vectorStore.size());
     }
 
     @Test
@@ -226,6 +237,29 @@ class SimpleKnowledgeTest {
     }
 
     @Test
+    @DisplayName("Should retrieve documents filtered by vector name")
+    void testRetrieveWithVectorName() {
+        Document doc1 = createDocument("doc1", "Machine learning");
+        doc1.setVectorName("test-vector");
+        Document doc2 = createDocument("doc2", "Machine learning");
+        knowledgeBase.addDocuments(List.of(doc1, doc2)).block();
+
+        RetrieveConfig config =
+                RetrieveConfig.builder()
+                        .vectorName("test-vector")
+                        .limit(3)
+                        .scoreThreshold(0.0)
+                        .build();
+
+        StepVerifier.create(knowledgeBase.retrieve("Machine learning", config))
+                .assertNext(
+                        results -> {
+                            assertEquals(doc1.getId(), results.get(0).getId());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
     @DisplayName("Should handle clear operation")
     void testClear() {
         Document doc = createDocument("doc1", "Content");
@@ -243,8 +277,7 @@ class SimpleKnowledgeTest {
      * Creates a test document.
      */
     private Document createDocument(String docId, String content) {
-        io.agentscope.core.message.TextBlock textBlock =
-                io.agentscope.core.message.TextBlock.builder().text(content).build();
+        TextBlock textBlock = TextBlock.builder().text(content).build();
         DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, "0");
         return new Document(metadata);
     }
@@ -266,12 +299,12 @@ class SimpleKnowledgeTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
-            if (block instanceof io.agentscope.core.message.TextBlock) {
-                String text = ((io.agentscope.core.message.TextBlock) block).getText();
+            if (block instanceof TextBlock) {
+                String text = ((TextBlock) block).getText();
                 return Mono.fromCallable(
                         () -> {
                             // Generate deterministic embedding based on text

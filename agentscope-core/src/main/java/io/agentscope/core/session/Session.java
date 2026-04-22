@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,92 +15,129 @@
  */
 package io.agentscope.core.session;
 
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.State;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
- * Abstract base class for session management in AgentScope.
+ * Session storage interface for AgentScope.
  *
- * Sessions provide persistent storage for StateModule components, allowing
- * agents, memories, toolkits, and other stateful components to be saved
- * and restored across application runs or user interactions.
+ * <p>Sessions provide persistent storage for state objects, allowing agents, memories, toolkits,
+ * and other stateful components to be saved and restored across application runs or user
+ * interactions.
  *
- * Supports multi-module sessions where multiple StateModules can be saved and
- * loaded together as a cohesive session state.
+ * <ul>
+ *   <li>{@link #save(SessionKey, String, State)} - Save a single state object
+ *   <li>{@link #save(SessionKey, String, List)} - Save a list (incremental append)
+ *   <li>{@link #get(SessionKey, String, Class)} - Get a single state object
+ *   <li>{@link #getList(SessionKey, String, Class)} - Get a list of state objects
+ * </ul>
+ *
+ * <p>Example usage:
+ *
+ * <pre>{@code
+ * Session session = new JsonSession(Path.of("sessions"));
+ * SessionKey sessionKey = SimpleSessionKey.of("user_123");
+ *
+ * // Save state
+ * session.save(sessionKey, "agent_meta", new AgentMetaState("id", "name", "desc", "prompt"));
+ * session.save(sessionKey, "memory_messages", messages);  // incremental append
+ *
+ * // Load state
+ * Optional<AgentMetaState> meta = session.get(sessionKey, "agent_meta", AgentMetaState.class);
+ * List<Msg> messages = session.getList(sessionKey, "memory_messages", Msg.class);
+ * }</pre>
  */
 public interface Session {
 
     /**
-     * Save the state of multiple StateModules to a session.
+     * Save a single state value (full replacement).
      *
-     * This method persists the state of all provided StateModules under
-     * the specified session ID. The implementation determines the storage
-     * mechanism (files, database, etc.).
+     * <p>This method saves a single state object, replacing any existing value with the same key.
      *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
+     * @param value the state value to save
      */
-    void saveSessionState(String sessionId, Map<String, StateModule> stateModules);
+    void save(SessionKey sessionKey, String key, State value);
 
     /**
-     * Load session state into multiple StateModules.
+     * Save a list of state values.
      *
-     * This method restores the state of all provided StateModules from
-     * the session storage. If the session doesn't exist and allowNotExist
-     * is true, the operation completes without error.
+     * <p>Different implementations may use different storage strategies:
      *
-     * @param sessionId Unique identifier for the session
-     * @param allowNotExist Whether to allow loading from non-existent sessions
-     * @param stateModules Map of component names to StateModule instances to load into
+     * <ul>
+     *   <li>JsonSession: Incremental append - only appends new elements not yet persisted
+     *   <li>InMemorySession: Full replacement - replaces the entire list
+     * </ul>
+     *
+     * <p>Callers should always pass the full list. The implementation decides the storage strategy.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the full list of state values
      */
-    void loadSessionState(
-            String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules);
+    void save(SessionKey sessionKey, String key, List<? extends State> values);
 
     /**
-     * Load session state with default allowNotExist=true.
+     * Get a single state value.
      *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances to load into
+     * @param sessionKey the session identifier
+     * @param key the state key
+     * @param type the expected state type
+     * @param <T> the state type
+     * @return the state value, or empty if not found
      */
-    default void loadSessionState(String sessionId, Map<String, StateModule> stateModules) {
-        loadSessionState(sessionId, true, stateModules);
+    <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type);
+
+    /**
+     * Get a list of state values.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key
+     * @param itemType the expected item type
+     * @param <T> the item type
+     * @return the list of state values, or empty list if not found
+     */
+    <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType);
+
+    /**
+     * Check if a session exists.
+     *
+     * @param sessionKey the session identifier
+     * @return true if the session exists
+     */
+    boolean exists(SessionKey sessionKey);
+
+    /**
+     * Delete a session and all its data.
+     *
+     * @param sessionKey the session identifier
+     */
+    void delete(SessionKey sessionKey);
+
+    /**
+     * Delete a single state entry within a session.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key to delete
+     */
+    default void delete(SessionKey sessionKey, String key) {
+        // Default no-op; implementations should override if they support per-key deletion
     }
 
     /**
-     * Check if a session exists in storage.
+     * List all session keys.
      *
-     * @param sessionId Unique identifier for the session
-     * @return true if session exists
+     * @return set of all session keys
      */
-    boolean sessionExists(String sessionId);
+    Set<SessionKey> listSessionKeys();
 
     /**
-     * Delete a session from storage.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if session was deleted
-     */
-    boolean deleteSession(String sessionId);
-
-    /**
-     * Get a list of all session IDs in storage.
-     *
-     * @return List of session IDs
-     */
-    List<String> listSessions();
-
-    /**
-     * Get information about a session (size, last modified, etc.).
-     *
-     * @param sessionId Unique identifier for the session
-     * @return Session information
-     */
-    SessionInfo getSessionInfo(String sessionId);
-
-    /**
-     * Clean up any resources used by this session manager.
-     * Implementations should override this if they need cleanup.
+     * Clean up any resources used by this session manager. Implementations should override this if
+     * they need cleanup.
      */
     default void close() {
         // Default implementation does nothing

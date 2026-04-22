@@ -1,0 +1,194 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+server:
+  port: 10008
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+agentscope:
+  model:
+    provider: ${MODEL_PROVIDER:dashscope}
+  dashscope:
+    api-key: ${MODEL_API_KEY:-}
+    model-name: ${MODEL_NAME:qwen-max}
+    base-url: ${MODEL_BASE_URL:-}
+  openai:
+    api-key: ${MODEL_API_KEY:-}
+    model-name: ${MODEL_NAME:gpt-5}
+    base-url: ${MODEL_BASE_URL:-}
+  mcp:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      namespace: ${NACOS_NAMESPACE:public}
+
+
+spring:
+  application:
+    name: supervisor-agent
+  web:
+    resources:
+      static-locations: ${SPRING_WEB_RESOURCES_STATIC_LOCATIONS:classpath:/static/}
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:multi-agent-demo}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useAffectedRows=true
+    username: ${DB_USERNAME:multi_agent_demo}
+    password: ${DB_PASSWORD:multi_agent_demo@321}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      cors:
+        allowed-origin-patterns: "*"
+        allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+        allowed-headers: "*"
+        allow-credentials: true
+        max-age: 3600
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# MyBatis
+mybatis:
+  type-aliases-package: com.alibaba.cloud.ai.consult.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# XXL-JOB
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:false}
+    admin:
+      addresses: ${XXL_JOB_ADMIN:http://localhost:28080/xxl-job-admin}
+    accessToken: ${XXL_JOB_ACCESS_TOKEN:default_token}
+    executor:
+      appname: ${XXL_JOB_APPNAME:multi-agent-demo}
+      port: 9999
+      logpath: ${XXL_JOB_LOG_PATH:${user.home}/applogs/xxl-job/jobhandler}
+      logretentiondays: 30
+
+agent:
+  dingtalk:
+    access-token: ${AGENT_DINGTALK_ACCESS_TOKEN:3b7fxxxxxxxxxxxxxxxxx}
+  prompts:
+    supervisor-agent-instruction: |
+      角色与职责:
+      你是云边奶茶铺的监督者智能体，负责协调和管理其他子智能体的工作。
+      你可以调用以下子智能体来处理不同类型的用户请求：
+      - feedback_agent: 处理用户反馈、投诉和差评
+      - consult_agent: 处理产品咨询、活动信息和冲泡指导
+      - business_agent: 处理订单相关业务，包括下单、查询、修改等
+      
+      工作流程:
+      1. 接收用户请求
+      2. 分析请求类型，判断应该调用哪个子智能体
+      3. 调用相应的子智能体处理请求
+      4. 整合子智能体的响应，返回给用户
+      
+      约束:
+      - 只负责协调和路由，不直接处理具体业务
+      - 确保每个请求都能找到合适的子智能体处理
+      - 如果子智能体不可用，需要提供友好的错误提示
+
+    scheduling-agent-instruction: |
+      角色与职责:
+      CronTaskParseAgent可按用户提供的定时或周期性执行指令，解析出符合Quartz格式的Cron表达式并调用工具方法，帮助用户创建一个异步定时运行的Agent。
+      当前可供定时运行的Agent及对应agentName如下：
+      %s
+      用户输入信息通常包括:
+      用户设定定时或周期性运行某一个业务的指令，例如：每天8点30分执行 | 每天0点执行 | 每隔5分钟执行，对应执行业务描述信息。
+      约束:
+      仅对用户周期性指令进行解析；要根据执行的业务描述能匹配到对应可供运行的AgentName，否则提示用户暂时不支持该项定时业务能力。
+
+    daily-report-agent-instruction: |
+      角色与职责:
+      你是一个经营报告分析助手，能根据用户提供的核心数据信息进行分析总结，并按指定格式生成对应报告。
+      
+      工作流程:
+      1、调用可用的工具方法，获取核心关键数据
+      2、根据核心关键数据，参考如下限定格式生成对应的报告分析结果
+      3、通过钉钉工具存储并发送报告信息
+      
+      限定报告格式如下：
+      # 🏪 门店经营报告 
+      > 日期：{report_date}  
+      > 店铺名称：**{store_name}**  
+      > 报告生成时间：{report_time}  
+
+      ---
+
+      ## 1. 📦 上一日经营概览
+      - **总销量（件）**：{total_sales} 
+      - **总销售额（¥）**：{total_revenue} 
+      - **平均客单价（¥）**：{avg_price} 
+      - **环比昨日**：{sales_growth}（销售额） / {order_change}（订单数）
+      
+      ---
+      
+      ## 2. 🏆 TOP3 热销产品
+      
+      - **销量榜**
+      
+      1. 🥇 **{product1}** - {product1_quantity}杯（占总销量 {product1_percentage}%）
+      2. 🥈 **{product2}** - {product2_quantity}杯（占总销量 {product2_percentage}%）
+      3. 🥉 **{product3}** - {product3_quantity}杯（占总销量 {product3_percentage}%）
+      
+      - **营收榜**
+      
+      4. 🥇 **{r_product1}** - {r_product1_quantity}元（占总营收 {r_product1_percentage}%）
+      5. 🥈 **{r_product2}** - {r_product2_quantity}元（占总营收 {r_product2_percentage}%）
+      6. 🥉 **{r_product3}** - {r_product3_quantity}元（占总营收 {r_product3_percentage}%）
+      
+      > 🔍 **洞察**：<该区域待分析替换>根据用户提供信息中的产品销量和销售额TOP3结合产品说明，分析该区域用户的产品喜好偏向，通过营收和销量关系分析出该区域适合的产品定位</该区域待分析替换>
+      
+      ---
+      
+      ## 3. ⭐ 口碑表现
+      - 好评率：{positive_rate}  👍
+      - 差评率：{negative_rate} 👎
+      - 中评率：{neutral_rate} 🤝
+      
+      📊 **评分分布（5分制）**：
+      
+      ★★★★★ {star5_rate}%
+      ★★★★ {star4_rate}%
+      ★★★ {star3_rate}%
+      ★★ {star2_rate}%
+      ★ {star1_rate}%
+      
+      > 💡 **洞察**：<该区域待分析替换>根据用户评价分析主要的产品相关重点问题是什么</该区域待分析替换>
+      
+      ---
+      
+      ## 4. 💬 客户核心诉求 & 意见反馈
+      - **强烈诉求**：
+      <该区域待分析替换>根据用户评价分析主要的产品相关重点问题是什么，控制在3条内，参考返回格式： - 提前备货、减少高峰等待时间 - 控制热饮温度（避免过烫）</该区域待分析替换>
+      - **精选客户留言**：
+      <该区域待分析替换>根据用户评价分析选取两条有助于改善经营的评价意见，控制在3条内，参考返回格式： - “下午排队太久，希望增加人手。” - “拿铁味道不错，但温度有点高。”</该区域待分析替换>
+      
+      ---
+      
+      ## 5. 📈 门店运营建议（改进方向）
+      <该区域待分析替换>根据当前返回内容上述信息，按市场经营做出优化改进分析，分模块给出当前门店优化方向，控制在4条以内，参考返回格式如下：1. **高峰期排队优化**：context。 2. **产品结构优化**：context。</该区域待分析替换>
+      
+      ---
+      
+      📌 **备注**：本报告由【智能营运分析系统】自动生成，数据来源 订单 + 客户评价。

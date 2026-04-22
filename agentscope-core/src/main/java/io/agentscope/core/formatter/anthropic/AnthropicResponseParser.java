@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,13 +19,13 @@ import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.RawMessageStreamEvent;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -43,8 +43,6 @@ public class AnthropicResponseParser {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicResponseParser.class);
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
     /**
      * Parse non-streaming Anthropic Message to ChatResponse.
      */
@@ -52,7 +50,7 @@ public class AnthropicResponseParser {
         List<ContentBlock> contentBlocks = new ArrayList<>();
 
         // Process content blocks
-        for (com.anthropic.models.messages.ContentBlock block : message.content()) {
+        for (var block : message.content()) {
             // Text block
             block.text()
                     .ifPresent(
@@ -202,7 +200,7 @@ public class AnthropicResponseParser {
         try {
             String jsonString = ObjectMappers.jsonMapper().writeValueAsString(jsonValue);
             @SuppressWarnings("unchecked")
-            Map<String, Object> result = objectMapper.readValue(jsonString, Map.class);
+            Map<String, Object> result = JsonUtils.getJsonCodec().fromJson(jsonString, Map.class);
             return result != null ? result : Map.of();
         } catch (Exception e) {
             log.warn("Failed to parse tool input JSON for tool {}: {}", toolName, e.getMessage());

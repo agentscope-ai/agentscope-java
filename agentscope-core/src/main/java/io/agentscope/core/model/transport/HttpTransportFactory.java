@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -47,8 +47,9 @@ import org.slf4j.LoggerFactory;
  * HttpTransportFactory.register(myTransport);
  * }</pre>
  *
- * <p>All registered transports and the default transport will be automatically
- * closed when the JVM shuts down.
+ * <p>All registered transports and the default transport will be closed
+ * during JVM shutdown, orchestrated by {@code AgentScopeJvmShutdownHook}
+ * after all agents have finished processing.
  */
 public final class HttpTransportFactory {
 
@@ -60,9 +61,6 @@ public final class HttpTransportFactory {
     /** List of all managed transports for cleanup. */
     private static final List<HttpTransport> managedTransports = new CopyOnWriteArrayList<>();
 
-    /** Whether the shutdown hook has been registered. */
-    private static volatile boolean shutdownHookRegistered = false;
-
     /** Lock object for synchronization. */
     private static final Object lock = new Object();
 
@@ -73,7 +71,7 @@ public final class HttpTransportFactory {
     /**
      * Get the default HttpTransport instance.
      *
-     * <p>If no default has been set, a new OkHttpTransport with default configuration
+     * <p>If no default has been set, a new JdkHttpTransport with default configuration
      * will be created lazily. The default transport is automatically registered for
      * cleanup on JVM shutdown.
      *
@@ -83,9 +81,8 @@ public final class HttpTransportFactory {
         if (defaultTransport == null) {
             synchronized (lock) {
                 if (defaultTransport == null) {
-                    defaultTransport = new OkHttpTransport();
+                    defaultTransport = new JdkHttpTransport();
                     managedTransports.add(defaultTransport);
-                    registerShutdownHookIfNeeded();
                     log.debug("Created default HttpTransport: {}", defaultTransport);
                 }
             }
@@ -107,7 +104,6 @@ public final class HttpTransportFactory {
             if (transport != null && !managedTransports.contains(transport)) {
                 managedTransports.add(transport);
             }
-            registerShutdownHookIfNeeded();
             log.debug("Set default HttpTransport: {}", transport);
         }
     }
@@ -124,7 +120,6 @@ public final class HttpTransportFactory {
     public static void register(HttpTransport transport) {
         if (transport != null && !managedTransports.contains(transport)) {
             managedTransports.add(transport);
-            registerShutdownHookIfNeeded();
             log.debug("Registered HttpTransport for management: {}", transport);
         }
     }
@@ -144,30 +139,6 @@ public final class HttpTransportFactory {
             log.debug("Unregistered HttpTransport from management: {}", transport);
         }
         return removed;
-    }
-
-    /**
-     * Register the JVM shutdown hook if not already registered.
-     */
-    private static void registerShutdownHookIfNeeded() {
-        if (!shutdownHookRegistered) {
-            synchronized (lock) {
-                if (!shutdownHookRegistered) {
-                    Runtime.getRuntime()
-                            .addShutdownHook(
-                                    new Thread(
-                                            () -> {
-                                                log.debug(
-                                                        "Shutdown hook triggered, closing all"
-                                                                + " HttpTransports");
-                                                shutdown();
-                                            },
-                                            "HttpTransportFactory-ShutdownHook"));
-                    shutdownHookRegistered = true;
-                    log.debug("Registered HttpTransport shutdown hook");
-                }
-            }
-        }
     }
 
     /**
@@ -215,7 +186,7 @@ public final class HttpTransportFactory {
      * @param transport the transport to check
      * @return true if the transport is managed
      */
-    static boolean isManaged(HttpTransport transport) {
+    public static boolean isManaged(HttpTransport transport) {
         return managedTransports.contains(transport);
     }
 }

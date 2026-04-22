@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,15 +19,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.state.State;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -46,12 +50,13 @@ import java.util.stream.Collectors;
  * for tracking purposes.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Msg {
+public class Msg implements State {
+
+    /** Metadata key for storing the generate reason. */
+    public static final String METADATA_GENERATE_REASON = "agentscope_generate_reason";
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String id;
 
@@ -86,8 +91,21 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = List.copyOf(content);
-        this.metadata = Map.copyOf(metadata);
+        this.content =
+                Objects.nonNull(content)
+                        ? content.stream().filter(Objects::nonNull).toList()
+                        : List.of();
+        this.metadata = new HashMap<>();
+        if (Objects.nonNull(metadata)) {
+            for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (Objects.isNull(key) || Objects.isNull(value)) {
+                    continue;
+                }
+                this.metadata.put(key, value);
+            }
+        }
         this.timestamp = timestamp;
     }
 
@@ -219,7 +237,7 @@ public class Msg {
     @Transient
     @JsonIgnore
     public boolean hasStructuredData() {
-        return metadata != null && !metadata.isEmpty();
+        return metadata != null && metadata.containsKey(MessageMetadataKeys.STRUCTURED_OUTPUT);
     }
 
     /**
@@ -253,8 +271,15 @@ public class Msg {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
         try {
-            return OBJECT_MAPPER.convertValue(metadata, targetClass);
+            return JsonUtils.getJsonCodec().convertValue(structuredOutput, targetClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
@@ -262,6 +287,85 @@ public class Msg {
                             + ". Ensure the target class has appropriate fields matching metadata"
                             + " keys.",
                     e);
+        }
+    }
+
+    /**
+     * Extract structured data from message metadata and convert it to the java.util.Map.
+     *
+     * <p>This method is useful when the message contains structured input from a user agent
+     * or structured output from an LLM. support for using dynamic schema processing
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * String json = """
+     *         {
+     *                 						 "type": "object",
+     *                 						 "properties": {
+     *                 						   "productName": {
+     *                 							 "type": "string"
+     *                 						                                              },
+     *                 						   "features": {
+     *                 							 "type": "array",
+     *                 							 "items": {
+     *                 							   "type": "string"                                             *                                           }
+     *                 						   },
+     *                 						   "pricing": {
+     *                 							 "type": "object",
+     *                 							 "properties": {
+     *                 							   "amount": {
+     *                                                  e": "number"
+     *                 							   },
+     *                 							   "currency": {
+     *                                                  e": "string"
+     *                                             }
+     *                                           }
+     *                 						   },
+     *                 						   "ratings": {
+     *                 							 "type": "object",
+     *                 							 "additionalProperties": {
+     *                                                   e": "integer"
+     *                                           }
+     *                                         }
+     *                                       }
+     *                 					   }
+     *         """;
+     *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
+     *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
+     *   Map<String, Object> structuredData = msg.getStructuredData(false);
+     * }</pre>
+     *
+     * @return The copied metadata
+     * @throws IllegalStateException if no metadata exists
+     */
+    @Transient
+    @JsonIgnore
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getStructuredData(boolean mutable) {
+        if (metadata == null || metadata.isEmpty()) {
+            throw new IllegalStateException(
+                    "No structured data in message. Use hasStructuredData() to check first.");
+        }
+        Object structuredOutput = metadata.get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        if (structuredOutput == null) {
+            throw new IllegalStateException(
+                    "No structured output in message metadata. Key '"
+                            + MessageMetadataKeys.STRUCTURED_OUTPUT
+                            + "' not found.");
+        }
+        if (!(structuredOutput instanceof Map)) {
+            throw new IllegalStateException(
+                    "Structured output is not a Map. Use getStructuredData(Class<T>) instead.");
+        }
+        Map<String, Object> result = (Map<String, Object>) structuredOutput;
+        if (mutable) {
+            return result;
+        }
+        try {
+            return JsonUtils.getJsonCodec()
+                    .convertValue(result, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to convert structured output to Map.", e);
         }
     }
 
@@ -311,7 +415,86 @@ public class Msg {
             return null;
         }
         Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
-        return usage instanceof ChatUsage ? (ChatUsage) usage : null;
+        if (usage instanceof ChatUsage) {
+            return (ChatUsage) usage;
+        }
+        if (usage instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) usage;
+            ChatUsage chatUsage =
+                    ChatUsage.builder()
+                            .inputTokens(toInt(map.get("inputTokens")))
+                            .outputTokens(toInt(map.get("outputTokens")))
+                            .time(toDouble(map.get("time")))
+                            .build();
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+            return chatUsage;
+        }
+        return null;
+    }
+
+    private static int toInt(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        return 0;
+    }
+
+    private static double toDouble(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        return 0.0;
+    }
+
+    /**
+     * Gets the reason why this message was generated.
+     *
+     * <p>This method helps users understand the context of agent execution:
+     * <ul>
+     *   <li>{@link GenerateReason#MODEL_STOP} - Task completed normally</li>
+     *   <li>{@link GenerateReason#TOOL_SUSPENDED} - External tools need user execution</li>
+     *   <li>{@link GenerateReason#REASONING_STOP_REQUESTED} - HITL stop in reasoning phase</li>
+     *   <li>{@link GenerateReason#ACTING_STOP_REQUESTED} - HITL stop in acting phase</li>
+     *   <li>{@link GenerateReason#INTERRUPTED} - Agent was interrupted</li>
+     *   <li>{@link GenerateReason#MAX_ITERATIONS} - Maximum iterations reached</li>
+     * </ul>
+     *
+     * @return The generate reason, defaults to {@link GenerateReason#MODEL_STOP} if not set
+     */
+    @Transient
+    @JsonIgnore
+    public GenerateReason getGenerateReason() {
+        if (metadata == null) {
+            return GenerateReason.MODEL_STOP;
+        }
+        Object reason = metadata.get(METADATA_GENERATE_REASON);
+        if (reason instanceof String s) {
+            try {
+                return GenerateReason.valueOf(s);
+            } catch (IllegalArgumentException e) {
+                return GenerateReason.MODEL_STOP;
+            }
+        }
+        if (reason instanceof GenerateReason gr) {
+            return gr;
+        }
+        return GenerateReason.MODEL_STOP;
+    }
+
+    /**
+     * Creates a new message with the specified generate reason.
+     *
+     * <p>This method returns a new Msg instance with the updated generate reason
+     * stored in metadata. The original message is not modified (immutable).
+     *
+     * @param reason The generate reason to set
+     * @return A new Msg instance with the updated generate reason
+     */
+    public Msg withGenerateReason(GenerateReason reason) {
+        Map<String, Object> newMetadata = new HashMap<>(this.metadata);
+        newMetadata.put(METADATA_GENERATE_REASON, reason.name());
+        return new Msg(this.id, this.name, this.role, this.content, newMetadata, this.timestamp);
     }
 
     public static class Builder {
@@ -435,6 +618,27 @@ public class Msg {
         public Builder timestamp(String timestamp) {
             this.timestamp =
                     timestamp == null ? TIMESTAMP_FORMATTER.format(Instant.now()) : timestamp;
+            return this;
+        }
+
+        /**
+         * Sets the generate reason for this message.
+         *
+         * <p>The generate reason indicates why this message was generated by the agent,
+         * helping users understand the execution context and required follow-up actions.
+         *
+         * @param reason The generate reason
+         * @return This builder for chaining
+         */
+        public Builder generateReason(GenerateReason reason) {
+            if (reason != null) {
+                if (this.metadata == null || this.metadata.isEmpty()) {
+                    this.metadata = new HashMap<>();
+                } else if (!(this.metadata instanceof HashMap)) {
+                    this.metadata = new HashMap<>(this.metadata);
+                }
+                this.metadata.put(METADATA_GENERATE_REASON, reason.name());
+            }
             return this;
         }
 

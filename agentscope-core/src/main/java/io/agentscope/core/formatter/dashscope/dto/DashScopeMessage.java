@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.formatter.dashscope.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.util.JsonUtils;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DashScope message DTO.
@@ -76,7 +80,12 @@ public class DashScopeMessage {
 
     /** Reasoning/thinking content (for assistant messages with thinking enabled). */
     @JsonProperty("reasoning_content")
+    @JsonAlias("reasoning")
     private String reasoningContent;
+
+    /** Cache control configuration for prompt caching. */
+    @JsonProperty("cache_control")
+    private Map<String, String> cacheControl;
 
     public DashScopeMessage() {}
 
@@ -103,9 +112,19 @@ public class DashScopeMessage {
      */
     @JsonIgnore
     public String getContentAsString() {
-        if (content instanceof String) {
-            return (String) content;
+        if (content instanceof String text) {
+            return text;
         }
+        if (content instanceof List) {
+            List<DashScopeContentPart> contentParts =
+                    JsonUtils.getJsonCodec()
+                            .convertValue(
+                                    content, new TypeReference<List<DashScopeContentPart>>() {});
+            if (contentParts != null && !contentParts.isEmpty()) {
+                return contentParts.get(0).getText();
+            }
+        }
+
         return null;
     }
 
@@ -165,6 +184,14 @@ public class DashScopeMessage {
         this.reasoningContent = reasoningContent;
     }
 
+    public Map<String, String> getCacheControl() {
+        return cacheControl;
+    }
+
+    public void setCacheControl(Map<String, String> cacheControl) {
+        this.cacheControl = cacheControl;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -204,6 +231,11 @@ public class DashScopeMessage {
 
         public Builder reasoningContent(String reasoningContent) {
             message.setReasoningContent(reasoningContent);
+            return this;
+        }
+
+        public Builder cacheControl(Map<String, String> cacheControl) {
+            message.setCacheControl(cacheControl);
             return this;
         }
 

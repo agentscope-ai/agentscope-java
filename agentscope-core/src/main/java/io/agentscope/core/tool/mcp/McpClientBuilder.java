@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import static io.agentscope.core.Version.VERSION;
+
+import io.agentscope.core.Version;
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -25,13 +28,22 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.ElicitRequest;
+import io.modelcontextprotocol.spec.McpSchema.ElicitResult;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
@@ -39,31 +51,33 @@ import reactor.core.publisher.Mono;
  *
  * <p>Supports three transport types:
  * <ul>
- *   <li>StdIO - for local process communication</li>
- *   <li>SSE - for HTTP Server-Sent Events (stateful)</li>
- *   <li>StreamableHTTP - for HTTP streaming (stateless)</li>
+ * <li>StdIO - for local process communication</li>
+ * <li>SSE - for HTTP Server-Sent Events (stateful)</li>
+ * <li>StreamableHTTP - for HTTP streaming (stateless)</li>
  * </ul>
  *
  * <p>Example usage:
  * <pre>{@code
  * // StdIO transport
  * McpClientWrapper client = McpClientBuilder.create("git-mcp")
- *     .stdioTransport("python", "-m", "mcp_server_git")
- *     .buildAsync()
- *     .block();
+ *         .stdioTransport("python", "-m", "mcp_server_git")
+ *         .buildAsync()
+ *         .block();
  *
- * // SSE transport with headers
+ * // SSE transport with headers and query parameters
  * McpClientWrapper client = McpClientBuilder.create("remote-mcp")
- *     .sseTransport("https://mcp.example.com/sse")
- *     .header("Authorization", "Bearer " + token)
- *     .timeout(Duration.ofSeconds(60))
- *     .buildAsync()
- *     .block();
+ *         .sseTransport("https://mcp.example.com/sse")
+ *         .header("Authorization", "Bearer " + token)
+ *         .queryParam("queryKey", "queryValue")
+ *         .timeout(Duration.ofSeconds(60))
+ *         .buildAsync()
+ *         .block();
  *
- * // Synchronous client
- * McpClientWrapper client = McpClientBuilder.create("sync-mcp")
- *     .streamableHttpTransport("https://mcp.example.com/http")
- *     .buildSync();
+ * // HTTP transport with multiple query parameters
+ * McpClientWrapper client = McpClientBuilder.create("http-mcp")
+ *         .streamableHttpTransport("https://mcp.example.com/http")
+ *         .queryParams(Map.of("token", "abc123", "env", "prod"))
+ *         .buildSync();
  * }</pre>
  */
 public class McpClientBuilder {
@@ -75,6 +89,8 @@ public class McpClientBuilder {
     private TransportConfig transportConfig;
     private Duration requestTimeout = DEFAULT_REQUEST_TIMEOUT;
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
+    private Function<ElicitRequest, Mono<ElicitResult>> asyncElicitationHandler;
+    private Function<ElicitRequest, ElicitResult> syncElicitationHandler;
 
     private McpClientBuilder(String name) {
         this.name = name;
@@ -97,7 +113,7 @@ public class McpClientBuilder {
      * Configures StdIO transport for local process communication.
      *
      * @param command the executable command
-     * @param args command arguments
+     * @param args    command arguments
      * @return this builder
      */
     public McpClientBuilder stdioTransport(String command, String... args) {
@@ -109,8 +125,8 @@ public class McpClientBuilder {
      * Configures StdIO transport with environment variables.
      *
      * @param command the executable command
-     * @param args command arguments list
-     * @param env environment variables
+     * @param args    command arguments list
+     * @param env     environment variables
      * @return this builder
      */
     public McpClientBuilder stdioTransport(
@@ -131,6 +147,30 @@ public class McpClientBuilder {
     }
 
     /**
+     * Customizes the HTTP client for SSE transport (only applicable after calling sseTransport).
+     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts, SSL settings, etc.
+     *
+     * <p>Example usage for HTTP/2:
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *         .sseTransport("https://example.com/sse")
+     *     .customizeSseClient(clientBuilder ->
+     *         clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
+     *         .buildAsync()
+     *         .block();
+     * }</pre>
+     *
+     * @param customizer consumer to customize the HttpClient.Builder
+     * @return this builder
+     */
+    public McpClientBuilder customizeSseClient(Consumer<HttpClient.Builder> customizer) {
+        if (transportConfig instanceof SseTransportConfig) {
+            ((SseTransportConfig) transportConfig).customizeHttpClient(customizer);
+        }
+        return this;
+    }
+
+    /**
      * Configures HTTP StreamableHTTP transport for stateless connections.
      *
      * @param url the server URL
@@ -142,9 +182,37 @@ public class McpClientBuilder {
     }
 
     /**
+     * Customizes the HTTP client for StreamableHTTP transport (only applicable
+     * after calling streamableHttpTransport).
+     * This allows advanced HTTP client configuration like HTTP/2, custom timeouts,
+     * SSL settings, etc.
+     *
+     * <p>
+     * Example usage for HTTP/2:
+     *
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *         .streamableHttpTransport("https://example.com/http")
+     *         .customizeStreamableHttpClient(
+     *                 clientBuilder -> clientBuilder.version(java.net.http.HttpClient.Version.HTTP_2))
+     *         .buildAsync()
+     *         .block();
+     * }</pre>
+     *
+     * @param customizer consumer to customize the HttpClient.Builder
+     * @return this builder
+     */
+    public McpClientBuilder customizeStreamableHttpClient(Consumer<HttpClient.Builder> customizer) {
+        if (transportConfig instanceof StreamableHttpTransportConfig) {
+            ((StreamableHttpTransportConfig) transportConfig).customizeHttpClient(customizer);
+        }
+        return this;
+    }
+
+    /**
      * Adds an HTTP header (only applicable for HTTP transports).
      *
-     * @param key header name
+     * @param key   header name
      * @param value header value
      * @return this builder
      */
@@ -164,6 +232,42 @@ public class McpClientBuilder {
     public McpClientBuilder headers(Map<String, String> headers) {
         if (transportConfig instanceof HttpTransportConfig) {
             ((HttpTransportConfig) transportConfig).setHeaders(headers);
+        }
+        return this;
+    }
+
+    /**
+     * Adds a query parameter to the URL (only applicable for HTTP transports).
+     *
+     * <p>
+     * Query parameters added via this method will be merged with any existing
+     * query parameters in the URL. If the same parameter key exists in both the URL
+     * and the added parameters, the added parameter will take precedence.
+     *
+     * @param key   query parameter name
+     * @param value query parameter value
+     * @return this builder
+     */
+    public McpClientBuilder queryParam(String key, String value) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).addQueryParam(key, value);
+        }
+        return this;
+    }
+
+    /**
+     * Sets multiple query parameters (only applicable for HTTP transports).
+     *
+     * <p>
+     * This method replaces any previously added query parameters.
+     * Query parameters in the original URL are still preserved and merged.
+     *
+     * @param queryParams map of query parameter name-value pairs
+     * @return this builder
+     */
+    public McpClientBuilder queryParams(Map<String, String> queryParams) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).setQueryParams(queryParams);
         }
         return this;
     }
@@ -191,6 +295,79 @@ public class McpClientBuilder {
     }
 
     /**
+     * Registers an asynchronous elicitation handler for processing elicit requests
+     * from the server.
+     *
+     * <p>
+     * When an elicitation handler is registered, the client will automatically
+     * enable
+     * the elicitation capability in ClientCapabilities.
+     *
+     * <p>
+     * This method is for use with {@link #buildAsync()}. The handler returns a
+     * {@link Mono}
+     * for asynchronous processing.
+     *
+     * <p>
+     * Example usage:
+     *
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .stdioTransport("python", "-m", "mcp_server")
+     *     .asyncElicitation(request -> {
+     *         // Handle elicitation request asynchronously
+     *         return Mono.just(ElicitResult.builder()...build());
+     *     })
+     *     .buildAsync()
+     *     .block();
+     * }
+     * </pre>
+     *
+     * @param handler function to handle elicit requests asynchronously
+     * @return this builder
+     */
+    public McpClientBuilder asyncElicitation(Function<ElicitRequest, Mono<ElicitResult>> handler) {
+        this.asyncElicitationHandler = handler;
+        return this;
+    }
+
+    /**
+     * Registers a synchronous elicitation handler for processing elicit requests
+     * from the server.
+     *
+     * <p>
+     * When an elicitation handler is registered, the client will automatically
+     * enable
+     * the elicitation capability in ClientCapabilities.
+     *
+     * <p>
+     * This method is for use with {@link #buildSync()}. The handler returns an
+     * {@link ElicitResult}
+     * directly for synchronous processing.
+     *
+     * <p>
+     * Example usage:
+     *
+     * <pre>{@code
+     * McpClientWrapper client = McpClientBuilder.create("mcp")
+     *     .stdioTransport("python", "-m", "mcp_server")
+     *     .syncElicitation(request -> {
+     *         // Handle elicitation request synchronously
+     *         return ElicitResult.builder()...build();
+     *     })
+     *     .buildSync();
+     * }
+     * </pre>
+     *
+     * @param handler function to handle elicit requests synchronously
+     * @return this builder
+     */
+    public McpClientBuilder syncElicitation(Function<ElicitRequest, ElicitResult> handler) {
+        this.syncElicitationHandler = handler;
+        return this;
+    }
+
+    /**
      * Builds an asynchronous MCP client wrapper.
      *
      * @return Mono emitting the async client wrapper
@@ -206,20 +383,23 @@ public class McpClientBuilder {
 
                     McpSchema.Implementation clientInfo =
                             new McpSchema.Implementation(
-                                    "agentscope-java",
-                                    "AgentScope Java Framework",
-                                    "1.0.3-SNAPSHOT");
+                                    "agentscope-java", "AgentScope Java Framework", VERSION);
 
                     McpSchema.ClientCapabilities clientCapabilities =
-                            McpSchema.ClientCapabilities.builder().build();
+                            buildCapabilities(asyncElicitationHandler != null);
 
-                    McpAsyncClient mcpClient =
+                    var clientBuilder =
                             McpClient.async(transport)
                                     .requestTimeout(requestTimeout)
                                     .initializationTimeout(initializationTimeout)
                                     .clientInfo(clientInfo)
-                                    .capabilities(clientCapabilities)
-                                    .build();
+                                    .capabilities(clientCapabilities);
+
+                    if (asyncElicitationHandler != null) {
+                        clientBuilder = clientBuilder.elicitation(asyncElicitationHandler);
+                    }
+
+                    McpAsyncClient mcpClient = clientBuilder.build();
 
                     return new McpAsyncClientWrapper(name, mcpClient);
                 });
@@ -239,20 +419,39 @@ public class McpClientBuilder {
 
         McpSchema.Implementation clientInfo =
                 new McpSchema.Implementation(
-                        "agentscope-java", "AgentScope Java Framework", "1.0.3-SNAPSHOT");
+                        "agentscope-java", "AgentScope Java Framework", Version.VERSION);
 
         McpSchema.ClientCapabilities clientCapabilities =
-                McpSchema.ClientCapabilities.builder().build();
+                buildCapabilities(syncElicitationHandler != null);
 
-        McpSyncClient mcpClient =
+        var clientBuilder =
                 McpClient.sync(transport)
                         .requestTimeout(requestTimeout)
                         .initializationTimeout(initializationTimeout)
                         .clientInfo(clientInfo)
-                        .capabilities(clientCapabilities)
-                        .build();
+                        .capabilities(clientCapabilities);
+
+        if (syncElicitationHandler != null) {
+            clientBuilder = clientBuilder.elicitation(syncElicitationHandler);
+        }
+
+        McpSyncClient mcpClient = clientBuilder.build();
 
         return new McpSyncClientWrapper(name, mcpClient);
+    }
+
+    /**
+     * Builds client capabilities
+     * @param withElicitation whether to include elicitation capability
+     * @return client capabilities
+     */
+    private McpSchema.ClientCapabilities buildCapabilities(boolean withElicitation) {
+        McpSchema.ClientCapabilities.Builder capabilitiesBuilder =
+                McpSchema.ClientCapabilities.builder();
+        if (withElicitation) {
+            capabilitiesBuilder.elicitation();
+        }
+        return capabilitiesBuilder.build();
     }
 
     // ==================== Internal Transport Configuration Classes ====================
@@ -296,6 +495,7 @@ public class McpClientBuilder {
     private abstract static class HttpTransportConfig implements TransportConfig {
         protected final String url;
         protected Map<String, String> headers = new HashMap<>();
+        protected Map<String, String> queryParams = new HashMap<>();
 
         protected HttpTransportConfig(String url) {
             this.url = url;
@@ -308,62 +508,170 @@ public class McpClientBuilder {
         public void setHeaders(Map<String, String> headers) {
             this.headers = new HashMap<>(headers);
         }
+
+        public void addQueryParam(String key, String value) {
+            if (key == null) {
+                throw new IllegalArgumentException("Query parameter key cannot be null");
+            }
+            if (value == null) {
+                throw new IllegalArgumentException("Query parameter value cannot be null");
+            }
+            queryParams.put(key, value);
+        }
+
+        public void setQueryParams(Map<String, String> queryParams) {
+            if (queryParams == null) {
+                throw new IllegalArgumentException("Query parameters map cannot be null");
+            }
+            this.queryParams = new HashMap<>(queryParams);
+        }
+
+        /**
+         * Extracts the endpoint path from URL, merging with additional query
+         * parameters.
+         * Query parameters from the original URL are merged with additionally
+         * configured parameters.
+         * Additional parameters take precedence over URL parameters with the same key.
+         *
+         * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
+         */
+        protected String extractEndpoint() {
+            URI uri;
+            try {
+                uri = URI.create(url);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid URL format: " + url, e);
+            }
+
+            String endpoint = uri.getPath();
+            if (endpoint == null || endpoint.isEmpty()) {
+                endpoint = "/";
+            }
+
+            // Parse existing query parameters from URL
+            Map<String, String> mergedParams = new HashMap<>();
+            String existingQuery = uri.getQuery();
+            if (existingQuery != null && !existingQuery.isEmpty()) {
+                for (String param : existingQuery.split("&")) {
+                    // Skip empty parameters
+                    if (param.isEmpty()) {
+                        continue;
+                    }
+
+                    String[] keyValue = param.split("=", 2);
+                    String key = keyValue[0];
+                    String value = keyValue.length == 2 ? keyValue[1] : "";
+
+                    // URL decode the key and value
+                    key = URLDecoder.decode(key, StandardCharsets.UTF_8);
+                    value = URLDecoder.decode(value, StandardCharsets.UTF_8);
+
+                    mergedParams.put(key, value);
+                }
+            }
+
+            // Merge with additional query parameters (additional params take precedence)
+            mergedParams.putAll(queryParams);
+
+            // Build query string
+            if (!mergedParams.isEmpty()) {
+                String queryString =
+                        mergedParams.entrySet().stream()
+                                .map(
+                                        e ->
+                                                URLEncoder.encode(
+                                                                e.getKey(), StandardCharsets.UTF_8)
+                                                        + "="
+                                                        + URLEncoder.encode(
+                                                                e.getValue(),
+                                                                StandardCharsets.UTF_8))
+                                .collect(Collectors.joining("&"));
+                endpoint += "?" + queryString;
+            }
+
+            return endpoint;
+        }
     }
 
     private static class SseTransportConfig extends HttpTransportConfig {
+        private HttpClientSseClientTransport.Builder clientTransportBuilder = null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
+
         public SseTransportConfig(String url) {
             super(url);
         }
 
+        public void clientTransportBuilder(
+                HttpClientSseClientTransport.Builder clientTransportBuilder) {
+            this.clientTransportBuilder = clientTransportBuilder;
+        }
+
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
+            this.httpClientCustomizer = customizer;
+        }
+
         @Override
         public McpClientTransport createTransport() {
-            HttpClientSseClientTransport.Builder builder =
-                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint(url));
+            if (clientTransportBuilder == null) {
+                clientTransportBuilder = HttpClientSseClientTransport.builder(url);
+            }
+
+            // Apply HTTP client customization if provided
+            if (httpClientCustomizer != null) {
+                clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
+            clientTransportBuilder.sseEndpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
-                builder.customizeRequest(
+                clientTransportBuilder.customizeRequest(
                         requestBuilder -> {
                             headers.forEach(requestBuilder::header);
                         });
             }
 
-            return builder.build();
+            return clientTransportBuilder.build();
         }
     }
 
     private static class StreamableHttpTransportConfig extends HttpTransportConfig {
+        private HttpClientStreamableHttpTransport.Builder clientTransportBuilder = null;
+        private Consumer<HttpClient.Builder> httpClientCustomizer = null;
+
         public StreamableHttpTransportConfig(String url) {
             super(url);
         }
 
+        public void clientTransportBuilder(
+                HttpClientStreamableHttpTransport.Builder clientTransportBuilder) {
+            this.clientTransportBuilder = clientTransportBuilder;
+        }
+
+        public void customizeHttpClient(Consumer<HttpClient.Builder> customizer) {
+            this.httpClientCustomizer = customizer;
+        }
+
         @Override
         public McpClientTransport createTransport() {
-            HttpClientStreamableHttpTransport.Builder builder =
-                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint(url));
+            if (clientTransportBuilder == null) {
+                clientTransportBuilder = HttpClientStreamableHttpTransport.builder(url);
+            }
+
+            // Apply HTTP client customization if provided
+            if (httpClientCustomizer != null) {
+                clientTransportBuilder.customizeClient(httpClientCustomizer);
+            }
+
+            clientTransportBuilder.endpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
-                builder.customizeRequest(
+                clientTransportBuilder.customizeRequest(
                         requestBuilder -> {
                             headers.forEach(requestBuilder::header);
                         });
             }
 
-            return builder.build();
+            return clientTransportBuilder.build();
         }
-    }
-
-    /**
-     * Extracts the endpoint path from URL, preserving query parameters.
-     *
-     * @param url the full URL
-     * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
-     */
-    private static String extractEndpoint(String url) {
-        URI uri = URI.create(url);
-        String endpoint = uri.getPath();
-        if (uri.getQuery() != null) {
-            endpoint += "?" + uri.getQuery();
-        }
-        return endpoint;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ public class ToolSchema {
     private final String name;
     private final String description;
     private final Map<String, Object> parameters;
+    private final Boolean strict;
 
     /**
      * Creates a new ToolSchema instance using the builder pattern.
@@ -42,6 +43,7 @@ public class ToolSchema {
                 builder.parameters != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.parameters))
                         : Collections.emptyMap();
+        this.strict = builder.strict;
     }
 
     /**
@@ -72,6 +74,15 @@ public class ToolSchema {
     }
 
     /**
+     * Gets the strict mode flag for schema validation.
+     *
+     * @return true if strict mode is enabled, false otherwise, or null if not specified
+     */
+    public Boolean getStrict() {
+        return strict;
+    }
+
+    /**
      * Creates a new builder for ToolSchema.
      *
      * @return a new Builder instance
@@ -87,6 +98,7 @@ public class ToolSchema {
         private String name;
         private String description;
         private Map<String, Object> parameters;
+        private Boolean strict;
 
         /**
          * Sets the tool name.
@@ -118,6 +130,17 @@ public class ToolSchema {
          */
         public Builder parameters(Map<String, Object> parameters) {
             this.parameters = parameters;
+            return this;
+        }
+
+        /**
+         * Sets the strict mode for schema validation.
+         *
+         * @param strict whether to enable strict mode
+         * @return this builder instance
+         */
+        public Builder strict(Boolean strict) {
+            this.strict = strict;
             return this;
         }
 

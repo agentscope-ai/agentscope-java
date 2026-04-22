@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,18 +16,36 @@
 package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.test.ModelTestUtils;
+import io.agentscope.core.model.transport.OkHttpTransport;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for DashScopeChatModel.
@@ -135,6 +153,104 @@ class DashScopeChatModelTest {
 
         assertNotNull(
                 thinkingWithBudgetModel, "Model with thinking mode and budget should be created");
+    }
+
+    // ========== EndpointType Builder Tests ==========
+
+    @Test
+    @DisplayName("Should create model with explicit EndpointType.MULTIMODAL")
+    void testBuilderWithEndpointTypeMultimodal() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen3.5-plus")
+                        .endpointType(EndpointType.MULTIMODAL)
+                        .build();
+
+        assertNotNull(model, "Model with MULTIMODAL endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with explicit EndpointType.TEXT")
+    void testBuilderWithEndpointTypeText() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .endpointType(EndpointType.TEXT)
+                        .build();
+
+        assertNotNull(model, "Model with TEXT endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with EndpointType.AUTO (default behavior)")
+    void testBuilderWithEndpointTypeAuto() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .endpointType(EndpointType.AUTO)
+                        .build();
+
+        assertNotNull(model, "Model with AUTO endpoint type should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model without endpointType (defaults to AUTO)")
+    void testBuilderWithoutEndpointType() {
+        // This tests backward compatibility - not setting endpointType should still work
+        DashScopeChatModel model =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .build();
+
+        assertNotNull(model, "Model without explicit endpointType should be created");
+    }
+
+    // ========== Backward Compatible Constructor Tests ==========
+
+    @Test
+    @DisplayName("Should create model using overloaded constructor without endpointType")
+    void testOverloadedConstructorWithoutEndpointType() {
+        // The overloaded constructor without endpointType should delegate to the full constructor
+        DashScopeChatModel model =
+                new DashScopeChatModel(
+                        mockApiKey,
+                        "qwen-plus",
+                        true,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(model, "Model from overloaded constructor should be created");
+        assertEquals("qwen-plus", model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model using full constructor with explicit endpointType")
+    void testFullConstructorWithEndpointType() {
+        DashScopeChatModel model =
+                new DashScopeChatModel(
+                        mockApiKey,
+                        "qwen3.5-plus",
+                        true,
+                        null,
+                        null,
+                        EndpointType.MULTIMODAL,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+
+        assertNotNull(model, "Model from full constructor should be created");
+        assertEquals("qwen3.5-plus", model.getModelName());
     }
 
     // ========== Vision Model Tests ==========
@@ -409,5 +525,457 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(thinkingModel);
+    }
+
+    @Test
+    @DisplayName("DashScope chat model stream with additional headers and params")
+    void testDoStreamWithAdditionHeadersAndParams() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .enableThinking(true)
+                        .enableSearch(true)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder()
+                                .additionalHeaders(Map.of("custom", "custom-header"))
+                                .additionalBodyParams(Map.of("custom", "custom-body"))
+                                .additionalQueryParams(Map.of("custom", "custom-query"))
+                                .build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("custom-header", recorded.getHeader("custom"));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT + "?custom=custom-query",
+                recorded.getPath());
+        assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-body\""));
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("DashScope chat model non-stream with additional headers and params")
+    void testDoNonStreamWithAdditionHeadersAndParams() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder()
+                                .additionalHeaders(Map.of("custom", "custom-header"))
+                                .additionalBodyParams(Map.of("custom", "custom-body"))
+                                .additionalQueryParams(Map.of("custom", "custom-query"))
+                                .build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("custom-header", recorded.getHeader("custom"));
+        assertEquals(
+                DashScopeHttpClient.TEXT_GENERATION_ENDPOINT + "?custom=custom-query",
+                recorded.getPath());
+        assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-body\""));
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("DashScope chat model apply thinking mode")
+    void testApplyThinkingMode() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .enableSearch(false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+
+        assertTrue(request.getParameters().getEnableThinking());
+        assertFalse(request.getParameters().getEnableSearch());
+        assertEquals(100, request.getParameters().getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("DashScope chat model apply thinking mode with null")
+    void testApplyThinkingModeWithNull() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
+
+        assertNull(request.getParameters().getEnableThinking());
+        assertNull(request.getParameters().getEnableSearch());
+        assertNull(request.getParameters().getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName(
+            "Should throw an IllegalStateException when setting thinkingBudget while thinking mode"
+                    + " is disabled")
+    void testApplyThinkingModeValidation() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(false)
+                        .enableSearch(false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokeApplyThinkingMode(chatModel, request, options));
+    }
+
+    @Test
+    @DisplayName("DashScope chat model non-stream should throw ModelException when occur error")
+    void testDoNonStreamErrorHandling() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setBody(
+                                """
+                                {
+                                    "request_id" : "cd6fa13d-0f95-47e5-aba1-d676b87b7526",
+                                    "code" : "InvalidParameter",
+                                    "message" : "This model does not support enable_search."
+                                  }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-plus").stream(
+                                false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        Flux<ChatResponse> flux =
+                chatModel.doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build());
+
+        StepVerifier.create(flux).expectError(ModelException.class).verify();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertNotNull(recorded);
+
+        mockServer.shutdown();
+    }
+
+    // ========== Encryption Configuration Tests ==========
+
+    @Test
+    @DisplayName("Should create model with encryption enabled")
+    void testModelWithEncryption() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        try {
+            // Mock public key API response
+            String publicKeyResponse =
+                    """
+                    {
+                      "request_id": "test-request-id",
+                      "data": {
+                        "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnojrB579xgPQN5f46SvoRAiQBPWBaPzWh7hp51fWI+OsQk7KqH0qMcw8i0eK5rfOvJIPujOQgnes1ph9/gKAst9NzXVIl9JJYUSPtzTvOabhp4yvS3KBf9g3xHYVjYgW33SOY74Ue/tgbCXn717rV6gXb4sVvq9XK/1BrDcGbEOQEZEgBTFkm/g3lpWLQtACwwqHffoA9eQtkkz15ZFKosAgbR8LedfIvxAl2zk15REzxXiRcFgc9/tLF0U1t2Sxt9FkQefxYwn6EZawTsRJvf4kqF3MaPdTcDbOp0iSNvCl2qzPSf/F+Oll2CUM1tFAEu81oa4l0WaDR3UtvqOtyQIDAQAB",
+                        "public_key_id": "1"
+                      }
+                    }
+                    """;
+
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody(publicKeyResponse)
+                            .setHeader("Content-Type", "application/json"));
+
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+
+            DashScopeChatModel encryptedModel =
+                    DashScopeChatModel.builder()
+                            .apiKey(mockApiKey)
+                            .modelName("qwen-max")
+                            .enableEncrypt(true)
+                            .baseUrl(baseUrl)
+                            .httpTransport(OkHttpTransport.builder().build())
+                            .build();
+
+            assertNotNull(encryptedModel, "Encrypted model should be created");
+
+            // Verify that the public key API was called
+            RecordedRequest recorded = mockServer.takeRequest();
+            assertEquals(DashScopeHttpClient.PUBLIC_KEYS_ENDPOINT, recorded.getPath());
+            assertEquals("Bearer " + mockApiKey, recorded.getHeader("Authorization"));
+        } finally {
+            mockServer.shutdown();
+        }
+    }
+
+    @Test
+    @DisplayName("Should create model without encryption (default)")
+    void testModelWithoutEncryption() {
+        DashScopeChatModel normalModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        assertNotNull(normalModel, "Normal model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with encryption disabled explicitly")
+    void testModelWithEncryptionDisabled() {
+        DashScopeChatModel model =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableEncrypt(false)
+                        .build();
+
+        assertNotNull(model, "Model with encryption disabled should be created");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when public key fetch fails")
+    void testModelWithEncryptionFetchFails() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        try {
+            // Mock error response from public key API
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(500)
+                            .setBody("Internal Server Error")
+                            .setHeader("Content-Type", "text/plain"));
+
+            String baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
+
+            assertThrows(
+                    DashScopeHttpClient.DashScopeHttpException.class,
+                    () ->
+                            DashScopeChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("qwen-max")
+                                    .enableEncrypt(true)
+                                    .baseUrl(baseUrl)
+                                    .httpTransport(OkHttpTransport.builder().build())
+                                    .build());
+        } finally {
+            mockServer.shutdown();
+        }
+    }
+
+    @Test
+    @DisplayName("Should apply cache_control to request when cacheControl option is enabled")
+    void testCacheControlApplied() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().cacheControl(true).build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        assertTrue(
+                body.contains("\"cache_control\""),
+                "Request body should contain cache_control: " + body);
+        assertTrue(
+                body.contains("\"ephemeral\""),
+                "Request body should contain ephemeral cache type: " + body);
+
+        mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should NOT apply cache_control when cacheControl option is not enabled")
+    void testCacheControlNotAppliedWhenDisabled() throws Exception {
+        MockWebServer mockServer = new MockWebServer();
+        mockServer.start();
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                """
+                                        {
+                                            "request_id": "test",
+                                            "output": {
+                                                "choices": []
+                                            }
+                                        }
+                                """)
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        chatModel
+                .doStream(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("You are helpful.")
+                                                        .build())
+                                        .build(),
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(TextBlock.builder().text("Hello").build())
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build())
+                .blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        assertFalse(
+                body.contains("\"cache_control\""),
+                "Request body should NOT contain cache_control when disabled: " + body);
+
+        mockServer.shutdown();
+    }
+
+    /**
+     *  Use reflection to invoke applyThinkingMode
+     *
+     * @param model the dashscope model
+     * @param request the dashscope API request DTO
+     * @param options the generation options for LLM models
+     * @throws Throwable throw the target exception
+     */
+    private void invokeApplyThinkingMode(
+            DashScopeChatModel model, DashScopeRequest request, GenerateOptions options)
+            throws Throwable {
+        try {
+            Method method =
+                    DashScopeChatModel.class.getDeclaredMethod(
+                            "applyThinkingMode", DashScopeRequest.class, GenerateOptions.class);
+            method.setAccessible(true);
+            method.invoke(model, request, options);
+        } catch (InvocationTargetException e) {
+            throw e.getTargetException();
+        }
     }
 }

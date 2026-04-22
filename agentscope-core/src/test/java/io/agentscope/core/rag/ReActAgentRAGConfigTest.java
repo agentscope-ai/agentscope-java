@@ -1,11 +1,11 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2024-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,7 +24,9 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -55,9 +57,7 @@ class ReActAgentRAGConfigTest {
                 new Model() {
                     @Override
                     public Flux<ChatResponse> stream(
-                            List<Msg> messages,
-                            List<io.agentscope.core.model.ToolSchema> tools,
-                            io.agentscope.core.model.GenerateOptions options) {
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                         // Return a simple finish response
                         ChatResponse response =
                                 ChatResponse.builder()
@@ -234,23 +234,6 @@ class ReActAgentRAGConfigTest {
 
         assertNotNull(agent);
         // No exception should be thrown
-    }
-
-    @Test
-    @DisplayName("Should configure enableOnlyForUserQueries")
-    void testEnableOnlyForUserQueries() {
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(mockModel)
-                        .toolkit(new Toolkit())
-                        .memory(new InMemoryMemory())
-                        .knowledge(mockKnowledge)
-                        .ragMode(RAGMode.GENERIC)
-                        .enableOnlyForUserQueries(false)
-                        .build();
-
-        assertNotNull(agent);
     }
 
     @Test
