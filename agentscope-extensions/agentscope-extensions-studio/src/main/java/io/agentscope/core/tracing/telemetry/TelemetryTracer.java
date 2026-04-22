@@ -28,12 +28,14 @@ import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMRe
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMResponseAttributes;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolRequestAttributes;
 import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GEN_AI_SESSION_ID;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
 
 import io.agentscope.core.Version;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
@@ -50,6 +52,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.TracerProvider;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.ContextKey;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
@@ -66,10 +69,33 @@ import reactor.util.context.ContextView;
 
 public class TelemetryTracer implements Tracer {
 
+    static final ContextKey<String> SESSION_ID_KEY = ContextKey.named("gen_ai.session.id");
+
     private final io.opentelemetry.api.trace.Tracer tracer;
 
     public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
         this.tracer = tracer;
+    }
+
+    private static String resolveSessionId(AgentBase instance, Context parentContext) {
+        SessionKey sessionKey = instance.getCurrentSessionKey();
+        if (sessionKey != null) {
+            return sessionKey.toIdentifier();
+        }
+        return parentContext.get(SESSION_ID_KEY);
+    }
+
+    private static Context enrichContextWithSessionId(Context context, String sessionId) {
+        if (sessionId != null) {
+            return context.with(SESSION_ID_KEY, sessionId);
+        }
+        return context;
+    }
+
+    private static void setSessionIdAttribute(Span span, String sessionId) {
+        if (sessionId != null) {
+            span.setAttribute(GEN_AI_SESSION_ID, sessionId);
+        }
     }
 
     @Override
@@ -90,7 +116,11 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callAgent"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    String sessionId = resolveSessionId(instance, parentContext);
+                    setSessionIdAttribute(span, sessionId);
+                    Context otelContext =
+                            enrichContextWithSessionId(
+                                    span.storeInContext(Context.current()), sessionId);
 
                     return otelContext
                             .wrapSupplier(agentCall)
@@ -128,7 +158,11 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callModel"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    String sessionId = parentContext.get(SESSION_ID_KEY);
+                    setSessionIdAttribute(span, sessionId);
+                    Context otelContext =
+                            enrichContextWithSessionId(
+                                    span.storeInContext(Context.current()), sessionId);
 
                     StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
 
@@ -172,7 +206,11 @@ public class TelemetryTracer implements Tracer {
                             AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callTool"));
 
                     Span span = spanBuilder.startSpan();
-                    Context otelContext = span.storeInContext(Context.current());
+                    String sessionId = parentContext.get(SESSION_ID_KEY);
+                    setSessionIdAttribute(span, sessionId);
+                    Context otelContext =
+                            enrichContextWithSessionId(
+                                    span.storeInContext(Context.current()), sessionId);
 
                     return otelContext
                             .wrapSupplier(toolKitCall)
@@ -205,6 +243,9 @@ public class TelemetryTracer implements Tracer {
         spanBuilder.setAllAttributes(getCommonAttributes());
         spanBuilder.setAttribute(AGENTSCOPE_FUNCTION_NAME, getFunctionName(formatter, "format"));
         Span span = spanBuilder.startSpan();
+
+        String sessionId = Context.current().get(SESSION_ID_KEY);
+        setSessionIdAttribute(span, sessionId);
 
         List<TReq> result = null;
         try (Scope scope = span.makeCurrent()) {
