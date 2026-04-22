@@ -56,6 +56,8 @@ public class ReasoningContext {
     private int inputTokens = 0;
     private int outputTokens = 0;
     private double time = 0;
+    private Integer reasoningTokens = null;
+    private Integer cachedTokens = null;
 
     public ReasoningContext(String agentName) {
         this.agentName = agentName;
@@ -84,6 +86,12 @@ public class ReasoningContext {
             inputTokens = usage.getInputTokens();
             outputTokens = usage.getOutputTokens();
             time = usage.getTime();
+            if (usage.getReasoningTokens() != null) {
+                reasoningTokens = usage.getReasoningTokens();
+            }
+            if (usage.getCachedTokens() != null) {
+                cachedTokens = usage.getCachedTokens();
+            }
         }
 
         List<Msg> streamingMsgs = new ArrayList<>();
@@ -166,12 +174,14 @@ public class ReasoningContext {
 
         // Build metadata with accumulated ChatUsage
         Map<String, Object> metadata = new HashMap<>();
-        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+        if (inputTokens > 0 || outputTokens > 0 || time > 0 || reasoningTokens != null || cachedTokens != null) {
             ChatUsage chatUsage =
                     ChatUsage.builder()
                             .inputTokens(inputTokens)
                             .outputTokens(outputTokens)
                             .time(time)
+                            .reasoningTokens(reasoningTokens)
+                            .cachedTokens(cachedTokens)
                             .build();
             metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
         }
@@ -278,11 +288,13 @@ public class ReasoningContext {
      * @return ChatUsage with accumulated tokens, or null if no usage data
      */
     public ChatUsage getChatUsage() {
-        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+        if (inputTokens > 0 || outputTokens > 0 || time > 0 || reasoningTokens != null || cachedTokens != null) {
             return ChatUsage.builder()
                     .inputTokens(inputTokens)
                     .outputTokens(outputTokens)
                     .time(time)
+                    .reasoningTokens(reasoningTokens)
+                    .cachedTokens(cachedTokens)
                     .build();
         }
         return null;

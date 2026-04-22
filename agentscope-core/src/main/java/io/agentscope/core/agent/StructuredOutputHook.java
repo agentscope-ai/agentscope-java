@@ -221,6 +221,8 @@ public class StructuredOutputHook implements Hook {
         int totalInput = 0;
         int totalOutput = 0;
         double totalTime = 0;
+        Integer totalReasoning = null;
+        Integer totalCached = null;
         boolean hasUsage = false;
 
         for (Msg msg : messages) {
@@ -232,6 +234,12 @@ public class StructuredOutputHook implements Hook {
                     totalInput += usage.getInputTokens();
                     totalOutput += usage.getOutputTokens();
                     totalTime += usage.getTime();
+                    if (usage.getReasoningTokens() != null) {
+                        totalReasoning = (totalReasoning == null ? 0 : totalReasoning) + usage.getReasoningTokens();
+                    }
+                    if (usage.getCachedTokens() != null) {
+                        totalCached = (totalCached == null ? 0 : totalCached) + usage.getCachedTokens();
+                    }
                 }
 
                 // Collect ThinkingBlock (keep the last one)
@@ -247,6 +255,8 @@ public class StructuredOutputHook implements Hook {
                         ? ChatUsage.builder()
                                 .inputTokens(totalInput)
                                 .outputTokens(totalOutput)
+                                .reasoningTokens(totalReasoning)
+                                .cachedTokens(totalCached)
                                 .time(totalTime)
                                 .build()
                         : null;
