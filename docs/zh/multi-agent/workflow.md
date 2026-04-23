@@ -83,9 +83,9 @@ START → list_tables → call_get_schema → get_schema → generate_query → 
 
 **配置**：
 
-- `workflow.rag.enabled` – 启用 RAG 工作流 Bean。
-- `workflow.sql.enabled` – 启用 SQL 工作流 Bean。
-- `workflow.runner.enabled` – 为 `true` 时，启动时执行一次演示（需与上述其一搭配）。
+- `workflow.rag.enabled` – 启用 RAG 工作流 Bean（默认 `false`）。
+- `workflow.sql.enabled` – 启用 SQL 工作流 Bean（示例中默认 `true`）。
+- `workflow.runner.enabled` – 为 `true` 时，启动时执行一次演示（示例中默认 `true`，需与上述其一搭配）。
 - **DashScope API Key**：`AI_DASHSCOPE_API_KEY` 或 `spring.ai.dashscope.api-key`（RAG 与 SQL 均需；RAG 还需配置 embedding 模型）。
 
 ## 与其他模式的关系

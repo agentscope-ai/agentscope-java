@@ -65,17 +65,16 @@
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <spotless.version>3.4.0</spotless.version>
+        <google-java-format.version>1.28.0</google-java-format.version>
+
+        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
-        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
-        <google-java-format.version>1.28.0</google-java-format.version>
-        <maven.deploy.skip>false</maven.deploy.skip>
         <central.publishing.maven.version>0.10.0</central.publishing.maven.version>
+
+        <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 
     <dependencyManagement>

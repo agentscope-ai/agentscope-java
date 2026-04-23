@@ -531,6 +531,54 @@ class OpenAIMessageConverterTest {
             assertTrue(args.contains("city"));
             assertTrue(args.contains("Shanghai"));
         }
+
+        @Test
+        @DisplayName(
+                "Should fallback to input when content is invalid JSON (interrupted streaming)")
+        void testToolCallFallbackWhenContentIsInvalidJson() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_broken")
+                            .name("search")
+                            .input(Map.of("query", "hello"))
+                            .content("{\"query\": \"hel")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            // Should fall back to input serialization
+            assertTrue(args.contains("query"));
+            assertTrue(args.contains("hello"));
+        }
+
+        @Test
+        @DisplayName("Should fallback to input when content is non-object JSON like array")
+        void testToolCallFallbackWhenContentIsNonObjectJson() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_array")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("[1, 2, 3]")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            assertTrue(args.contains("key"));
+            assertTrue(args.contains("value"));
+        }
     }
 
     @Nested
