@@ -238,6 +238,7 @@ class ToolExecutor {
                         .agent(param.getAgent())
                         .context(finalContext)
                         .emitter(toolEmitter)
+                        .metadata(param.getMetadata())
                         .build();
 
         return tool.callAsync(executionParam)
@@ -279,7 +280,8 @@ class ToolExecutor {
             boolean parallel,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            ToolExecutionContext agentContext,
+            Map<String, Object> metadata) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
@@ -292,7 +294,11 @@ class ToolExecutor {
                         .map(
                                 toolCall ->
                                         executeWithInfrastructure(
-                                                toolCall, executionConfig, agent, agentContext))
+                                                toolCall,
+                                                executionConfig,
+                                                agent,
+                                                agentContext,
+                                                metadata))
                         .toList();
 
         // Parallel or sequential execution
@@ -309,13 +315,15 @@ class ToolExecutor {
             ToolUseBlock toolCall,
             ExecutionConfig executionConfig,
             Agent agent,
-            ToolExecutionContext agentContext) {
+            ToolExecutionContext agentContext,
+            Map<String, Object> metadata) {
         // Build tool call parameter
         ToolCallParam param =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .agent(agent)
                         .context(agentContext)
+                        .metadata(metadata)
                         .build();
 
         // Get core execution

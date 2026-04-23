@@ -102,6 +102,52 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should propagate metadata in batch execution path")
+    void shouldPropagateMetadataInBatchExecutionPath() {
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_echo";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Echo metadata user id";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        Object userId = param.getMetadata().get("userId");
+                        return Mono.just(
+                                ToolResultBlock.of(
+                                        TextBlock.builder().text(String.valueOf(userId)).build()));
+                    }
+                });
+
+        ToolUseBlock call =
+                ToolUseBlock.builder()
+                        .id("call-metadata")
+                        .name("metadata_echo")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+        Map<String, Object> metadata = Map.of("userId", "1234567890");
+
+        List<ToolResultBlock> responses =
+                toolkit.callTools(List.of(call), null, null, null, metadata).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return metadata echo response");
+        assertEquals(1, responses.size(), "Should have one response");
+        assertEquals("1234567890", extractFirstText(responses.get(0)));
+    }
+
+    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         Map<String, Object> errorInput = Map.of("message", "test failure");

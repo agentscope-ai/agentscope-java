@@ -48,6 +48,7 @@ public class ToolCallParam {
     private final Agent agent;
     private final ToolExecutionContext context;
     private final ToolEmitter emitter;
+    private final Map<String, Object> metadata;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
@@ -55,6 +56,8 @@ public class ToolCallParam {
         this.agent = builder.agent;
         this.context = builder.context;
         this.emitter = builder.emitter;
+        this.metadata =
+                builder.metadata != null ? new HashMap<>(builder.metadata) : Collections.emptyMap();
     }
 
     /**
@@ -106,6 +109,18 @@ public class ToolCallParam {
     }
 
     /**
+     * Gets the metadata associated with this tool call.
+     *
+     * <p>This metadata is used to propagate information (such as user context) through the tool
+     * call chain, particularly when using sub-agents.
+     *
+     * @return Unmodifiable map of metadata, never null
+     */
+    public Map<String, Object> getMetadata() {
+        return Collections.unmodifiableMap(metadata);
+    }
+
+    /**
      * Creates a new builder for constructing ToolCallParam instances.
      *
      * @return A new builder
@@ -123,6 +138,7 @@ public class ToolCallParam {
         private Agent agent;
         private ToolExecutionContext context;
         private ToolEmitter emitter;
+        private Map<String, Object> metadata;
 
         private Builder() {}
 
@@ -178,6 +194,20 @@ public class ToolCallParam {
          */
         public Builder emitter(ToolEmitter emitter) {
             this.emitter = emitter;
+            return this;
+        }
+
+        /**
+         * Sets the metadata for this tool call.
+         *
+         * <p>This metadata is used to propagate information (such as user context) through the tool
+         * call chain.
+         *
+         * @param metadata The metadata map
+         * @return This builder
+         */
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
             return this;
         }
 

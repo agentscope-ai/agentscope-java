@@ -154,6 +154,7 @@ public class SubAgentTool implements AgentTool {
                                 Msg.builder()
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
+                                        .metadata(param.getMetadata())
                                         .build();
 
                         logger.debug(
