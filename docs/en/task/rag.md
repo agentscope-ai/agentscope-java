@@ -48,7 +48,6 @@ ReActAgent agent = ReActAgent.builder()
             .limit(3)
             .scoreThreshold(0.3)
             .build())
-    .enableOnlyForUserQueries(true)  // Retrieve only for user messages
     .build();
 ```
 

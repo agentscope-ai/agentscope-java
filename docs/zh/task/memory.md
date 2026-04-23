@@ -316,4 +316,4 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 
 - [AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
 - [Session 管理](./session.md)
-- [ReActAgent 使用指南](./react-agent.md)
+- [Agent 配置](./agent-config.md)

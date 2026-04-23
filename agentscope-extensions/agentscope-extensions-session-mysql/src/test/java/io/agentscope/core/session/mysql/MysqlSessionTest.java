@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -233,6 +234,22 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should commit single state save when connection auto-commit is disabled")
+    void testSaveSingleStateCommitsWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session_auto_commit_off");
+
+        session.save(sessionKey, "testModule", new TestState("test_value", 42));
+
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+    }
+
+    @Test
     @DisplayName("Should save and get list state correctly")
     void testSaveAndGetListState() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
@@ -263,6 +280,49 @@ public class MysqlSessionTest {
         assertEquals(2, loaded.size());
         assertEquals("value1", loaded.get(0).value());
         assertEquals("value2", loaded.get(1).value());
+    }
+
+    @Test
+    @DisplayName("Should commit incremental list save when connection auto-commit is disabled")
+    void testSaveListIncrementalAppendCommitsWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(false, true);
+        when(mockResultSet.getInt("max_index")).thenReturn(0);
+        when(mockResultSet.wasNull()).thenReturn(true);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session_list_auto_commit_off");
+        List<TestState> states = List.of(new TestState("value1", 1), new TestState("value2", 2));
+
+        session.save(sessionKey, "testList", states);
+
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+    }
+
+    @Test
+    @DisplayName(
+            "Should not force auto-commit true after full rewrite when connection starts disabled")
+    void testSaveListFullRewriteRestoresOriginalAutoCommitState() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(true, true);
+        when(mockResultSet.getString("state_data")).thenReturn("stale_hash");
+        when(mockResultSet.getInt("max_index")).thenReturn(0);
+        when(mockResultSet.wasNull()).thenReturn(false);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session_full_rewrite_auto_commit_off");
+        List<TestState> states = List.of(new TestState("value1", 1));
+
+        session.save(sessionKey, "testList", states);
+
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
     }
 
     @Test
@@ -335,6 +395,22 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should commit delete when connection auto-commit is disabled")
+    void testDeleteSessionCommitsWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(1);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        SessionKey sessionKey = SimpleSessionKey.of("session1");
+
+        session.delete(sessionKey);
+
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+    }
+
+    @Test
     @DisplayName("Should list all session keys when empty")
     void testListSessionKeysEmpty() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
@@ -376,6 +452,21 @@ public class MysqlSessionTest {
     }
 
     @Test
+    @DisplayName("Should commit clearAllSessions when connection auto-commit is disabled")
+    void testClearAllSessionsCommitsWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(5);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        int deleted = session.clearAllSessions();
+
+        assertEquals(5, deleted);
+        verify(mockConnection).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+    }
+
+    @Test
     @DisplayName("Should truncate session table")
     void testTruncateAllSessions() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
@@ -385,6 +476,23 @@ public class MysqlSessionTest {
         int success = session.truncateAllSessions();
 
         assertEquals(0, success);
+    }
+
+    @Test
+    @DisplayName(
+            "Should execute truncateAllSessions directly when connection auto-commit is disabled")
+    void testTruncateAllSessionsExecutesDirectlyWhenAutoCommitDisabled() throws SQLException {
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        when(mockStatement.execute()).thenReturn(true);
+        when(mockStatement.executeUpdate()).thenReturn(0);
+
+        MysqlSession session = new MysqlSession(mockDataSource, true);
+        int success = session.truncateAllSessions();
+
+        assertEquals(0, success);
+        verify(mockConnection, never()).commit();
+        verify(mockConnection, never()).setAutoCommit(true);
+        verify(mockConnection, never()).setAutoCommit(false);
     }
 
     @Test
