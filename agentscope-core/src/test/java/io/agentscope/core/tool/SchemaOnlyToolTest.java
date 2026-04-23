@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +58,7 @@ class SchemaOnlyToolTest {
                                         Map.of("sql", Map.of("type", "string")),
                                         "required",
                                         List.of("sql")))
+                        .strict(true)
                         .build();
         schemaOnlyTool = new SchemaOnlyTool(testSchema);
     }
@@ -69,6 +71,7 @@ class SchemaOnlyToolTest {
         assertEquals("Query an external database", schemaOnlyTool.getDescription());
         assertNotNull(schemaOnlyTool.getParameters());
         assertEquals("object", schemaOnlyTool.getParameters().get("type"));
+        assertEquals(Boolean.TRUE, schemaOnlyTool.getStrict());
     }
 
     @Test
@@ -82,6 +85,7 @@ class SchemaOnlyToolTest {
         assertEquals("get_user", tool.getName());
         assertEquals("Get user by ID", tool.getDescription());
         assertEquals(params, tool.getParameters());
+        assertNull(tool.getStrict());
     }
 
     @Test

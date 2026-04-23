@@ -59,6 +59,7 @@ public class SchemaOnlyTool implements AgentTool {
     private final String name;
     private final String description;
     private final Map<String, Object> parameters;
+    private final Boolean strict;
 
     /**
      * Creates a new SchemaOnlyTool from a ToolSchema.
@@ -74,6 +75,7 @@ public class SchemaOnlyTool implements AgentTool {
                 schema.getParameters() != null
                         ? Collections.unmodifiableMap(schema.getParameters())
                         : Collections.emptyMap();
+        this.strict = schema.getStrict();
     }
 
     /**
@@ -91,6 +93,7 @@ public class SchemaOnlyTool implements AgentTool {
                 parameters != null
                         ? Collections.unmodifiableMap(parameters)
                         : Collections.emptyMap();
+        this.strict = null;
     }
 
     @Override
@@ -106,6 +109,11 @@ public class SchemaOnlyTool implements AgentTool {
     @Override
     public Map<String, Object> getParameters() {
         return parameters;
+    }
+
+    @Override
+    public Boolean getStrict() {
+        return strict;
     }
 
     /**

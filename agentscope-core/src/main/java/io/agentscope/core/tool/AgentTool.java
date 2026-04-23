@@ -75,6 +75,19 @@ public interface AgentTool {
     Map<String, Object> getParameters();
 
     /**
+     * Gets strict mode configuration for this tool schema.
+     *
+     * <p>When strict mode is enabled, compatible model providers are expected to enforce stricter
+     * adherence to the tool parameter schema. Returning {@code null} means no explicit strict mode
+     * preference is provided.
+     *
+     * @return strict mode value ({@code true}/{@code false}) or {@code null} when unspecified
+     */
+    default Boolean getStrict() {
+        return null;
+    }
+
+    /**
      * Execute the tool with the given parameters (asynchronous).
      *
      * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for
