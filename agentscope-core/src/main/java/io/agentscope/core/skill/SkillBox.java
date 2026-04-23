@@ -37,6 +37,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,8 @@ public class SkillBox implements StateModule {
     private Path uploadDir;
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
+
+    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null, null);
@@ -759,13 +762,19 @@ public class SkillBox implements StateModule {
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
-                    if (content.startsWith(BASE64_PREFIX)) {
-                        String encoded = content.substring(BASE64_PREFIX.length());
-                        byte[] decoded = Base64.getDecoder().decode(encoded);
-                        Files.write(targetPath, decoded);
-                    } else {
-                        Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+
+                    Object lock =
+                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    synchronized (lock) {
+                        if (content.startsWith(BASE64_PREFIX)) {
+                            String encoded = content.substring(BASE64_PREFIX.length());
+                            byte[] decoded = Base64.getDecoder().decode(encoded);
+                            Files.write(targetPath, decoded);
+                        } else {
+                            Files.writeString(targetPath, content, StandardCharsets.UTF_8);
+                        }
                     }
+
                     logger.debug("Uploaded file: {}", targetPath);
                     fileCount++;
                 } catch (IOException | IllegalArgumentException e) {
