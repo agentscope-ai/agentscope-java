@@ -150,10 +150,12 @@ public class ClientEventContext {
             for (Hook hook : hooks) {
                 eventMono = eventMono.flatMap(hook::onEvent);
             }
-            postEvent = eventMono.block();
 
-            Msg modifiedMsg = postEvent.getReasoningMessage();
-            return modifiedMsg != null ? modifiedMsg : finalMsg;
+            postEvent = eventMono.block();
+            if (postEvent != null) {
+                Msg modifiedMsg = postEvent.getReasoningMessage();
+                return modifiedMsg != null ? modifiedMsg : finalMsg;
+            }
         }
         return finalMsg;
     }
