@@ -140,4 +140,56 @@ class SchemaOnlyToolTest {
         Map<String, Object> parameters = schemaOnlyTool.getParameters();
         assertThrows(UnsupportedOperationException.class, () -> parameters.put("new_key", "value"));
     }
+
+    @Test
+    @DisplayName("Should support strict mode configuration via 4-arg constructor")
+    void testStrictModeConfiguration() {
+        Map<String, Object> params =
+                Map.of("type", "object", "properties", Map.of("id", Map.of("type", "integer")));
+
+        SchemaOnlyTool toolWithStrict = new SchemaOnlyTool("get_user", "Get user", params, true);
+        assertEquals(Boolean.TRUE, toolWithStrict.getStrict());
+
+        SchemaOnlyTool toolWithoutStrict =
+                new SchemaOnlyTool("get_user", "Get user", params, false);
+        assertEquals(Boolean.FALSE, toolWithoutStrict.getStrict());
+
+        SchemaOnlyTool toolUnspecifiedStrict =
+                new SchemaOnlyTool("get_user", "Get user", params, null);
+        assertNull(toolUnspecifiedStrict.getStrict());
+    }
+
+    @Test
+    @DisplayName("Should defensively copy parameters map to prevent external mutations")
+    void testDefensiveCopyOfParameters() {
+        Map<String, Object> originalParams = new java.util.HashMap<>();
+        originalParams.put("type", "object");
+        originalParams.put("sql", "SELECT 1");
+
+        // Create tool with the original parameters map
+        SchemaOnlyTool tool = new SchemaOnlyTool("query", "Query tool", originalParams);
+
+        // Mutate the original parameters map
+        originalParams.put("sql", "MODIFIED");
+        originalParams.put("newKey", "newValue");
+
+        // Verify that the tool's parameters were not affected by external mutations
+        Map<String, Object> toolParams = tool.getParameters();
+        assertEquals("SELECT 1", toolParams.get("sql"), "Original value should be preserved");
+        assertNull(toolParams.get("newKey"), "External mutation should not be visible");
+
+        // Verify exactly the expected entries are in the tool's parameters
+        assertEquals(2, toolParams.size(), "Tool should have only the original 2 entries");
+    }
+
+    @Test
+    @DisplayName("Should preserve strict mode when delegating through 3-arg constructor")
+    void testStrictModePreservedInThreeArgConstructor() {
+        Map<String, Object> params = Map.of("type", "object");
+
+        SchemaOnlyTool tool = new SchemaOnlyTool("test_tool", "Test tool", params);
+
+        // Verify that 3-arg constructor sets strict to null (unspecified)
+        assertNull(tool.getStrict());
+    }
 }

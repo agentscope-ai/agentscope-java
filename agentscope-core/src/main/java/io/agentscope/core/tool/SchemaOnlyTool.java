@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ToolSchema;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import reactor.core.publisher.Mono;
@@ -64,22 +65,21 @@ public class SchemaOnlyTool implements AgentTool {
     /**
      * Creates a new SchemaOnlyTool from a ToolSchema.
      *
-     * @param schema The tool schema containing name, description, and parameters
+     * @param schema The tool schema containing name, description, parameters, and strict mode
      * @throws NullPointerException if schema is null
      */
     public SchemaOnlyTool(ToolSchema schema) {
-        Objects.requireNonNull(schema, "schema cannot be null");
-        this.name = schema.getName();
-        this.description = schema.getDescription();
-        this.parameters =
-                schema.getParameters() != null
-                        ? Collections.unmodifiableMap(schema.getParameters())
-                        : Collections.emptyMap();
-        this.strict = schema.getStrict();
+        this(
+                Objects.requireNonNull(schema, "schema cannot be null").getName(),
+                schema.getDescription(),
+                schema.getParameters(),
+                schema.getStrict());
     }
 
     /**
      * Creates a new SchemaOnlyTool with the specified name, description, and parameters.
+     *
+     * <p>Strict mode is set to null (unspecified).
      *
      * @param name The tool name
      * @param description The tool description
@@ -87,13 +87,32 @@ public class SchemaOnlyTool implements AgentTool {
      * @throws NullPointerException if name or description is null
      */
     public SchemaOnlyTool(String name, String description, Map<String, Object> parameters) {
+        this(name, description, parameters, null);
+    }
+
+    /**
+     * Creates a new SchemaOnlyTool with the specified name, description, parameters, and strict
+     * mode configuration.
+     *
+     * <p>The parameters map is defensively copied to prevent external mutations from affecting
+     * the tool's internal state.
+     *
+     * @param name The tool name
+     * @param description The tool description
+     * @param parameters The tool parameters schema
+     * @param strict Whether the tool should use strict schema validation (null if unspecified)
+     * @throws NullPointerException if name or description is null
+     */
+    public SchemaOnlyTool(
+            String name, String description, Map<String, Object> parameters, Boolean strict) {
         this.name = Objects.requireNonNull(name, "name cannot be null");
         this.description = Objects.requireNonNull(description, "description cannot be null");
+        // Defensive copy: create a new HashMap from the provided parameters, then wrap it
         this.parameters =
                 parameters != null
-                        ? Collections.unmodifiableMap(parameters)
+                        ? Collections.unmodifiableMap(new HashMap<>(parameters))
                         : Collections.emptyMap();
-        this.strict = null;
+        this.strict = strict;
     }
 
     @Override
