@@ -210,6 +210,8 @@ class SkillUtilTest {
                             + "Content";
             AgentSkill skill4 = SkillUtil.createFrom(extraFieldsSkillMd, null);
             assertEquals("skill", skill4.getName());
+            assertEquals("1.0.0", String.valueOf(skill4.getMetadataValue("version")));
+            assertEquals("John", skill4.getMetadataValue("author"));
         }
 
         @Test

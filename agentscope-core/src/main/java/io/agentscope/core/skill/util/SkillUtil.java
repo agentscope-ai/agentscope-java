@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -87,10 +88,13 @@ public class SkillUtil {
     public static AgentSkill createFrom(
             String skillMd, Map<String, String> resources, String source) {
         ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMd);
-        Map<String, String> metadata = parsed.getMetadata();
+        Map<String, Object> metadata = parsed.getMetadata();
 
-        String name = metadata.get("name");
-        String description = metadata.get("description");
+        String name = stringifyRequiredMetadata(metadata, "name");
+        String description = stringifyRequiredMetadata(metadata, "description");
+        metadata = new LinkedHashMap<>(metadata);
+        metadata.put("name", name);
+        metadata.put("description", description);
         String skillContent = parsed.getContent();
 
         if (name == null || name.isEmpty() || description == null || description.isEmpty()) {
@@ -103,7 +107,7 @@ public class SkillUtil {
                     "The SKILL.md must have content except for the YAML Front Matter.");
         }
 
-        return new AgentSkill(name, description, skillContent, resources, source);
+        return new AgentSkill(metadata, skillContent, resources, source);
     }
 
     /**
@@ -297,5 +301,19 @@ public class SkillUtil {
             }
             return outputStream.toString(StandardCharsets.UTF_8);
         }
+    }
+
+    private static String stringifyRequiredMetadata(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return null;
+        }
+
+        Object value = metadata.get(key);
+        if (value == null) {
+            return null;
+        }
+
+        String stringValue = String.valueOf(value);
+        return stringValue.isEmpty() ? null : stringValue;
     }
 }
