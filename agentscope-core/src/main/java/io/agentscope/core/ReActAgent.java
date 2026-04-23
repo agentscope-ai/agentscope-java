@@ -291,9 +291,8 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         // patched during PreCallEvent. If we still reach here, the hook was disabled
         // and the user did not provide tool results — this is an unrecoverable state.
         throw new IllegalStateException(
-                "Pending tool calls exist without results. "
-                        + "Enable PendingToolRecoveryHook or provide tool results. "
-                        + "Pending IDs: "
+                "Pending tool calls exist without results. Provide tool results or re-enable"
+                        + " PendingToolRecoveryHook if it was disabled. Pending IDs: "
                         + pendingIds);
     }
 
@@ -1115,7 +1114,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         private PlanNotebook planNotebook;
         private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
-        private boolean enablePendingToolRecovery = false;
+        private boolean enablePendingToolRecovery = true;
 
         // Long-term memory configuration
         private LongTermMemory longTermMemory;
@@ -1257,7 +1256,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
         /**
          * Enables or disables automatic recovery from orphaned pending tool calls.
          *
-         * <p>When enabled , a {@link PendingToolRecoveryHook} is automatically
+         * <p>This recovery is enabled by default. When enabled, a {@link PendingToolRecoveryHook}
          * registered to detect and patch orphaned pending tool calls with synthetic error
          * results before agent processing begins. This prevents {@link IllegalStateException}
          * when tool execution fails, times out, or is interrupted.
