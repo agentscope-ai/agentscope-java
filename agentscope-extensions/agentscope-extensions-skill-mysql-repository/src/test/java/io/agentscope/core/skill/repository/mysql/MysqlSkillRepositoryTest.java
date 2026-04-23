@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +34,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -46,15 +49,13 @@ import org.mockito.MockitoAnnotations;
 /**
  * Unit tests for MysqlSkillRepository.
  *
- * <p>
- * These tests use mocked DataSource and Connection to verify the behavior of
+ * <p>These tests use mocked DataSource and Connection to verify the behavior of
  * MysqlSkillRepository without requiring an actual MySQL database.
  *
- * <p>
- * Test categories:
+ * <p>Test categories:
  * <ul>
- * <li>Constructor tests - validate initialization and parameter handling
- * <li>CRUD operation tests - verify skill save, get, delete operations
+ * <li>Constructor tests - validate initialization, schema creation, and compatibility detection
+ * <li>CRUD operation tests - verify legacy fallback and full metadata round-trip behavior
  * <li>SQL injection prevention tests - ensure security validations work
  * <li>Repository info tests - verify metadata reporting
  * </ul>
@@ -81,6 +82,8 @@ public class MysqlSkillRepositoryTest {
         when(mockConnection.prepareStatement(anyString())).thenReturn(mockStatement);
         // Also mock prepareStatement with RETURN_GENERATED_KEYS for insertSkill
         when(mockConnection.prepareStatement(anyString(), anyInt())).thenReturn(mockStatement);
+        when(mockStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockResultSet.next()).thenReturn(false);
         // Mock getGeneratedKeys for insertSkill
         when(mockStatement.getGeneratedKeys()).thenReturn(mockGeneratedKeysResultSet);
         when(mockGeneratedKeysResultSet.next()).thenReturn(true);
@@ -121,6 +124,20 @@ public class MysqlSkillRepositoryTest {
             assertEquals("agentscope_skill_resources", repo.getResourcesTableName());
             assertEquals(mockDataSource, repo.getDataSource());
             assertTrue(repo.isWriteable());
+            assertTrue(repo.isMetadataJsonColumnSupported() == false);
+            verify(mockConnection, atLeast(1)).prepareStatement(anyString());
+        }
+
+        @Test
+        @DisplayName("Should create metadata_json column for new tables")
+        void testConstructorCreatesMetadataJsonColumn() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+
+            new MysqlSkillRepository(mockDataSource, true, true);
+
+            verify(mockConnection)
+                    .prepareStatement(
+                            org.mockito.ArgumentMatchers.contains("metadata_json LONGTEXT NULL"));
         }
 
         @Test
@@ -597,22 +614,70 @@ public class MysqlSkillRepositoryTest {
         @Test
         @DisplayName("Should get skill successfully")
         void testGetSkill() throws SQLException {
-            // Setup mock for skill query
-            when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-            // First query: skill exists, second query: no resources
-            when(mockResultSet.next()).thenReturn(true, false);
+            when(mockResultSet.next()).thenReturn(true, true, false);
             when(mockResultSet.getString("name")).thenReturn("test-skill");
             when(mockResultSet.getString("description")).thenReturn("Test description");
             when(mockResultSet.getString("skill_content")).thenReturn("Test content");
             when(mockResultSet.getString("source")).thenReturn("mysql_test");
+            when(mockResultSet.getString("metadata_json"))
+                    .thenReturn(
+                            "{\"name\":\"test-skill\",\"description\":\"Test description\","
+                                    + "\"homepage\":\"https://example.com\"}");
 
-            AgentSkill skill = repo.getSkill("test-skill");
+            MysqlSkillRepository metadataRepo =
+                    new MysqlSkillRepository(mockDataSource, true, true);
+
+            AgentSkill skill = metadataRepo.getSkill("test-skill");
 
             assertNotNull(skill);
             assertEquals("test-skill", skill.getName());
             assertEquals("Test description", skill.getDescription());
             assertEquals("Test content", skill.getSkillContent());
             assertEquals("mysql_test", skill.getSource());
+            assertEquals("https://example.com", skill.getMetadataValue("homepage"));
+        }
+
+        @Test
+        @DisplayName("Should fall back to core metadata when metadata_json column is absent")
+        void testGetSkillLegacySchemaFallback() throws SQLException {
+            when(mockResultSet.next()).thenReturn(false, true, false);
+            when(mockResultSet.getString("name")).thenReturn("test-skill");
+            when(mockResultSet.getString("description")).thenReturn("Test description");
+            when(mockResultSet.getString("skill_content")).thenReturn("Test content");
+            when(mockResultSet.getString("source")).thenReturn("mysql_test");
+
+            MysqlSkillRepository legacyRepo = new MysqlSkillRepository(mockDataSource, true, true);
+            AgentSkill skill = legacyRepo.getSkill("test-skill");
+
+            assertEquals(List.of("name", "description"), List.copyOf(skill.getMetadata().keySet()));
+            assertEquals("test-skill", skill.getName());
+            assertEquals("Test description", skill.getDescription());
+        }
+
+        @Test
+        @DisplayName("Should get all skills with metadata_json when column exists")
+        void testGetAllSkillsWithMetadataJson() throws SQLException {
+            when(mockResultSet.next()).thenReturn(true, true, false, true, false, false);
+            when(mockResultSet.getLong("id")).thenReturn(1L, 1L);
+            when(mockResultSet.getString("name")).thenReturn("skill1");
+            when(mockResultSet.getString("description")).thenReturn("Desc 1");
+            when(mockResultSet.getString("skill_content")).thenReturn("Content 1");
+            when(mockResultSet.getString("source")).thenReturn("mysql_test");
+            when(mockResultSet.getString("metadata_json"))
+                    .thenReturn(
+                            "{\"name\":\"skill1\",\"description\":\"Desc"
+                                    + " 1\",\"homepage\":\"https://example.com/1\"}");
+            when(mockResultSet.getString("resource_path")).thenReturn("readme.md");
+            when(mockResultSet.getString("resource_content")).thenReturn("hello");
+
+            MysqlSkillRepository metadataRepo =
+                    new MysqlSkillRepository(mockDataSource, true, true);
+
+            List<AgentSkill> skills = metadataRepo.getAllSkills();
+
+            assertEquals(1, skills.size());
+            assertEquals("https://example.com/1", skills.get(0).getMetadataValue("homepage"));
+            assertEquals("hello", skills.get(0).getResources().get("readme.md"));
         }
 
         @Test
@@ -696,10 +761,57 @@ public class MysqlSkillRepositoryTest {
         }
 
         @Test
+        @DisplayName("Should save metadata_json when column exists")
+        void testSaveSkillWithMetadataJson() throws SQLException {
+            when(mockStatement.executeUpdate()).thenReturn(1);
+            when(mockResultSet.next()).thenReturn(true, false);
+
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("name", "new-skill");
+            metadata.put("description", "Description");
+            metadata.put("homepage", "https://example.com");
+            AgentSkill skill = new AgentSkill(metadata, "Content", Map.of(), "test");
+
+            MysqlSkillRepository metadataRepo =
+                    new MysqlSkillRepository(mockDataSource, true, true);
+
+            boolean saved = metadataRepo.save(List.of(skill), false);
+
+            assertTrue(saved);
+            verify(mockStatement)
+                    .setString(
+                            eq(5),
+                            org.mockito.ArgumentMatchers.contains(
+                                    "\"homepage\":\"https://example.com\""));
+        }
+
+        @Test
+        @DisplayName("Should skip metadata_json when legacy schema is used")
+        void testSaveSkillLegacySchemaFallback() throws SQLException {
+            when(mockStatement.execute()).thenReturn(true);
+            when(mockStatement.executeUpdate()).thenReturn(1);
+            when(mockResultSet.next()).thenReturn(false, false);
+
+            MysqlSkillRepository legacyRepo = new MysqlSkillRepository(mockDataSource, true, true);
+
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("name", "legacy-skill");
+            metadata.put("description", "Description");
+            metadata.put("homepage", "https://example.com");
+            AgentSkill skill = new AgentSkill(metadata, "Content", Map.of(), "test");
+
+            boolean saved = legacyRepo.save(List.of(skill), false);
+
+            assertTrue(saved);
+            verify(mockStatement, never()).setString(eq(5), anyString());
+        }
+
+        @Test
         @DisplayName("Should throw exception when skill exists and force=false")
         void testSaveSkillExistsNoForce() throws SQLException {
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-            when(mockResultSet.next()).thenReturn(true); // skill exists
+            when(mockResultSet.next())
+                    .thenReturn(true, true); // metadata column exists, skill exists
 
             AgentSkill skill =
                     new AgentSkill("existing-skill", "Description", "Content", Map.of(), "test");
@@ -718,7 +830,8 @@ public class MysqlSkillRepositoryTest {
         void testSaveSkillWithForce() throws SQLException {
             when(mockStatement.executeUpdate()).thenReturn(1);
             when(mockStatement.executeQuery()).thenReturn(mockResultSet);
-            when(mockResultSet.next()).thenReturn(true, false); // skill exists, then deleted
+            when(mockResultSet.next())
+                    .thenReturn(true, true, false); // column exists, skill exists, then deleted
 
             AgentSkill skill =
                     new AgentSkill(
