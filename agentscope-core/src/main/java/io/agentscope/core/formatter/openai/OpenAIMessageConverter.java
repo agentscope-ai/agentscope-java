@@ -267,6 +267,8 @@ public class OpenAIMessageConverter {
         String textContent = textExtractor.apply(msg);
         if (textContent != null && !textContent.isEmpty()) {
             builder.content(textContent);
+        } else {
+            builder.content("");
         }
 
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)

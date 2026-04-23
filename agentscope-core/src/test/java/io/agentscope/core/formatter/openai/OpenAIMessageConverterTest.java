@@ -531,6 +531,31 @@ class OpenAIMessageConverterTest {
             assertTrue(args.contains("city"));
             assertTrue(args.contains("Shanghai"));
         }
+
+        @Test
+        @DisplayName("Should set empty content for assistant message without text content")
+        void testAssistantMessageSetsEmptyContentWhenNoText() {
+            // Reproduces issue #1268 and #1270 where content was null for tool-only messages
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_123")
+                            .name("get_weather")
+                            .input(Map.of("city", "Beijing"))
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("assistant", result.getRole());
+            assertNotNull(result.getToolCalls());
+
+            assertNotNull(
+                    result.getContent(),
+                    "Content should not be null to comply with strict OpenAI APIs");
+            assertEquals("", result.getContentAsString());
+        }
     }
 
     @Nested
