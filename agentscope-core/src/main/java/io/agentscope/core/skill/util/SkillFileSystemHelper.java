@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -193,12 +192,8 @@ public final class SkillFileSystemHelper {
 
                 Files.createDirectories(skillDir);
 
-                Map<String, Object> metadata = new LinkedHashMap<>();
-                metadata.put("name", skill.getName());
-                metadata.put("description", skill.getDescription());
-
                 String skillMdContent =
-                        MarkdownSkillParser.generate(metadata, skill.getSkillContent());
+                        MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
 
                 Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 Files.writeString(skillFile, skillMdContent, StandardCharsets.UTF_8);
