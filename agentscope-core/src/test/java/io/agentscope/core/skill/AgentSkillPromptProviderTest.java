@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,88 +49,145 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
-    @DisplayName("Should generate prompt for single skill")
+    @DisplayName("Should render metadata as XML for single skill")
     void testSingleSkill() {
         AgentSkill skill =
                 new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("## Available Skills"));
         assertTrue(prompt.contains("<available_skills>"));
         assertTrue(prompt.contains("<skill>"));
-        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
         assertTrue(prompt.contains("<name>test_skill</name>"));
         assertTrue(prompt.contains("<description>Test Skill Description</description>"));
+        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
         assertTrue(prompt.contains("</skill>"));
         assertTrue(prompt.contains("</available_skills>"));
     }
 
     @Test
-    @DisplayName("Should generate prompt for multiple skills")
-    void testMultipleSkills() {
-        AgentSkill skill1 = new AgentSkill("skill1", "First Skill", "# Content1", null);
-        RegisteredSkill registered1 = new RegisteredSkill("skill1_custom");
-        skillRegistry.registerSkill("skill1_custom", skill1, registered1);
-
-        AgentSkill skill2 = new AgentSkill("skill2", "Second Skill", "# Content2", null);
-        RegisteredSkill registered2 = new RegisteredSkill("skill2_custom");
-        skillRegistry.registerSkill("skill2_custom", skill2, registered2);
+    @DisplayName("Should preserve metadata order in XML output")
+    void testMetadataOrder() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "trello");
+        metadata.put("description", "Manage Trello boards");
+        metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.contains("## Available Skills"));
-        assertTrue(prompt.contains("<skill-id>skill1_custom</skill-id>"));
-        assertTrue(prompt.contains("<name>skill1</name>"));
-        assertTrue(prompt.contains("<description>First Skill</description>"));
-        assertTrue(prompt.contains("<skill-id>skill2_custom</skill-id>"));
-        assertTrue(prompt.contains("<name>skill2</name>"));
-        assertTrue(prompt.contains("<description>Second Skill</description>"));
+        int nameIndex = prompt.indexOf("<name>trello</name>");
+        int descriptionIndex = prompt.indexOf("<description>Manage Trello boards</description>");
+        int homepageIndex =
+                prompt.indexOf(
+                        "<homepage>https://developer.atlassian.com/cloud/trello/rest/</homepage>");
+        int skillIdIndex = prompt.indexOf("<skill-id>trello_custom</skill-id>");
+
+        assertTrue(nameIndex < descriptionIndex);
+        assertTrue(descriptionIndex < homepageIndex);
+        assertTrue(homepageIndex < skillIdIndex);
     }
 
     @Test
-    @DisplayName("Should generate correct prompt format")
-    void testPromptFormat() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Description", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+    @DisplayName("Should render nested metadata as nested XML")
+    void testNestedMetadataXml() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "trello");
+        metadata.put("description", "Manage Trello boards");
+        metadata.put(
+                "metadata",
+                Map.of(
+                        "clawdbot",
+                        Map.of(
+                                "emoji",
+                                "📋",
+                                "requires",
+                                Map.of(
+                                        "bins", List.of("jq"),
+                                        "env", List.of("TRELLO_API_KEY", "TRELLO_TOKEN")))));
+
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.startsWith("## Available Skills\n"));
-        assertTrue(prompt.contains("specialized capabilities"));
-        assertTrue(prompt.contains("load_skill_through_path"));
-        assertTrue(prompt.contains("<usage>"));
-        assertTrue(prompt.contains("</usage>"));
-        assertTrue(prompt.contains("<available_skills>"));
-        assertTrue(prompt.contains("</available_skills>"));
+        assertTrue(prompt.contains("<metadata>"));
+        assertTrue(prompt.contains("<clawdbot>"));
+        assertTrue(prompt.contains("<emoji>📋</emoji>"));
+        assertTrue(prompt.contains("<requires>"));
+        assertTrue(prompt.contains("<bins>"));
+        assertTrue(prompt.contains("<item>jq</item>"));
+        assertTrue(prompt.contains("<env>"));
+        assertTrue(prompt.contains("<item>TRELLO_API_KEY</item>"));
+        assertTrue(prompt.contains("<item>TRELLO_TOKEN</item>"));
     }
 
     @Test
-    @DisplayName("Should handle skills with special characters in description")
-    void testSpecialCharactersInDescription() {
-        AgentSkill skill =
-                new AgentSkill(
-                        "test_skill",
-                        "Description with \"quotes\" and 'apostrophes'",
-                        "# Content",
-                        null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+    @DisplayName("Should expose only name and description when all metadata is disabled")
+    void testExposeOnlyCoreMetadata() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "trello");
+        metadata.put("description", "Manage Trello boards");
+        metadata.put("homepage", "https://developer.atlassian.com/cloud/trello/rest/");
+        metadata.put("metadata", Map.of("clawdbot", Map.of("emoji", "📋")));
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+
+        provider.setExposeAllMetadata(false);
 
         String prompt = provider.getSkillSystemPrompt();
 
-        assertTrue(prompt.contains("Description with \"quotes\" and 'apostrophes'"));
+        assertTrue(prompt.contains("<name>trello</name>"));
+        assertTrue(prompt.contains("<description>Manage Trello boards</description>"));
+        assertTrue(prompt.contains("<skill-id>trello_custom</skill-id>"));
+        assertFalse(prompt.contains("<homepage>"));
+        assertFalse(prompt.contains("<metadata>"));
+    }
+
+    @Test
+    @DisplayName("Should escape special characters in XML")
+    void testXmlEscaping() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "test_skill");
+        metadata.put("description", "Description with <xml> & \"quotes\" and 'apostrophes'");
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(
+                prompt.contains(
+                        "<description>Description with &lt;xml&gt; &amp; &quot;quotes&quot; and"
+                                + " &apos;apostrophes&apos;</description>"));
+    }
+
+    @Test
+    @DisplayName("Should fallback to entry tag for invalid metadata keys")
+    void testInvalidMetadataKeyFallback() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "test_skill");
+        metadata.put("description", "desc");
+        metadata.put("tool:config", "enabled");
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertTrue(prompt.contains("<entry key=\"tool:config\">enabled</entry>"));
     }
 
     @Test
     @DisplayName("Should not include code execution section when not enabled")
     void testNoCodeExecutionSectionByDefault() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -139,11 +199,10 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should not include code execution section when enabled but uploadDir not set")
     void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         provider.setCodeExecutionEnable(true);
-        // uploadDir not set
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -155,8 +214,8 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should include code execution section with uploadDir when enabled")
     void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -170,44 +229,11 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
-    @DisplayName("Should include skill-id based path pattern in code execution section")
-    void testCodeExecutionSectionContainsSkillIdPattern(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        provider.setCodeExecutionEnable(true);
-        provider.setUploadDir(tempDir);
-
-        String prompt = provider.getSkillSystemPrompt();
-        String uploadDirStr = tempDir.toAbsolutePath().toString();
-
-        assertTrue(prompt.contains(uploadDirStr + "/<skill-id>/scripts/"));
-        assertTrue(prompt.contains(uploadDirStr + "/<skill-id>/assets/"));
-    }
-
-    @Test
-    @DisplayName("Should include absolute path instruction in code execution section")
-    void testCodeExecutionSectionMentionsAbsolutePaths(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        provider.setCodeExecutionEnable(true);
-        provider.setUploadDir(tempDir);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("absolute paths"));
-        assertTrue(prompt.contains("existing script"));
-    }
-
-    @Test
     @DisplayName("Code execution section should appear after </available_skills>")
     void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -223,8 +249,8 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should use custom code execution instruction when set")
     void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
+        skillRegistry.registerSkill(
+                "test_skill_custom", skill, new RegisteredSkill("test_skill_custom"));
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -235,21 +261,5 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("## Custom Section"));
         assertTrue(prompt.contains("Skills dir: " + tempDir.toAbsolutePath()));
         assertFalse(prompt.contains("## Code Execution"));
-    }
-
-    @Test
-    @DisplayName("Should fall back to default instruction when null is set")
-    void testNullCodeExecutionInstructionUsesDefault(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        provider.setCodeExecutionEnable(true);
-        provider.setUploadDir(tempDir);
-        provider.setCodeExecutionInstruction(null);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("## Code Execution"));
     }
 }

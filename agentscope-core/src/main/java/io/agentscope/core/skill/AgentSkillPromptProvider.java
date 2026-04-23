@@ -16,6 +16,10 @@
 package io.agentscope.core.skill;
 
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Generates skill system prompts for agents to understand available skills.
@@ -30,9 +34,12 @@ import java.nio.file.Path;
  * }</pre>
  */
 public class AgentSkillPromptProvider {
+    private static final String INDENT = "  ";
+    private static final Pattern XML_TAG_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
+
     private final SkillRegistry skillRegistry;
     private final String instruction;
-    private final String template;
+    private boolean exposeAllMetadata = true;
     private boolean codeExecutionEnabled;
     private String uploadDir;
     private String codeExecutionInstruction;
@@ -54,10 +61,11 @@ public class AgentSkillPromptProvider {
             2. Load it: load_skill_through_path(skillId="data-analysis_builtin", path="SKILL.md")
             3. Follow the instructions returned by the skill
 
-            Template fields explanation:
-            - <name>: The skill's display name
-            - <description>: When and how to use this skill
-            - <skill-id>: Unique identifier for load_skill_through_path tool
+            Metadata is rendered as XML under each <skill> element:
+            - scalar metadata becomes a simple child element
+            - nested maps become nested XML elements
+            - lists become repeated <item> elements
+            - <skill-id> is always appended for tool loading
             </usage>
 
             <available_skills>
@@ -99,41 +107,27 @@ public class AgentSkillPromptProvider {
             </code_execution>
             """;
 
-    // skillName, skillDescription, skillId
-    public static final String DEFAULT_AGENT_SKILL_TEMPLATE =
-            """
-            <skill>
-            <name>%s</name>
-            <description>%s</description>
-            <skill-id>%s</skill-id>
-            </skill>
-
-            """;
-
     /**
      * Creates a skill prompt provider.
      *
      * @param registry The skill registry containing registered skills
      */
     public AgentSkillPromptProvider(SkillRegistry registry) {
-        this(registry, null, null);
+        this(registry, null);
     }
 
     /**
-     * Creates a skill prompt provider with custom instruction and template.
+     * Creates a skill prompt provider with custom instruction.
      *
      * @param registry The skill registry containing registered skills
      * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
      */
-    public AgentSkillPromptProvider(SkillRegistry registry, String instruction, String template) {
+    public AgentSkillPromptProvider(SkillRegistry registry, String instruction) {
         this.skillRegistry = registry;
         this.instruction =
                 instruction == null || instruction.isBlank()
                         ? DEFAULT_AGENT_SKILL_INSTRUCTION
                         : instruction;
-        this.template =
-                template == null || template.isBlank() ? DEFAULT_AGENT_SKILL_TEMPLATE : template;
     }
 
     /**
@@ -144,28 +138,20 @@ public class AgentSkillPromptProvider {
      * @return The skill system prompt, or empty string if no skills exist
      */
     public String getSkillSystemPrompt() {
-        StringBuilder sb = new StringBuilder();
-
-        // Check if there are any skills
         if (skillRegistry.getAllRegisteredSkills().isEmpty()) {
             return "";
         }
 
-        // Add instruction header
+        StringBuilder sb = new StringBuilder();
         sb.append(instruction);
 
-        // Add each skill
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
-            sb.append(
-                    String.format(
-                            template, skill.getName(), skill.getDescription(), skill.getSkillId()));
+            appendSkill(sb, skill);
         }
 
-        // Close available_skills tag
         sb.append("</available_skills>");
 
-        // Conditionally append code execution instructions
         if (codeExecutionEnabled && uploadDir != null) {
             String template =
                     codeExecutionInstruction != null
@@ -210,5 +196,91 @@ public class AgentSkillPromptProvider {
                 codeExecutionInstruction == null || codeExecutionInstruction.isBlank()
                         ? null
                         : codeExecutionInstruction;
+    }
+
+    /**
+     * Sets whether all metadata fields are exposed to the LLM.
+     *
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * are rendered into the skill prompt.
+     *
+     * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
+     *                          the core fields
+     */
+    public void setExposeAllMetadata(boolean exposeAllMetadata) {
+        this.exposeAllMetadata = exposeAllMetadata;
+    }
+
+    private void appendSkill(StringBuilder sb, AgentSkill skill) {
+        sb.append("<skill>\n");
+        for (Map.Entry<String, Object> entry : getPromptMetadata(skill).entrySet()) {
+            appendXmlNode(sb, entry.getKey(), entry.getValue(), 1);
+        }
+        appendXmlNode(sb, "skill-id", skill.getSkillId(), 1);
+        sb.append("</skill>\n\n");
+    }
+
+    private Map<String, Object> getPromptMetadata(AgentSkill skill) {
+        if (exposeAllMetadata) {
+            return skill.getMetadata();
+        }
+
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", skill.getName());
+        metadata.put("description", skill.getDescription());
+        return metadata;
+    }
+
+    private void appendXmlNode(StringBuilder sb, String key, Object value, int indentLevel) {
+        String indent = INDENT.repeat(indentLevel);
+        boolean validTagName = isValidXmlTagName(key);
+        String openTag = validTagName ? "<" + key + ">" : "<entry key=\"" + escapeXml(key) + "\">";
+        String closeTag = validTagName ? "</" + key + ">" : "</entry>";
+
+        if (isScalarValue(value)) {
+            sb.append(indent)
+                    .append(openTag)
+                    .append(escapeXml(String.valueOf(value)))
+                    .append(closeTag)
+                    .append("\n");
+            return;
+        }
+
+        sb.append(indent).append(openTag).append("\n");
+        if (value instanceof Map<?, ?> mapValue) {
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                appendXmlNode(
+                        sb, String.valueOf(entry.getKey()), entry.getValue(), indentLevel + 1);
+            }
+        } else if (value instanceof Collection<?> collectionValue) {
+            for (Object item : collectionValue) {
+                appendXmlNode(sb, "item", item, indentLevel + 1);
+            }
+        } else {
+            sb.append(INDENT.repeat(indentLevel + 1))
+                    .append(escapeXml(String.valueOf(value)))
+                    .append("\n");
+        }
+        sb.append(indent).append(closeTag).append("\n");
+    }
+
+    private boolean isScalarValue(Object value) {
+        return value == null
+                || (!(value instanceof Map<?, ?>) && !(value instanceof Collection<?>));
+    }
+
+    private boolean isValidXmlTagName(String value) {
+        return value != null && XML_TAG_NAME_PATTERN.matcher(value).matches();
+    }
+
+    private String escapeXml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 }
