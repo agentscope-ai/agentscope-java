@@ -25,6 +25,7 @@ import io.agentscope.core.skill.util.SkillUtil;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -257,6 +258,30 @@ class SkillUtilTest {
         }
 
         @Test
+        @DisplayName("Should create from zip content with custom charset")
+        void testCreateFromZipWithCustomCharset() throws IOException {
+            Charset charset = Charset.forName("GBK");
+            String skillMd =
+                    "---\n"
+                            + "name: gbk_skill\n"
+                            + "description: GBK zip package\n"
+                            + "---\n"
+                            + "技能内容";
+
+            byte[] zipBytes =
+                    buildZipBytes(
+                            Map.of("gbk-skill/SKILL.md", skillMd, "gbk-skill/docs/说明.txt", "资源内容"),
+                            charset);
+
+            AgentSkill skill = SkillUtil.createFromZip(zipBytes, "zip", charset);
+
+            assertEquals("gbk_skill", skill.getName());
+            assertEquals("GBK zip package", skill.getDescription());
+            assertEquals("技能内容", skill.getSkillContent());
+            assertEquals("资源内容", skill.getResources().get("docs/说明.txt"));
+        }
+
+        @Test
         @DisplayName("Should create from zip with root folder")
         void testCreateFromZipWithRootFolder() throws IOException {
             String skillMd =
@@ -364,12 +389,17 @@ class SkillUtilTest {
     }
 
     private static byte[] buildZipBytes(Map<String, String> entries) throws IOException {
+        return buildZipBytes(entries, StandardCharsets.UTF_8);
+    }
+
+    private static byte[] buildZipBytes(Map<String, String> entries, Charset charset)
+            throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        try (ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream)) {
+        try (ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, charset)) {
             for (Map.Entry<String, String> entry : entries.entrySet()) {
                 ZipEntry zipEntry = new ZipEntry(entry.getKey());
                 zipOutputStream.putNextEntry(zipEntry);
-                byte[] content = entry.getValue().getBytes(StandardCharsets.UTF_8);
+                byte[] content = entry.getValue().getBytes(charset);
                 zipOutputStream.write(content);
                 zipOutputStream.closeEntry();
             }
