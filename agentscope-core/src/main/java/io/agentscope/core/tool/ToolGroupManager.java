@@ -17,10 +17,12 @@ package io.agentscope.core.tool;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +35,7 @@ class ToolGroupManager {
 
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
-    private List<String> activeGroups = new ArrayList<>();
+    private final Set<String> activeGroups = new CopyOnWriteArraySet<>();
 
     /**
      * Create tool groups and record them in the manager.
@@ -54,8 +56,8 @@ class ToolGroupManager {
 
         toolGroups.put(groupName, group);
 
-        if (active && !activeGroups.contains(groupName)) {
-            activeGroups.add(groupName);
+        if (active) {
+            setGroupActiveState(groupName, group, true);
         }
 
         logger.info("Created tool group '{}': {}", groupName, description);
@@ -86,16 +88,7 @@ class ToolGroupManager {
                 throw new IllegalArgumentException(
                         String.format("Tool group '%s' does not exist", groupName));
             }
-
-            group.setActive(active);
-
-            if (active) {
-                if (!activeGroups.contains(groupName)) {
-                    activeGroups.add(groupName);
-                }
-            } else {
-                activeGroups.remove(groupName);
-            }
+            setGroupActiveState(groupName, group, active);
 
             logger.info("Tool group '{}' active status set to: {}", groupName, active);
         }
@@ -144,12 +137,13 @@ class ToolGroupManager {
      * @return Formatted string describing active tool groups
      */
     public String getActivatedNotes() {
-        if (activeGroups.isEmpty()) {
+        List<String> activeGroupSnapshot = getActiveGroups();
+        if (activeGroupSnapshot.isEmpty()) {
             return "No tool groups are currently activated.";
         }
 
         StringBuilder notes = new StringBuilder("Activated tool groups:\n");
-        for (String groupName : activeGroups) {
+        for (String groupName : activeGroupSnapshot) {
             ToolGroup group = toolGroups.get(groupName);
             if (group != null) {
                 notes.append(String.format("- %s: %s\n", groupName, group.getDescription()));
@@ -324,14 +318,12 @@ class ToolGroupManager {
      * @param activeGroups List of group names to mark as active
      */
     public void setActiveGroups(List<String> activeGroups) {
-        this.activeGroups = new ArrayList<>(activeGroups);
+        Set<String> desiredActiveGroups = new LinkedHashSet<>(activeGroups);
+        this.activeGroups.clear();
+        this.activeGroups.addAll(desiredActiveGroups);
 
-        // Mark corresponding groups as active
-        for (String groupName : activeGroups) {
-            ToolGroup group = toolGroups.get(groupName);
-            if (group != null) {
-                group.setActive(true);
-            }
+        for (ToolGroup group : toolGroups.values()) {
+            group.setActive(desiredActiveGroups.contains(group.getName()));
         }
     }
 
@@ -373,8 +365,17 @@ class ToolGroupManager {
             target.tools.put(entry.getKey(), new HashSet<>(entry.getValue()));
         }
 
-        // Copy activeGroups list
-        target.activeGroups = new ArrayList<>(this.activeGroups);
+        target.activeGroups.clear();
+        target.activeGroups.addAll(this.activeGroups);
+    }
+
+    private void setGroupActiveState(String groupName, ToolGroup group, boolean active) {
+        group.setActive(active);
+        if (active) {
+            activeGroups.add(groupName);
+            return;
+        }
+        activeGroups.remove(groupName);
     }
 
     private boolean removeGroupFromToolIndex(String toolName, String groupName) {
