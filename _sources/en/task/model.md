@@ -162,6 +162,7 @@ Google's Gemini series models, supporting both Gemini API and Vertex AI.
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
         .modelName("gemini-2.5-flash")  // Default
+        .baseUrl("https://your-gateway.example")  // Optional
         .build();
 ```
 
@@ -182,12 +183,15 @@ GeminiChatModel model = GeminiChatModel.builder()
 | Option | Description |
 |--------|-------------|
 | `apiKey` | Gemini API key |
+| `baseUrl` | Custom Gemini API endpoint (optional) |
 | `modelName` | Model name, default `gemini-2.5-flash` |
 | `project` | GCP project ID (Vertex AI) |
 | `location` | GCP region (Vertex AI) |
 | `vertexAI` | Whether to use Vertex AI |
 | `credentials` | GCP credentials (Vertex AI) |
 | `streamEnabled` | Enable streaming, default `true` |
+
+For endpoint override, use `baseUrl(...)`. For more advanced transport or proxy setup, continue to use `httpOptions(...)` or `clientOptions(...)`.
 
 ## Ollama
 

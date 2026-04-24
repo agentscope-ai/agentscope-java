@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta property="article:modified_time" content="2026-04-13T01:37:58+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+    <meta property="article:modified_time" content="2026-04-24T08:26:23+00:00" /><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="canonical" href="https://java.agentscope.io/zh/task/model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
@@ -722,6 +722,7 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认值</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://your-gateway.example&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 可选</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -751,27 +752,31 @@
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
 <td><p>Gemini API 密钥</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>自定义 Gemini API 端点（可选）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
 <td><p>模型名称，默认 <code class="docutils literal notranslate"><span class="pre">gemini-2.5-flash</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">project</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">project</span></code></p></td>
 <td><p>GCP 项目 ID（Vertex AI）</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></td>
 <td><p>GCP 区域（Vertex AI）</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">vertexAI</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">vertexAI</span></code></p></td>
 <td><p>是否使用 Vertex AI</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">credentials</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">credentials</span></code></p></td>
 <td><p>GCP 凭证（Vertex AI）</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">streamEnabled</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">streamEnabled</span></code></p></td>
 <td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p>如需覆盖请求端点，可使用 <code class="docutils literal notranslate"><span class="pre">baseUrl(...)</span></code>。更高级的传输层或代理配置，仍建议通过 <code class="docutils literal notranslate"><span class="pre">httpOptions(...)</span></code> 或 <code class="docutils literal notranslate"><span class="pre">clientOptions(...)</span></code> 处理。</p>
 </section>
 </section>
 <section id="ollama">
@@ -1196,7 +1201,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2026-04-13</div>
+              Last updated on 2026-04-24</div>
           </div>
           <div class="right-details">
             <div class="icons">
