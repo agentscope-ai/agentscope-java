@@ -323,4 +323,93 @@ class ToolCallsAccumulatorTest {
         List<ToolUseBlock> allCalls = accumulator.getAllAccumulatedToolCalls();
         assertEquals(2, allCalls.size());
     }
+
+    @Test
+    @DisplayName("Should produce valid JSON content when streaming is interrupted mid-arguments")
+    void testInterruptedStreamingProducesValidJsonContent() {
+        // Simulate streaming that gets interrupted mid-arguments:
+        // Model was outputting {"query": "hello wor... but got cut off
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("search")
+                        .content("{\"query\": \"hello wor")
+                        .build();
+
+        accumulator.add(chunk1);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock toolCall = result.get(0);
+        // Content should fall back to "{}" since the raw content is invalid JSON
+        assertEquals("{}", toolCall.getContent());
+        // Input should be empty since parsing failed
+        assertTrue(toolCall.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should produce valid JSON content when multiple chunks are interrupted")
+    void testInterruptedMultiChunkStreamingProducesValidJsonContent() {
+        // First chunk starts the arguments
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("get_weather")
+                        .content("{\"city\":")
+                        .build();
+
+        // Second chunk is a partial value — streaming interrupted here
+        ToolUseBlock chunk2 =
+                ToolUseBlock.builder().id("call_1").name("__fragment__").content("\"Bei").build();
+
+        accumulator.add(chunk1);
+        accumulator.add(chunk2);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock toolCall = result.get(0);
+        assertEquals("{}", toolCall.getContent());
+        assertTrue(toolCall.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should handle non-object JSON content like arrays or null")
+    void testNonObjectJsonContentFallsBackToEmpty() {
+        ToolUseBlock chunk =
+                ToolUseBlock.builder().id("call_1").name("tool").content("[1, 2, 3]").build();
+
+        accumulator.add(chunk);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+        // Arrays are not valid JSON objects for tool call arguments
+        assertEquals("{}", result.get(0).getContent());
+    }
+
+    @Test
+    @DisplayName("Should preserve valid content even when input was populated via merge")
+    void testValidContentPreservedWithMergedInput() {
+        // First chunk: input populated via parsed args
+        Map<String, Object> args = new HashMap<>();
+        args.put("city", "Tokyo");
+        ToolUseBlock chunk1 =
+                ToolUseBlock.builder()
+                        .id("call_1")
+                        .name("weather")
+                        .input(args)
+                        .content("{\"city\": \"Tokyo\"}")
+                        .build();
+
+        accumulator.add(chunk1);
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock toolCall = result.get(0);
+        // Valid JSON content should be preserved
+        assertEquals("{\"city\": \"Tokyo\"}", toolCall.getContent());
+        assertEquals("Tokyo", toolCall.getInput().get("city"));
+    }
 }
