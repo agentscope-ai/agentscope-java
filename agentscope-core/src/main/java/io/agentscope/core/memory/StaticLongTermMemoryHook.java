@@ -29,6 +29,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -74,6 +75,12 @@ import reactor.core.scheduler.Schedulers;
 public class StaticLongTermMemoryHook implements Hook {
 
     private static final Logger log = LoggerFactory.getLogger(StaticLongTermMemoryHook.class);
+    // Dedicated async scheduler for long-term memory recording:
+    // - max 1 concurrent workers
+    // - max 3 queued tasks (new tasks are rejected when saturated)
+    // This avoids unbounded queuing on the global boundedElastic scheduler.
+    private static final Scheduler ASYNC_RECORD_SCHEDULER =
+            Schedulers.newBoundedElastic(1, 3, "long-term-memory-record");
 
     private final LongTermMemory longTermMemory;
     private final Memory memory;
@@ -197,8 +204,14 @@ public class StaticLongTermMemoryHook implements Hook {
      * the entire conversation context.
      *
      * <p>When {@code asyncRecord} is enabled, the recording is performed in a
-     * fire-and-forget manner that does not block the agent's response. Otherwise,
-     * the recording completes before returning the event.
+     * fire-and-forget manner that does not block the agent's response. Async recording
+     * uses a bounded scheduler (1 workers, queue size 3). When saturated, new record
+     * tasks are dropped and logged.
+     *
+     * <p><b>Trade-offs:</b> This async path intentionally decouples recording from the
+     * main event chain. The returned subscription is not retained in this mode, so
+     * in-flight record tasks are not explicitly cancelled by this class.
+     * Otherwise, the recording completes before returning the event.
      *
      * @param event the PostCallEvent
      * @return Mono containing the unmodified event
@@ -212,21 +225,25 @@ public class StaticLongTermMemoryHook implements Hook {
 
         // Record to long-term memory
         if (asyncRecord) {
-            // Fire-and-forget: schedule on boundedElastic so the agent's
-            // response is not blocked. subscribe() is intentional here —
-            // the record pipeline runs independently of the event chain.
-            longTermMemory
-                    .record(allMessages)
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .onErrorResume(
-                            error -> {
-                                log.warn(
-                                        "Failed to asynchronously record to long-term memory: {}",
-                                        error.getMessage());
-                                return Mono.empty();
-                            })
-                    .subscribe();
-            return Mono.just(event);
+            // Fire-and-forget: schedule on a dedicated bounded scheduler so the agent's
+            // response is not blocked while still limiting backlog growth.
+            return Mono.deferContextual(
+                    ctxView -> {
+                        longTermMemory
+                                .record(allMessages)
+                                .subscribeOn(ASYNC_RECORD_SCHEDULER)
+                                .contextWrite(context -> context.putAll(ctxView))
+                                .onErrorResume(
+                                        error -> {
+                                            log.warn(
+                                                    "Failed to asynchronously record to long-term"
+                                                            + " memory: {}",
+                                                    error.getMessage());
+                                            return Mono.empty();
+                                        })
+                                .subscribe();
+                        return Mono.just(event);
+                    });
         } else {
             return longTermMemory
                     .record(allMessages)
