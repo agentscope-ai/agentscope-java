@@ -149,6 +149,23 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
+    @DisplayName("Should omit null metadata values from XML output")
+    void testOmitNullMetadataValues() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("name", "trello");
+        metadata.put("description", "Manage Trello boards");
+        metadata.put("homepage", null);
+        AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
+        skillRegistry.registerSkill("trello_custom", skill, new RegisteredSkill("trello_custom"));
+
+        String prompt = provider.getSkillSystemPrompt();
+
+        assertFalse(prompt.contains("<homepage>null</homepage>"));
+        assertFalse(prompt.contains("<homepage></homepage>"));
+        assertFalse(prompt.contains("<homepage>"));
+    }
+
+    @Test
     @DisplayName("Should escape special characters in XML")
     void testXmlEscaping() {
         Map<String, Object> metadata = new LinkedHashMap<>();

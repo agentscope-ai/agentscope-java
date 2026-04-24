@@ -214,6 +214,9 @@ public class AgentSkillPromptProvider {
     private void appendSkill(StringBuilder sb, AgentSkill skill) {
         sb.append("<skill>\n");
         for (Map.Entry<String, Object> entry : getPromptMetadata(skill).entrySet()) {
+            if (entry.getValue() == null) {
+                continue;
+            }
             appendXmlNode(sb, entry.getKey(), entry.getValue(), 1);
         }
         appendXmlNode(sb, "skill-id", skill.getSkillId(), 1);
@@ -232,6 +235,10 @@ public class AgentSkillPromptProvider {
     }
 
     private void appendXmlNode(StringBuilder sb, String key, Object value, int indentLevel) {
+        if (value == null) {
+            return;
+        }
+
         String indent = INDENT.repeat(indentLevel);
         boolean validTagName = isValidXmlTagName(key);
         String openTag = validTagName ? "<" + key + ">" : "<entry key=\"" + escapeXml(key) + "\">";
@@ -265,8 +272,7 @@ public class AgentSkillPromptProvider {
     }
 
     private boolean isScalarValue(Object value) {
-        return value == null
-                || (!(value instanceof Map<?, ?>) && !(value instanceof Collection<?>));
+        return !(value instanceof Map<?, ?>) && !(value instanceof Collection<?>);
     }
 
     private boolean isValidXmlTagName(String value) {

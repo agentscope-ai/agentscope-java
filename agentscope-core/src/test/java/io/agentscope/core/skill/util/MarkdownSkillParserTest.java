@@ -609,6 +609,34 @@ class MarkdownSkillParserTest {
         }
 
         @Test
+        @DisplayName("Should reject non-string required metadata values")
+        void testRejectNonStringRequiredMetadataValues() {
+            String skillMd =
+                    "---\n"
+                            + "name:\n"
+                            + "  - a\n"
+                            + "  - b\n"
+                            + "description: valid description\n"
+                            + "---\n"
+                            + "Content";
+
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
+        }
+
+        @Test
+        @DisplayName("Should align parser code point limit with frontmatter limit")
+        void testFrontmatterAtConfiguredCodePointLimit() {
+            String value = "a".repeat(16_360);
+            String markdown =
+                    "---\n" + "name: test\n" + "description: " + value + "\n---\n" + "Content";
+
+            ParsedMarkdown parsed = MarkdownSkillParser.parse(markdown);
+
+            assertEquals("test", parsed.getMetadata().get("name"));
+            assertEquals(value, parsed.getMetadata().get("description"));
+        }
+
+        @Test
         @DisplayName("Should keep generated document unchanged after parse and regenerate")
         void testParseThenGenerateKeepsDocumentStable() {
             Map<String, Object> metadata = new LinkedHashMap<>();

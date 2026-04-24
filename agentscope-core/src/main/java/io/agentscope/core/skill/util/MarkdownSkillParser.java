@@ -187,7 +187,7 @@ public class MarkdownSkillParser {
         options.setAllowDuplicateKeys(false);
         options.setMaxAliasesForCollections(10);
         options.setNestingDepthLimit(10);
-        options.setCodePointLimit(10_000);
+        options.setCodePointLimit(FRONTMATTER_CODE_POINT_LIMIT);
         return options;
     }
 

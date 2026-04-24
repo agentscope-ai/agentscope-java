@@ -59,7 +59,7 @@ public class SkillBox implements StateModule {
     }
 
     /**
-     * Creates a SkillBox with a toolkit and custom skill prompt instruction and template.
+     * Creates a SkillBox with a toolkit and custom skill prompt instruction.
      *
      * @param toolkit The toolkit to bind
      * @param instruction Custom instruction header (null or blank uses default)

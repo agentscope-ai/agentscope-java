@@ -309,11 +309,10 @@ public class SkillUtil {
         }
 
         Object value = metadata.get(key);
-        if (value == null) {
+        if (!(value instanceof String stringValue)) {
             return null;
         }
 
-        String stringValue = String.valueOf(value);
-        return stringValue.isEmpty() ? null : stringValue;
+        return stringValue.isBlank() ? null : stringValue;
     }
 }
