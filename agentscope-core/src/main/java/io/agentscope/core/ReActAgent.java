@@ -272,7 +272,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
 
         // Has pending tools but no input -> resume (execute pending tools directly)
         if (msgs == null || msgs.isEmpty()) {
-            return hasPendingToolUse() ? acting(0) : executeIteration(0);
+            return acting(0);
         }
 
         // Has pending tools + input -> check if user provided tool results
