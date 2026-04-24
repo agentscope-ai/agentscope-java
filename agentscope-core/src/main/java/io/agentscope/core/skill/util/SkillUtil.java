@@ -123,23 +123,6 @@ public class SkillUtil {
     }
 
     /**
-     * Creates an AgentSkill from a skill package zip using the given charset.
-     *
-     * <p>The package must contain a {@value #SKILL_FILE_NAME} entry and any optional resource
-     * files. The .skill and .zip extensions are aliases for the same package format.
-     *
-     * @param zipBytes Zip content as bytes
-     * @param charset Charset used to decode zip entry names and file contents (null defaults to
-     *                UTF-8). Use this when the zip was created with a non-UTF-8 charset such as
-     *                GBK/GB18030 and the default overload fails during zip entry decoding with
-     *                errors like {@code malformed input}
-     * @return Created AgentSkill instance
-     */
-    public static AgentSkill createFromZip(byte[] zipBytes, Charset charset) {
-        return createFromZip(zipBytes, DEFAULT_SOURCE, charset);
-    }
-
-    /**
      * Creates an AgentSkill from a skill package zip file path.
      *
      * <p>The package must contain a {@value #SKILL_FILE_NAME} entry and any optional resource
@@ -183,23 +166,6 @@ public class SkillUtil {
      */
     public static AgentSkill createFromZip(InputStream zipStream) {
         return createFromZip(zipStream, DEFAULT_SOURCE, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Creates an AgentSkill from a skill package zip input stream using the given charset.
-     *
-     * <p>The package must contain a {@value #SKILL_FILE_NAME} entry and any optional resource
-     * files. The .skill and .zip extensions are aliases for the same package format.
-     *
-     * @param zipStream Zip content stream
-     * @param charset Charset used to decode zip entry names and file contents (null defaults to
-     *                UTF-8). Use this when the zip was created with a non-UTF-8 charset such as
-     *                GBK/GB18030 and the default overload fails during zip entry decoding with
-     *                errors like {@code malformed input}
-     * @return Created AgentSkill instance
-     */
-    public static AgentSkill createFromZip(InputStream zipStream, Charset charset) {
-        return createFromZip(zipStream, DEFAULT_SOURCE, charset);
     }
 
     /**
