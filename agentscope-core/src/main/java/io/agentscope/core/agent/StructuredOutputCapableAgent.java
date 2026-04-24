@@ -215,11 +215,7 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
 
             @Override
             public Map<String, Object> getParameters() {
-                Map<String, Object> params = new HashMap<>();
-                params.put("type", "object");
-                params.put("properties", Map.of("response", schema));
-                params.put("required", List.of("response"));
-                return params;
+                return wrapStructuredOutputSchema(schema);
             }
 
             @Override
@@ -266,6 +262,34 @@ public abstract class StructuredOutputCapableAgent extends AgentBase {
                         });
             }
         };
+    }
+
+    static Map<String, Object> wrapStructuredOutputSchema(Map<String, Object> schema) {
+        Map<String, Object> responseSchema = new HashMap<>(schema);
+        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> properties = new HashMap<>();
+        Map<String, Object> rootDefs = new HashMap<>();
+
+        hoistDefs(responseSchema, "$defs", rootDefs);
+        hoistDefs(responseSchema, "definitions", rootDefs);
+
+        properties.put("response", responseSchema);
+        params.put("type", "object");
+        params.put("properties", properties);
+        params.put("required", List.of("response"));
+        if (!rootDefs.isEmpty()) {
+            params.put("$defs", rootDefs);
+        }
+        return params;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void hoistDefs(
+            Map<String, Object> schema, String key, Map<String, Object> rootDefs) {
+        Object rawDefs = schema.remove(key);
+        if (rawDefs instanceof Map<?, ?> defs && !defs.isEmpty()) {
+            rootDefs.putAll((Map<String, Object>) defs);
+        }
     }
 
     /**
