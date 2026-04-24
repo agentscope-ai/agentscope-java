@@ -46,6 +46,7 @@ public class JSONRPCProperties implements CustomTransportProperties {
         return TransportProperties.builder(TransportProtocol.JSONRPC.asString())
                 .host(deploymentProperties.host())
                 .port(deploymentProperties.port())
+                .path(deploymentProperties.path())
                 .build();
     }
 
