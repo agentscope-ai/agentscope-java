@@ -95,8 +95,10 @@ public class AgentscopeA2aAutoConfiguration {
             List<AgentRegistry> agentRegistries,
             List<CustomTransportProperties> transportProperties) {
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
-        builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
+        ConfigurableAgentCard configurableAgentCard =
+                buildConfigurableAgentCard(agentCardProperties);
         DeploymentProperties deploymentProperties = buildDeploymentProperties(environment);
+        builder.agentCard(configurableAgentCard);
         builder.deploymentProperties(deploymentProperties);
         builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
         transportProperties.stream()
@@ -188,9 +190,14 @@ public class AgentscopeA2aAutoConfiguration {
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class, 8080);
         String defaultServerExportAddress =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
+        String defaultServerExportContextPath =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_CONTEXT_PATH);
         result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);
+        }
+        if (null != defaultServerExportContextPath) {
+            result.path(defaultServerExportContextPath);
         }
         return result.build();
     }

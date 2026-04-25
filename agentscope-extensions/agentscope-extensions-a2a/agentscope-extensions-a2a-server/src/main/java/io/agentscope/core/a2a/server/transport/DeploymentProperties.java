@@ -22,12 +22,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Some deployment relative properties, such as server default export port and host.
+ * Some deployment relative properties, such as server default export port and host and path.
  *
  * <p>When developers don't specified target {@link TransportProperties}, and want to use default transport, developers
  * should create this class and input port at least to make sure AgentScope can generate the url for default transport.
  */
-public record DeploymentProperties(String host, int port) {
+public record DeploymentProperties(String host, int port, String path) {
 
     private static final Logger log = LoggerFactory.getLogger(DeploymentProperties.class);
 
@@ -37,6 +37,8 @@ public record DeploymentProperties(String host, int port) {
 
         private Integer port;
 
+        private String path;
+
         public Builder host(String host) {
             this.host = host;
             return this;
@@ -44,6 +46,11 @@ public record DeploymentProperties(String host, int port) {
 
         public Builder port(Integer port) {
             this.port = port;
+            return this;
+        }
+
+        public Builder path(String path) {
+            this.path = path;
             return this;
         }
 
@@ -61,7 +68,7 @@ public record DeploymentProperties(String host, int port) {
             if (null == port) {
                 throw new IllegalArgumentException("port must be configured.");
             }
-            return new DeploymentProperties(host, port);
+            return new DeploymentProperties(host, port, path);
         }
     }
 }
