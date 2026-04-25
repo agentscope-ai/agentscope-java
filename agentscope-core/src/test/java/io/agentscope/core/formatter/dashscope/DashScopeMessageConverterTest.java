@@ -38,6 +38,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -562,5 +564,105 @@ class DashScopeMessageConverterTest {
         assertNotNull(args);
         assertTrue(args.contains("city"));
         assertTrue(args.contains("Shanghai"));
+    }
+
+    @Nested
+    @DisplayName("DashScope Reasoning Content Preservation Tests (Issue #1284)")
+    class ReasoningContentPreservationTests {
+
+        @Test
+        @DisplayName(
+                "Should preserve reasoning_content from ThinkingBlock for assistant with tool"
+                        + " calls")
+        void testReasoningContentPreservedWithToolCalls() {
+            ThinkingBlock thinkingBlock =
+                    ThinkingBlock.builder().thinking("Let me analyze the request...").build();
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_123")
+                            .name("get_weather")
+                            .input(Map.of("city", "Shanghai"))
+                            .build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(List.of(thinkingBlock, toolBlock))
+                            .build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("assistant", result.getRole());
+            assertEquals(
+                    "Let me analyze the request...",
+                    result.getReasoningContent(),
+                    "reasoning_content should be preserved from ThinkingBlock");
+            assertNotNull(result.getToolCalls());
+        }
+
+        @Test
+        @DisplayName(
+                "Should preserve reasoning_content from ThinkingBlock for assistant without tool"
+                        + " calls")
+        void testReasoningContentPreservedWithoutToolCalls() {
+            ThinkingBlock thinkingBlock =
+                    ThinkingBlock.builder().thinking("Thinking about the answer...").build();
+            TextBlock textBlock = TextBlock.builder().text("Here is my answer.").build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(List.of(thinkingBlock, textBlock))
+                            .build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("assistant", result.getRole());
+            assertEquals(
+                    "Thinking about the answer...",
+                    result.getReasoningContent(),
+                    "reasoning_content should be preserved from ThinkingBlock");
+            assertEquals("Here is my answer.", result.getContentAsString());
+        }
+
+        @Test
+        @DisplayName("Should not set reasoning_content when ThinkingBlock is absent")
+        void testNoReasoningContentWhenNoThinkingBlock() {
+            TextBlock textBlock = TextBlock.builder().text("Simple answer.").build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(textBlock)).build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNull(
+                    result.getReasoningContent(),
+                    "reasoning_content should be null when no ThinkingBlock");
+            assertEquals("Simple answer.", result.getContentAsString());
+        }
+
+        @Test
+        @DisplayName(
+                "Should not set reasoning_content when ThinkingBlock has empty thinking content")
+        void testNoReasoningContentWhenThinkingEmpty() {
+            ThinkingBlock thinkingBlock = ThinkingBlock.builder().thinking("").build();
+            TextBlock textBlock = TextBlock.builder().text("Answer.").build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(List.of(thinkingBlock, textBlock))
+                            .build();
+
+            DashScopeMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNull(
+                    result.getReasoningContent(),
+                    "reasoning_content should be null when thinking is empty");
+            assertEquals("Answer.", result.getContentAsString());
+        }
     }
 }
