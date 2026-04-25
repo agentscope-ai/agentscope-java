@@ -265,7 +265,8 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
         String textContent = textExtractor.apply(msg);
-        if (textContent != null && !textContent.isEmpty()) {
+        boolean hasTextContent = textContent != null && !textContent.isEmpty();
+        if (hasTextContent) {
             builder.content(textContent);
         }
 
@@ -373,6 +374,13 @@ public class OpenAIMessageConverter {
 
             if (!reasoningDetails.isEmpty()) {
                 builder.reasoningDetails(reasoningDetails);
+            }
+
+            // Qwen3 and similar models in thinking mode may produce assistant messages
+            // with reasoning_content + tool_calls but null content. APIs like vLLM and
+            // DashScope require the content field to be present. Ensure it is at least "".
+            if (!hasTextContent) {
+                builder.content("");
             }
         }
 
