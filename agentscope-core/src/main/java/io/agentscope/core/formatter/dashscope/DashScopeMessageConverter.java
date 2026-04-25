@@ -212,6 +212,14 @@ public class DashScopeMessageConverter {
                 DashScopeMessage.builder().role(msg.getRole().name().toLowerCase());
 
         if (msg.getRole() == MsgRole.ASSISTANT) {
+            ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
+            if (thinkingBlock != null) {
+                String thinking = thinkingBlock.getThinking();
+                if (thinking != null && !thinking.isEmpty()) {
+                    builder.reasoningContent(thinking);
+                }
+            }
+
             List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
             if (!toolBlocks.isEmpty()) {
                 // Assistant with tool calls
