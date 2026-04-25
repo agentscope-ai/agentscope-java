@@ -348,6 +348,65 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should execute without preset parameters when registration metadata is absent")
+    void shouldExecuteWhenRegisteredMetadataIsAbsent() {
+        AgentTool echoTool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_gap_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool for simulating a metadata lookup gap";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(
+                                ToolResultBlock.text("value: " + param.getInput().get("value")));
+                    }
+                };
+
+        ToolRegistry registryWithMetadataGap =
+                new ToolRegistry() {
+                    @Override
+                    RegisteredToolFunction getRegisteredTool(String name) {
+                        return null;
+                    }
+                };
+        registryWithMetadataGap.registerTool(
+                echoTool.getName(), echoTool, new RegisteredToolFunction(echoTool, null, null));
+        ToolExecutor executor =
+                new ToolExecutor(
+                        toolkit,
+                        registryWithMetadataGap,
+                        new ToolGroupManager(),
+                        ToolkitConfig.defaultConfig());
+        Map<String, Object> input = Map.of("value", "caller_value");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-metadata-gap")
+                        .name(echoTool.getName())
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                executor.execute(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals("value: caller_value", extractFirstText(result));
+    }
+
+    @Test
     @DisplayName("Should format all error messages consistently")
     void testErrorMessageFormat() {
         // Register various failing tools

@@ -227,7 +227,9 @@ class ToolExecutor {
         } else if (!toolCall.getInput().isEmpty()) {
             mergedInput.putAll(toolCall.getInput());
         }
-        mergedInput.putAll(registered.getPresetParameters());
+        if (registered != null) {
+            mergedInput.putAll(registered.getPresetParameters());
+        }
 
         // Build final execution param
         ToolCallParam executionParam =
