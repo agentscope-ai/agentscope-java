@@ -318,6 +318,67 @@ class SubAgentToolTest {
     }
 
     @Test
+    @DisplayName("Should forward event with default text block when content is empty")
+    void testEventForwardingWithEmptyContent() {
+        Agent mockAgent = mock(Agent.class);
+        when(mockAgent.getName()).thenReturn("EmptyEventAgent");
+        when(mockAgent.getDescription()).thenReturn("Agent that yields empty events");
+
+        // Create a message with NO content (null or empty list)
+        Msg emptyResponseMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        // Intentionally not setting content
+                        .build();
+
+        Event stateEvent = new Event(EventType.REASONING, emptyResponseMsg, false);
+
+        Msg finalMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Done").build())
+                        .build();
+        Event endEvent = new Event(EventType.SUMMARY, finalMsg, true);
+
+        when(mockAgent.stream(any(List.class), any(StreamOptions.class)))
+                .thenReturn(Flux.just(stateEvent, endEvent));
+
+        SubAgentConfig config = SubAgentConfig.builder().forwardEvents(true).build();
+        SubAgentTool tool = new SubAgentTool(() -> mockAgent, config);
+
+        List<ToolResultBlock> emittedChunks = new ArrayList<>();
+        ToolEmitter testEmitter = emittedChunks::add;
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("message", "Trigger");
+        ToolUseBlock toolUse =
+                ToolUseBlock.builder().id("1").name("call_emptyeventagent").input(input).build();
+
+        tool.callAsync(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolUse)
+                                .input(input)
+                                .emitter(testEmitter)
+                                .build())
+                .block();
+
+        // We expect 2 chunks emitted
+        assertEquals(2, emittedChunks.size());
+
+        // Verify the first chunk (the empty one)
+        ToolResultBlock emptyChunk = emittedChunks.get(0);
+        assertNotNull(emptyChunk.getOutput());
+        assertEquals(1, emptyChunk.getOutput().size(), "Should insert a default empty block");
+        assertTrue(emptyChunk.getOutput().get(0) instanceof TextBlock);
+        assertEquals(
+                "",
+                ((TextBlock) emptyChunk.getOutput().get(0)).getText(),
+                "Default block should contain empty string");
+        assertEquals(
+                EventType.REASONING.name(), emptyChunk.getMetadata().get("subagent_event_type"));
+    }
+
+    @Test
     @DisplayName("Should not use streaming when forwardEvents is false")
     void testEventForwardingDisabled() {
         Agent mockAgent = mock(Agent.class);
