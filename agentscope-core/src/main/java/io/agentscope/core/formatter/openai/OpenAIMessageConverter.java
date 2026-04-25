@@ -265,9 +265,15 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
         String textContent = textExtractor.apply(msg);
-        boolean hasTextContent = textContent != null && !textContent.isEmpty();
-        if (hasTextContent) {
+        // Qwen3 and similar models in thinking mode may produce assistant messages with
+        // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),
+        // a null content would be omitted from the JSON, causing strict OpenAI-compatible
+        // APIs (e.g. vLLM) to reject with "Field required: input.messages.N.content".
+        // Always ensure content is present — use the actual text or fall back to "".
+        if (textContent != null && !textContent.isEmpty()) {
             builder.content(textContent);
+        } else {
+            builder.content("");
         }
 
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
@@ -374,13 +380,6 @@ public class OpenAIMessageConverter {
 
             if (!reasoningDetails.isEmpty()) {
                 builder.reasoningDetails(reasoningDetails);
-            }
-
-            // Qwen3 and similar models in thinking mode may produce assistant messages
-            // with reasoning_content + tool_calls but null content. APIs like vLLM and
-            // DashScope require the content field to be present. Ensure it is at least "".
-            if (!hasTextContent) {
-                builder.content("");
             }
         }
 
