@@ -58,3 +58,6 @@ logs/
 
 ##agentscope
 .agentscope/
+
+## harness db
+**/*.db
