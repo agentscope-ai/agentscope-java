@@ -700,7 +700,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Flux of events emitted during execution
      */
     @Override
-    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
         return createEventStream(options, () -> call(msgs));
     }
 
@@ -713,8 +713,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Flux of events emitted during execution
      */
     @Override
-    public final Flux<Event> stream(
-            List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return createEventStream(options, () -> call(msgs, structuredModel));
     }
 
@@ -727,7 +726,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @return Flux of events emitted during execution
      */
     @Override
-    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
         return createEventStream(options, () -> call(msgs, schema));
     }
 
