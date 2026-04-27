@@ -99,7 +99,7 @@ class SandboxManagerIsolationTest {
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 
-        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(resumedSandbox, result.getSandbox());
         assertEquals(true, result.isSdkOwned());
@@ -121,7 +121,7 @@ class SandboxManagerIsolationTest {
                         .snapshotSpec(snapshotSpec)
                         .build();
 
-        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(freshSandbox, result.getSandbox());
         verify(client).create(any(), any(), any());
@@ -136,7 +136,7 @@ class SandboxManagerIsolationTest {
         RuntimeContext rtx = RuntimeContext.builder().build(); // no sessionKey
         SandboxContext sCtx = SandboxContext.builder().build(); // scope = SESSION (default)
 
-        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(freshSandbox, result.getSandbox());
         verify(stateStore, never()).load(any());
@@ -153,7 +153,7 @@ class SandboxManagerIsolationTest {
         RuntimeContext rtx = RuntimeContext.builder().userId("user-42").build();
         SandboxContext sCtx = SandboxContext.builder().isolationScope(IsolationScope.USER).build();
 
-        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(resumedSandbox, result.getSandbox());
     }
@@ -165,7 +165,7 @@ class SandboxManagerIsolationTest {
         RuntimeContext rtx = RuntimeContext.builder().build(); // no userId
         SandboxContext sCtx = SandboxContext.builder().isolationScope(IsolationScope.USER).build();
 
-        SandboxAcquireResult result = manager.acquire(sCtx, rtx);
+        SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(freshSandbox, result.getSandbox());
         verify(stateStore, never()).load(any());
@@ -218,7 +218,7 @@ class SandboxManagerIsolationTest {
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 
-        manager.persistState(result, sCtx, rtx);
+        manager.persistState(result, sCtx, rtx.toCore());
 
         verify(stateStore).save(any(), any());
     }
@@ -232,7 +232,7 @@ class SandboxManagerIsolationTest {
         RuntimeContext rtx = RuntimeContext.builder().build(); // no session key
         SandboxContext sCtx = SandboxContext.builder().build(); // SESSION scope by default
 
-        manager.persistState(result, sCtx, rtx);
+        manager.persistState(result, sCtx, rtx.toCore());
 
         verify(stateStore, never()).save(any(), any());
     }
@@ -246,7 +246,7 @@ class SandboxManagerIsolationTest {
         SandboxContext sCtx =
                 SandboxContext.builder().isolationScope(IsolationScope.SESSION).build();
 
-        manager.clearState(sCtx, rtx);
+        manager.clearState(sCtx, rtx.toCore());
 
         verify(stateStore).delete(any());
     }

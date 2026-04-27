@@ -15,12 +15,13 @@
  */
 package io.agentscope.harness.agent.hook;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.harness.agent.RuntimeContext;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxBackedFilesystem;
@@ -35,7 +36,7 @@ import reactor.core.publisher.Mono;
  *
  * <h2>PreCallEvent</h2>
  * <ol>
- *   <li>Read {@link SandboxContext} from the {@link RuntimeContext}</li>
+ *   <li>Read {@link SandboxContext} from the current {@link RuntimeContext}</li>
  *   <li>Acquire a session via {@link SandboxManager}</li>
  *   <li>Start the session (4-branch workspace init)</li>
  *   <li>Inject the live session into the {@link SandboxBackedFilesystem} proxy</li>
@@ -53,7 +54,7 @@ import reactor.core.publisher.Mono;
  * <p>Post-call failures (persist, release) are logged but do not propagate — this ensures
  * the agent call result is always returned to the caller even if sandbox cleanup fails.
  */
-public class SandboxLifecycleHook implements Hook, RuntimeContextAwareHook {
+public class SandboxLifecycleHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(SandboxLifecycleHook.class);
 
@@ -87,8 +88,8 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAwareHook {
     }
 
     @Override
-    public void setRuntimeContext(RuntimeContext runtimeContext) {
-        this.runtimeContext = runtimeContext;
+    public void setRuntimeContext(RuntimeContext ctx) {
+        this.runtimeContext = ctx;
     }
 
     @SuppressWarnings("unchecked")
@@ -111,7 +112,7 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAwareHook {
             return Mono.just(event);
         }
 
-        SandboxContext sandboxContext = ctx.getSandboxContext();
+        SandboxContext sandboxContext = ctx.get(SandboxContext.class);
         if (sandboxContext == null) {
             return Mono.just(event);
         }
@@ -164,7 +165,8 @@ public class SandboxLifecycleHook implements Hook, RuntimeContextAwareHook {
                     }
 
                     RuntimeContext ctx = runtimeContext;
-                    SandboxContext sandboxContext = ctx != null ? ctx.getSandboxContext() : null;
+                    SandboxContext sandboxContext =
+                            ctx != null ? ctx.get(SandboxContext.class) : null;
 
                     // Persist state first (before release destroys workspace)
                     try {

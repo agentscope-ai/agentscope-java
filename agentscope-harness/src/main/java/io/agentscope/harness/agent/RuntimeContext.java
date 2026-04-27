@@ -18,65 +18,55 @@ package io.agentscope.harness.agent;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Runtime context passed into agent.call() to carry session-scoped metadata.
+ * Harness-facing runtime context: wraps {@link io.agentscope.core.agent.RuntimeContext} and adds
+ * a typed {@link #getSandboxContext() sandbox} view (stored as a typed attribute on the core
+ * object).
  *
- * <p>This context is available throughout the reasoning loop (hooks, tools) but is
- * NOT persisted to storage media.
+ * <p>Pass {@link #toCore()} to {@link io.agentscope.core.ReActAgent#call} when calling the
+ * delegate directly.
  */
-public class RuntimeContext {
+public final class RuntimeContext {
 
-    private final String sessionId;
-    private final String userId;
-    private final Session session;
-    private final SessionKey sessionKey;
-    private final Map<String, Object> extra;
-    private final SandboxContext sandboxContext;
+    private final io.agentscope.core.agent.RuntimeContext core;
 
-    private RuntimeContext(Builder builder) {
-        this.sessionId = builder.sessionId;
-        this.userId = builder.userId;
-        this.session = builder.session;
-        this.sessionKey = builder.sessionKey;
-        this.extra = Map.copyOf(builder.extra);
-        this.sandboxContext = builder.sandboxContext;
+    private RuntimeContext(io.agentscope.core.agent.RuntimeContext core) {
+        this.core = core;
+    }
+
+    public io.agentscope.core.agent.RuntimeContext toCore() {
+        return core;
     }
 
     public String getSessionId() {
-        return sessionId;
+        return core.getSessionId();
     }
 
     public String getUserId() {
-        return userId;
+        return core.getUserId();
     }
 
     public Session getSession() {
-        return session;
+        return core.getSession();
     }
 
     public SessionKey getSessionKey() {
-        return sessionKey;
+        return core.getSessionKey();
     }
 
     @SuppressWarnings("unchecked")
     public <T> T get(String key) {
-        return (T) extra.get(key);
+        return (T) core.get(key);
     }
 
     public Map<String, Object> getExtra() {
-        return extra;
+        return core.getExtra();
     }
 
-    /**
-     * Returns the sandbox context for this call.
-     *
-     * @return sandbox context, or {@code null} if sandbox is not configured
-     */
     public SandboxContext getSandboxContext() {
-        return sandboxContext;
+        return core.get(SandboxContext.class);
     }
 
     public static Builder builder() {
@@ -84,58 +74,46 @@ public class RuntimeContext {
     }
 
     public static class Builder {
-        private String sessionId;
-        private String userId;
-        private Session session;
-        private SessionKey sessionKey;
-        private final Map<String, Object> extra = new HashMap<>();
-        private SandboxContext sandboxContext;
+        private final io.agentscope.core.agent.RuntimeContext.Builder b =
+                io.agentscope.core.agent.RuntimeContext.builder();
 
         public Builder sessionId(String sessionId) {
-            this.sessionId = sessionId;
+            b.sessionId(sessionId);
             return this;
         }
 
         public Builder userId(String userId) {
-            this.userId = userId;
+            b.userId(userId);
             return this;
         }
 
         public Builder session(Session session) {
-            this.session = session;
+            b.session(session);
             return this;
         }
 
         public Builder sessionKey(SessionKey sessionKey) {
-            this.sessionKey = sessionKey;
+            b.sessionKey(sessionKey);
             return this;
         }
 
         public Builder put(String key, Object value) {
-            this.extra.put(key, value);
+            b.put(key, value);
             return this;
         }
 
         public Builder putAll(Map<String, Object> extras) {
-            if (extras != null) {
-                this.extra.putAll(extras);
-            }
+            b.putAll(extras);
             return this;
         }
 
-        /**
-         * Sets the sandbox context for this call.
-         *
-         * @param sandboxContext sandbox configuration and state
-         * @return this builder
-         */
         public Builder sandboxContext(SandboxContext sandboxContext) {
-            this.sandboxContext = sandboxContext;
+            b.put(SandboxContext.class, sandboxContext);
             return this;
         }
 
         public RuntimeContext build() {
-            return new RuntimeContext(this);
+            return new RuntimeContext(b.build());
         }
     }
 }

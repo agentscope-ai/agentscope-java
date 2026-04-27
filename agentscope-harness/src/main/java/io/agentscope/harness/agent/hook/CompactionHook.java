@@ -16,14 +16,15 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -52,9 +53,9 @@ import reactor.core.publisher.Mono;
  * (priority 900): compaction runs on the conversation portion first; workspace files are merged into
  * the system message afterwards on the same {@link PreReasoningEvent} chain.
  *
- * <p>{@link RuntimeContext} must be injected via {@link #setRuntimeContext} before the hook fires.
+ * <p>{@link RuntimeContext} is bound on each call by {@link io.agentscope.core.ReActAgent}.
  */
-public class CompactionHook implements Hook {
+public class CompactionHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionHook.class);
 
@@ -70,6 +71,7 @@ public class CompactionHook implements Hook {
         this.config = config;
     }
 
+    @Override
     public void setRuntimeContext(RuntimeContext runtimeContext) {
         this.runtimeContext = runtimeContext;
     }
@@ -80,9 +82,12 @@ public class CompactionHook implements Hook {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         if (event instanceof PreReasoningEvent pre) {
-            return handlePreReasoning(pre).thenReturn(event);
+            // Must emit a value: Reactor's thenReturn() would not run if the source completed
+            // "empty" (e.g. Mono.empty() from flatMap), which would drop all later hooks.
+            return (Mono<T>) (Mono<?>) handlePreReasoning(pre);
         }
         return Mono.just(event);
     }
@@ -91,9 +96,9 @@ public class CompactionHook implements Hook {
     // Core compaction flow
     // -------------------------------------------------------------------------
 
-    private Mono<Void> handlePreReasoning(PreReasoningEvent event) {
+    private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
         if (!(event.getAgent() instanceof ReActAgent reActAgent)) {
-            return Mono.empty();
+            return Mono.just(event);
         }
 
         // Separate system messages (injected by WorkspaceContextHook etc.) from conversation
@@ -116,22 +121,22 @@ public class CompactionHook implements Hook {
 
         return compactor
                 .compactIfNeeded(conversationMsgs, config, agentId, sessionId)
-                .<Void>flatMap(
+                .flatMap(
                         optResult -> {
                             if (optResult.isEmpty()) {
-                                return Mono.empty();
+                                return Mono.just(event);
                             }
                             List<Msg> compacted = optResult.get();
                             applyToMemory(reActAgent.getMemory(), compacted);
                             applyToEvent(event, systemMsgs, compacted);
-                            return Mono.empty();
+                            return Mono.just(event);
                         })
                 .onErrorResume(
                         e -> {
                             log.warn(
                                     "Compaction failed, continuing without compaction: {}",
                                     e.getMessage());
-                            return Mono.empty();
+                            return Mono.just(event);
                         });
     }
 

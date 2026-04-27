@@ -15,14 +15,15 @@
  */
 package io.agentscope.harness.agent.hook;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -39,7 +40,7 @@ import reactor.core.publisher.Mono;
  * workspace files using XML-style {@code <loaded_context>} blocks to compare against markdown
  * sectioning.
  */
-public class WorkspaceContextHook implements Hook, RuntimeContextAwareHook {
+public class WorkspaceContextHook implements Hook, RuntimeContextAware {
 
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
@@ -117,6 +118,7 @@ public class WorkspaceContextHook implements Hook, RuntimeContextAwareHook {
         this.additionalContextFiles = files != null ? files : List.of();
     }
 
+    @Override
     public void setRuntimeContext(RuntimeContext runtimeContext) {
         this.runtimeContext = runtimeContext;
     }

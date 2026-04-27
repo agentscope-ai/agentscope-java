@@ -211,7 +211,7 @@ class WorkspaceSandboxStateStoreTest {
     private static SandboxIsolationKey isolationKey(IsolationScope scope, String value) {
         return SandboxIsolationKey.resolve(
                         scope,
-                        buildCtxForScope(scope, value),
+                        buildCtxForScope(scope, value).toCore(),
                         value.startsWith("user") || scope == IsolationScope.GLOBAL
                                 ? "test-agent"
                                 : value)

@@ -20,6 +20,7 @@ import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
@@ -108,6 +109,10 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicReference<InterruptSource> interruptSource =
             new AtomicReference<>(InterruptSource.USER);
 
+    private final CopyOnWriteArrayList<RuntimeContextAware> runtimeContextAwareHooks =
+            new CopyOnWriteArrayList<>();
+    private final AtomicReference<RuntimeContext> currentRuntimeContext = new AtomicReference<>();
+
     /**
      * Constructor for AgentBase.
      *
@@ -143,6 +148,9 @@ public abstract class AgentBase implements StateModule, Agent {
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
+        for (Hook h : this.hooks) {
+            registerRuntimeContextHookIfNeeded(h);
+        }
     }
 
     @Override
@@ -172,18 +180,20 @@ public abstract class AgentBase implements StateModule, Agent {
     public final Mono<Msg> call(List<Msg> msgs) {
         return Mono.using(
                 this::acquireExecution,
-                resource ->
-                        TracerRegistry.get()
-                                .callAgent(
-                                        this,
-                                        msgs,
-                                        () ->
-                                                notifyPreCall(msgs)
-                                                        .flatMap(this::doCall)
-                                                        .flatMap(this::notifyPostCall)
-                                                        .onErrorResume(
-                                                                createErrorHandler(
-                                                                        msgs.toArray(new Msg[0])))),
+                resource -> {
+                    beforeAgentExecution(msgs);
+                    return TracerRegistry.get()
+                            .callAgent(
+                                    this,
+                                    msgs,
+                                    () ->
+                                            notifyPreCall(msgs)
+                                                    .flatMap(this::doCall)
+                                                    .flatMap(this::notifyPostCall)
+                                                    .onErrorResume(
+                                                            createErrorHandler(
+                                                                    msgs.toArray(new Msg[0]))));
+                },
                 this::releaseExecution,
                 true);
     }
@@ -201,22 +211,20 @@ public abstract class AgentBase implements StateModule, Agent {
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         return Mono.using(
                 this::acquireExecution,
-                resource ->
-                        TracerRegistry.get()
-                                .callAgent(
-                                        this,
-                                        msgs,
-                                        () ->
-                                                notifyPreCall(msgs)
-                                                        .flatMap(
-                                                                m ->
-                                                                        doCall(
-                                                                                m,
-                                                                                structuredOutputClass))
-                                                        .flatMap(this::notifyPostCall)
-                                                        .onErrorResume(
-                                                                createErrorHandler(
-                                                                        msgs.toArray(new Msg[0])))),
+                resource -> {
+                    beforeAgentExecution(msgs);
+                    return TracerRegistry.get()
+                            .callAgent(
+                                    this,
+                                    msgs,
+                                    () ->
+                                            notifyPreCall(msgs)
+                                                    .flatMap(m -> doCall(m, structuredOutputClass))
+                                                    .flatMap(this::notifyPostCall)
+                                                    .onErrorResume(
+                                                            createErrorHandler(
+                                                                    msgs.toArray(new Msg[0]))));
+                },
                 this::releaseExecution,
                 true);
     }
@@ -234,18 +242,20 @@ public abstract class AgentBase implements StateModule, Agent {
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
         return Mono.using(
                 this::acquireExecution,
-                resource ->
-                        TracerRegistry.get()
-                                .callAgent(
-                                        this,
-                                        msgs,
-                                        () ->
-                                                notifyPreCall(msgs)
-                                                        .flatMap(m -> doCall(m, schema))
-                                                        .flatMap(this::notifyPostCall)
-                                                        .onErrorResume(
-                                                                createErrorHandler(
-                                                                        msgs.toArray(new Msg[0])))),
+                resource -> {
+                    beforeAgentExecution(msgs);
+                    return TracerRegistry.get()
+                            .callAgent(
+                                    this,
+                                    msgs,
+                                    () ->
+                                            notifyPreCall(msgs)
+                                                    .flatMap(m -> doCall(m, schema))
+                                                    .flatMap(this::notifyPostCall)
+                                                    .onErrorResume(
+                                                            createErrorHandler(
+                                                                    msgs.toArray(new Msg[0]))));
+                },
                 this::releaseExecution,
                 true);
     }
@@ -421,6 +431,7 @@ public abstract class AgentBase implements StateModule, Agent {
      * @param resource the agent instance (ignored, uses {@code this})
      */
     private void releaseExecution(AgentBase resource) {
+        afterAgentExecution();
         running.set(false);
         GracefulShutdownManager.getInstance().unregisterRequest(this);
     }
@@ -501,6 +512,54 @@ public abstract class AgentBase implements StateModule, Agent {
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
 
     /**
+     * Current per-call {@link RuntimeContext} when bound (e.g. by {@code ReActAgent} during a
+     * {@code call}).
+     */
+    public RuntimeContext getRuntimeContext() {
+        return currentRuntimeContext.get();
+    }
+
+    /**
+     * Invoked at the start of a {@code call} / stream-backed call, after {@link
+     * #acquireExecution} and before any hooks. The default is a no-op. {@link
+     * io.agentscope.core.ReActAgent} uses this to bind a {@link RuntimeContext}.
+     */
+    protected void beforeAgentExecution(List<Msg> msgs) {}
+
+    /**
+     * Invoked in {@code Mono.using} cleanup, before clearing the running state. Pairs with {@link
+     * #beforeAgentExecution(List)}. The default is a no-op.
+     */
+    protected void afterAgentExecution() {}
+
+    /**
+     * Binds {@code ctx} to the agent reference and all {@link RuntimeContextAware} hooks
+     * registered for this agent.
+     */
+    protected void bindRuntimeContextToHooks(RuntimeContext ctx) {
+        currentRuntimeContext.set(ctx);
+        for (RuntimeContextAware h : runtimeContextAwareHooks) {
+            h.setRuntimeContext(ctx);
+        }
+    }
+
+    /**
+     * Clears {@link #getRuntimeContext()} and nulls all {@link RuntimeContextAware} hooks.
+     */
+    protected void unbindRuntimeContextFromHooks() {
+        for (RuntimeContextAware h : runtimeContextAwareHooks) {
+            h.setRuntimeContext(null);
+        }
+        currentRuntimeContext.set(null);
+    }
+
+    private void registerRuntimeContextHookIfNeeded(Hook hook) {
+        if (hook instanceof RuntimeContextAware r && !runtimeContextAwareHooks.contains(r)) {
+            runtimeContextAwareHooks.add(r);
+        }
+    }
+
+    /**
      * Get the list of hooks for this agent.
      * Protected to allow subclasses to access hooks for custom notification logic.
      *
@@ -521,6 +580,7 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void addHook(Hook hook) {
         if (hook != null) {
             hooks.add(hook);
+            registerRuntimeContextHookIfNeeded(hook);
             sortHooks();
         }
     }
@@ -540,6 +600,9 @@ public abstract class AgentBase implements StateModule, Agent {
     protected void removeHook(Hook hook) {
         if (hook != null) {
             hooks.remove(hook);
+            if (hook instanceof RuntimeContextAware r) {
+                runtimeContextAwareHooks.remove(r);
+            }
         }
     }
 

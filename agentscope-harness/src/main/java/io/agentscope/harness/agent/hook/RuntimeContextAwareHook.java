@@ -15,10 +15,10 @@
  */
 package io.agentscope.harness.agent.hook;
 
-import io.agentscope.harness.agent.RuntimeContext;
+import io.agentscope.core.hook.RuntimeContextAware;
 
-/** Marker contract for hooks that need per-call {@link RuntimeContext}. */
-public interface RuntimeContextAwareHook {
-
-    void setRuntimeContext(RuntimeContext runtimeContext);
-}
+/**
+ * @deprecated Use {@link RuntimeContextAware} in {@code io.agentscope.core.hook} instead.
+ */
+@Deprecated(since = "1.0", forRemoval = false)
+public interface RuntimeContextAwareHook extends RuntimeContextAware {}

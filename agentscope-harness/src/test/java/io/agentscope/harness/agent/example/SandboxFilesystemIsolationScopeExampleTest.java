@@ -123,8 +123,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .filesystem(spec)
                         .build();
 
-        agent.call(userMsg("call from session-1"), ctx("session-1", "alice")).block();
-        agent.call(userMsg("call from session-2"), ctx("session-2", "alice")).block();
+        agent.call(userMsg("call from session-1"), ctx("session-2-1", "alice")).block();
+        agent.call(userMsg("call from session-2"), ctx("session-2-2", "alice")).block();
 
         assertEquals(
                 2, client.getCreateCount(), "each distinct session should create its own sandbox");
@@ -186,8 +186,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .filesystem(spec)
                         .build();
 
-        agent.call(userMsg("hi from alice"), ctx("s1", "alice")).block();
-        agent.call(userMsg("hi from bob"), ctx("s2", "bob")).block();
+        agent.call(userMsg("hi from alice2"), ctx("s1", "alice2")).block();
+        agent.call(userMsg("hi from bob2"), ctx("s2", "bob2")).block();
 
         assertEquals(2, client.getCreateCount(), "each user should get their own fresh sandbox");
         assertEquals(0, client.getResumeCount());

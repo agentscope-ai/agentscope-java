@@ -86,7 +86,7 @@ class SessionSandboxStateStoreTest {
     }
 
     private static SandboxIsolationKey isolationKey(IsolationScope scope, String value) {
-        return SandboxIsolationKey.resolve(scope, runtimeContext(scope, value), AGENT_ID)
+        return SandboxIsolationKey.resolve(scope, runtimeContext(scope, value).toCore(), AGENT_ID)
                 .orElseThrow();
     }
 

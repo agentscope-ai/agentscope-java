@@ -15,6 +15,10 @@
  */
 package io.agentscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.StructuredOutputCapableAgent;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.ActingChunkEvent;
@@ -151,6 +155,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
     private final StatePersistence statePersistence;
+    private RuntimeContext pendingRuntimeContext;
 
     // ==================== Constructor ====================
 
@@ -176,6 +181,72 @@ public class ReActAgent extends StructuredOutputCapableAgent {
                 builder.statePersistence != null
                         ? builder.statePersistence
                         : StatePersistence.all();
+    }
+
+    // ==================== RuntimeContext ====================
+
+    @Override
+    protected void beforeAgentExecution(List<Msg> msgs) {
+        RuntimeContext ctx = this.pendingRuntimeContext;
+        this.pendingRuntimeContext = null;
+        if (ctx == null) {
+            ctx = RuntimeContext.empty();
+        }
+        bindRuntimeContextToHooks(ctx);
+    }
+
+    @Override
+    protected void afterAgentExecution() {
+        unbindRuntimeContextFromHooks();
+    }
+
+    private ToolExecutionContext buildMergedToolContext() {
+        RuntimeContext run = getRuntimeContext();
+        if (run == null) {
+            return toolExecutionContext != null
+                    ? toolExecutionContext
+                    : ToolExecutionContext.empty();
+        }
+        return ToolExecutionContext.merge(run.asToolExecutionContext(), toolExecutionContext);
+    }
+
+    /**
+     * Calls the agent with a per-call {@link RuntimeContext} (metadata for hooks and tools, not
+     * persisted).
+     */
+    public Mono<Msg> call(List<Msg> msgs, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs, structuredOutputClass);
+    }
+
+    public Mono<Msg> call(List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return call(msgs, outputSchema);
+    }
+
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options);
+    }
+
+    public Flux<Event> stream(
+            List<Msg> msgs,
+            StreamOptions options,
+            Class<?> structuredModel,
+            RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options, structuredModel);
+    }
+
+    public Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext context) {
+        this.pendingRuntimeContext = context;
+        return stream(msgs, options, schema);
     }
 
     // ==================== New StateModule API ====================
@@ -665,7 +736,7 @@ public class ReActAgent extends StructuredOutputCapableAgent {
      */
     private Mono<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> executeToolCalls(
             List<ToolUseBlock> toolCalls) {
-        return toolkit.callTools(toolCalls, toolExecutionConfig, this, toolExecutionContext)
+        return toolkit.callTools(toolCalls, toolExecutionConfig, this, buildMergedToolContext())
                 .map(
                         results ->
                                 IntStream.range(0, toolCalls.size())

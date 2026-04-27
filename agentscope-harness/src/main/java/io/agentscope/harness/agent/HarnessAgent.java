@@ -47,7 +47,6 @@ import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
 import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
-import io.agentscope.harness.agent.hook.RuntimeContextAwareHook;
 import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
 import io.agentscope.harness.agent.hook.SessionPersistenceHook;
 import io.agentscope.harness.agent.hook.SubagentsHook;
@@ -128,39 +127,27 @@ public class HarnessAgent implements Agent, StateModule {
 
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
-    private final RuntimeContextAwareHook workspaceContextHook;
-    private final MemoryFlushHook memoryFlushHook;
-    private final SessionPersistenceHook sessionPersistenceHook;
     private final CompactionHook compactionHook;
     private final AtomicReference<String> userIdRef;
     private final AtomicReference<String> sessionIdRef;
     private final Session defaultSession;
-    private final SandboxLifecycleHook sandboxLifecycleHook;
     private final SandboxContext defaultSandboxContext;
     private RuntimeContext runtimeContext;
 
     private HarnessAgent(
             ReActAgent delegate,
             WorkspaceManager workspaceManager,
-            RuntimeContextAwareHook workspaceContextHook,
-            MemoryFlushHook memoryFlushHook,
-            SessionPersistenceHook sessionPersistenceHook,
             CompactionHook compactionHook,
             AtomicReference<String> userIdRef,
             AtomicReference<String> sessionIdRef,
             Session defaultSession,
-            SandboxLifecycleHook sandboxLifecycleHook,
             SandboxContext defaultSandboxContext) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
-        this.workspaceContextHook = workspaceContextHook;
-        this.memoryFlushHook = memoryFlushHook;
-        this.sessionPersistenceHook = sessionPersistenceHook;
         this.compactionHook = compactionHook;
         this.userIdRef = userIdRef;
         this.sessionIdRef = sessionIdRef;
         this.defaultSession = defaultSession;
-        this.sandboxLifecycleHook = sandboxLifecycleHook;
         this.defaultSandboxContext = defaultSandboxContext;
     }
 
@@ -172,7 +159,7 @@ public class HarnessAgent implements Agent, StateModule {
     /** Calls the agent with multiple messages and a runtime context. */
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         bindRuntimeContext(ctx);
-        return delegate.call(msgs)
+        return delegate.call(msgs, coreForDelegate())
                 .onErrorResume(
                         e -> {
                             if (isContextOverflowError(e)) {
@@ -185,7 +172,13 @@ public class HarnessAgent implements Agent, StateModule {
     /** Streams the agent response with a runtime context. */
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
         bindRuntimeContext(ctx);
-        return delegate.stream(msgs, options);
+        return delegate.stream(msgs, options, coreForDelegate());
+    }
+
+    private io.agentscope.core.agent.RuntimeContext coreForDelegate() {
+        return runtimeContext != null
+                ? runtimeContext.toCore()
+                : io.agentscope.core.agent.RuntimeContext.empty();
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs) {
@@ -227,13 +220,19 @@ public class HarnessAgent implements Agent, StateModule {
                                 for (Msg m : opt.get()) {
                                     memory.addMessage(m);
                                 }
-                                return delegate.call(msgs);
+                                return delegate.call(msgs, coreRuntimeForRecovery());
                             }
                             return Mono.error(
                                     new RuntimeException(
                                             "Context overflow: emergency compaction yielded no"
                                                     + " result"));
                         });
+    }
+
+    private io.agentscope.core.agent.RuntimeContext coreRuntimeForRecovery() {
+        return runtimeContext != null
+                ? runtimeContext.toCore()
+                : io.agentscope.core.agent.RuntimeContext.empty();
     }
 
     private static boolean isContextOverflowError(Throwable e) {
@@ -267,21 +266,6 @@ public class HarnessAgent implements Agent, StateModule {
                             ? effective.getSessionKey().toIdentifier()
                             : effective.getSessionId();
             sessionIdRef.set(sid);
-        }
-        if (workspaceContextHook != null) {
-            workspaceContextHook.setRuntimeContext(effective);
-        }
-        if (memoryFlushHook != null) {
-            memoryFlushHook.setRuntimeContext(effective);
-        }
-        if (sessionPersistenceHook != null) {
-            sessionPersistenceHook.setRuntimeContext(effective);
-        }
-        if (compactionHook != null) {
-            compactionHook.setRuntimeContext(effective);
-        }
-        if (sandboxLifecycleHook != null) {
-            sandboxLifecycleHook.setRuntimeContext(effective);
         }
         if (effective.getSession() != null && effective.getSessionKey() != null) {
             try {
@@ -922,8 +906,6 @@ public class HarnessAgent implements Agent, StateModule {
                 allHooks.add(new AgentTraceHook());
             }
 
-            RuntimeContextAwareHook wsContextHook;
-
             WorkspaceContextHook markdownHook =
                     new WorkspaceContextHook(
                             wsManager,
@@ -932,7 +914,6 @@ public class HarnessAgent implements Agent, StateModule {
                             maxContextTokens);
             markdownHook.setAdditionalContextFiles(additionalContextFiles);
             allHooks.add(markdownHook);
-            wsContextHook = markdownHook;
 
             MemoryFlushHook memoryFlushHook = null;
             if (model != null) {
@@ -1026,14 +1007,10 @@ public class HarnessAgent implements Agent, StateModule {
             return new HarnessAgent(
                     delegate,
                     wsManager,
-                    wsContextHook,
-                    memoryFlushHook,
-                    sessionPersistenceHook,
                     compactionHook,
                     userIdRef,
                     sessionIdRef,
                     effectiveSession,
-                    sandboxLifecycleHook,
                     defaultSandboxContext);
         }
 

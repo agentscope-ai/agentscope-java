@@ -17,13 +17,14 @@ package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
@@ -43,7 +44,7 @@ import reactor.core.publisher.Mono;
  * <p>Priority is 5 — runs early so state is persisted before the session-persistence hook
  * (priority 900) saves the overall agent state.
  */
-public class MemoryFlushHook implements Hook {
+public class MemoryFlushHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushHook.class);
 
@@ -56,6 +57,7 @@ public class MemoryFlushHook implements Hook {
         this.model = model;
     }
 
+    @Override
     public void setRuntimeContext(RuntimeContext runtimeContext) {
         this.runtimeContext = runtimeContext;
     }

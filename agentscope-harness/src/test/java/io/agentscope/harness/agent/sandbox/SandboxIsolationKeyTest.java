@@ -34,7 +34,7 @@ class SandboxIsolationKeyTest {
         RuntimeContext ctx =
                 RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-abc")).build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx.toCore(), AGENT_ID);
         assertTrue(key.isPresent());
         assertEquals(IsolationScope.SESSION, key.get().getScope());
         assertEquals("sess-abc", key.get().getValue());
@@ -44,7 +44,7 @@ class SandboxIsolationKeyTest {
     void sessionScope_missingSessionKey_returnsEmpty() {
         RuntimeContext ctx = RuntimeContext.builder().build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx.toCore(), AGENT_ID);
         assertFalse(key.isPresent());
     }
 
@@ -60,7 +60,7 @@ class SandboxIsolationKeyTest {
         RuntimeContext ctx =
                 RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-def")).build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve((IsolationScope) null, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve((IsolationScope) null, ctx.toCore(), AGENT_ID);
         assertTrue(key.isPresent());
         assertEquals(IsolationScope.SESSION, key.get().getScope());
         assertEquals("sess-def", key.get().getValue());
@@ -70,7 +70,7 @@ class SandboxIsolationKeyTest {
     void userScope_withUserId_resolvesCorrectly() {
         RuntimeContext ctx = RuntimeContext.builder().userId("user-123").build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx.toCore(), AGENT_ID);
         assertTrue(key.isPresent());
         assertEquals(IsolationScope.USER, key.get().getScope());
         assertEquals("user-123", key.get().getValue());
@@ -80,7 +80,7 @@ class SandboxIsolationKeyTest {
     void userScope_blankUserId_returnsEmpty() {
         RuntimeContext ctx = RuntimeContext.builder().userId("  ").build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx.toCore(), AGENT_ID);
         assertFalse(key.isPresent());
     }
 
@@ -88,7 +88,7 @@ class SandboxIsolationKeyTest {
     void userScope_nullUserId_returnsEmpty() {
         RuntimeContext ctx = RuntimeContext.builder().build();
         Optional<SandboxIsolationKey> key =
-                SandboxIsolationKey.resolve(IsolationScope.USER, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.USER, ctx.toCore(), AGENT_ID);
         assertFalse(key.isPresent());
     }
 
@@ -103,7 +103,7 @@ class SandboxIsolationKeyTest {
     void agentScope_alwaysResolvesToAgentId() {
         Optional<SandboxIsolationKey> keyWithCtx =
                 SandboxIsolationKey.resolve(
-                        IsolationScope.AGENT, RuntimeContext.builder().build(), AGENT_ID);
+                        IsolationScope.AGENT, RuntimeContext.builder().build().toCore(), AGENT_ID);
         Optional<SandboxIsolationKey> keyNullCtx =
                 SandboxIsolationKey.resolve(IsolationScope.AGENT, null, AGENT_ID);
 
@@ -128,9 +128,9 @@ class SandboxIsolationKeyTest {
     void equalsAndHashCode_sameValues_areEqual() {
         RuntimeContext ctx = RuntimeContext.builder().sessionKey(SimpleSessionKey.of("s1")).build();
         Optional<SandboxIsolationKey> k1 =
-                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx.toCore(), AGENT_ID);
         Optional<SandboxIsolationKey> k2 =
-                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx, AGENT_ID);
+                SandboxIsolationKey.resolve(IsolationScope.SESSION, ctx.toCore(), AGENT_ID);
         assertTrue(k1.isPresent() && k2.isPresent());
         assertEquals(k1.get(), k2.get());
         assertEquals(k1.get().hashCode(), k2.get().hashCode());

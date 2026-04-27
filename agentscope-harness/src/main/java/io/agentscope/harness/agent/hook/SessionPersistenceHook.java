@@ -16,12 +16,13 @@
 package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.RuntimeContextAware;
 import io.agentscope.core.state.StateModule;
-import io.agentscope.harness.agent.RuntimeContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -33,19 +34,20 @@ import reactor.core.publisher.Mono;
  * ensure state is saved regardless of outcome. The save is best-effort: failures are logged but
  * do not propagate exceptions.
  *
- * <p>Session and SessionKey are obtained from the {@link RuntimeContext} injected via
- * {@link #setRuntimeContext(RuntimeContext)}. When no session is configured in the context,
+ * <p>Session and SessionKey are obtained from the {@link RuntimeContext} set per call. When no
+ * session is configured in the context,
  * the hook is a no-op.
  *
  * <p>Priority is set to 900 (low) so this hook runs after other hooks like
  * {@link MemoryFlushHook} have completed their work.
  */
-public class SessionPersistenceHook implements Hook {
+public class SessionPersistenceHook implements Hook, RuntimeContextAware {
 
     private static final Logger log = LoggerFactory.getLogger(SessionPersistenceHook.class);
 
     private RuntimeContext runtimeContext;
 
+    @Override
     public void setRuntimeContext(RuntimeContext ctx) {
         this.runtimeContext = ctx;
     }

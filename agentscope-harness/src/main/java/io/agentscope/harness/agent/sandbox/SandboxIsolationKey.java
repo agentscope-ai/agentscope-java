@@ -15,8 +15,8 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.IsolationScope;
-import io.agentscope.harness.agent.RuntimeContext;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;

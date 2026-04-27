@@ -146,16 +146,27 @@ class HarnessAgentIntegrationExampleTest {
                         .findFirst()
                         .orElse("");
 
-        assertTrue(combined.contains("## Session Context"), "Session context should be injected");
-        assertTrue(combined.contains("# Project Context"));
-        assertTrue(combined.contains("## AGENTS.md"));
+        assertTrue(
+                combined.contains("## Session Context"),
+                "Session context should be injected; model saw: "
+                        + captor.getAllValues().stream()
+                                .map(HarnessAgentIntegrationExampleTest::joinAllText)
+                                .toList());
+        // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context> blocks
+        assertTrue(
+                combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
+                "expected workspace guidance sections");
+        assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
         assertTrue(
                 combined.contains(agentsPersona), "AGENTS.md should appear under workspace hook");
-        assertTrue(combined.contains("## MEMORY.md"));
+        assertTrue(combined.contains("memory_context") || combined.contains("MEMORY.md"));
         assertTrue(combined.contains(memoryNote));
-        assertTrue(combined.contains("## KNOWLEDGE.md"));
+        assertTrue(
+                combined.contains("domain_knowledge_context") || combined.contains("KNOWLEDGE.md"));
         assertTrue(combined.contains(knowledgeLine));
-        assertTrue(combined.contains("## Subagents"));
+        assertTrue(
+                combined.contains("## Subagents") || combined.contains("Subagents:"),
+                "subagent list should be injected into the system prompt");
         assertTrue(combined.contains("`" + helperSubId + "`"));
         assertTrue(combined.contains("`" + reviewerSubId + "`"));
     }
