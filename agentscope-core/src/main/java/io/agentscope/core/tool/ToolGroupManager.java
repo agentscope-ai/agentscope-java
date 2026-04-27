@@ -34,7 +34,7 @@ class ToolGroupManager {
 
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
-    private final List<String> activeGroups = new CopyOnWriteArrayList<>();
+    private volatile List<String> activeGroups = new CopyOnWriteArrayList<>();
 
     /**
      * Create tool groups and record them in the manager.
@@ -325,8 +325,7 @@ class ToolGroupManager {
      * @param activeGroups List of group names to mark as active
      */
     public void setActiveGroups(List<String> activeGroups) {
-        this.activeGroups.clear();
-        this.activeGroups.addAll(activeGroups);
+        this.activeGroups = new CopyOnWriteArrayList<>(activeGroups);
 
         // Mark corresponding groups as active
         for (String groupName : activeGroups) {
@@ -376,8 +375,7 @@ class ToolGroupManager {
         }
 
         // Copy activeGroups list
-        target.activeGroups.clear();
-        target.activeGroups.addAll(this.activeGroups);
+        target.activeGroups = new CopyOnWriteArrayList<>(this.activeGroups);
     }
 
     private boolean removeGroupFromToolIndex(String toolName, String groupName) {
