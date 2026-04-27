@@ -46,6 +46,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Unit tests for AutoContextMemory.
@@ -966,7 +968,86 @@ class AutoContextMemoryTest {
                 "Should have tool compression event with plan-aware hint");
     }
 
+    @Test
+    @DisplayName("Should compress asynchronously on non-blocking scheduler")
+    void testCompressIfNeededAsyncOnNonBlockingScheduler() {
+        AutoContextConfig asyncConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        TestModel asyncModel = new TestModel("Conversation summary");
+        AutoContextMemory asyncMemory = new AutoContextMemory(asyncConfig, asyncModel);
+
+        addCompressibleConversation(asyncMemory, 3);
+        asyncMemory.addMessage(createTextMessage("Latest request", MsgRole.USER));
+        int initialCount = asyncMemory.getMessages().size();
+
+        Boolean compressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        assertTrue(Boolean.TRUE.equals(compressed));
+        assertTrue(asyncModel.getCallCount() >= 1, "Compression should invoke the model");
+        assertTrue(asyncMemory.getMessages().size() < initialCount);
+        assertFalse(asyncMemory.getOffloadContext().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should allow repeated async compression calls")
+    void testCompressIfNeededAsyncMultipleCalls() {
+        AutoContextConfig asyncConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(5)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(2)
+                        .minConsecutiveToolMessages(10)
+                        .largePayloadThreshold(10000)
+                        .minCompressionTokenThreshold(0)
+                        .build();
+        TestModel asyncModel = new TestModel("Conversation summary");
+        AutoContextMemory asyncMemory = new AutoContextMemory(asyncConfig, asyncModel);
+
+        addCompressibleConversation(asyncMemory, 3);
+        asyncMemory.addMessage(createTextMessage("Latest request", MsgRole.USER));
+        Boolean firstCompressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        addCompressibleConversation(asyncMemory, 2);
+        asyncMemory.addMessage(createTextMessage("Another request", MsgRole.USER));
+        Boolean secondCompressed =
+                Mono.defer(asyncMemory::compressIfNeededAsync)
+                        .subscribeOn(Schedulers.parallel())
+                        .block();
+
+        assertTrue(Boolean.TRUE.equals(firstCompressed));
+        assertTrue(Boolean.TRUE.equals(secondCompressed));
+        assertTrue(
+                asyncModel.getCallCount() >= 2, "Both async compressions should reach the model");
+        assertFalse(asyncMemory.getMessages().isEmpty());
+    }
+
     // Helper methods
+
+    private void addCompressibleConversation(AutoContextMemory targetMemory, int rounds) {
+        for (int i = 0; i < rounds; i++) {
+            String callId = "call_" + i + "_" + targetMemory.getMessages().size();
+            targetMemory.addMessage(createTextMessage("User message " + i, MsgRole.USER));
+            targetMemory.addMessage(createToolUseMessage("test_tool", callId));
+            targetMemory.addMessage(createToolResultMessage("test_tool", callId, "Result " + i));
+            targetMemory.addMessage(
+                    createTextMessage("Assistant response " + i, MsgRole.ASSISTANT));
+        }
+    }
 
     private Msg createTextMessage(String text, MsgRole role) {
         return Msg.builder()
