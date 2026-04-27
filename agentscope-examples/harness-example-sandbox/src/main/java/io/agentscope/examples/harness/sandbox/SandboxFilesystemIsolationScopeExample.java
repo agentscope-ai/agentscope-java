@@ -86,8 +86,14 @@ public final class SandboxFilesystemIsolationScopeExample {
                         .filesystem(spec)
                         .build();
 
-        agent.call(userMsg("call from session-DifferentSessionCreatesTwo-1"), ctx("session-DifferentSessionCreatesTwo-1", "alice")).block();
-        agent.call(userMsg("call from session-DifferentSessionCreatesTwo-2"), ctx("session-DifferentSessionCreatesTwo-2", "alice")).block();
+        agent.call(
+                        userMsg("call from session-DifferentSessionCreatesTwo-1"),
+                        ctx("session-DifferentSessionCreatesTwo-1", "alice"))
+                .block();
+        agent.call(
+                        userMsg("call from session-DifferentSessionCreatesTwo-2"),
+                        ctx("session-DifferentSessionCreatesTwo-2", "alice"))
+                .block();
         if (client.getCreateCount() != 2 || client.getResumeCount() != 0) {
             throw new IllegalStateException("expected 2 creates for distinct sessions");
         }
