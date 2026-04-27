@@ -56,6 +56,7 @@
         <module>multiagent-patterns/skills</module>
         <module>a2a-rocketmq</module>
         <module>harness-example</module>
+        <module>harness-example-sandbox</module>
     </modules>
 
     <properties>
