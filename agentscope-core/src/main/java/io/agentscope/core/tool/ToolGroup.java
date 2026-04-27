@@ -43,7 +43,7 @@ public class ToolGroup {
 
     private final String name;
     private final String description;
-    private boolean active;
+    private volatile boolean active;
     private final Set<String> tools; // Tool names in this group
 
     private ToolGroup(Builder builder) {

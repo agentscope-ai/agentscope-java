@@ -33,6 +33,7 @@ class ToolGroupManager {
 
     private final Map<String, ToolGroup> toolGroups = new ConcurrentHashMap<>(); // group -> tools
     private final Map<String, Set<String>> tools = new ConcurrentHashMap<>(); // tool -> groups
+    private final Object activeGroupsLock = new Object();
     private List<String> activeGroups = new ArrayList<>();
 
     /**
@@ -54,8 +55,12 @@ class ToolGroupManager {
 
         toolGroups.put(groupName, group);
 
-        if (active && !activeGroups.contains(groupName)) {
-            activeGroups.add(groupName);
+        if (active) {
+            synchronized (activeGroupsLock) {
+                if (!activeGroups.contains(groupName)) {
+                    activeGroups.add(groupName);
+                }
+            }
         }
 
         logger.info("Created tool group '{}': {}", groupName, description);
@@ -89,12 +94,14 @@ class ToolGroupManager {
 
             group.setActive(active);
 
-            if (active) {
-                if (!activeGroups.contains(groupName)) {
-                    activeGroups.add(groupName);
+            synchronized (activeGroupsLock) {
+                if (active) {
+                    if (!activeGroups.contains(groupName)) {
+                        activeGroups.add(groupName);
+                    }
+                } else {
+                    activeGroups.remove(groupName);
                 }
-            } else {
-                activeGroups.remove(groupName);
             }
 
             logger.info("Tool group '{}' active status set to: {}", groupName, active);
@@ -129,7 +136,9 @@ class ToolGroupManager {
             }
 
             // Remove from active groups
-            activeGroups.remove(groupName);
+            synchronized (activeGroupsLock) {
+                activeGroups.remove(groupName);
+            }
 
             logger.info(
                     "Removed tool group '{}' with {} tools", groupName, group.getTools().size());
@@ -144,18 +153,20 @@ class ToolGroupManager {
      * @return Formatted string describing active tool groups
      */
     public String getActivatedNotes() {
-        if (activeGroups.isEmpty()) {
-            return "No tool groups are currently activated.";
-        }
-
-        StringBuilder notes = new StringBuilder("Activated tool groups:\n");
-        for (String groupName : activeGroups) {
-            ToolGroup group = toolGroups.get(groupName);
-            if (group != null) {
-                notes.append(String.format("- %s: %s\n", groupName, group.getDescription()));
+        synchronized (activeGroupsLock) {
+            if (activeGroups.isEmpty()) {
+                return "No tool groups are currently activated.";
             }
+
+            StringBuilder notes = new StringBuilder("Activated tool groups:\n");
+            for (String groupName : activeGroups) {
+                ToolGroup group = toolGroups.get(groupName);
+                if (group != null) {
+                    notes.append(String.format("- %s: %s\n", groupName, group.getDescription()));
+                }
+            }
+            return notes.toString();
         }
-        return notes.toString();
     }
 
     /**
@@ -315,7 +326,9 @@ class ToolGroupManager {
      * @return List of active group names
      */
     public List<String> getActiveGroups() {
-        return new ArrayList<>(activeGroups);
+        synchronized (activeGroupsLock) {
+            return new ArrayList<>(activeGroups);
+        }
     }
 
     /**
@@ -324,7 +337,9 @@ class ToolGroupManager {
      * @param activeGroups List of group names to mark as active
      */
     public void setActiveGroups(List<String> activeGroups) {
-        this.activeGroups = new ArrayList<>(activeGroups);
+        synchronized (activeGroupsLock) {
+            this.activeGroups = new ArrayList<>(activeGroups);
+        }
 
         // Mark corresponding groups as active
         for (String groupName : activeGroups) {
@@ -373,8 +388,13 @@ class ToolGroupManager {
             target.tools.put(entry.getKey(), new HashSet<>(entry.getValue()));
         }
 
-        // Copy activeGroups list
-        target.activeGroups = new ArrayList<>(this.activeGroups);
+        List<String> activeGroupsSnapshot;
+        synchronized (activeGroupsLock) {
+            activeGroupsSnapshot = new ArrayList<>(this.activeGroups);
+        }
+        synchronized (target.activeGroupsLock) {
+            target.activeGroups = activeGroupsSnapshot;
+        }
     }
 
     private boolean removeGroupFromToolIndex(String toolName, String groupName) {
