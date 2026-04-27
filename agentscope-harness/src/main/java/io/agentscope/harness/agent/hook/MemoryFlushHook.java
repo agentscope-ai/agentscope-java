@@ -25,8 +25,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.memory.MemoryIndex;
-import io.agentscope.harness.agent.memory.MemoryMaintenanceScheduler;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
 import org.slf4j.Logger;
@@ -52,8 +50,6 @@ public class MemoryFlushHook implements Hook {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private RuntimeContext runtimeContext;
-    private volatile MemoryIndex memoryIndex;
-    private volatile MemoryMaintenanceScheduler maintenanceScheduler;
 
     public MemoryFlushHook(WorkspaceManager workspaceManager, Model model) {
         this.workspaceManager = workspaceManager;
@@ -62,18 +58,6 @@ public class MemoryFlushHook implements Hook {
 
     public void setRuntimeContext(RuntimeContext runtimeContext) {
         this.runtimeContext = runtimeContext;
-    }
-
-    public void setMemoryIndex(MemoryIndex memoryIndex) {
-        this.memoryIndex = memoryIndex;
-    }
-
-    /**
-     * Wires the maintenance scheduler so each flush can opportunistically request a
-     * MEMORY.md consolidation (throttled by the scheduler).
-     */
-    public void setMaintenanceScheduler(MemoryMaintenanceScheduler scheduler) {
-        this.maintenanceScheduler = scheduler;
     }
 
     @Override
@@ -101,8 +85,6 @@ public class MemoryFlushHook implements Hook {
         }
 
         MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
-        flushManager.setMemoryIndex(memoryIndex);
-        flushManager.setMaintenanceScheduler(maintenanceScheduler);
 
         Mono<Void> flushMono =
                 flushManager

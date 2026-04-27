@@ -13,14 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem.store;
-
-import java.util.Map;
+package io.agentscope.harness.agent.sandbox;
 
 /**
- * A single item retrieved from a {@link BaseStore}.
+ * Marks a filesystem that can have its backing {@link Sandbox} injected at runtime.
  *
- * @param key the item's key within its namespace
- * @param value the item's data as a string-keyed map
+ * <p>Implemented by {@link SandboxBackedFilesystem} so {@link
+ * io.agentscope.harness.agent.hook.SandboxLifecycleHook} can set the active sandbox for each
+ * call and clear it afterward.
  */
-public record StoreItem(String key, Map<String, Object> value) {}
+public interface SandboxAware {
+
+    void setSandbox(Sandbox sandbox);
+
+    Sandbox getSandbox();
+}

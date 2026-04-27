@@ -16,7 +16,6 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.harness.agent.filesystem.model.EditResult;
-import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -36,21 +35,27 @@ import java.util.Map;
  * Routes file operations to different {@link AbstractFilesystem} backends by path prefix.
  *
  * <p>Paths are matched against route prefixes (longest first). Unmatched paths fall through to the
- * default backend. If the default backend implements {@link AbstractSandboxFilesystem}, shell
- * execution is also supported.
+ * default backend.
+ *
+ * <p>Composite deliberately implements only {@link AbstractFilesystem} — it is the unified,
+ * non-sandbox view that blends a local workspace with remote-store-backed paths. Shell execution
+ * is intentionally not supported in this mode: routing shell commands across backends is
+ * ambiguous, and the primary use case (distributed memory with per-user/session isolation) does
+ * not need it. If you need shell execution, use a sandbox-backed filesystem
+ * ({@link AbstractSandboxFilesystem}) or {@link LocalFilesystemWithShell} directly instead.
  *
  * <p>Example:
  *
  * <pre>{@code
  * CompositeFilesystem fs = new CompositeFilesystem(
- *     localShell,
+ *     localFs,
  *     Map.of("/memories/", storeFs, "/cache/", inMemoryFs)
  * );
  * fs.read("/memories/notes.md", 0, 100);  // → storeFs.read("/notes.md", ...)
- * fs.read("/src/Main.java", 0, 100);      // → localShell.read("/src/Main.java", ...)
+ * fs.read("/src/Main.java", 0, 100);      // → localFs.read("/src/Main.java", ...)
  * }</pre>
  */
-public class CompositeFilesystem implements AbstractSandboxFilesystem {
+public class CompositeFilesystem implements AbstractFilesystem {
 
     private final AbstractFilesystem defaultBackend;
     private final List<RouteEntry> sortedRoutes;
@@ -93,7 +98,11 @@ public class CompositeFilesystem implements AbstractSandboxFilesystem {
                             ? entry.prefix().substring(0, entry.prefix().length() - 1)
                             : entry.prefix();
             if (path.equals(prefixNoSlash)) {
-                return new RouteResult(entry.backend(), "/", entry.prefix());
+                if (entry.prefix().endsWith("/")) {
+                    return new RouteResult(entry.backend(), "/", entry.prefix());
+                }
+                String backendPath = path.startsWith("/") ? path : "/" + path;
+                return new RouteResult(entry.backend(), backendPath, entry.prefix());
             }
             String normalizedPrefix =
                     entry.prefix().endsWith("/") ? entry.prefix() : entry.prefix() + "/";
@@ -159,6 +168,9 @@ public class CompositeFilesystem implements AbstractSandboxFilesystem {
                 results.addAll(defaultResult.entries());
             }
             for (RouteEntry entry : sortedRoutes) {
+                if (!entry.prefix().endsWith("/")) {
+                    continue;
+                }
                 String dirPath =
                         entry.prefix().endsWith("/") ? entry.prefix() : entry.prefix() + "/";
                 results.add(FileInfo.ofDir(dirPath, ""));
@@ -333,33 +345,58 @@ public class CompositeFilesystem implements AbstractSandboxFilesystem {
         return List.of(results);
     }
 
-    // ==================== AbstractSandboxFilesystem ====================
-
     @Override
-    public String id() {
-        if (defaultBackend instanceof AbstractSandboxFilesystem sandbox) {
-            return sandbox.id();
+    public WriteResult delete(String path) {
+        AbstractFilesystem.validatePath(path);
+        RouteResult route = routeForPath(path);
+        WriteResult result = route.backend().delete(route.backendPath());
+        if (result.isSuccess() && route.routePrefix() != null) {
+            return WriteResult.ok(path);
         }
-        return "composite";
+        return result;
     }
 
     @Override
-    public ExecuteResponse execute(String command, Integer timeoutSeconds) {
-        if (defaultBackend instanceof AbstractSandboxFilesystem sandbox) {
-            return sandbox.execute(command, timeoutSeconds);
+    public WriteResult move(String fromPath, String toPath) {
+        AbstractFilesystem.validatePath(fromPath);
+        AbstractFilesystem.validatePath(toPath);
+        RouteResult srcRoute = routeForPath(fromPath);
+        RouteResult dstRoute = routeForPath(toPath);
+
+        if (srcRoute.backend() == dstRoute.backend()) {
+            WriteResult result =
+                    srcRoute.backend().move(srcRoute.backendPath(), dstRoute.backendPath());
+            if (result.isSuccess()) {
+                return WriteResult.ok(toPath);
+            }
+            return result;
         }
-        throw new UnsupportedOperationException(
-                "Default backend does not support command execution (AbstractSandboxFilesystem). "
-                        + "To enable execution, provide a default backend that implements"
-                        + " AbstractSandboxFilesystem.");
+
+        // Cross-backend move: read → write → delete
+        var readResult = srcRoute.backend().read(srcRoute.backendPath(), 0, 0);
+        if (!readResult.isSuccess() || readResult.fileData() == null) {
+            return WriteResult.fail("Cannot read source for cross-backend move: " + fromPath);
+        }
+        String content = readResult.fileData().content();
+        if (content == null) {
+            content = "";
+        }
+        WriteResult writeResult = dstRoute.backend().write(dstRoute.backendPath(), content);
+        if (!writeResult.isSuccess()) {
+            return WriteResult.fail(
+                    "Cross-backend move write failed for '" + toPath + "': " + writeResult.error());
+        }
+        srcRoute.backend().delete(srcRoute.backendPath());
+        return WriteResult.ok(toPath);
     }
 
-    /**
-     * Whether this composite filesystem supports shell execution (i.e. the default backend is a
-     * sandbox).
-     */
-    public boolean isSandbox() {
-        return defaultBackend instanceof AbstractSandboxFilesystem;
+    @Override
+    public boolean exists(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        RouteResult route = routeForPath(path);
+        return route.backend().exists(route.backendPath());
     }
 
     /** Returns the default backend. */

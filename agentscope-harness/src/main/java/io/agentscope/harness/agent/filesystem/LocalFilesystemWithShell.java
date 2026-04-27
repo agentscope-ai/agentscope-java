@@ -16,7 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
-import io.agentscope.harness.agent.filesystem.store.NamespaceFactory;
+import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

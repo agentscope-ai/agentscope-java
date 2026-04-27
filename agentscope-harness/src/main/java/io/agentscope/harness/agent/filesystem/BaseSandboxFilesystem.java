@@ -27,8 +27,8 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
-import io.agentscope.harness.agent.filesystem.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -359,6 +359,48 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         }
 
         return GlobResult.success(entries);
+    }
+
+    @Override
+    public WriteResult delete(String path) {
+        AbstractFilesystem.validatePath(path);
+        String effectivePath = namespacedPath(path);
+        String escapedPath = FilesystemUtils.shellQuote(effectivePath);
+        String cmd = "rm -rf " + escapedPath;
+        ExecuteResponse result = execute(cmd, null);
+        if (result.exitCode() != 0) {
+            return WriteResult.fail("Error deleting '" + path + "': " + result.output());
+        }
+        return WriteResult.ok(path);
+    }
+
+    @Override
+    public WriteResult move(String fromPath, String toPath) {
+        AbstractFilesystem.validatePath(fromPath);
+        AbstractFilesystem.validatePath(toPath);
+        String from = namespacedPath(fromPath);
+        String to = namespacedPath(toPath);
+        String escapedFrom = FilesystemUtils.shellQuote(from);
+        String escapedTo = FilesystemUtils.shellQuote(to);
+        String cmd = "mkdir -p $(dirname " + escapedTo + ") && mv " + escapedFrom + " " + escapedTo;
+        ExecuteResponse result = execute(cmd, null);
+        if (result.exitCode() != 0) {
+            return WriteResult.fail(
+                    "Error moving '" + fromPath + "' to '" + toPath + "': " + result.output());
+        }
+        return WriteResult.ok(toPath);
+    }
+
+    @Override
+    public boolean exists(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        String effectivePath = namespacedPath(path);
+        String escapedPath = FilesystemUtils.shellQuote(effectivePath);
+        ExecuteResponse result =
+                execute("test -e " + escapedPath + " && echo yes || echo no", null);
+        return result.output() != null && result.output().strip().startsWith("yes");
     }
 
     private static String jsonEscape(String s) {

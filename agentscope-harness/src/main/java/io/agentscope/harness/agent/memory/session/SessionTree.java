@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.memory.session;
 
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -38,13 +40,13 @@ import org.slf4j.LoggerFactory;
  * Entries form a tree via {@code id}/{@code parentId} links. A companion {@code .log.jsonl} file
  * stores the full history for grep-ability (dual-file pattern from pi-mono mom).
  *
- * <h3>File layout</h3>
+ * <h2>File layout</h2>
  * <pre>
  *   agents/{agentId}/sessions/{sessionId}.jsonl      — LLM context (compacted)
  *   agents/{agentId}/sessions/{sessionId}.log.jsonl   — full history (append-only, never compacted)
  * </pre>
  *
- * <h3>Deferred persistence</h3>
+ * <h2>Deferred persistence</h2>
  * Entries are buffered in memory and only flushed to disk on the first call to {@link #flush()}
  * (typically after the first assistant message). This avoids partial session files from
  * failed/short interactions.
@@ -56,6 +58,8 @@ public class SessionTree {
 
     private final Path contextFile;
     private final Path logFile;
+    private final Path workspaceRoot;
+    private final AbstractFilesystem filesystem;
 
     private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
     private final List<SessionEntry> appendOrder = new ArrayList<>();
@@ -67,10 +71,16 @@ public class SessionTree {
     private boolean flushed = false;
 
     public SessionTree(Path contextFile) {
+        this(contextFile, null, null);
+    }
+
+    public SessionTree(Path contextFile, Path workspaceRoot, AbstractFilesystem filesystem) {
         this.contextFile = contextFile;
         String name = contextFile.getFileName().toString();
         String baseName = name.endsWith(".jsonl") ? name.substring(0, name.length() - 6) : name;
         this.logFile = contextFile.resolveSibling(baseName + ".log.jsonl");
+        this.workspaceRoot = workspaceRoot;
+        this.filesystem = filesystem;
     }
 
     /**
@@ -83,6 +93,7 @@ public class SessionTree {
         }
         loaded = true;
 
+        restoreFromMirror(contextFile);
         if (!Files.isRegularFile(contextFile)) {
             return;
         }
@@ -147,6 +158,8 @@ public class SessionTree {
 
         appendToFile(contextFile, toWrite);
         appendToFile(logFile, toWrite);
+        mirrorToFilesystem(contextFile);
+        mirrorToFilesystem(logFile);
     }
 
     /**
@@ -234,6 +247,7 @@ public class SessionTree {
      * @return the number of new entries synced
      */
     public int syncFromLog() {
+        restoreFromMirror(logFile);
         if (!Files.isRegularFile(logFile)) {
             return 0;
         }
@@ -294,5 +308,61 @@ public class SessionTree {
         } catch (IOException e) {
             log.warn("Failed to append to session file {}: {}", file, e.getMessage());
         }
+    }
+
+    private void restoreFromMirror(Path file) {
+        if (filesystem == null || workspaceRoot == null || Files.isRegularFile(file)) {
+            return;
+        }
+        String relativePath = toWorkspaceRelative(file);
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        ReadResult read = filesystem.read(relativePath, 0, 0);
+        if (!read.isSuccess() || read.fileData() == null || read.fileData().content() == null) {
+            return;
+        }
+        try {
+            if (file.getParent() != null) {
+                Files.createDirectories(file.getParent());
+            }
+            Files.writeString(
+                    file,
+                    read.fileData().content(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException e) {
+            log.warn(
+                    "Failed to restore session file {} from filesystem mirror: {}",
+                    file,
+                    e.getMessage());
+        }
+    }
+
+    private void mirrorToFilesystem(Path file) {
+        if (filesystem == null || workspaceRoot == null || !Files.isRegularFile(file)) {
+            return;
+        }
+        String relativePath = toWorkspaceRelative(file);
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        try {
+            byte[] bytes = Files.readAllBytes(file);
+            filesystem.uploadFiles(List.of(Map.entry(relativePath, bytes)));
+        } catch (IOException e) {
+            log.warn("Failed to mirror session file {} to filesystem: {}", file, e.getMessage());
+        }
+    }
+
+    private String toWorkspaceRelative(Path file) {
+        Path root = workspaceRoot.toAbsolutePath().normalize();
+        Path candidate = file.toAbsolutePath().normalize();
+        if (!candidate.startsWith(root)) {
+            return null;
+        }
+        return root.relativize(candidate).toString().replace('\\', '/');
     }
 }

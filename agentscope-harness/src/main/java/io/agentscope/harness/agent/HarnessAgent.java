@@ -40,24 +40,35 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemWithShell;
-import io.agentscope.harness.agent.filesystem.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
+import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
+import io.agentscope.harness.agent.hook.MemoryMaintenanceHook;
 import io.agentscope.harness.agent.hook.RuntimeContextAwareHook;
+import io.agentscope.harness.agent.hook.SandboxLifecycleHook;
 import io.agentscope.harness.agent.hook.SessionPersistenceHook;
 import io.agentscope.harness.agent.hook.SubagentsHook;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.hook.ToolResultEvictionHook;
 import io.agentscope.harness.agent.hook.WorkspaceContextHook;
+import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.memory.MemoryIndex;
-import io.agentscope.harness.agent.memory.MemoryMaintenanceScheduler;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.memory.compaction.CompactionHook;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
+import io.agentscope.harness.agent.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions;
+import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SandboxStateStore;
+import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
+import io.agentscope.harness.agent.sandbox.filesystem.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.session.WorkspaceSession;
+import io.agentscope.harness.agent.store.NamespaceFactory;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.SubagentSpec;
@@ -121,9 +132,11 @@ public class HarnessAgent implements Agent, StateModule {
     private final MemoryFlushHook memoryFlushHook;
     private final SessionPersistenceHook sessionPersistenceHook;
     private final CompactionHook compactionHook;
-    private final MemoryMaintenanceScheduler maintenanceScheduler;
     private final AtomicReference<String> userIdRef;
+    private final AtomicReference<String> sessionIdRef;
     private final Session defaultSession;
+    private final SandboxLifecycleHook sandboxLifecycleHook;
+    private final SandboxContext defaultSandboxContext;
     private RuntimeContext runtimeContext;
 
     private HarnessAgent(
@@ -133,21 +146,22 @@ public class HarnessAgent implements Agent, StateModule {
             MemoryFlushHook memoryFlushHook,
             SessionPersistenceHook sessionPersistenceHook,
             CompactionHook compactionHook,
-            MemoryMaintenanceScheduler maintenanceScheduler,
             AtomicReference<String> userIdRef,
-            Session defaultSession) {
+            AtomicReference<String> sessionIdRef,
+            Session defaultSession,
+            SandboxLifecycleHook sandboxLifecycleHook,
+            SandboxContext defaultSandboxContext) {
         this.delegate = delegate;
         this.workspaceManager = workspaceManager;
         this.workspaceContextHook = workspaceContextHook;
         this.memoryFlushHook = memoryFlushHook;
         this.sessionPersistenceHook = sessionPersistenceHook;
         this.compactionHook = compactionHook;
-        this.maintenanceScheduler = maintenanceScheduler;
         this.userIdRef = userIdRef;
+        this.sessionIdRef = sessionIdRef;
         this.defaultSession = defaultSession;
-        if (maintenanceScheduler != null) {
-            maintenanceScheduler.start();
-        }
+        this.sandboxLifecycleHook = sandboxLifecycleHook;
+        this.defaultSandboxContext = defaultSandboxContext;
     }
 
     /** Calls the agent with a runtime context, which provides sessionId and other metadata. */
@@ -202,7 +216,6 @@ public class HarnessAgent implements Agent, StateModule {
         // Force trigger by using a config with threshold=1 (always compact)
         CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
         MemoryFlushManager fm = new MemoryFlushManager(workspaceManager, delegate.getModel());
-        fm.setMaintenanceScheduler(maintenanceScheduler);
         ConversationCompactor compactor = new ConversationCompactor(delegate.getModel(), fm);
 
         return compactor
@@ -248,6 +261,13 @@ public class HarnessAgent implements Agent, StateModule {
         if (userIdRef != null) {
             userIdRef.set(effective.getUserId());
         }
+        if (sessionIdRef != null) {
+            String sid =
+                    effective.getSessionKey() != null
+                            ? effective.getSessionKey().toIdentifier()
+                            : effective.getSessionId();
+            sessionIdRef.set(sid);
+        }
         if (workspaceContextHook != null) {
             workspaceContextHook.setRuntimeContext(effective);
         }
@@ -259,6 +279,9 @@ public class HarnessAgent implements Agent, StateModule {
         }
         if (compactionHook != null) {
             compactionHook.setRuntimeContext(effective);
+        }
+        if (sandboxLifecycleHook != null) {
+            sandboxLifecycleHook.setRuntimeContext(effective);
         }
         if (effective.getSession() != null && effective.getSessionKey() != null) {
             try {
@@ -286,7 +309,13 @@ public class HarnessAgent implements Agent, StateModule {
                 sessionKey = SimpleSessionKey.of(delegate.getName());
             }
         }
-        if (session == ctx.getSession() && sessionKey == ctx.getSessionKey()) {
+        // Inject default sandbox context if the call doesn't provide one
+        SandboxContext sandboxCtx =
+                ctx.getSandboxContext() != null ? ctx.getSandboxContext() : defaultSandboxContext;
+
+        if (session == ctx.getSession()
+                && sessionKey == ctx.getSessionKey()
+                && sandboxCtx == ctx.getSandboxContext()) {
             return ctx;
         }
         return RuntimeContext.builder()
@@ -295,6 +324,7 @@ public class HarnessAgent implements Agent, StateModule {
                 .session(session)
                 .sessionKey(sessionKey)
                 .putAll(ctx.getExtra())
+                .sandboxContext(sandboxCtx)
                 .build();
     }
 
@@ -424,6 +454,8 @@ public class HarnessAgent implements Agent, StateModule {
         private String environmentMemory;
         private AbstractFilesystem abstractFilesystem;
         private Session session;
+        private SandboxStateStore sandboxStateStore;
+        private SandboxDistributedOptions sandboxDistributedOptions;
 
         /**
          * When {@code true}, this agent is a leaf worker (spawned subagent): it does not register
@@ -459,6 +491,11 @@ public class HarnessAgent implements Agent, StateModule {
         private final List<String> additionalContextFiles = new ArrayList<>();
         private int maxContextTokens = 8000;
         private boolean useLegacyXmlWorkspaceContext = false;
+
+        // Filesystem mode configuration (at most one of these three is set)
+        private SandboxFilesystemSpec sandboxFilesystemSpec;
+        private StoreFilesystemSpec storeFilesystemSpec;
+        private LocalFilesystemSpec localFilesystemSpec;
 
         public Builder name(String name) {
             this.name = name;
@@ -543,11 +580,51 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         /**
-         * Sets a custom {@link AbstractFilesystem} implementation. When not set, defaults to
-         * {@link LocalFilesystemWithShell} backed by the workspace directory.
+         * Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly.
+         *
+         * <p>Prefer {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(StoreFilesystemSpec)}
+         * or {@link #filesystem(SandboxFilesystemSpec)} unless you have a bespoke backend that is
+         * not expressible via any of the declarative specs.
          */
         public Builder abstractFilesystem(AbstractFilesystem backend) {
             this.abstractFilesystem = backend;
+            return this;
+        }
+
+        /**
+         * Configures <b>Mode 2 — sandbox filesystem</b> mode: fully isolated workspace running in a
+         * sandbox (for example Docker). Long-term memory extraction/read and shell execution are
+         * all routed through the sandbox session. State can be persisted via snapshots and resumed
+         * by the configured isolation scope.
+         *
+         * @param spec sandbox filesystem spec (for example Docker sandbox spec)
+         * @return this builder
+         */
+        public Builder filesystem(SandboxFilesystemSpec spec) {
+            this.sandboxFilesystemSpec = spec;
+            return this;
+        }
+
+        /**
+         * Configures <b>Mode 1 — composite (non-sandbox) filesystem</b> mode: a unified workspace
+         * view that blends a local {@code LocalFilesystem} backend with a shared
+         * {@code StoreFilesystem} for distributed long-term memory. Shell execution is not
+         * available in this mode — selected prefixes ({@code MEMORY.md}, {@code memory/},
+         * {@code agents/.../sessions/}) are routed to the store to keep memory consistent across
+         * replicas.
+         */
+        public Builder filesystem(StoreFilesystemSpec spec) {
+            this.storeFilesystemSpec = spec;
+            return this;
+        }
+
+        /**
+         * Configures <b>Mode 3 — local filesystem with shell</b> mode: the agent workspace is a
+         * plain local directory and shell commands execute on the host. Long-term memory is kept
+         * on the same local disk. Use for single-process / single-replica deployments.
+         */
+        public Builder filesystem(LocalFilesystemSpec spec) {
+            this.localFilesystemSpec = spec;
             return this;
         }
 
@@ -596,6 +673,35 @@ public class HarnessAgent implements Agent, StateModule {
          */
         public Builder session(Session session) {
             this.session = session;
+            return this;
+        }
+
+        /**
+         * Overrides the store used to persist/resume sandbox session state.
+         *
+         * <p>When not set, sandbox mode uses a {@link SessionSandboxStateStore} backed by the
+         * configured {@link #session(Session)} (or the default {@link WorkspaceSession}).
+         */
+        public Builder sandboxStateStore(SandboxStateStore sandboxStateStore) {
+            this.sandboxStateStore = sandboxStateStore;
+            return this;
+        }
+
+        /**
+         * Enables high-level distributed sandbox configuration.
+         *
+         * <p>This helper bundles three distributed concerns:
+         * <ul>
+         *   <li>distributed {@link Session} for sandbox state slots</li>
+         *   <li>remote/non-noop {@link io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec}
+         *       for workspace archive persistence</li>
+         *   <li>{@link IsolationScope} for sharing granularity</li>
+         * </ul>
+         *
+         * <p>Requires sandbox mode (i.e. {@link #filesystem(SandboxFilesystemSpec)}).
+         */
+        public Builder sandboxDistributed(SandboxDistributedOptions options) {
+            this.sandboxDistributedOptions = options;
             return this;
         }
 
@@ -675,12 +781,17 @@ public class HarnessAgent implements Agent, StateModule {
             return this;
         }
 
+        public List<SubagentEntry> buildSubagentEntries(Path resolvedWorkspace) {
+            return buildSubagentEntries(resolvedWorkspace, null);
+        }
+
         /**
          * Builds the subagent entries from programmatic specs, {@code workspace/subagents/*.md},
          * and custom factories. Useful for callers (e.g. {@code AgentBootstrap}) that need to
          * extract agent factories before building the full agent.
          */
-        public List<SubagentEntry> buildSubagentEntries(Path resolvedWorkspace) {
+        public List<SubagentEntry> buildSubagentEntries(
+                Path resolvedWorkspace, SandboxBackedFilesystem sandboxFs) {
             List<SubagentSpec> allSpecs = new ArrayList<>(subagentSpecs);
 
             Path subagentsDir = resolvedWorkspace.resolve("subagents");
@@ -695,7 +806,7 @@ public class HarnessAgent implements Agent, StateModule {
                             "general-purpose",
                             "General-purpose subagent with same capabilities as the main agent."
                                     + " Use for any isolated task that can be fully delegated.",
-                            buildGeneralPurposeFactory(resolvedWorkspace)));
+                            buildGeneralPurposeFactory(resolvedWorkspace, sandboxFs)));
 
             for (SubagentSpec spec : allSpecs) {
                 if (spec.getName() != null) {
@@ -721,15 +832,80 @@ public class HarnessAgent implements Agent, StateModule {
         }
 
         public HarnessAgent build() {
+            int specCount = 0;
+            if (sandboxFilesystemSpec != null) specCount++;
+            if (storeFilesystemSpec != null) specCount++;
+            if (localFilesystemSpec != null) specCount++;
+            if (specCount > 1) {
+                throw new IllegalStateException(
+                        "At most one of sandboxFilesystemSpec, storeFilesystemSpec,"
+                                + " localFilesystemSpec may be configured");
+            }
+            if (abstractFilesystem != null && specCount > 0) {
+                throw new IllegalStateException(
+                        "abstractFilesystem() is an escape hatch and is mutually exclusive with"
+                                + " filesystem(...) specs");
+            }
+            if (sandboxDistributedOptions != null && sandboxFilesystemSpec == null) {
+                throw new IllegalStateException(
+                        "sandboxDistributed(...) requires sandbox mode."
+                                + " Configure filesystem(SandboxFilesystemSpec) first.");
+            }
             Path resolvedWorkspace =
                     workspace != null
                             ? workspace
                             : Paths.get(System.getProperty("user.dir"))
                                     .resolve(".agentscope/workspace");
+            String resolvedAgentId = name != null ? name : "HarnessAgent";
+            Session effectiveSession =
+                    sandboxDistributedOptions != null
+                                    && sandboxDistributedOptions.getSession() != null
+                            ? sandboxDistributedOptions.getSession()
+                            : session;
+            if (effectiveSession == null) {
+                effectiveSession = new WorkspaceSession(resolvedWorkspace, resolvedAgentId);
+            }
 
             AtomicReference<String> userIdRef = new AtomicReference<>();
-            AbstractFilesystem backend = resolveBackend(resolvedWorkspace, userIdRef);
-            WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, backend);
+            AtomicReference<String> sessionIdRef = new AtomicReference<>();
+            AbstractFilesystem filesystem =
+                    resolveFilesystem(resolvedWorkspace, resolvedAgentId, userIdRef, sessionIdRef);
+
+            // ---- Sandbox integration ----
+            SandboxLifecycleHook sandboxLifecycleHook = null;
+            SandboxContext defaultSandboxContext = null;
+            SandboxBackedFilesystem capturedSandboxFs = null;
+            if (sandboxFilesystemSpec != null) {
+                if (sandboxDistributedOptions != null) {
+                    if (sandboxDistributedOptions.getIsolationScope() != null) {
+                        sandboxFilesystemSpec.isolationScope(
+                                sandboxDistributedOptions.getIsolationScope());
+                    }
+                    if (sandboxDistributedOptions.getSnapshotSpec() != null) {
+                        sandboxFilesystemSpec.snapshotSpec(
+                                sandboxDistributedOptions.getSnapshotSpec());
+                    }
+                }
+                capturedSandboxFs = new SandboxBackedFilesystem();
+                capturedSandboxFs.configureNamespace(buildDynamicNamespaceFactory(userIdRef));
+                filesystem = capturedSandboxFs;
+
+                defaultSandboxContext = sandboxFilesystemSpec.toSandboxContext(resolvedWorkspace);
+                if (sandboxDistributedOptions != null
+                        && sandboxDistributedOptions.isRequireDistributed()) {
+                    validateDistributedSandboxConfig(effectiveSession, defaultSandboxContext);
+                }
+
+                SandboxStateStore stateStore =
+                        sandboxStateStore != null
+                                ? sandboxStateStore
+                                : new SessionSandboxStateStore(effectiveSession, resolvedAgentId);
+                SandboxManager sandboxManager =
+                        new SandboxManager(
+                                defaultSandboxContext.getClient(), stateStore, resolvedAgentId);
+                sandboxLifecycleHook = new SandboxLifecycleHook(sandboxManager, capturedSandboxFs);
+            }
+            WorkspaceManager wsManager = new WorkspaceManager(resolvedWorkspace, filesystem);
             wsManager.validate();
 
             Memory memory = new InMemoryMemory();
@@ -737,37 +913,36 @@ public class HarnessAgent implements Agent, StateModule {
             // ---- Hooks ----
             List<Hook> allHooks = new ArrayList<>(hooks);
 
+            // Sandbox lifecycle hook runs first (priority=50) — acquire/release sandbox session
+            if (sandboxLifecycleHook != null) {
+                allHooks.add(sandboxLifecycleHook);
+            }
+
             if (agentTracingLogEnabled) {
                 allHooks.add(new AgentTraceHook());
             }
 
             RuntimeContextAwareHook wsContextHook;
-            if (useLegacyXmlWorkspaceContext) {
-                WorkspaceContextHook xmlHook =
-                        new WorkspaceContextHook(
-                                wsManager,
-                                name != null ? name : "HarnessAgent",
-                                environmentMemory,
-                                maxContextTokens);
-                xmlHook.setAdditionalContextFiles(additionalContextFiles);
-                allHooks.add(xmlHook);
-                wsContextHook = xmlHook;
-            } else {
-                WorkspaceContextHook markdownHook =
-                        new WorkspaceContextHook(
-                                wsManager,
-                                name != null ? name : "HarnessAgent",
-                                environmentMemory,
-                                maxContextTokens);
-                markdownHook.setAdditionalContextFiles(additionalContextFiles);
-                allHooks.add(markdownHook);
-                wsContextHook = markdownHook;
-            }
+
+            WorkspaceContextHook markdownHook =
+                    new WorkspaceContextHook(
+                            wsManager,
+                            name != null ? name : "HarnessAgent",
+                            environmentMemory,
+                            maxContextTokens);
+            markdownHook.setAdditionalContextFiles(additionalContextFiles);
+            allHooks.add(markdownHook);
+            wsContextHook = markdownHook;
 
             MemoryFlushHook memoryFlushHook = null;
             if (model != null) {
                 memoryFlushHook = new MemoryFlushHook(wsManager, model);
                 allHooks.add(memoryFlushHook);
+            }
+
+            if (model != null) {
+                MemoryConsolidator consolidator = new MemoryConsolidator(wsManager, model);
+                allHooks.add(new MemoryMaintenanceHook(wsManager, consolidator));
             }
 
             CompactionHook compactionHook = null;
@@ -777,14 +952,15 @@ public class HarnessAgent implements Agent, StateModule {
             }
 
             if (toolResultEvictionConfig != null) {
-                allHooks.add(new ToolResultEvictionHook(backend, toolResultEvictionConfig));
+                allHooks.add(new ToolResultEvictionHook(filesystem, toolResultEvictionConfig));
             }
 
             SessionPersistenceHook sessionPersistenceHook = new SessionPersistenceHook();
             allHooks.add(sessionPersistenceHook);
 
             if (!leafSubagent && model != null) {
-                SubagentsHook subagentsHook = buildSubagentsHook(wsManager, resolvedWorkspace);
+                SubagentsHook subagentsHook =
+                        buildSubagentsHook(wsManager, resolvedWorkspace, capturedSandboxFs);
                 if (subagentsHook != null) {
                     allHooks.add(subagentsHook);
                 }
@@ -793,31 +969,16 @@ public class HarnessAgent implements Agent, StateModule {
             // ---- Toolkit ----
             Toolkit agentToolkit = toolkit;
 
-            MemoryIndex memIdx = null;
             MemorySearchTool searchTool = new MemorySearchTool(wsManager);
             MemoryGetTool getTool = new MemoryGetTool(wsManager);
-
-            Path agentscopeDir = resolvedWorkspace.getParent();
-            if (agentscopeDir == null) {
-                agentscopeDir = resolvedWorkspace;
-            }
-            memIdx = new MemoryIndex(agentscopeDir);
-            try {
-                memIdx.indexAllFromWorkspace(wsManager);
-                searchTool.setMemoryIndex(memIdx);
-            } catch (Exception e) {
-                log.warn(
-                        "Failed to build memory index, falling back to keyword search: {}",
-                        e.getMessage());
-            }
 
             agentToolkit.registerTool(searchTool);
             agentToolkit.registerTool(getTool);
             agentToolkit.registerTool(new SessionSearchTool(wsManager));
 
-            agentToolkit.registerTool(new FilesystemTool(backend));
+            agentToolkit.registerTool(new FilesystemTool(filesystem));
 
-            if (backend instanceof AbstractSandboxFilesystem sandbox) {
+            if (filesystem instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
 
@@ -855,36 +1016,12 @@ public class HarnessAgent implements Agent, StateModule {
 
             ReActAgent delegate = reactBuilder.build();
 
-            if (memIdx != null && memoryFlushHook != null) {
-                memoryFlushHook.setMemoryIndex(memIdx);
-            }
-            if (memIdx != null && compactionHook != null) {
-                compactionHook.setMemoryIndex(memIdx);
-            }
-
             log.info(
                     "HarnessAgent '{}' built [workspace={}, backend={}, subagents={}]",
                     name,
                     resolvedWorkspace,
-                    backend.getClass().getSimpleName(),
+                    filesystem.getClass().getSimpleName(),
                     !leafSubagent && model != null);
-
-            MemoryMaintenanceScheduler scheduler = null;
-            if (memIdx != null) {
-                scheduler = new MemoryMaintenanceScheduler(wsManager, memIdx, model);
-            }
-            if (scheduler != null && memoryFlushHook != null) {
-                memoryFlushHook.setMaintenanceScheduler(scheduler);
-            }
-            if (scheduler != null && compactionHook != null) {
-                compactionHook.setMaintenanceScheduler(scheduler);
-            }
-
-            Session defaultSession = session;
-            if (defaultSession == null) {
-                String agentId = name != null ? name : "HarnessAgent";
-                defaultSession = new WorkspaceSession(resolvedWorkspace, agentId);
-            }
 
             return new HarnessAgent(
                     delegate,
@@ -893,9 +1030,11 @@ public class HarnessAgent implements Agent, StateModule {
                     memoryFlushHook,
                     sessionPersistenceHook,
                     compactionHook,
-                    scheduler,
                     userIdRef,
-                    defaultSession);
+                    sessionIdRef,
+                    effectiveSession,
+                    sandboxLifecycleHook,
+                    defaultSandboxContext);
         }
 
         // @formatter:off
@@ -955,13 +1094,42 @@ public class HarnessAgent implements Agent, StateModule {
         //  Backend
         // -----------------------------------------------------------------
 
-        private AbstractFilesystem resolveBackend(
-                Path workspace, AtomicReference<String> userIdRef) {
+        private AbstractFilesystem resolveFilesystem(
+                Path workspace,
+                String agentId,
+                AtomicReference<String> userIdRef,
+                AtomicReference<String> sessionIdRef) {
             if (abstractFilesystem != null) {
                 return abstractFilesystem;
             }
             NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
+            if (storeFilesystemSpec != null) {
+                return storeFilesystemSpec.toFilesystem(
+                        workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
+            }
+            if (localFilesystemSpec != null) {
+                return localFilesystemSpec.toFilesystem(workspace, nsFactory);
+            }
+            // Default to Mode 3 with out-of-the-box LocalFilesystemWithShell settings.
             return new LocalFilesystemWithShell(workspace, nsFactory);
+        }
+
+        private void validateDistributedSandboxConfig(
+                Session effectiveSession, SandboxContext sandboxContext) {
+            if (sandboxStateStore == null && effectiveSession instanceof WorkspaceSession) {
+                throw new IllegalStateException(
+                        "sandboxDistributed(requireDistributed=true) requires a distributed"
+                                + " Session backend (for example RedisSession)."
+                                + " Current effective session is WorkspaceSession.");
+            }
+            if (sandboxContext == null
+                    || sandboxContext.getSnapshotSpec() == null
+                    || sandboxContext.getSnapshotSpec() instanceof NoopSnapshotSpec) {
+                throw new IllegalStateException(
+                        "sandboxDistributed(requireDistributed=true) requires a non-noop"
+                                + " snapshotSpec to restore workspace archives across"
+                                + " distributed instances.");
+            }
         }
 
         private static NamespaceFactory buildDynamicNamespaceFactory(
@@ -979,8 +1147,9 @@ public class HarnessAgent implements Agent, StateModule {
         //  Subagents
         // -----------------------------------------------------------------
 
-        private SubagentsHook buildSubagentsHook(WorkspaceManager wsManager, Path workspace) {
-            List<SubagentEntry> entries = buildSubagentEntries(workspace);
+        private SubagentsHook buildSubagentsHook(
+                WorkspaceManager wsManager, Path workspace, SandboxBackedFilesystem sandboxFs) {
+            List<SubagentEntry> entries = buildSubagentEntries(workspace, sandboxFs);
             TaskRepository repo =
                     taskRepository != null ? taskRepository : new DefaultTaskRepository();
 
@@ -995,10 +1164,12 @@ public class HarnessAgent implements Agent, StateModule {
          * mirrors the main agent's configuration (same model, workspace, file system, user hooks)
          * but disables subagent support to prevent recursive spawning.
          */
-        private SubagentFactory buildGeneralPurposeFactory(Path workspace) {
+        private SubagentFactory buildGeneralPurposeFactory(
+                Path workspace, SandboxBackedFilesystem sandboxFs) {
             // Capture builder state for the closure
             final Model capturedModel = this.model;
-            final AbstractFilesystem capturedBackend = this.abstractFilesystem;
+            final AbstractFilesystem capturedBackend =
+                    sandboxFs != null ? sandboxFs : this.abstractFilesystem;
             final int capturedMaxIters = this.maxIters;
             final ExecutionConfig capturedModelExec = this.modelExecutionConfig;
             final ExecutionConfig capturedToolExec = this.toolExecutionConfig;

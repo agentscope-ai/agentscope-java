@@ -21,7 +21,7 @@ import java.util.Set;
  * Configuration for per-tool-result eviction of oversized outputs.
  *
  * <p>When a tool produces a result whose text content exceeds {@link #getMaxResultChars()}, the
- * full output is written to the {@link AbstractFilesystem} at a deterministic path under
+ * full output is written to the workspace filesystem abstraction at a deterministic path under
  * {@link #getEvictionPath()}, and the in-context {@link io.agentscope.core.message.ToolResultBlock}
  * is replaced with a compact placeholder that includes a head+tail preview and an instruction to
  * use {@code readFile} for the full content.

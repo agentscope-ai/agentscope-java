@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,6 +34,7 @@ public class RuntimeContext {
     private final Session session;
     private final SessionKey sessionKey;
     private final Map<String, Object> extra;
+    private final SandboxContext sandboxContext;
 
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
@@ -40,6 +42,7 @@ public class RuntimeContext {
         this.session = builder.session;
         this.sessionKey = builder.sessionKey;
         this.extra = Map.copyOf(builder.extra);
+        this.sandboxContext = builder.sandboxContext;
     }
 
     public String getSessionId() {
@@ -67,6 +70,15 @@ public class RuntimeContext {
         return extra;
     }
 
+    /**
+     * Returns the sandbox context for this call.
+     *
+     * @return sandbox context, or {@code null} if sandbox is not configured
+     */
+    public SandboxContext getSandboxContext() {
+        return sandboxContext;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -77,6 +89,7 @@ public class RuntimeContext {
         private Session session;
         private SessionKey sessionKey;
         private final Map<String, Object> extra = new HashMap<>();
+        private SandboxContext sandboxContext;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -107,6 +120,17 @@ public class RuntimeContext {
             if (extras != null) {
                 this.extra.putAll(extras);
             }
+            return this;
+        }
+
+        /**
+         * Sets the sandbox context for this call.
+         *
+         * @param sandboxContext sandbox configuration and state
+         * @return this builder
+         */
+        public Builder sandboxContext(SandboxContext sandboxContext) {
+            this.sandboxContext = sandboxContext;
             return this;
         }
 

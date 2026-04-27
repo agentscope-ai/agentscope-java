@@ -19,16 +19,14 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.Model;
-import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -47,9 +45,13 @@ import reactor.core.publisher.Mono;
  * </ul>
  *
  * <p>A small state file ({@code memory/.consolidation_state}) records the timestamp of
- * the last successful consolidation. Daily files whose mtime is at or before that
- * timestamp are skipped — reducing token usage and protecting MEMORY.md from being
+ * the last successful consolidation. Daily files whose {@code modifiedAt} is at or before
+ * that timestamp are skipped — reducing token usage and protecting MEMORY.md from being
  * re-rewritten with stale content.
+ *
+ * <p>All file I/O is performed via the {@link AbstractFilesystem} obtained from the
+ * {@link WorkspaceManager}, so this class is backend-agnostic (works with Local,
+ * Sandbox, and Store filesystems without any direct {@code java.nio.file.Files} usage).
  */
 public class MemoryConsolidator {
 
@@ -174,92 +176,113 @@ public class MemoryConsolidator {
     /**
      * Reads daily memory files modified strictly after the given watermark.
      * If watermark is {@link Instant#EPOCH}, all daily files are returned (first run).
+     *
+     * <p>All I/O is done through the {@link AbstractFilesystem} so this works equally well
+     * with Local, Sandbox, and Store backends.
      */
     private String readDailyEntries(Instant watermark) {
-        Path memoryDir = workspaceManager.getMemoryDir();
-        if (!Files.isDirectory(memoryDir)) {
+        AbstractFilesystem fs = workspaceManager.getFilesystem();
+        if (fs == null) {
             return "";
         }
 
+        GlobResult glob = fs.glob("*.md", "memory");
+        if (!glob.isSuccess() || glob.matches() == null || glob.matches().isEmpty()) {
+            return "";
+        }
+
+        List<FileInfo> eligible = new ArrayList<>();
+        for (FileInfo fi : glob.matches()) {
+            if (fi.isDirectory()) {
+                continue;
+            }
+            String name = fileName(fi.path());
+            if (name.equals(STATE_FILE) || name.equals("archive") || !name.endsWith(".md")) {
+                continue;
+            }
+            if (isModifiedAfter(fi, watermark)) {
+                eligible.add(fi);
+            }
+        }
+        eligible.sort(Comparator.comparing(fi -> fileName(fi.path())));
+
         StringBuilder sb = new StringBuilder();
-        try (Stream<Path> files = Files.list(memoryDir)) {
-            files.filter(p -> p.toString().endsWith(".md"))
-                    .filter(Files::isRegularFile)
-                    .filter(p -> !p.getFileName().toString().equals("archive"))
-                    .filter(p -> isModifiedAfter(p, watermark))
-                    .sorted(Comparator.comparing(Path::getFileName))
-                    .forEach(
-                            p -> {
-                                try {
-                                    String content = Files.readString(p);
-                                    if (!content.isBlank()) {
-                                        sb.append("### ").append(p.getFileName()).append("\n");
-                                        sb.append(content.strip()).append("\n\n");
-                                    }
-                                } catch (IOException e) {
-                                    log.warn("Failed to read {}: {}", p, e.getMessage());
-                                }
-                            });
-        } catch (IOException e) {
-            log.warn("Failed to list memory dir: {}", e.getMessage());
+        for (FileInfo fi : eligible) {
+            String rel = toRelative(fi.path());
+            String content = workspaceManager.readManagedWorkspaceFileUtf8(rel);
+            if (content != null && !content.isBlank()) {
+                sb.append("### ").append(fileName(fi.path())).append("\n");
+                sb.append(content.strip()).append("\n\n");
+            }
         }
         return sb.toString();
     }
 
-    private static boolean isModifiedAfter(Path p, Instant watermark) {
-        try {
-            return Files.getLastModifiedTime(p).toInstant().isAfter(watermark);
-        } catch (IOException e) {
-            return true; // be safe — include on read error
+    private static boolean isModifiedAfter(FileInfo fi, Instant watermark) {
+        String modifiedAt = fi.modifiedAt();
+        if (modifiedAt == null || modifiedAt.isBlank()) {
+            return true; // be safe — include on unknown mtime
         }
+        try {
+            return Instant.parse(modifiedAt).isAfter(watermark);
+        } catch (Exception e) {
+            return true; // be safe on parse error
+        }
+    }
+
+    /** Extracts the file name (last path segment) from a path string. */
+    private static String fileName(String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+        String stripped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        int idx = stripped.lastIndexOf('/');
+        return idx >= 0 ? stripped.substring(idx + 1) : stripped;
+    }
+
+    /**
+     * Converts an absolute filesystem path (e.g. {@code /memory/2025-01-01.md}) to a
+     * workspace-relative path ({@code memory/2025-01-01.md}) for use with
+     * {@link WorkspaceManager#readManagedWorkspaceFileUtf8}.
+     */
+    private static String toRelative(String path) {
+        if (path == null) {
+            return "";
+        }
+        return path.startsWith("/") ? path.substring(1) : path;
     }
 
     private void writeConsolidatedMemory(String content) {
-        Path memoryFile = workspaceManager.getWorkspace().resolve(WorkspaceConstants.MEMORY_MD);
-        try {
-            if (memoryFile.getParent() != null) {
-                Files.createDirectories(memoryFile.getParent());
-            }
-            Files.writeString(memoryFile, content);
-        } catch (IOException e) {
-            log.warn("Failed to write consolidated MEMORY.md: {}", e.getMessage());
-        }
+        workspaceManager.writeUtf8WorkspaceRelative("MEMORY.md", content);
     }
 
-    private Path stateFilePath() {
-        return workspaceManager.getMemoryDir().resolve(STATE_FILE);
-    }
+    static final String STATE_REL_PATH = "memory/" + STATE_FILE;
 
     /** Reads the last consolidation Instant, or {@link Instant#EPOCH} if none recorded. */
     Instant readWatermark() {
-        Path state = stateFilePath();
-        if (!Files.isRegularFile(state)) {
-            return Instant.EPOCH;
-        }
         try {
-            String value = Files.readString(state).strip();
-            if (value.isEmpty()) {
+            String value = workspaceManager.readManagedWorkspaceFileUtf8(STATE_REL_PATH);
+            if (value == null || value.isBlank()) {
                 return Instant.EPOCH;
             }
-            return Instant.parse(value);
+            return Instant.parse(value.strip());
         } catch (Exception e) {
             log.warn(
                     "Failed to read consolidation watermark at {}: {} — treating as EPOCH",
-                    state,
+                    STATE_REL_PATH,
                     e.getMessage());
             return Instant.EPOCH;
         }
     }
 
     private void writeWatermark(Instant ts) {
-        Path state = stateFilePath();
         try {
-            if (state.getParent() != null) {
-                Files.createDirectories(state.getParent());
-            }
-            Files.writeString(state, ts.toString());
-        } catch (IOException e) {
-            log.warn("Failed to write consolidation watermark at {}: {}", state, e.getMessage());
+            workspaceManager.writeUtf8WorkspaceRelative(STATE_REL_PATH, ts.toString());
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to write consolidation watermark at {}: {}",
+                    STATE_REL_PATH,
+                    e.getMessage());
         }
     }
 }

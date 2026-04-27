@@ -49,7 +49,7 @@ import reactor.core.publisher.Mono;
  * <ul>
  *   <li><b>This hook</b> fires on {@link PostActingEvent} — once per tool call, triggered by
  *       individual result <em>size</em> (context width).</li>
- *   <li><b>Argument truncation</b> runs inside {@link io.agentscope.harness.agent.memory.compaction.CompactionHook}
+ *   <li><b>Argument truncation</b> runs inside {@link CompactionHook}
  *       at {@code PreReasoningEvent} — triggered by accumulated message count/tokens.</li>
  *   <li><b>Conversation compaction</b> runs inside {@code CompactionHook} at
  *       {@code PreReasoningEvent} — triggered by overall conversation length (context depth).</li>

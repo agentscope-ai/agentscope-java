@@ -30,7 +30,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.filesystem.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
+import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -190,6 +192,26 @@ class HarnessAgentTest {
         assertTrue(names.contains("general-purpose"));
         assertTrue(
                 names.contains(mdId), "subagents/*.md with front matter should produce an entry");
+    }
+
+    @Test
+    void storeFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
+        InMemoryStore store = new InMemoryStore();
+
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("agent-a")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .filesystem(new StoreFilesystemSpec(store))
+                        .build();
+
+        agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");
+
+        assertTrue(
+                store.get(List.of("agents", "agent-a", "users", "_default"), "/MEMORY.md") != null);
     }
 
     private static Msg userText(String text) {

@@ -85,25 +85,10 @@ public class MemoryFlushManager {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
-    private volatile MemoryIndex memoryIndex;
-    private volatile MemoryMaintenanceScheduler maintenanceScheduler;
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
         this.workspaceManager = workspaceManager;
         this.model = model;
-    }
-
-    public void setMemoryIndex(MemoryIndex memoryIndex) {
-        this.memoryIndex = memoryIndex;
-    }
-
-    /**
-     * Optional hook into the maintenance scheduler. When set, every successful flush will
-     * call {@link MemoryMaintenanceScheduler#requestConsolidation()} so MEMORY.md stays
-     * fresh in long sessions instead of waiting for the next periodic tick.
-     */
-    public void setMaintenanceScheduler(MemoryMaintenanceScheduler scheduler) {
-        this.maintenanceScheduler = scheduler;
     }
 
     /**
@@ -179,7 +164,6 @@ public class MemoryFlushManager {
                                 return Mono.empty();
                             }
                             writeMemoryFiles(extracted);
-                            requestConsolidation();
                             return Mono.empty();
                         });
     }
@@ -220,7 +204,11 @@ public class MemoryFlushManager {
     private void offloadToSessionTree(List<Msg> messages, String agentId, String sessionId) {
         try {
             Path contextFile = workspaceManager.resolveSessionContextFile(agentId, sessionId);
-            SessionTree tree = new SessionTree(contextFile);
+            SessionTree tree =
+                    new SessionTree(
+                            contextFile,
+                            workspaceManager.getWorkspace(),
+                            workspaceManager.getFilesystem());
             tree.load();
 
             String lastId = null;
@@ -280,41 +268,6 @@ public class MemoryFlushManager {
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         workspaceManager.appendUtf8WorkspaceRelative(dailyRelPath, dailyEntry);
-
-        indexAfterWrite(dailyRelPath);
-    }
-
-    /**
-     * Asks the maintenance scheduler (if wired) to opportunistically consolidate MEMORY.md.
-     * The scheduler throttles requests, so calling this every flush is safe.
-     */
-    private void requestConsolidation() {
-        MemoryMaintenanceScheduler s = this.maintenanceScheduler;
-        if (s != null) {
-            try {
-                s.requestConsolidation();
-            } catch (Exception e) {
-                log.debug("Opportunistic consolidation request failed: {}", e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Re-indexes today's daily ledger so search reflects the just-appended entries.
-     * MEMORY.md is re-indexed separately by {@link MemoryMaintenanceScheduler#runMaintenance()}
-     * after consolidation, so it is not touched here.
-     */
-    private void indexAfterWrite(String dailyRelPath) {
-        MemoryIndex idx = this.memoryIndex;
-        if (idx == null) {
-            return;
-        }
-        try {
-            idx.indexFromString(
-                    dailyRelPath, workspaceManager.readManagedWorkspaceFileUtf8(dailyRelPath));
-        } catch (Exception e) {
-            log.warn("Failed to index daily memory file after write: {}", e.getMessage());
-        }
     }
 
     private String readExistingContent(String relativePath) {

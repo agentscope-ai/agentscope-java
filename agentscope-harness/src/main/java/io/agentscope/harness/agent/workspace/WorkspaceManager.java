@@ -32,6 +32,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,7 +53,7 @@ import org.slf4j.LoggerFactory;
  * etc.), the {@link AbstractFilesystem} is queried first. If it returns non-empty content, that
  * content is used (filesystem overrides). Otherwise, the local workspace disk is read as a
  * fallback. The filesystem layer applies user/session scoping transparently via
- * {@link io.agentscope.harness.agent.filesystem.store.NamespaceFactory}.
+ * {@link NamespaceFactory}.
  *
  * <p><strong>Write path:</strong> All writes (memory, sessions, etc.) go through the
  * {@link AbstractFilesystem}.
@@ -323,7 +324,7 @@ public class WorkspaceManager {
     }
 
     /** Overwrites a workspace-relative UTF-8 file. All writes go through the filesystem. */
-    private void writeUtf8WorkspaceRelative(String relativePath, String content) {
+    public void writeUtf8WorkspaceRelative(String relativePath, String content) {
         if (relativePath == null || content == null) {
             return;
         }
@@ -343,7 +344,7 @@ public class WorkspaceManager {
 
     /**
      * Two-layer read: filesystem first (namespaced by {@link
-     * io.agentscope.harness.agent.filesystem.store.NamespaceFactory}), local disk fallback.
+     * NamespaceFactory}), local disk fallback.
      */
     private String readWithOverride(String relativePath) {
         String fsContent = readTextThroughFilesystem(relativePath);

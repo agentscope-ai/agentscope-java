@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.memory.compaction;
+package io.agentscope.harness.agent.hook;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.Hook;
@@ -25,8 +25,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.RuntimeContext;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
-import io.agentscope.harness.agent.memory.MemoryIndex;
-import io.agentscope.harness.agent.memory.MemoryMaintenanceScheduler;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,8 +63,6 @@ public class CompactionHook implements Hook {
     private final CompactionConfig config;
 
     private RuntimeContext runtimeContext;
-    private volatile MemoryIndex memoryIndex;
-    private volatile MemoryMaintenanceScheduler maintenanceScheduler;
 
     public CompactionHook(WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
         this.workspaceManager = workspaceManager;
@@ -74,15 +72,6 @@ public class CompactionHook implements Hook {
 
     public void setRuntimeContext(RuntimeContext runtimeContext) {
         this.runtimeContext = runtimeContext;
-    }
-
-    public void setMemoryIndex(MemoryIndex memoryIndex) {
-        this.memoryIndex = memoryIndex;
-    }
-
-    /** Wires the maintenance scheduler so flushes can opportunistically consolidate MEMORY.md. */
-    public void setMaintenanceScheduler(MemoryMaintenanceScheduler scheduler) {
-        this.maintenanceScheduler = scheduler;
     }
 
     @Override
@@ -188,10 +177,7 @@ public class CompactionHook implements Hook {
     // -------------------------------------------------------------------------
 
     private MemoryFlushManager buildFlushManager() {
-        MemoryFlushManager fm = new MemoryFlushManager(workspaceManager, model);
-        fm.setMemoryIndex(memoryIndex);
-        fm.setMaintenanceScheduler(maintenanceScheduler);
-        return fm;
+        return new MemoryFlushManager(workspaceManager, model);
     }
 
     private String sessionId() {

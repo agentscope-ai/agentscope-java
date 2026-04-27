@@ -33,6 +33,10 @@ import java.nio.file.Path;
  * {@link io.agentscope.core.state.SessionKey#toIdentifier()}) is appended automatically
  * by the parent class as a subdirectory, producing the full path above.
  *
+ * <p>This session is dedicated to ReActAgent runtime state persistence only (for example memory
+ * messages, agent metadata). Sandbox lifecycle state is stored separately through
+ * {@code SandboxStateStore}.
+ *
  * <p>Usage:
  *
  * <pre>{@code

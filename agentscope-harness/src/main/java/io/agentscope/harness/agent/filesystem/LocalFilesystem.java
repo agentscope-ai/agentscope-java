@@ -26,8 +26,8 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
-import io.agentscope.harness.agent.filesystem.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import io.agentscope.harness.agent.store.NamespaceFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -40,6 +40,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -384,6 +385,68 @@ public class LocalFilesystem implements AbstractFilesystem {
             }
         }
         return responses;
+    }
+
+    @Override
+    public WriteResult delete(String path) {
+        AbstractFilesystem.validatePath(path);
+        Path resolved = resolvePath(path);
+        if (!Files.exists(resolved)) {
+            return WriteResult.ok(path); // idempotent
+        }
+        try {
+            if (Files.isDirectory(resolved)) {
+                try (Stream<Path> walk = Files.walk(resolved)) {
+                    walk.sorted(Comparator.reverseOrder())
+                            .forEach(
+                                    p -> {
+                                        try {
+                                            Files.delete(p);
+                                        } catch (IOException e) {
+                                            log.warn("Failed to delete {}: {}", p, e.getMessage());
+                                        }
+                                    });
+                }
+            } else {
+                Files.delete(resolved);
+            }
+            return WriteResult.ok(path);
+        } catch (IOException e) {
+            return WriteResult.fail("Error deleting '" + path + "': " + e.getMessage());
+        }
+    }
+
+    @Override
+    public WriteResult move(String fromPath, String toPath) {
+        AbstractFilesystem.validatePath(fromPath);
+        AbstractFilesystem.validatePath(toPath);
+        Path from = resolvePath(fromPath);
+        Path to = resolvePath(toPath);
+        if (!Files.exists(from)) {
+            return WriteResult.fail("Source does not exist: " + fromPath);
+        }
+        try {
+            if (to.getParent() != null) {
+                Files.createDirectories(to.getParent());
+            }
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+            return WriteResult.ok(toPath);
+        } catch (IOException e) {
+            return WriteResult.fail(
+                    "Error moving '" + fromPath + "' to '" + toPath + "': " + e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean exists(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        try {
+            return Files.exists(resolvePath(path));
+        } catch (SecurityException e) {
+            return false;
+        }
     }
 
     // ==================== Path resolution ====================

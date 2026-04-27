@@ -26,10 +26,10 @@ import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
-import io.agentscope.harness.agent.filesystem.store.BaseStore;
-import io.agentscope.harness.agent.filesystem.store.NamespaceFactory;
-import io.agentscope.harness.agent.filesystem.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
+import io.agentscope.harness.agent.store.BaseStore;
+import io.agentscope.harness.agent.store.NamespaceFactory;
+import io.agentscope.harness.agent.store.StoreItem;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.PathMatcher;
@@ -378,6 +378,67 @@ public class StoreFilesystem implements AbstractFilesystem {
             responses.add(FileDownloadResponse.success(filePath, contentBytes));
         }
         return responses;
+    }
+
+    @Override
+    public WriteResult delete(String path) {
+        AbstractFilesystem.validatePath(path);
+        List<String> ns = getNamespace();
+        List<StoreItem> items = searchAllItems();
+        String normalizedPath = normalizePath(path);
+        boolean deleted = false;
+        for (StoreItem item : items) {
+            if (item.key().equals(normalizedPath) || item.key().startsWith(normalizedPath + "/")) {
+                store.delete(ns, item.key());
+                deleted = true;
+            }
+        }
+        // idempotent — not found is still success
+        return WriteResult.ok(path);
+    }
+
+    @Override
+    public WriteResult move(String fromPath, String toPath) {
+        AbstractFilesystem.validatePath(fromPath);
+        AbstractFilesystem.validatePath(toPath);
+        List<String> ns = getNamespace();
+        List<StoreItem> items = searchAllItems();
+        String normFrom = normalizePath(fromPath);
+        String normTo = normalizePath(toPath);
+        boolean found = false;
+        for (StoreItem item : items) {
+            String key = item.key();
+            if (key.equals(normFrom) || key.startsWith(normFrom + "/")) {
+                String newKey = normTo + key.substring(normFrom.length());
+                store.put(ns, newKey, item.value());
+                store.delete(ns, key);
+                found = true;
+            }
+        }
+        if (!found) {
+            return WriteResult.fail("Source does not exist: " + fromPath);
+        }
+        return WriteResult.ok(toPath);
+    }
+
+    @Override
+    public boolean exists(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        List<String> ns = getNamespace();
+        String normalized = normalizePath(path);
+        if (store.get(ns, normalized) != null) {
+            return true;
+        }
+        // Also check if any child exists (directory-like)
+        List<StoreItem> items = searchAllItems();
+        for (StoreItem item : items) {
+            if (item.key().startsWith(normalized + "/")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== Internal helpers ====================

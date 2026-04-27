@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.harness.agent.filesystem.store;
+package io.agentscope.harness.agent.store;
 
 import java.util.List;
 

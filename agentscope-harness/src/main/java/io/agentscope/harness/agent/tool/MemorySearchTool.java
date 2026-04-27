@@ -17,7 +17,6 @@ package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import io.agentscope.harness.agent.memory.MemoryIndex;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.List;
 import java.util.StringJoiner;
@@ -28,23 +27,18 @@ import org.slf4j.LoggerFactory;
 /**
  * Tool for searching through persisted memories (MEMORY.md and memory/*.md files).
  *
- * <p>When a {@link MemoryIndex} is available, uses SQLite FTS5 for ranked full-text
- * search. Falls back to naive keyword search when the index is unavailable.
+ * <p>Uses keyword-based search through all memory files visible via the configured
+ * {@link io.agentscope.harness.agent.filesystem.AbstractFilesystem} (works across Local,
+ * Sandbox, and Store backends without any local SQLite dependency).
  */
 public class MemorySearchTool {
 
     private static final Logger log = LoggerFactory.getLogger(MemorySearchTool.class);
-    private static final int MAX_RESULTS = 30;
 
     private final WorkspaceManager workspaceManager;
-    private volatile MemoryIndex memoryIndex;
 
     public MemorySearchTool(WorkspaceManager workspaceManager) {
         this.workspaceManager = workspaceManager;
-    }
-
-    public void setMemoryIndex(MemoryIndex memoryIndex) {
-        this.memoryIndex = memoryIndex;
     }
 
     @Tool(
@@ -58,26 +52,6 @@ public class MemorySearchTool {
                     String query) {
         if (query == null || query.isBlank()) {
             return "No query provided";
-        }
-
-        MemoryIndex idx = this.memoryIndex;
-        if (idx != null) {
-            try {
-                List<MemoryIndex.SearchHit> hits = idx.search(query, MAX_RESULTS);
-                if (!hits.isEmpty()) {
-                    StringJoiner sj = new StringJoiner("\n");
-                    for (MemoryIndex.SearchHit hit : hits) {
-                        sj.add(
-                                String.format(
-                                        "Source: %s#%d: %s",
-                                        hit.path(), hit.lineNumber(), hit.content()));
-                    }
-                    return "Found " + hits.size() + " matches:\n\n" + sj;
-                }
-                return "No matching memories found for: " + query;
-            } catch (Exception e) {
-                log.warn("FTS5 search failed, falling back to keyword search: {}", e.getMessage());
-            }
         }
 
         return keywordSearch(query);

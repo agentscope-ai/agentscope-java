@@ -105,4 +105,55 @@ public interface AbstractFilesystem {
      * @return list of FileDownloadResponse objects, one per input path (order matches input order)
      */
     List<FileDownloadResponse> downloadFiles(List<String> paths);
+
+    /**
+     * Delete a file or directory (recursive for directories).
+     *
+     * <p>Idempotent: deleting a path that does not exist is treated as success.
+     *
+     * @param path absolute path to the file or directory to delete
+     * @return WriteResult success when deleted (or already absent), failure on I/O error
+     */
+    WriteResult delete(String path);
+
+    /**
+     * Move (rename) a file or directory from {@code fromPath} to {@code toPath}.
+     *
+     * <p>Implementations that span multiple backends (e.g. {@code CompositeFilesystem}) may
+     * fall back to a read + write + delete sequence when source and destination live in
+     * different backend filesystems.
+     *
+     * @param fromPath absolute source path
+     * @param toPath absolute destination path
+     * @return WriteResult success on completion, failure on I/O error or missing source
+     */
+    WriteResult move(String fromPath, String toPath);
+
+    /**
+     * Check whether a file or directory exists.
+     *
+     * <p>Implementations may approximate this with a lightweight read probe where a dedicated
+     * {@code exists} API is unavailable, but should avoid reading full file content.
+     *
+     * @param path absolute path to check
+     * @return {@code true} if the path exists, {@code false} otherwise
+     */
+    boolean exists(String path);
+
+    // ==================== Path validation utility ====================
+
+    /**
+     * Validates that {@code path} is safe (non-null, non-blank, no {@code ..} traversal).
+     *
+     * @param path the path to validate
+     * @throws IllegalArgumentException if the path is invalid
+     */
+    static void validatePath(String path) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("Path must not be null or blank");
+        }
+        if (path.contains("..")) {
+            throw new IllegalArgumentException("Path traversal ('..') not allowed: " + path);
+        }
+    }
 }
