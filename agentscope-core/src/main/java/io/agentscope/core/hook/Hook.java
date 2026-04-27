@@ -124,12 +124,12 @@ public interface Hook {
      *   <li>{@link PostReasoningEvent} - Modify reasoning results</li>
      *   <li>{@link PreActingEvent} - Modify tool parameters before execution</li>
      *   <li>{@link PostActingEvent} - Modify tool results</li>
+     *   <li>{@link PreCallEvent} - Modify messages before agent starts</li>
      *   <li>{@link PostCallEvent} - Modify final agent response</li>
      * </ul>
      *
      * <p><b>Notification Events:</b> Events without setters are read-only:
      * <ul>
-     *   <li>{@link PreCallEvent} - Notified when agent starts</li>
      *   <li>{@link ReasoningChunkEvent} - Streaming reasoning chunks</li>
      *   <li>{@link ActingChunkEvent} - Streaming tool execution chunks</li>
      *   <li>{@link ErrorEvent} - Errors during execution</li>
