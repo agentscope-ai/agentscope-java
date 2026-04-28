@@ -26,6 +26,8 @@ import static org.mockito.Mockito.mockStatic;
 
 import io.agentscope.core.a2a.server.utils.NetworkUtils;
 import java.net.SocketException;
+import java.util.Objects;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -189,7 +191,9 @@ class DeploymentPropertiesTest {
             assertNotNull(deploymentProperties);
             assertEquals(host, deploymentProperties.host());
             assertEquals(port, deploymentProperties.port());
-            assertNull(deploymentProperties.path());
+            if (Objects.nonNull(deploymentProperties.path())) {
+                throw new AssertionError("Path should be null");
+            }
         }
 
         @Test
