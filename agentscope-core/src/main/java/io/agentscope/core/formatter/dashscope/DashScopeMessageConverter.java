@@ -300,18 +300,27 @@ public class DashScopeMessageConverter {
                     content.add(mediaConverter.convertImageBlockToContentPart(ib));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof AudioBlock ab) {
                 try {
                     content.add(mediaConverter.convertAudioBlockToContentPart(ab));
                 } catch (Exception e) {
                     log.warn("Failed to process AudioBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof VideoBlock vb) {
                 try {
                     content.add(mediaConverter.convertVideoBlockToContentPart(vb));
                 } catch (Exception e) {
                     log.warn("Failed to process VideoBlock in tool result: {}", e.getMessage());
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Video - processing failed: " + e.getMessage() + "]"));
                 }
             }
         }

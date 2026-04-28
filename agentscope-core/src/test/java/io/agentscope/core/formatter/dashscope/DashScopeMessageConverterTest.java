@@ -204,6 +204,7 @@ class DashScopeMessageConverterTest {
         assertEquals("tool_call_1", dsMsg.getToolCallId());
         assertEquals("fetch_data", dsMsg.getName());
         assertTrue(dsMsg.isMultimodal());
+        assertEquals("Data retrieved", dsMsg.getContentAsList().get(0).getText());
     }
 
     @Test
@@ -608,6 +609,10 @@ class DashScopeMessageConverterTest {
         assertEquals("call_123", dsMsg.getToolCallId());
         assertTrue(dsMsg.isMultimodal());
         assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Here is a cat image", dsMsg.getContentAsList().get(0).getText());
+        assertEquals(
+                "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg",
+                dsMsg.getContentAsList().get(1).getImage());
     }
 
     @Test
@@ -675,5 +680,38 @@ class DashScopeMessageConverterTest {
         assertEquals("The capital of Japan is Tokyo.", dsMsg.getContentAsList().get(0).getText());
         assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
         assertEquals("https://example.com/audio.wav", dsMsg.getContentAsList().get(2).getAudio());
+    }
+
+    @Test
+    void testToolResultWithInvalidImageBlockAddsFailureText() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_invalid_image")
+                        .name("get_invalid_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Image lookup finished").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/not-image.txt")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_invalid_image", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Image lookup finished", dsMsg.getContentAsList().get(0).getText());
+        assertTrue(
+                dsMsg.getContentAsList()
+                        .get(1)
+                        .getText()
+                        .startsWith("[Image - processing failed:"));
     }
 }
