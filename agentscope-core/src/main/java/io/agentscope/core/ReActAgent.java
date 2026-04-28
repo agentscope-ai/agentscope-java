@@ -728,6 +728,28 @@ public class ReActAgent extends StructuredOutputCapableAgent {
     protected Mono<Msg> summarizing() {
         log.debug("Maximum iterations reached. Generating summary...");
 
+        // Handle pending tool calls that were not completed before max iterations
+        if (hasPendingToolUse()) {
+            List<ToolUseBlock> pendingTools = extractPendingToolCalls();
+            log.warn(
+                    "Max iterations reached with {} pending tool calls. Adding error results.",
+                    pendingTools.size());
+
+            for (ToolUseBlock toolUse : pendingTools) {
+                ToolResultBlock errorResult =
+                        buildErrorToolResult(
+                                toolUse.getId(),
+                                "Tool execution cancelled because maximum iterations limit ("
+                                        + maxIters
+                                        + ") was reached");
+
+                Msg errorResultMsg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                errorResult, toolUse, getName());
+                memory.addMessage(errorResultMsg);
+            }
+        }
+
         List<Msg> messageList = prepareSummaryMessages();
         GenerateOptions generateOptions = buildGenerateOptions();
 
