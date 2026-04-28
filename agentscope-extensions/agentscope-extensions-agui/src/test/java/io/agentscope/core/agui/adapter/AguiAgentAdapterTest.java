@@ -1018,7 +1018,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
         assertEquals("msg-r1", reasoningMessageStart.messageId());
-        assertEquals("assistant", reasoningMessageStart.role());
+        assertEquals("reasoning", reasoningMessageStart.role());
 
         AguiEvent.ReasoningMessageContent reasoningMessageContent =
                 events.stream()
@@ -1097,6 +1097,7 @@ class AguiAgentAdapterTest {
                         .content(
                                 ToolResultBlock.builder()
                                         .id("tc-unknown")
+                                        .name("weather_lookup")
                                         .output(TextBlock.builder().text("result").build())
                                         .build())
                         .build();
@@ -1121,6 +1122,17 @@ class AguiAgentAdapterTest {
         long toolStartCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
         assertEquals(1, toolStartCount, "Should backfill ToolCallStart for unknown tool result");
+
+        AguiEvent.ToolCallStart backfilledStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(backfilledStart, "Should backfill ToolCallStart");
+        assertEquals("tc-unknown", backfilledStart.toolCallId());
+        assertEquals("weather_lookup", backfilledStart.toolCallName());
     }
 
     @Test
@@ -1399,6 +1411,41 @@ class AguiAgentAdapterTest {
         assertTrue(hasReasoningMessageStart, "Should have ReasoningMessageStart");
         assertTrue(hasReasoningMessageContent, "Should have ReasoningMessageContent");
         assertTrue(hasToolStart, "Should have ToolCallStart for tool call");
+
+        int reasoningStartIdx = -1;
+        int reasoningContentIdx = -1;
+        int reasoningEndIdx = -1;
+        int toolStartIdx = -1;
+
+        for (int i = 0; i < events.size(); i++) {
+            AguiEvent e = events.get(i);
+            if (reasoningStartIdx < 0 && e instanceof AguiEvent.ReasoningMessageStart) {
+                reasoningStartIdx = i;
+            } else if (reasoningContentIdx < 0 && e instanceof AguiEvent.ReasoningMessageContent) {
+                reasoningContentIdx = i;
+            } else if (reasoningEndIdx < 0 && e instanceof AguiEvent.ReasoningMessageEnd) {
+                reasoningEndIdx = i;
+            } else if (toolStartIdx < 0 && e instanceof AguiEvent.ToolCallStart) {
+                toolStartIdx = i;
+            }
+        }
+
+        assertTrue(reasoningStartIdx >= 0, "Should have ReasoningMessageStart");
+        assertTrue(reasoningContentIdx >= 0, "Should have ReasoningMessageContent");
+        assertTrue(reasoningEndIdx >= 0, "Should have ReasoningMessageEnd before tool call");
+        assertTrue(toolStartIdx >= 0, "Should have ToolCallStart");
+
+        assertTrue(
+                reasoningStartIdx < reasoningContentIdx,
+                "Reasoning start should be before content");
+        assertTrue(reasoningContentIdx < reasoningEndIdx, "Reasoning content should be before end");
+        assertTrue(
+                reasoningEndIdx < toolStartIdx, "Reasoning should be closed before ToolCallStart");
+
+        // ReasoningMessage must be explicitly closed before ToolCallStart.
+        long reasoningEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+        assertEquals(1, reasoningEndCount, "Should emit exactly one ReasoningMessageEnd");
     }
 
     @Test
