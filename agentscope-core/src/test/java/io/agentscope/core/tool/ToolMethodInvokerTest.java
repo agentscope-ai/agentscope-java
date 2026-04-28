@@ -170,6 +170,11 @@ class ToolMethodInvokerTest {
             return String.valueOf(sum);
         }
 
+        public String beanParamMethod(
+                @ToolParam(name = "payload", description = "bean payload") BeanParam payload) {
+            return payload.getRequiredField() + "|" + payload.getOptionalField();
+        }
+
         public String suspendTool(
                 @ToolParam(name = "reason", description = "reason") String reason) {
             throw new ToolSuspendException(reason);
@@ -246,6 +251,27 @@ class ToolMethodInvokerTest {
         @Override
         public int hashCode() {
             return Objects.hash(name, quantity);
+        }
+    }
+
+    static class BeanParam {
+        private String requiredField;
+        private String optionalField;
+
+        public String getRequiredField() {
+            return requiredField;
+        }
+
+        public void setRequiredField(String requiredField) {
+            this.requiredField = requiredField;
+        }
+
+        public String getOptionalField() {
+            return optionalField;
+        }
+
+        public void setOptionalField(String optionalField) {
+            this.optionalField = optionalField;
         }
     }
 
@@ -895,5 +921,42 @@ class ToolMethodInvokerTest {
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
         // Sum of 1+2+3+4+5+6 = 21
         Assertions.assertEquals("\"21\"", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testBeanParam_WithMissingOptionalField() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("beanParamMethod", BeanParam.class);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requiredField", "value");
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("payload", payload);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"value|null\"", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testBeanParam_WithExplicitNullOptionalField() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("beanParamMethod", BeanParam.class);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("requiredField", "value");
+        payload.put("optionalField", null);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("payload", payload);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"value|null\"", ToolTestUtils.extractContent(response));
     }
 }

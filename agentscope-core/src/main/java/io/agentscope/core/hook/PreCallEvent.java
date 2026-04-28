@@ -17,17 +17,20 @@ package io.agentscope.core.hook;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Event fired before agent starts processing.
  *
- * <p><b>Modifiable:</b> No (notification-only)
+ * <p><b>Modifiable:</b> Yes - {@link #setInputMessages(List)}
  *
  * <p><b>Context:</b>
  * <ul>
  *   <li>{@link #getAgent()} - The agent instance</li>
- *   <li>{@link #getMemory()} - Agent's memory (includes input messages already added)</li>
+ *   <li>{@link #getMemory()} - Agent's existing memory or conversation history prior to processing this call</li>
+ *   <li>{@link #getInputMessages()} - Messages input to the agent (modifiable)</li>
  * </ul>
  *
  * <p><b>Use Cases:</b>
@@ -35,6 +38,7 @@ import java.util.List;
  *   <li>Log the start of agent execution</li>
  *   <li>Initialize execution-specific resources</li>
  *   <li>Track agent invocation metrics</li>
+ *   <li>Filter or modify input messages before agent processing</li>
  * </ul>
  */
 public final class PreCallEvent extends HookEvent {
@@ -45,18 +49,32 @@ public final class PreCallEvent extends HookEvent {
      * Constructor for PreCallEvent.
      *
      * @param agent The agent instance (must not be null)
-     * @throws NullPointerException if agent is null
+     * @param inputMessages The messages input to the agent (must not be null)
+     * @throws NullPointerException if agent or inputMessages is null
      */
     public PreCallEvent(Agent agent, List<Msg> inputMessages) {
         super(HookEventType.PRE_CALL, agent);
-        this.inputMessages = inputMessages;
+        this.inputMessages =
+                new ArrayList<>(
+                        Objects.requireNonNull(inputMessages, "inputMessages cannot be null"));
     }
 
+    /**
+     * Get the input messages for the agent call.
+     *
+     * @return The input messages
+     */
     public List<Msg> getInputMessages() {
         return inputMessages;
     }
 
+    /**
+     * Modify the input messages for the agent call.
+     *
+     * @param inputMessages The new message list (must not be null)
+     * @throws NullPointerException if inputMessages is null
+     */
     public void setInputMessages(List<Msg> inputMessages) {
-        this.inputMessages = inputMessages;
+        this.inputMessages = Objects.requireNonNull(inputMessages, "inputMessages cannot be null");
     }
 }

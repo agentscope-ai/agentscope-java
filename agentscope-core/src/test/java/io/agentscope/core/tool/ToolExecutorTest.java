@@ -272,6 +272,141 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should apply preset parameters after explicit ToolCallParam input")
+    void shouldApplyPresetParametersAfterExplicitInput() {
+        class OverrideTool {
+            @Tool(description = "Test preset precedence with explicit ToolCallParam input")
+            public ToolResultBlock testOverride(
+                    @ToolParam(name = "param1") String param1,
+                    @ToolParam(name = "param2") String param2) {
+                return ToolResultBlock.text(
+                        String.format("param1: %s, param2: %s", param1, param2));
+            }
+        }
+
+        toolkit.registration()
+                .tool(new OverrideTool())
+                .presetParameters(
+                        Map.of(
+                                "testOverride",
+                                Map.of("param1", "preset_value1", "param2", "preset_value2")))
+                .apply();
+
+        Map<String, Object> explicitInput = Map.of("param1", "agent_value1");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-override")
+                        .name("testOverride")
+                        .input(Map.of())
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(explicitInput)
+                                        .build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        String resultText = extractFirstText(result);
+        assertTrue(
+                resultText.contains("param1: preset_value1"),
+                "Preset value should override explicit ToolCallParam input");
+        assertTrue(resultText.contains("param2: preset_value2"), "Preset value should be used");
+    }
+
+    @Test
+    @DisplayName("Should use only preset parameters when both input sources are absent")
+    void shouldUseOnlyPresetParametersWhenInputsAbsent() {
+        class PresetOnlyTool {
+            @Tool(description = "Test preset usage when no explicit inputs are present")
+            public ToolResultBlock presetOnly(@ToolParam(name = "param1") String param1) {
+                return ToolResultBlock.text("param1: " + param1);
+            }
+        }
+
+        toolkit.registration()
+                .tool(new PresetOnlyTool())
+                .presetParameters(Map.of("presetOnly", Map.of("param1", "preset_value1")))
+                .apply();
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-preset-only")
+                        .name("presetOnly")
+                        .content("{}")
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals("param1: preset_value1", extractFirstText(result));
+    }
+
+    @Test
+    @DisplayName("Should execute without preset parameters when registration metadata is absent")
+    void shouldExecuteWhenRegisteredMetadataIsAbsent() {
+        AgentTool echoTool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "metadata_gap_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool for simulating a metadata lookup gap";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.just(
+                                ToolResultBlock.text("value: " + param.getInput().get("value")));
+                    }
+                };
+
+        ToolRegistry registryWithMetadataGap =
+                new ToolRegistry() {
+                    @Override
+                    RegisteredToolFunction getRegisteredTool(String name) {
+                        return null;
+                    }
+                };
+        registryWithMetadataGap.registerTool(
+                echoTool.getName(), echoTool, new RegisteredToolFunction(echoTool, null, null));
+        ToolExecutor executor =
+                new ToolExecutor(
+                        toolkit,
+                        registryWithMetadataGap,
+                        new ToolGroupManager(),
+                        ToolkitConfig.defaultConfig());
+        Map<String, Object> input = Map.of("value", "caller_value");
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-metadata-gap")
+                        .name(echoTool.getName())
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
+
+        ToolResultBlock result =
+                executor.execute(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals("value: caller_value", extractFirstText(result));
+    }
+
+    @Test
     @DisplayName("Should format all error messages consistently")
     void testErrorMessageFormat() {
         // Register various failing tools

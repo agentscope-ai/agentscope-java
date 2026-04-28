@@ -172,6 +172,114 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testRunWithSummaryEventUsesTextMessages() {
+        Msg summaryChunk =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Here is the conversation summary.")
+                                        .build())
+                        .build();
+
+        Msg summaryFinal =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Here is the conversation summary.")
+                                        .build())
+                        .build();
+
+        Event summaryChunkEvent = new Event(EventType.SUMMARY, summaryChunk, false);
+        Event summaryFinalEvent = new Event(EventType.SUMMARY, summaryFinal, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(summaryChunkEvent, summaryFinalEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.TextMessageContent summaryContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(summaryContent, "Should convert SUMMARY to TextMessageContent");
+        assertEquals("msg-summary", summaryContent.messageId());
+        assertEquals("Here is the conversation summary.", summaryContent.delta());
+
+        long textEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        assertEquals(1, textEndCount, "Should close the summary text message exactly once");
+    }
+
+    @Test
+    void testRunWithStreamingSummaryEvents() {
+        Msg summaryChunk1 =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("First part. ").build())
+                        .build();
+
+        Msg summaryChunk2 =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Second part.").build())
+                        .build();
+
+        Msg summaryFinal =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("First part. Second part.").build())
+                        .build();
+
+        Event event1 = new Event(EventType.SUMMARY, summaryChunk1, false);
+        Event event2 = new Event(EventType.SUMMARY, summaryChunk2, false);
+        Event event3 = new Event(EventType.SUMMARY, summaryFinal, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2, event3));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        long contentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
+        assertEquals(2, contentCount, "Should stream summary chunks as text deltas");
+
+        long startCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
+        assertEquals(1, startCount, "Should only start the summary message once");
+
+        long endCount = events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        assertEquals(1, endCount, "Should only end the summary message once");
+    }
+
+    @Test
     void testRunWithToolCallEvent() {
         Msg toolCallMsg =
                 Msg.builder()
@@ -910,7 +1018,7 @@ class AguiAgentAdapterTest {
 
         assertNotNull(reasoningMessageStart, "Should have ReasoningMessageStart");
         assertEquals("msg-r1", reasoningMessageStart.messageId());
-        assertEquals("assistant", reasoningMessageStart.role());
+        assertEquals("reasoning", reasoningMessageStart.role());
 
         AguiEvent.ReasoningMessageContent reasoningMessageContent =
                 events.stream()
@@ -989,6 +1097,7 @@ class AguiAgentAdapterTest {
                         .content(
                                 ToolResultBlock.builder()
                                         .id("tc-unknown")
+                                        .name("weather_lookup")
                                         .output(TextBlock.builder().text("result").build())
                                         .build())
                         .build();
@@ -1013,6 +1122,17 @@ class AguiAgentAdapterTest {
         long toolStartCount =
                 events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
         assertEquals(1, toolStartCount, "Should backfill ToolCallStart for unknown tool result");
+
+        AguiEvent.ToolCallStart backfilledStart =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(backfilledStart, "Should backfill ToolCallStart");
+        assertEquals("tc-unknown", backfilledStart.toolCallId());
+        assertEquals("weather_lookup", backfilledStart.toolCallName());
     }
 
     @Test
@@ -1291,6 +1411,41 @@ class AguiAgentAdapterTest {
         assertTrue(hasReasoningMessageStart, "Should have ReasoningMessageStart");
         assertTrue(hasReasoningMessageContent, "Should have ReasoningMessageContent");
         assertTrue(hasToolStart, "Should have ToolCallStart for tool call");
+
+        int reasoningStartIdx = -1;
+        int reasoningContentIdx = -1;
+        int reasoningEndIdx = -1;
+        int toolStartIdx = -1;
+
+        for (int i = 0; i < events.size(); i++) {
+            AguiEvent e = events.get(i);
+            if (reasoningStartIdx < 0 && e instanceof AguiEvent.ReasoningMessageStart) {
+                reasoningStartIdx = i;
+            } else if (reasoningContentIdx < 0 && e instanceof AguiEvent.ReasoningMessageContent) {
+                reasoningContentIdx = i;
+            } else if (reasoningEndIdx < 0 && e instanceof AguiEvent.ReasoningMessageEnd) {
+                reasoningEndIdx = i;
+            } else if (toolStartIdx < 0 && e instanceof AguiEvent.ToolCallStart) {
+                toolStartIdx = i;
+            }
+        }
+
+        assertTrue(reasoningStartIdx >= 0, "Should have ReasoningMessageStart");
+        assertTrue(reasoningContentIdx >= 0, "Should have ReasoningMessageContent");
+        assertTrue(reasoningEndIdx >= 0, "Should have ReasoningMessageEnd before tool call");
+        assertTrue(toolStartIdx >= 0, "Should have ToolCallStart");
+
+        assertTrue(
+                reasoningStartIdx < reasoningContentIdx,
+                "Reasoning start should be before content");
+        assertTrue(reasoningContentIdx < reasoningEndIdx, "Reasoning content should be before end");
+        assertTrue(
+                reasoningEndIdx < toolStartIdx, "Reasoning should be closed before ToolCallStart");
+
+        // ReasoningMessage must be explicitly closed before ToolCallStart.
+        long reasoningEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ReasoningMessageEnd).count();
+        assertEquals(1, reasoningEndCount, "Should emit exactly one ReasoningMessageEnd");
     }
 
     @Test

@@ -531,6 +531,54 @@ class OpenAIMessageConverterTest {
             assertTrue(args.contains("city"));
             assertTrue(args.contains("Shanghai"));
         }
+
+        @Test
+        @DisplayName(
+                "Should fallback to input when content is invalid JSON (interrupted streaming)")
+        void testToolCallFallbackWhenContentIsInvalidJson() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_broken")
+                            .name("search")
+                            .input(Map.of("query", "hello"))
+                            .content("{\"query\": \"hel")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            // Should fall back to input serialization
+            assertTrue(args.contains("query"));
+            assertTrue(args.contains("hello"));
+        }
+
+        @Test
+        @DisplayName("Should fallback to input when content is non-object JSON like array")
+        void testToolCallFallbackWhenContentIsNonObjectJson() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_array")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("[1, 2, 3]")
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(result.getToolCalls());
+            assertEquals(1, result.getToolCalls().size());
+            String args = result.getToolCalls().get(0).getFunction().getArguments();
+            assertTrue(args.contains("key"));
+            assertTrue(args.contains("value"));
+        }
     }
 
     @Nested
@@ -901,6 +949,93 @@ class OpenAIMessageConverterTest {
             assertNotNull(result);
             // Tool call with null name should be skipped
             assertEquals("assistant", result.getRole());
+        }
+    }
+
+    @Nested
+    @DisplayName("Qwen3 Thinking Mode Tests (Issue #1268)")
+    class Qwen3ThinkingModeTests {
+
+        @Test
+        @DisplayName(
+                "Should set empty content for assistant with ThinkingBlock + ToolUseBlock but no"
+                        + " TextBlock")
+        void testThinkingModeWithToolCallsHasNonNullContent() {
+            ThinkingBlock thinkingBlock =
+                    ThinkingBlock.builder().thinking("Let me call the tool...").build();
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_123")
+                            .name("get_weather")
+                            .input(Map.of("city", "Shanghai"))
+                            .build();
+
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(List.of(thinkingBlock, toolBlock))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("assistant", result.getRole());
+            assertNotNull(result.getToolCalls());
+            assertNotNull(
+                    result.getContent(),
+                    "Content should not be null to comply with strict OpenAI-compatible APIs");
+            assertEquals("", result.getContentAsString());
+        }
+
+        @Test
+        @DisplayName(
+                "Should preserve text content when both TextBlock and ThinkingBlock exist with tool"
+                        + " calls")
+        void testThinkingModeWithTextAndToolCalls() {
+            Msg msg =
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    List.of(
+                                            ThinkingBlock.builder()
+                                                    .thinking("reasoning...")
+                                                    .build(),
+                                            TextBlock.builder().text("Here is my answer").build(),
+                                            ToolUseBlock.builder()
+                                                    .id("call_456")
+                                                    .name("search")
+                                                    .input(Map.of("q", "test"))
+                                                    .build()))
+                            .build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertEquals("Here is my answer", result.getContentAsString());
+            assertNotNull(result.getToolCalls());
+            assertEquals("reasoning...", result.getReasoningContent());
+        }
+
+        @Test
+        @DisplayName(
+                "Should set empty content for assistant with only ToolUseBlock (no text or"
+                        + " thinking)")
+        void testToolCallsOnlyWithoutTextOrThinking() {
+            ToolUseBlock toolBlock =
+                    ToolUseBlock.builder()
+                            .id("call_789")
+                            .name("calculate")
+                            .input(Map.of("expr", "1+1"))
+                            .build();
+
+            Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(List.of(toolBlock)).build();
+
+            OpenAIMessage result = converter.convertToMessage(msg, false);
+
+            assertNotNull(result);
+            assertNotNull(
+                    result.getContent(), "Content should not be null even without ThinkingBlock");
+            assertEquals("", result.getContentAsString());
         }
     }
 }

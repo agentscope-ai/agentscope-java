@@ -105,7 +105,7 @@ public String transferToSales(
 创建销售与支持两个 `AgentScopeAgent`，各自使用 ReActAgent、系统提示和包含对应交接工具的 Toolkit。
 
 ```java
-import com.alibaba.cloud.ai.graph.agent.agentscope.AgentScopeAgent;
+import com.alibaba.cloud.ai.agent.agentscope.AgentScopeAgent;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;

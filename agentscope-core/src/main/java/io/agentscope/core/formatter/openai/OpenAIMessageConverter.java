@@ -265,8 +265,15 @@ public class OpenAIMessageConverter {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
         String textContent = textExtractor.apply(msg);
+        // Qwen3 and similar models in thinking mode may produce assistant messages with
+        // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),
+        // a null content would be omitted from the JSON, causing strict OpenAI-compatible
+        // APIs (e.g. vLLM) to reject with "Field required: input.messages.N.content".
+        // Always ensure content is present — use the actual text or fall back to "".
         if (textContent != null && !textContent.isEmpty()) {
             builder.content(textContent);
+        } else {
+            builder.content("");
         }
 
         // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
@@ -330,23 +337,7 @@ public class OpenAIMessageConverter {
                     continue;
                 }
 
-                // Prioritize using content field (raw arguments string), fallback to input map
-                // serialization
-                String argsJson;
-                if (toolUse.getContent() != null && !toolUse.getContent().isEmpty()) {
-                    argsJson = toolUse.getContent();
-                } else {
-                    try {
-                        argsJson = JsonUtils.getJsonCodec().toJson(toolUse.getInput());
-                    } catch (Exception e) {
-                        String errorMsg =
-                                e.getMessage() != null
-                                        ? e.getMessage()
-                                        : e.getClass().getSimpleName();
-                        log.warn("Failed to serialize tool call arguments: {}", errorMsg);
-                        argsJson = "{}";
-                    }
-                }
+                String argsJson = JsonUtils.resolveToolCallArgsJson(toolUse);
 
                 // Add thought signature if present in metadata (required for Gemini)
                 String signature = null;
