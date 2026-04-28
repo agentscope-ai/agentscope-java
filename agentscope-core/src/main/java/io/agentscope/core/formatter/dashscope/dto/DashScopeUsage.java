@@ -47,6 +47,14 @@ public class DashScopeUsage {
     @JsonProperty("total_tokens")
     private Integer totalTokens;
 
+    /** Reasoning tokens used by advanced models. */
+    @JsonProperty("reasoning_tokens")
+    private Integer reasoningTokens;
+
+    /** Prompt tokens saved by caching mechanism. */
+    @JsonProperty("cached_tokens")
+    private Integer cachedTokens;
+
     /** Image tokens (for multimodal). */
     @JsonProperty("image_tokens")
     private Integer imageTokens;
@@ -83,6 +91,22 @@ public class DashScopeUsage {
 
     public void setTotalTokens(Integer totalTokens) {
         this.totalTokens = totalTokens;
+    }
+
+    public Integer getReasoningTokens() {
+        return reasoningTokens;
+    }
+
+    public void setReasoningTokens(Integer reasoningTokens) {
+        this.reasoningTokens = reasoningTokens;
+    }
+
+    public Integer getCachedTokens() {
+        return cachedTokens;
+    }
+
+    public void setCachedTokens(Integer cachedTokens) {
+        this.cachedTokens = cachedTokens;
     }
 
     public Integer getImageTokens() {

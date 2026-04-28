@@ -403,6 +403,9 @@ public class Msg implements State {
      *     System.out.println("Output tokens: " + usage.getOutputTokens());
      *     System.out.println("Total tokens: " + usage.getTotalTokens());
      *     System.out.println("Time: " + usage.getTime() + "s");
+     *     // Advanced metrics (may be null if not supported by the model)
+     *     System.out.println("Reasoning tokens: " + usage.getReasoningTokens());
+     *     System.out.println("Cached tokens: " + usage.getCachedTokens());
      * }
      * }</pre>
      *

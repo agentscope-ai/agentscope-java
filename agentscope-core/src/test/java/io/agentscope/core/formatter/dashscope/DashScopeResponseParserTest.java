@@ -454,4 +454,42 @@ class DashScopeResponseParserTest {
         assertNotNull(toolUse.getId());
         assertTrue(toolUse.getId().startsWith("tool_call_"));
     }
+
+    @Test
+    void testParseUsageWithAdvancedTokens() {
+        // Given
+        Instant startTime = Instant.now().minusSeconds(3);
+
+        DashScopeUsage dashScopeUsage = new DashScopeUsage();
+        dashScopeUsage.setInputTokens(120);
+        dashScopeUsage.setOutputTokens(80);
+        dashScopeUsage.setReasoningTokens(30);
+        dashScopeUsage.setCachedTokens(40);
+
+        DashScopeMessage message = new DashScopeMessage();
+        message.setRole("assistant");
+        message.setContent("Test");
+
+        DashScopeChoice choice = new DashScopeChoice();
+        choice.setMessage(message);
+
+        DashScopeOutput output = new DashScopeOutput();
+        output.setChoices(List.of(choice));
+
+        DashScopeResponse response = new DashScopeResponse();
+        response.setRequestId("test-dashscope-usage");
+        response.setOutput(output);
+        response.setUsage(dashScopeUsage);
+
+        // When
+        ChatResponse result = parser.parseResponse(response, startTime);
+
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.getUsage());
+        assertEquals(120, result.getUsage().getInputTokens());
+        assertEquals(80, result.getUsage().getOutputTokens());
+        assertEquals(30, result.getUsage().getReasoningTokens());
+        assertEquals(40, result.getUsage().getCachedTokens());
+    }
 }

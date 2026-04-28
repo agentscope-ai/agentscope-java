@@ -87,11 +87,15 @@ public class AnthropicResponseParser {
         }
 
         // Parse usage
+        Integer cachedTokens =
+                message.usage().cacheReadInputTokens().map(Long::intValue).orElse(null);
+
         ChatUsage usage =
                 ChatUsage.builder()
                         .inputTokens((int) message.usage().inputTokens())
                         .outputTokens((int) message.usage().outputTokens())
                         .time(Duration.between(startTime, Instant.now()).toMillis() / 1000.0)
+                        .cachedTokens(cachedTokens)
                         .build();
 
         return ChatResponse.builder().id(message.id()).content(contentBlocks).usage(usage).build();
