@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -209,6 +210,26 @@ class ToolMethodInvokerTest {
         public Mono<String> suspendToolMonoSync(
                 @ToolParam(name = "reason", description = "reason") String reason) {
             throw new ToolSuspendException(reason);
+        }
+
+        public Flux<String> fluxConcat(
+                @ToolParam(name = "prefix", description = "prefix") String prefix,
+                @ToolParam(name = "suffix", description = "suffix") String suffix) {
+            return Flux.just(prefix, suffix);
+        }
+
+        public Flux<Integer> fluxSingleNumber(
+                @ToolParam(name = "value", description = "value") Integer value) {
+            return Flux.just(value);
+        }
+
+        public Flux<Integer> fluxNumbers(
+                @ToolParam(name = "start", description = "start") Integer start) {
+            return Flux.just(start, start + 1, start + 2);
+        }
+
+        public Flux<String> emptyFluxString() {
+            return Flux.empty();
         }
     }
 
@@ -893,6 +914,75 @@ class ToolMethodInvokerTest {
     }
 
     /** Test nested generic types like List&lt;List&lt;Integer&gt;&gt;. */
+    @Test
+    void testFluxStringAggregationAndChunkEmission() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("fluxConcat", String.class, String.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("prefix", "Hello");
+        input.put("suffix", "World");
+
+        List<String> emittedChunks = new ArrayList<>();
+        ToolUseBlock toolUseBlock = new ToolUseBlock("flux-id", method.getName(), input);
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolUseBlock)
+                        .input(input)
+                        .emitter(chunk -> emittedChunks.add(ToolTestUtils.extractContent(chunk)))
+                        .build();
+
+        ToolResultBlock response =
+                invoker.invokeAsync(tools, method, param, responseConverter).block();
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"HelloWorld\"", ToolTestUtils.extractContent(response));
+        Assertions.assertEquals(List.of("Hello", "World"), emittedChunks);
+    }
+
+    @Test
+    void testFluxSingleValueAggregation() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("fluxSingleNumber", Integer.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("value", 7);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("7", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testFluxMultipleValuesAggregateToJsonArray() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("fluxNumbers", Integer.class);
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("start", 3);
+
+        ToolResultBlock response = invokeWithParam(tools, method, input);
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("[3,4,5]", ToolTestUtils.extractContent(response));
+    }
+
+    @Test
+    void testEmptyFluxStringAggregatesToEmptyString() throws Exception {
+        TestTools tools = new TestTools();
+        Method method = TestTools.class.getMethod("emptyFluxString");
+
+        ToolResultBlock response = invokeWithParam(tools, method, new HashMap<>());
+
+        Assertions.assertNotNull(response);
+        Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
+        Assertions.assertEquals("\"\"", ToolTestUtils.extractContent(response));
+    }
+
     @Test
     void testNestedGenericList() throws Exception {
         TestTools tools = new TestTools();
