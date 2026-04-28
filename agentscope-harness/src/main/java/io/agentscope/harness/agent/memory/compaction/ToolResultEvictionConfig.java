@@ -33,7 +33,6 @@ import java.util.Set;
  * </ul>
  * Both operate independently on different trigger conditions and different lifecycle events.
  *
- * <p>Defaults mirror DeepAgents' {@code FilesystemMiddleware}:
  * <ul>
  *   <li>Trigger at 80,000 characters (~20 K tokens at 4 chars/token)</li>
  *   <li>Preview: first + last 2,000 characters of the original output</li>

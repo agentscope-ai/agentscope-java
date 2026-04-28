@@ -23,17 +23,17 @@ import io.agentscope.examples.harness.sandbox.support.FixedReplyModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.RuntimeContext;
-import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Example: {@link StoreFilesystemSpec} with in-memory key-value store and different {@link
+ * Example: {@link RemoteFilesystemSpec} with in-memory key-value store and different {@link
  * IsolationScope} namespaces.
  */
-public final class StoreFilesystemIsolationScopeExample {
+public final class RemoteFilesystemIsolationScopeExample {
 
     public static void main(String[] args) throws Exception {
         Model model = FixedReplyModel.done();
@@ -58,7 +58,7 @@ public final class StoreFilesystemIsolationScopeExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store)
+                                new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .build();
 
@@ -84,7 +84,7 @@ public final class StoreFilesystemIsolationScopeExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store)
+                                new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .build();
 
@@ -107,7 +107,7 @@ public final class StoreFilesystemIsolationScopeExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.USER))
+                                new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
 
         agent.call(userMsg("hi from session-a"), ctx("session-a", "alice")).block();
@@ -131,7 +131,7 @@ public final class StoreFilesystemIsolationScopeExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.USER))
+                                new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
 
         agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
@@ -151,7 +151,8 @@ public final class StoreFilesystemIsolationScopeExample {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.AGENT))
+                                new RemoteFilesystemSpec(store)
+                                        .isolationScope(IsolationScope.AGENT))
                         .build();
 
         agent.call(userMsg("alice"), ctx("s1", "alice")).block();

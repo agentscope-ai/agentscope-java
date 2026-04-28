@@ -461,7 +461,6 @@ public class ConversationCompactor {
      * <p>During chained summarization the working memory may already contain a summary USER
      * message from a prior compaction round. We filter these out before offloading to the
      * backend so the original messages (already stored there) are not duplicated.
-     * Mirrors DeepAgents' {@code _filter_summary_messages}.
      */
     static List<Msg> filterSummaryMessages(List<Msg> messages) {
         return messages.stream()
@@ -478,7 +477,7 @@ public class ConversationCompactor {
      *
      * <p>This is a lightweight, non-LLM pass that fires at a separate (lower) threshold
      * than full summarization. Only messages before the keep window are modified; recent
-     * messages are left intact. Mirrors DeepAgents' {@code _truncate_args}.
+     * messages are left intact.
      *
      * <p>When {@code truncateConfig} is {@code null}, the original list is returned unchanged.
      */

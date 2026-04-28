@@ -31,7 +31,7 @@ import java.util.Map;
  * where distributed sharing is not required and the agent is trusted to run host shell commands.
  *
  * <p>For distributed deployments where long-term memory must be shared across replicas, prefer
- * {@link StoreFilesystemSpec} (no shell) or a sandbox filesystem spec (shell via sandbox).
+ * {@link RemoteFilesystemSpec} (no shell) or a sandbox filesystem spec (shell via sandbox).
  */
 public class LocalFilesystemSpec {
 

@@ -17,22 +17,33 @@ package io.agentscope.harness.agent.sandbox;
 
 /**
  * Result of acquiring a {@link Sandbox} from {@link SandboxManager}.
+ *
+ * <p>Two ownership modes:
+ * <ul>
+ *   <li><b>self-managed</b> ({@code selfManaged=true}): the SDK created the sandbox and is
+ *       responsible for its full lifecycle — {@code stop()} + {@code shutdown()} are both called
+ *       after each agent call.</li>
+ *   <li><b>user-managed</b> ({@code selfManaged=false}): the caller injected a pre-existing
+ *       sandbox; the SDK only calls {@code stop()} and never calls {@code shutdown()}.</li>
+ * </ul>
  */
 public final class SandboxAcquireResult {
 
     private final Sandbox sandbox;
-    private final boolean sdkOwned;
+    private final boolean selfManaged;
 
-    private SandboxAcquireResult(Sandbox sandbox, boolean sdkOwned) {
+    private SandboxAcquireResult(Sandbox sandbox, boolean selfManaged) {
         this.sandbox = sandbox;
-        this.sdkOwned = sdkOwned;
+        this.selfManaged = selfManaged;
     }
 
-    public static SandboxAcquireResult sdkOwned(Sandbox sandbox) {
+    /** Creates a self-managed result (SDK owns the full lifecycle). */
+    public static SandboxAcquireResult selfManaged(Sandbox sandbox) {
         return new SandboxAcquireResult(sandbox, true);
     }
 
-    public static SandboxAcquireResult developerOwned(Sandbox sandbox) {
+    /** Creates a user-managed result (caller owns the lifecycle; SDK only calls stop). */
+    public static SandboxAcquireResult userManaged(Sandbox sandbox) {
         return new SandboxAcquireResult(sandbox, false);
     }
 
@@ -40,7 +51,8 @@ public final class SandboxAcquireResult {
         return sandbox;
     }
 
-    public boolean isSdkOwned() {
-        return sdkOwned;
+    /** Returns {@code true} if the SDK owns the full sandbox lifecycle. */
+    public boolean isSelfManaged() {
+        return selfManaged;
     }
 }

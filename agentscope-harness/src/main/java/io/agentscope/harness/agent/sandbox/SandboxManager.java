@@ -47,9 +47,9 @@ public class SandboxManager {
         if (sandboxContext.getExternalSandbox() != null) {
             Sandbox external = sandboxContext.getExternalSandbox();
             log.debug(
-                    "[sandbox] Priority 1: using developer-owned sandbox: {}",
+                    "[sandbox] Priority 1: using user-managed sandbox: {}",
                     external.getState() != null ? external.getState().getSessionId() : "?");
-            return SandboxAcquireResult.developerOwned(external);
+            return SandboxAcquireResult.userManaged(external);
         }
 
         if (sandboxContext.getExternalSandboxState() != null) {
@@ -57,7 +57,7 @@ public class SandboxManager {
             log.debug(
                     "[sandbox] Priority 2: resuming from explicit state: {}",
                     sandboxContext.getExternalSandboxState().getSessionId());
-            return SandboxAcquireResult.sdkOwned(sandbox);
+            return SandboxAcquireResult.selfManaged(sandbox);
         }
 
         Optional<SandboxIsolationKey> scopeKey =
@@ -72,7 +72,7 @@ public class SandboxManager {
                             scopeKey.get());
                     SandboxState state = client.deserializeState(stateJson.get());
                     Sandbox sandbox = client.resume(state);
-                    return SandboxAcquireResult.sdkOwned(sandbox);
+                    return SandboxAcquireResult.selfManaged(sandbox);
                 }
             } catch (Exception e) {
                 log.warn(
@@ -96,7 +96,7 @@ public class SandboxManager {
         Sandbox sandbox =
                 typedClient.create(
                         spec, sandboxContext.getSnapshotSpec(), sandboxContext.getClientOptions());
-        return SandboxAcquireResult.sdkOwned(sandbox);
+        return SandboxAcquireResult.selfManaged(sandbox);
     }
 
     public void release(SandboxAcquireResult result) {
@@ -114,7 +114,7 @@ public class SandboxManager {
             log.warn("[sandbox] Sandbox stop failed: {}", e.getMessage(), e);
         }
 
-        if (result.isSdkOwned()) {
+        if (result.isSelfManaged()) {
             try {
                 sandbox.shutdown();
             } catch (Exception e) {

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.harness.agent.filesystem.StoreFilesystem;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystem;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -58,7 +58,7 @@ class MemoryConsolidatorFilesystemTest {
     void readWatermark_returnsEpochWhenStateAbsent(@TempDir Path tmp) {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
-        StoreFilesystem fs = new StoreFilesystem(store, ns);
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
         WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
 
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
@@ -74,7 +74,7 @@ class MemoryConsolidatorFilesystemTest {
     void watermark_roundTripThroughFilesystem(@TempDir Path tmp) {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
-        StoreFilesystem fs = new StoreFilesystem(store, ns);
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
         WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
 
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
@@ -93,7 +93,7 @@ class MemoryConsolidatorFilesystemTest {
     void watermark_doesNotCreateLocalFile(@TempDir Path tmp) {
         InMemoryStore store = new InMemoryStore();
         List<String> ns = List.of("test-ns");
-        StoreFilesystem fs = new StoreFilesystem(store, ns);
+        RemoteFilesystem fs = new RemoteFilesystem(store, ns);
         WorkspaceManager wsm = new WorkspaceManager(tmp, fs);
 
         MemoryConsolidator consolidator = new MemoryConsolidator(wsm, null);
@@ -105,7 +105,7 @@ class MemoryConsolidatorFilesystemTest {
         Path localState = tmp.resolve("memory").resolve(MemoryConsolidator.STATE_FILE);
         assertFalse(
                 Files.exists(localState),
-                "state file should not be written to local disk when using StoreFilesystem");
+                "state file should not be written to local disk when using RemoteFilesystem");
 
         // but consolidator reads it correctly from the store
         assertEquals(ts, consolidator.readWatermark());

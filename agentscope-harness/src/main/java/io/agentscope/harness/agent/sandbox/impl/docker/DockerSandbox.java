@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  *       the existing container is reused.</li>
  *   <li>On {@link #stop()}: the workspace snapshot is persisted (if configured).
  *       The container keeps running.</li>
- *   <li>On {@link #shutdown()}: the container is stopped and removed if SDK-owned.</li>
+ *   <li>On {@link #shutdown()}: the container is stopped and removed if self-managed.</li>
  * </ul>
  *
  * <h2>Workspace Operations</h2>
@@ -87,7 +87,7 @@ public class DockerSandbox extends AbstractBaseSandbox {
     }
 
     /**
-     * Stops and removes the Docker container if SDK-owned.
+     * Stops and removes the Docker container if self-managed.
      *
      * @throws Exception if the container cannot be stopped or removed
      */
@@ -99,7 +99,7 @@ public class DockerSandbox extends AbstractBaseSandbox {
         }
         if (!dockerState.isContainerOwned()) {
             log.debug(
-                    "[sandbox-docker] Skipping shutdown: container is developer-owned: {}",
+                    "[sandbox-docker] Skipping shutdown: container is user-managed: {}",
                     containerId);
             return;
         }

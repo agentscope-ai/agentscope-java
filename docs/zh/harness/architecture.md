@@ -2,7 +2,7 @@
 
 [Overview](./overview.md) 把 harness 的能力按"解决了什么问题"组织。本文换一个视角：把每个组件的**定义、行为、触发时机、协作对象**讲清楚，最后用时序图说明这些组件在一次 `call()` 里如何协同。
 
-> 本文聚焦使用者视角的中粒度——讲清"是谁、什么时候、做什么、跟谁协作"，不展开调用栈与实现细节；那些放在各子文档（[memory](./memory.md)、[workspace](./workspace.md)、[filesystem](./filesystem.md)、[subagent](./subagent.md)、[session](./session.md)、[tool](./tool.md)）。
+> 本文聚焦使用者视角的中粒度——讲清"是谁、什么时候、做什么、跟谁协作"，不展开调用栈与实现细节；那些放在各子文档（[memory](./memory.md)、[workspace](./workspace.md)、[filesystem](./filesystem.md)、[sandbox](./sandbox.md)、[subagent](./subagent.md)、[session](./session.md)、[tool](./tool.md)）。
 
 ## 1. 顶层结构
 
@@ -64,23 +64,25 @@ workspace/
 
 | 实现 | 用途 | 关键特性 |
 |---|---|---|
-| `LocalFilesystem` | 本地磁盘 | `virtualMode` 锚定 `rootDir` 阻止穿越 |
-| `LocalFilesystemWithShell` | 本地 + shell | 默认后端；触发 `shell_execute` 工具注册 |
-| `BaseSandboxFilesystem` | 沙箱模板 | 把所有 IO 收敛到沙箱 |
-| `StoreFilesystem` | KV store | 跨线程持久化；`NamespaceFactory` 读 `userId` 做多租户 |
-| `CompositeFilesystem` | 路由 | 按 path prefix 分发；前缀越长越优先 |
+| `LocalFilesystem` | 本地磁盘 | `virtualMode` 锚定 `rootDir` 阻止穿越；无 shell |
+| `LocalFilesystemWithShell` | 本地 + 宿主 shell | 声明式下对应 `LocalFilesystemSpec` 与**无 `filesystem` 的默认**；`instanceof AbstractSandboxFilesystem` 时注册 `shell_execute` |
+| `BaseSandboxFilesystem` / `SandboxBackedFilesystem` | 沙箱后端 | 文件与命令在沙箱内；见 [Sandbox](./sandbox.md) |
+| `RemoteFilesystem` | KV store | 在 `RemoteFilesystemSpec` 下与 `LocalFilesystem` 经 `CompositeFilesystem` 路由；无 shell |
+| `CompositeFilesystem` | 按前缀路由 | 仅实现 `AbstractFilesystem`（**不**实现 `AbstractSandboxFilesystem`），**不**触发 `ShellExecuteTool`；最长前缀优先 |
 
-> **多租户机制**：`NamespaceFactory` 是函数式接口，每次操作时被调用读取 `RuntimeContext.userId`；同一个 filesystem 实例在不同 user 间天然路径隔离。
+> **多租户与隔离**：`NamespaceFactory` 在每次操作时被调用；`RemoteFilesystemSpec` / `SandboxFilesystemSpec` 还可配 `IsolationScope`（与沙箱/共享存储命名一致）。**三种声明式模式**以何者注册 `ShellExecuteTool` 为准，见 [filesystem](./filesystem.md#三种声明式模式)。
 
 ## 3. Hook 列表
 
-七个 hook，由 `Builder.build()` 装配进 `ReActAgent`。它们按 `priority()` 排序，**值越小越先执行**。
+下列为 `Builder.build()` 中常见的 harness 内置 hook（**沙箱模式**下会加入 `SandboxLifecycleHook`，见 [Sandbox](./sandbox.md)）。`ReActAgent` 按 `priority()` **升序**执行，同优先级时保留装配顺序。
 
 | Hook | 优先级 | 监听事件 | 默认开启 | 关键依赖 |
 |------|--------|----------|---------|----------|
-| `AgentTraceHook` | 0 | 全部 | ✓ | — |
+| `AgentTraceHook` | 0 | 全部 | ✓（默认；可 `.agentTracing(false)` 关闭）| — |
 | `MemoryFlushHook` | 5 | `PostCallEvent` | ✓（需 `model`）| `WorkspaceManager`、`Model`、`MemoryFlushManager` |
+| `MemoryMaintenanceHook` | 6 | `PostCallEvent`（有节流） | ✓（需 `model`）| `MemoryConsolidator`、`WorkspaceManager` |
 | `CompactionHook` | 10 | `PreReasoningEvent` | ✗（需显式 `.compaction(...)`）| `WorkspaceManager`、`Model`、`CompactionConfig`、`MemoryFlushManager` |
+| `SandboxLifecycleHook` | 50 | `PreCall` / `PostCall` / `Error` | 仅当 `filesystem(SandboxFilesystemSpec)` | `SandboxManager`、`SandboxBackedFilesystem` |
 | `ToolResultEvictionHook` | 50 | `PostActingEvent` | ✗（需显式 `.toolResultEviction(...)`）| `AbstractFilesystem`、`ToolResultEvictionConfig` |
 | `SubagentsHook` | 80 | `PreReasoningEvent` + `tools()` | ✓（非 leaf 且有 `model`）| 子 agent 列表、`TaskRepository` |
 | `WorkspaceContextHook` | 900 | `PreReasoningEvent` | ✓ | `WorkspaceManager`、`RuntimeContext`、token 预算 |

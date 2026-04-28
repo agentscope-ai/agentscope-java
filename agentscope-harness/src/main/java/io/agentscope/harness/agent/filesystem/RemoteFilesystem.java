@@ -52,23 +52,23 @@ import java.util.Set;
  * <p>Dynamic namespace example:
  *
  * <pre>{@code
- * StoreFilesystem fs = new StoreFilesystem(store,
+ * RemoteFilesystem fs = new RemoteFilesystem(store,
  *     () -> List.of("sessions", sessionIdSupplier.get(), "filesystem"));
  * }</pre>
  */
-public class StoreFilesystem implements AbstractFilesystem {
+public class RemoteFilesystem implements AbstractFilesystem {
 
     private final BaseStore store;
     private final NamespaceFactory namespaceFactory;
 
     /**
-     * Creates a StoreFilesystem with a {@link NamespaceFactory} that is called on every operation,
+     * Creates a RemoteFilesystem with a {@link NamespaceFactory} that is called on every operation,
      * allowing the namespace to vary based on runtime context.
      *
      * @param store the store to use for persistence
      * @param namespaceFactory factory that returns the namespace tuple per operation
      */
-    public StoreFilesystem(BaseStore store, NamespaceFactory namespaceFactory) {
+    public RemoteFilesystem(BaseStore store, NamespaceFactory namespaceFactory) {
         if (store == null) {
             throw new IllegalArgumentException("store must not be null");
         }
@@ -80,21 +80,21 @@ public class StoreFilesystem implements AbstractFilesystem {
     }
 
     /**
-     * Creates a StoreFilesystem with a fixed namespace.
+     * Creates a RemoteFilesystem with a fixed namespace.
      *
      * @param store the store to use for persistence
      * @param namespace the namespace tuple for organizing files
      */
-    public StoreFilesystem(BaseStore store, List<String> namespace) {
+    public RemoteFilesystem(BaseStore store, List<String> namespace) {
         this(store, toFactory(namespace));
     }
 
     /**
-     * Creates a StoreFilesystem with a default "filesystem" namespace.
+     * Creates a RemoteFilesystem with a default "filesystem" namespace.
      *
      * @param store the store to use for persistence
      */
-    public StoreFilesystem(BaseStore store) {
+    public RemoteFilesystem(BaseStore store) {
         this(store, List.of("filesystem"));
     }
 

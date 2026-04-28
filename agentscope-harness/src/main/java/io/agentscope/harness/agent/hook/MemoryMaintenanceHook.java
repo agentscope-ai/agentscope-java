@@ -51,7 +51,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>All file I/O goes through {@link AbstractFilesystem} (obtained from
  * {@link WorkspaceManager}), making this backend-agnostic across Local, Sandbox, and
- * Store filesystems.
+ * Remote filesystems.
  */
 public class MemoryMaintenanceHook implements Hook {
 

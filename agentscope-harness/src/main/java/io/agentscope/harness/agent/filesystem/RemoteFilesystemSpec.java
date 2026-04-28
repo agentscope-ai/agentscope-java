@@ -34,7 +34,7 @@ import java.util.function.Supplier;
  * <ul>
  *   <li>a plain {@link LocalFilesystem} (no shell) for workspace-local, ephemeral files such as
  *       skills/, knowledge/, additional context files, etc.;
- *   <li>a shared {@link StoreFilesystem} for cross-node paths that must be identical across all
+ *   <li>a shared {@link RemoteFilesystem} for cross-node paths that must be identical across all
  *       replicas (long-term memory, offloaded session logs).
  * </ul>
  *
@@ -60,14 +60,14 @@ import java.util.function.Supplier;
  *   <li>{@link IsolationScope#GLOBAL} — single global namespace</li>
  * </ul>
  */
-public class StoreFilesystemSpec {
+public class RemoteFilesystemSpec {
 
     private final BaseStore store;
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
 
-    public StoreFilesystemSpec(BaseStore store) {
+    public RemoteFilesystemSpec(BaseStore store) {
         if (store == null) {
             throw new IllegalArgumentException("store must not be null");
         }
@@ -79,7 +79,7 @@ public class StoreFilesystemSpec {
      *
      * <p>Examples: {@code knowledge/}, {@code prompts/}.
      */
-    public StoreFilesystemSpec addSharedPrefix(String prefix) {
+    public RemoteFilesystemSpec addSharedPrefix(String prefix) {
         if (prefix != null && !prefix.isBlank()) {
             extraSharedPrefixes.add(normalizePrefix(prefix));
         }
@@ -89,7 +89,7 @@ public class StoreFilesystemSpec {
     /**
      * Sets the fallback user identifier when runtime {@code userId} is absent/blank.
      */
-    public StoreFilesystemSpec anonymousUserId(String userId) {
+    public RemoteFilesystemSpec anonymousUserId(String userId) {
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("anonymous user id must not be blank");
         }
@@ -106,7 +106,7 @@ public class StoreFilesystemSpec {
      * @param scope isolation scope
      * @return this spec
      */
-    public StoreFilesystemSpec isolationScope(IsolationScope scope) {
+    public RemoteFilesystemSpec isolationScope(IsolationScope scope) {
         if (scope == null) {
             throw new IllegalArgumentException("isolation scope must not be null");
         }
@@ -119,7 +119,7 @@ public class StoreFilesystemSpec {
      *
      * <ul>
      *   <li>default backend: {@link LocalFilesystem} (no shell)
-     *   <li>shared routes: {@link StoreFilesystem} with scope-driven namespace
+     *   <li>shared routes: {@link RemoteFilesystem} with scope-driven namespace
      * </ul>
      */
     public AbstractFilesystem toFilesystem(
@@ -130,8 +130,8 @@ public class StoreFilesystemSpec {
             Supplier<String> sessionIdSupplier) {
         String effectiveAgentId = agentId == null || agentId.isBlank() ? "HarnessAgent" : agentId;
         AbstractFilesystem local = new LocalFilesystem(workspace, false, 10, localNamespaceFactory);
-        StoreFilesystem shared =
-                new StoreFilesystem(
+        RemoteFilesystem shared =
+                new RemoteFilesystem(
                         store, storeNamespace(effectiveAgentId, userIdSupplier, sessionIdSupplier));
 
         Map<String, AbstractFilesystem> routes = new LinkedHashMap<>();

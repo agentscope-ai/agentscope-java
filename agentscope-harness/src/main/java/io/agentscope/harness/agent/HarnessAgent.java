@@ -42,7 +42,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.LocalFilesystemWithShell;
-import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.AgentTraceHook;
 import io.agentscope.harness.agent.hook.CompactionHook;
 import io.agentscope.harness.agent.hook.MemoryFlushHook;
@@ -478,7 +478,7 @@ public class HarnessAgent implements Agent, StateModule {
 
         // Filesystem mode configuration (at most one of these three is set)
         private SandboxFilesystemSpec sandboxFilesystemSpec;
-        private StoreFilesystemSpec storeFilesystemSpec;
+        private RemoteFilesystemSpec remoteFilesystemSpec;
         private LocalFilesystemSpec localFilesystemSpec;
 
         public Builder name(String name) {
@@ -566,7 +566,7 @@ public class HarnessAgent implements Agent, StateModule {
         /**
          * Escape hatch: sets a custom {@link AbstractFilesystem} implementation directly.
          *
-         * <p>Prefer {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(StoreFilesystemSpec)}
+         * <p>Prefer {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)}
          * or {@link #filesystem(SandboxFilesystemSpec)} unless you have a bespoke backend that is
          * not expressible via any of the declarative specs.
          */
@@ -592,13 +592,13 @@ public class HarnessAgent implements Agent, StateModule {
         /**
          * Configures <b>Mode 1 — composite (non-sandbox) filesystem</b> mode: a unified workspace
          * view that blends a local {@code LocalFilesystem} backend with a shared
-         * {@code StoreFilesystem} for distributed long-term memory. Shell execution is not
+         * {@code RemoteFilesystem} for distributed long-term memory. Shell execution is not
          * available in this mode — selected prefixes ({@code MEMORY.md}, {@code memory/},
          * {@code agents/.../sessions/}) are routed to the store to keep memory consistent across
          * replicas.
          */
-        public Builder filesystem(StoreFilesystemSpec spec) {
-            this.storeFilesystemSpec = spec;
+        public Builder filesystem(RemoteFilesystemSpec spec) {
+            this.remoteFilesystemSpec = spec;
             return this;
         }
 
@@ -818,11 +818,11 @@ public class HarnessAgent implements Agent, StateModule {
         public HarnessAgent build() {
             int specCount = 0;
             if (sandboxFilesystemSpec != null) specCount++;
-            if (storeFilesystemSpec != null) specCount++;
+            if (remoteFilesystemSpec != null) specCount++;
             if (localFilesystemSpec != null) specCount++;
             if (specCount > 1) {
                 throw new IllegalStateException(
-                        "At most one of sandboxFilesystemSpec, storeFilesystemSpec,"
+                        "At most one of sandboxFilesystemSpec, remoteFilesystemSpec,"
                                 + " localFilesystemSpec may be configured");
             }
             if (abstractFilesystem != null && specCount > 0) {
@@ -1080,8 +1080,8 @@ public class HarnessAgent implements Agent, StateModule {
                 return abstractFilesystem;
             }
             NamespaceFactory nsFactory = buildDynamicNamespaceFactory(userIdRef);
-            if (storeFilesystemSpec != null) {
-                return storeFilesystemSpec.toFilesystem(
+            if (remoteFilesystemSpec != null) {
+                return remoteFilesystemSpec.toFilesystem(
                         workspace, agentId, nsFactory, userIdRef::get, sessionIdRef::get);
             }
             if (localFilesystemSpec != null) {

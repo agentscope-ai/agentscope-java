@@ -33,7 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Verifies delete / move / exists on all {@link AbstractFilesystem} implementations.
  *
  * <p>LocalFilesystem is tested in non-virtual mode; paths are workspace-relative (no leading '/').
- * StoreFilesystem uses leading-slash keys matching its internal convention.
+ * RemoteFilesystem uses leading-slash keys matching its internal convention.
  */
 class FilesystemDeleteMoveExistsTest {
 
@@ -104,7 +104,7 @@ class FilesystemDeleteMoveExistsTest {
     }
 
     // ================================================================
-    // StoreFilesystem — keys follow leading-slash convention
+    // RemoteFilesystem — keys follow leading-slash convention
     // ================================================================
 
     private static InMemoryStore storeWith(String path, String content) {
@@ -116,21 +116,21 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void store_exists_true() {
         InMemoryStore s = storeWith("/file.txt", "hello");
-        StoreFilesystem fs = new StoreFilesystem(s, List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
         assertTrue(fs.exists("/file.txt"));
     }
 
     @Test
     void store_exists_false() {
-        StoreFilesystem fs = new StoreFilesystem(new InMemoryStore(), List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
         assertFalse(fs.exists("/nope.txt"));
     }
 
     @Test
     void store_delete_file() {
         InMemoryStore s = storeWith("/file.txt", "hello");
-        StoreFilesystem fs = new StoreFilesystem(s, List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
         WriteResult result = fs.delete("/file.txt");
         assertTrue(result.isSuccess());
@@ -139,7 +139,7 @@ class FilesystemDeleteMoveExistsTest {
 
     @Test
     void store_delete_idempotent() {
-        StoreFilesystem fs = new StoreFilesystem(new InMemoryStore(), List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
         WriteResult result = fs.delete("/ghost.txt");
         assertTrue(result.isSuccess());
     }
@@ -147,7 +147,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void store_move_file() {
         InMemoryStore s = storeWith("/src.txt", "data");
-        StoreFilesystem fs = new StoreFilesystem(s, List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
 
         WriteResult result = fs.move("/src.txt", "/dst.txt");
         assertTrue(result.isSuccess());
@@ -157,7 +157,7 @@ class FilesystemDeleteMoveExistsTest {
 
     @Test
     void store_move_missingSource() {
-        StoreFilesystem fs = new StoreFilesystem(new InMemoryStore(), List.of("ns"));
+        RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
         WriteResult result = fs.move("/missing.txt", "/dst.txt");
         assertFalse(result.isSuccess());
     }
@@ -169,7 +169,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void composite_exists_routedToStore(@TempDir Path tmp) {
         InMemoryStore s = storeWith("/MEMORY.md", "mem");
-        StoreFilesystem storeFsys = new StoreFilesystem(s, List.of("ns"));
+        RemoteFilesystem storeFsys = new RemoteFilesystem(s, List.of("ns"));
         LocalFilesystem local = new LocalFilesystem(tmp);
 
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("MEMORY.md", storeFsys));
@@ -181,7 +181,7 @@ class FilesystemDeleteMoveExistsTest {
     @Test
     void composite_delete_routedToStore(@TempDir Path tmp) {
         InMemoryStore s = storeWith("/MEMORY.md", "mem");
-        StoreFilesystem storeFsys = new StoreFilesystem(s, List.of("ns"));
+        RemoteFilesystem storeFsys = new RemoteFilesystem(s, List.of("ns"));
         LocalFilesystem local = new LocalFilesystem(tmp);
 
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("MEMORY.md", storeFsys));
@@ -200,7 +200,7 @@ class FilesystemDeleteMoveExistsTest {
         InMemoryStore s = new InMemoryStore();
         List<String> ns = List.of("ns");
         s.put(ns, "/2025-01-01.md", Map.of("content", "diary", "encoding", "utf-8"));
-        StoreFilesystem storeFsys = new StoreFilesystem(s, ns);
+        RemoteFilesystem storeFsys = new RemoteFilesystem(s, ns);
         LocalFilesystem local = new LocalFilesystem(tmp);
 
         CompositeFilesystem fs = new CompositeFilesystem(local, Map.of("memory/", storeFsys));

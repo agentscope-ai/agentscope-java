@@ -51,7 +51,7 @@ import reactor.core.publisher.Mono;
  *
  * <p>All file I/O is performed via the {@link AbstractFilesystem} obtained from the
  * {@link WorkspaceManager}, so this class is backend-agnostic (works with Local,
- * Sandbox, and Store filesystems without any direct {@code java.nio.file.Files} usage).
+ * Sandbox, and Remote filesystems without any direct {@code java.nio.file.Files} usage).
  */
 public class MemoryConsolidator {
 

@@ -113,7 +113,7 @@ mvn -pl agentscope-examples/harness-example exec:java \
 
 **关于 `RuntimeContext`**：它是当次 `call()` 的身份载体，`sessionId` 决定状态存放与日志归档位置，`userId` 决定默认文件系统的命名空间（天然的多租户隔离）。它**不会被持久化**，只在当次调用的 hook 与工具间共享。
 
-**扩展方向**：在工作区里放 `KNOWLEDGE.md`、`skills/*/SKILL.md`、`subagents/*.md` 就能分别开启领域知识注入、技能加载、子 agent 编排；`.toolResultEviction(ToolResultEvictionConfig.defaults())` 一行启用大结果卸载；`.abstractFilesystem(...)` 替换成沙箱实现即可把 agent 放进容器。
+**扩展方向**：在工作区里放 `KNOWLEDGE.md`、`skills/*/SKILL.md`、`subagents/*.md` 就能分别开启领域知识注入、技能加载、子 agent 编排；`.toolResultEviction(ToolResultEvictionConfig.defaults())` 一行启用大结果卸载；**文件/命令的落点**用 [Filesystem — 三种声明式模式](./filesystem.md#三种声明式模式) 选择 **共享存储、沙箱或本机+shell**；需隔离执行时优先 `filesystem(SandboxFilesystemSpec)`（见 [Sandbox](./sandbox.md)），`abstractFilesystem` 仅作自管后端的逃生口。
 
 ## 核心能力
 
@@ -125,7 +125,7 @@ mvn -pl agentscope-examples/harness-example exec:java \
 - **大工具结果卸载** —— 解决 *单次工具返回过大*。`ToolResultEvictionHook` 把超限结果落盘到文件系统，上下文里只留占位符 + 预览，agent 可以按需回读。
 - **会话持久化** —— 解决 *状态如何跨进程保留*。`SessionPersistenceHook` 按 `sessionId` 把 agent 状态写入工作区，下次调用自动从断点恢复。
 - **子 agent 编排** —— 解决 *复杂任务如何分解*。`SubagentsHook` 注入 `task` / `task_output` 工具，主 agent 可同步或后台委派子 agent；子 agent 可由工作区规格文件、编程式 spec、自定义工厂声明。
-- **可插拔文件系统** —— 解决 *agent 的环境如何收敛与隔离*。所有文件工具都走 `AbstractFilesystem`，可替换为本地、沙箱、远端或组合后端；配合 `RuntimeContext.userId` 得到天然的多租户命名空间。
+- **可插拔文件系统** —— 解决 *agent 的环境如何收敛与隔离*。所有文件工具都走 `AbstractFilesystem`；通过 [三种声明式模式](./filesystem.md#三种声明式模式)（本机+shell、复合+Store、沙箱）或 `abstractFilesystem` 自管；配合 `RuntimeContext.userId` 与 `IsolationScope` 做多租户/会话级隔离。隔离执行与沙箱状态恢复见 [Sandbox](./sandbox.md)。
 
 此外还有几项围绕以上能力服务的基础设施：`RuntimeContext` 贯穿整次调用、`MemoryMaintenanceScheduler` 在后台做合并与索引维护、`AgentTraceHook` 统一追踪日志、`AgentSkillRepository` 自动装配 `SkillBox`。
 
@@ -143,7 +143,7 @@ mvn -pl agentscope-examples/harness-example exec:java \
 
 `HarnessAgent` 是 `Agent` + `StateModule` 的薄包装，内部持有一个 `ReActAgent delegate`，能力注入全部发生在 `HarnessAgent.Builder.build()`：
 
-- **Hook 通道**：按固定顺序把 `WorkspaceContextHook`、`MemoryFlushHook`、`CompactionHook`、`ToolResultEvictionHook`、`SessionPersistenceHook`、`SubagentsHook`、`AgentTraceHook` 串成 hook 列表交给 `ReActAgent`
+- **Hook 通道**：按 `priority` 把若干 hook 交给 `ReActAgent`（含沙箱模式下的 `SandboxLifecycleHook` 等，详见 [Architecture](./architecture.md)）
 - **Toolkit 通道**：在用户 `Toolkit` 上追加 `filesystem`、`memory_search`、`memory_get`、`session_search`，沙箱后端额外加 `shell_execute`；`SubagentsHook` 自己注册 `task` / `task_output`
 - **SkillBox 通道**：从 `workspace/skills/` 或自定义 `AgentSkillRepository` 自动构造 `SkillBox`
 
@@ -156,7 +156,8 @@ mvn -pl agentscope-examples/harness-example exec:java \
 - [Architecture](./architecture.md) — 各组件定义、生命周期时序图、协作关系
 - [工作区（Workspace）](./workspace.md) — 工作区目录结构与上下文注入
 - [记忆（Memory）](./memory.md) — 双层记忆、对话压缩与全文检索
-- [文件系统（Filesystem）](./filesystem.md) — `AbstractFilesystem` 及其实现
+- [文件系统（Filesystem）](./filesystem.md) — 三种声明式模式与 `AbstractFilesystem` 层次
+- [沙箱（Sandbox）](./sandbox.md) — 隔离执行、沙箱状态与分布式选项
 - [子 Agent（Subagent）](./subagent.md) — 子 agent 规格与编排
 - [工具（Tool）](./tool.md) — 内置工具参考
 - [会话（Session）](./session.md) — 会话持久化与状态恢复

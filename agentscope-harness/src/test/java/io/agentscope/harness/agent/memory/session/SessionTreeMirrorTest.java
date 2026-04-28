@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,7 +35,7 @@ class SessionTreeMirrorTest {
     void mirrorsToFilesystemAndCanRestoreWhenLocalFilesMissing() throws Exception {
         InMemoryStore store = new InMemoryStore();
         AbstractFilesystem fs =
-                new StoreFilesystemSpec(store)
+                new RemoteFilesystemSpec(store)
                         .toFilesystem(workspace, "agent-a", List::of, () -> "user-1");
 
         Path context = workspace.resolve("agents/agent-a/sessions/s1.jsonl");

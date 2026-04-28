@@ -16,12 +16,14 @@
 package io.agentscope.examples.harness.sandbox;
 
 import io.agentscope.examples.harness.sandbox.support.FixedReplyModel;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 
 /**
  * Runs harness filesystem examples (local, in-memory sandbox, in-memory store). No LLM API key
- * required — uses {@link FixedReplyModel} for a single turn per {@code call}.
+ * required — uses {@link FixedReplyModel} for a single turn per {@code call}. The
+ * {@code store} mode is an alias for {@code remote} (shared KV / {@link RemoteFilesystemSpec}).
  *
- * <p>Usage: {@code java ... HarnessSandboxExampleApp [all|local|sandbox|store]}
+ * <p>Usage: {@code java ... HarnessSandboxExampleApp [all|local|sandbox|remote|store]}
  */
 public final class HarnessSandboxExampleApp {
 
@@ -35,14 +37,14 @@ public final class HarnessSandboxExampleApp {
                 System.out.println();
                 SandboxFilesystemIsolationScopeExample.main(new String[0]);
                 System.out.println();
-                StoreFilesystemIsolationScopeExample.main(new String[0]);
+                RemoteFilesystemIsolationScopeExample.main(new String[0]);
             }
             case "local" -> LocalFilesystemPersonalAssistantExample.main(new String[0]);
             case "sandbox" -> SandboxFilesystemIsolationScopeExample.main(new String[0]);
-            case "store" -> StoreFilesystemIsolationScopeExample.main(new String[0]);
+            case "remote", "store" -> RemoteFilesystemIsolationScopeExample.main(new String[0]);
             default -> {
                 System.err.println("Unknown mode: " + mode);
-                System.err.println("Use: all | local | sandbox | store");
+                System.err.println("Use: all | local | sandbox | remote | store");
                 System.exit(1);
             }
         }

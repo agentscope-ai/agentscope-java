@@ -30,7 +30,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.RuntimeContext;
-import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,10 +41,10 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /**
- * Example: Distributed shared store filesystem mode with different {@link IsolationScope} levels.
+ * Example: Distributed shared remote filesystem mode with different {@link IsolationScope} levels.
  *
  * <h2>Context</h2>
- * <p>In store mode, selected paths (such as {@code MEMORY.md}, {@code memory/}) are routed to a
+ * <p>In remote mode, selected paths (such as {@code MEMORY.md}, {@code memory/}) are routed to a
  * shared key-value store ({@link InMemoryStore} here; typically Redis or another distributed
  * store in production). The {@code IsolationScope} controls the store namespace prefix and
  * therefore which agent calls can read each other's stored data.
@@ -72,7 +72,7 @@ import reactor.core.publisher.Flux;
  * directly where possible to keep the example focused on namespace routing rather than agent
  * conversation mechanics.
  */
-class StoreFilesystemIsolationScopeExampleTest {
+class RemoteFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
 
@@ -97,7 +97,7 @@ class StoreFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store)
+                                new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .build();
 
@@ -130,7 +130,7 @@ class StoreFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store)
+                                new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
                         .build();
 
@@ -167,7 +167,7 @@ class StoreFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.USER))
+                                new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
 
         // Call as alice / session-a and write MEMORY.md
@@ -200,7 +200,7 @@ class StoreFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.USER))
+                                new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
                         .build();
 
         agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
@@ -233,7 +233,8 @@ class StoreFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(
-                                new StoreFilesystemSpec(store).isolationScope(IsolationScope.AGENT))
+                                new RemoteFilesystemSpec(store)
+                                        .isolationScope(IsolationScope.AGENT))
                         .build();
 
         // Alice writes

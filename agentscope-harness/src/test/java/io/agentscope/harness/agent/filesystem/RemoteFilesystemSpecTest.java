@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class StoreFilesystemSpecTest {
+class RemoteFilesystemSpecTest {
 
     @TempDir Path workspace;
 
@@ -40,7 +40,7 @@ class StoreFilesystemSpecTest {
         NamespaceFactory localNs = () -> List.of("local-user");
 
         AbstractFilesystem fs =
-                new StoreFilesystemSpec(store)
+                new RemoteFilesystemSpec(store)
                         .anonymousUserId("anon")
                         .toFilesystem(workspace, "agent-a", localNs, userRef::get);
 
@@ -63,7 +63,7 @@ class StoreFilesystemSpecTest {
         AtomicReference<String> userRef = new AtomicReference<>("user-1");
 
         AbstractFilesystem fs =
-                new StoreFilesystemSpec(store)
+                new RemoteFilesystemSpec(store)
                         .toFilesystem(workspace, "agent-a", List::of, userRef::get);
 
         fs.uploadFiles(
@@ -72,7 +72,7 @@ class StoreFilesystemSpecTest {
     }
 
     /**
-     * Mode 1 invariant: the composite filesystem produced by {@link StoreFilesystemSpec} is
+     * Mode 1 invariant: the composite filesystem produced by {@link RemoteFilesystemSpec} is
      * <b>not</b> a sandbox filesystem, so the agent builder will not register the shell execute
      * tool in this mode.
      */
@@ -80,7 +80,7 @@ class StoreFilesystemSpecTest {
     void compositeModeIsNotASandboxFilesystem() {
         InMemoryStore store = new InMemoryStore();
         AbstractFilesystem fs =
-                new StoreFilesystemSpec(store)
+                new RemoteFilesystemSpec(store)
                         .toFilesystem(workspace, "agent-a", List::of, () -> null);
 
         assertFalse(

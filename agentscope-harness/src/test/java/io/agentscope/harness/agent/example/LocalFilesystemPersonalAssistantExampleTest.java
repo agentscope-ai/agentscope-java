@@ -111,7 +111,7 @@ class LocalFilesystemPersonalAssistantExampleTest {
      * Demonstrates that changing {@code userId} or {@code sessionId} does NOT redirect I/O to a
      * different location in local mode.
      *
-     * <p>This is the key distinction from sandbox/store modes: in local mode the workspace
+     * <p>This is the key distinction from sandbox/remote modes: in local mode the workspace
      * directory is fixed, so all users and sessions share the same disk location.
      */
     @Test

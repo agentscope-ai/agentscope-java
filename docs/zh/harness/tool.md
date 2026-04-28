@@ -82,7 +82,7 @@ Session mode 下，这三个名会变为 `sessions_spawn` / `sessions_send` / `s
 
 ## Shell·`ShellExecuteTool`（条件性装）
 
-仅在后端是 `AbstractSandboxFilesystem`（包含 `LocalFilesystemWithShell`）时才被注册。如果你用的是纯 `LocalFilesystem` 或 `StoreFilesystem`，子工具不出现。
+仅在后端是 `AbstractSandboxFilesystem`（包含 `LocalFilesystemWithShell`）时才被注册。如果你用的是纯 `LocalFilesystem` 或 `RemoteFilesystem`，子工具不出现。
 
 | 工具 | 作用 | 参数 |
 |------|------|------|

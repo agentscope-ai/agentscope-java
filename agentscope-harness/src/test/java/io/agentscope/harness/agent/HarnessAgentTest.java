@@ -30,7 +30,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.filesystem.LocalFilesystem;
-import io.agentscope.harness.agent.filesystem.StoreFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.hook.SubagentsHook.SubagentEntry;
 import io.agentscope.harness.agent.store.InMemoryStore;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -195,7 +195,7 @@ class HarnessAgentTest {
     }
 
     @Test
-    void storeFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
+    void remoteFilesystemSpec_sharesMemoryMdInNonsandboxMode() throws Exception {
         Files.createDirectories(workspace);
         Files.writeString(workspace.resolve(WorkspaceConstants.AGENTS_MD), "# Test\n");
         InMemoryStore store = new InMemoryStore();
@@ -205,7 +205,7 @@ class HarnessAgentTest {
                         .name("agent-a")
                         .model(stubModel("ok"))
                         .workspace(workspace)
-                        .filesystem(new StoreFilesystemSpec(store))
+                        .filesystem(new RemoteFilesystemSpec(store))
                         .build();
 
         agent.getWorkspaceManager().writeUtf8WorkspaceRelative("MEMORY.md", "shared-memory");

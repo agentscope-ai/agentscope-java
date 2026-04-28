@@ -57,7 +57,7 @@ class SandboxManagerIsolationTest {
         manager = new SandboxManager(client, stateStore, AGENT_ID);
     }
 
-    // ---- Priority 1: developer-owned external session ----
+    // ---- Priority 1: user-managed external session ----
 
     @Test
     void priority1_externalSession_usedDirectly() throws Exception {
@@ -66,7 +66,7 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(ctx, null);
 
         assertSame(externalSandbox, result.getSandbox());
-        assertEquals(false, result.isSdkOwned());
+        assertEquals(false, result.isSelfManaged());
         verify(stateStore, never()).load(any());
     }
 
@@ -82,7 +82,7 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(ctx, null);
 
         assertSame(resumedSandbox, result.getSandbox());
-        assertEquals(true, result.isSdkOwned());
+        assertEquals(true, result.isSelfManaged());
         verify(stateStore, never()).load(any());
     }
 
@@ -102,7 +102,7 @@ class SandboxManagerIsolationTest {
         SandboxAcquireResult result = manager.acquire(sCtx, rtx.toCore());
 
         assertSame(resumedSandbox, result.getSandbox());
-        assertEquals(true, result.isSdkOwned());
+        assertEquals(true, result.isSelfManaged());
         verify(client, never()).create(any(), any(), any());
     }
 
@@ -211,7 +211,7 @@ class SandboxManagerIsolationTest {
         Sandbox sandbox = mock(Sandbox.class);
         when(sandbox.getState()).thenReturn(state);
         when(client.serializeState(state)).thenReturn(STATE_JSON);
-        SandboxAcquireResult result = SandboxAcquireResult.sdkOwned(sandbox);
+        SandboxAcquireResult result = SandboxAcquireResult.selfManaged(sandbox);
 
         RuntimeContext rtx =
                 RuntimeContext.builder().sessionKey(SimpleSessionKey.of("sess-p")).build();
@@ -227,7 +227,7 @@ class SandboxManagerIsolationTest {
     void persistState_missingScopeKey_skipped() throws Exception {
         Sandbox sandbox = mock(Sandbox.class);
         when(sandbox.getState()).thenReturn(mock(SandboxState.class));
-        SandboxAcquireResult result = SandboxAcquireResult.sdkOwned(sandbox);
+        SandboxAcquireResult result = SandboxAcquireResult.selfManaged(sandbox);
 
         RuntimeContext rtx = RuntimeContext.builder().build(); // no session key
         SandboxContext sCtx = SandboxContext.builder().build(); // SESSION scope by default

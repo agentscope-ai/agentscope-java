@@ -28,7 +28,7 @@ import java.util.List;
  *
  * <pre>{@code
  * NamespaceFactory factory = () -> List.of("sessions", getCurrentSessionId(), "filesystem");
- * StoreFilesystem fs = new StoreFilesystem(store, factory);
+ * RemoteFilesystem fs = new RemoteFilesystem(store, factory);
  * }</pre>
  */
 @FunctionalInterface

@@ -33,9 +33,9 @@ import java.io.InputStream;
  *
  * <p>The distinction between {@code stop()} and {@code shutdown()} is critical:
  * <ul>
- *   <li>{@code stop()}: persist snapshot only — safe for both SDK-owned and developer-owned
+ *   <li>{@code stop()}: persist snapshot only — safe for both self-managed and user-managed
  *       sandboxes</li>
- *   <li>{@code shutdown()}: destroy backend resources — only called on SDK-owned sandboxes</li>
+ *   <li>{@code shutdown()}: destroy backend resources — only called on self-managed sandboxes</li>
  * </ul>
  */
 public interface Sandbox extends AutoCloseable {
