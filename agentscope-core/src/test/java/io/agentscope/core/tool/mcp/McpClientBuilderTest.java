@@ -1416,4 +1416,34 @@ class McpClientBuilderTest {
         // Should be null, meaning the transport's default protocolVersions() is used
         assertEquals(null, versions);
     }
+
+    @Test
+    void testProtocolVersions_NullElementsAreFiltered() throws Exception {
+        // Verify that null elements in the varargs are silently filtered out
+        McpClientBuilder builder =
+                McpClientBuilder.create("pv-null-filter")
+                        .stdioTransport("echo", "test")
+                        .protocolVersions("2024-11-05", null, "2025-03-26");
+
+        Field pvField = McpClientBuilder.class.getDeclaredField("protocolVersions");
+        pvField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<String> versions = (List<String>) pvField.get(builder);
+
+        assertNotNull(versions);
+        assertEquals(2, versions.size());
+        assertEquals("2024-11-05", versions.get(0));
+        assertEquals("2025-03-26", versions.get(1));
+    }
+
+    @Test
+    void testProtocolVersions_AllNullElementsThrows() {
+        // Verify that passing only null elements throws
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        McpClientBuilder.create("pv-all-null")
+                                .stdioTransport("echo", "test")
+                                .protocolVersions(null, null));
+    }
 }

@@ -44,6 +44,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -329,7 +330,13 @@ public class McpClientBuilder {
         if (versions == null || versions.length == 0) {
             throw new IllegalArgumentException("At least one protocol version must be specified");
         }
-        this.protocolVersions = Collections.unmodifiableList(Arrays.asList(versions));
+        List<String> filtered =
+                Arrays.stream(versions).filter(Objects::nonNull).collect(Collectors.toList());
+        if (filtered.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one non-null protocol version must be specified");
+        }
+        this.protocolVersions = Collections.unmodifiableList(filtered);
         return this;
     }
 
