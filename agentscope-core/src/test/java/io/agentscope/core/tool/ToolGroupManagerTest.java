@@ -22,8 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -443,6 +449,46 @@ class ToolGroupManagerTest {
         // Assert - should not have duplicates
         List<String> activeGroups = manager.getActiveGroups();
         assertEquals(1, activeGroups.stream().filter(g -> g.equals("group1")).count());
+    }
+
+    @Test
+    void testConcurrentActivationPreventsDuplicatesInActiveGroups() throws Exception {
+        int threadCount = 64;
+
+        for (int attempt = 0; attempt < 20; attempt++) {
+            ToolGroupManager concurrentManager = new ToolGroupManager();
+            concurrentManager.createToolGroup("group1", "Group 1", false);
+
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            CountDownLatch ready = new CountDownLatch(threadCount);
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> futures = new ArrayList<>();
+
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(
+                        executor.submit(
+                                () -> {
+                                    ready.countDown();
+                                    start.await();
+                                    concurrentManager.updateToolGroups(List.of("group1"), true);
+                                    return null;
+                                }));
+            }
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            for (Future<?> future : futures) {
+                future.get();
+            }
+
+            long activeGroupCount =
+                    concurrentManager.getActiveGroups().stream()
+                            .filter(groupName -> groupName.equals("group1"))
+                            .count();
+            assertEquals(1, activeGroupCount);
+        }
     }
 
     @Test
