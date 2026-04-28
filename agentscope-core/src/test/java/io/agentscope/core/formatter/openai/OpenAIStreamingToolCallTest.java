@@ -371,4 +371,110 @@ class OpenAIStreamingToolCallTest {
         assertEquals("call_null", toolUse.getId());
         assertEquals("null_args_tool", toolUse.getName());
     }
+
+    @Test
+    @DisplayName("Should generate streaming ID when first chunk has no ID")
+    void testStreamingToolCallGeneratesIdWhenMissing() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId(null);
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName("lookup_weather");
+        function.setArguments("");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertTrue(toolUse.getId().startsWith("streaming_"));
+        assertEquals("lookup_weather", toolUse.getName());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should keep raw content when complete streaming JSON is malformed")
+    void testStreamingToolCallMalformedCompleteJsonKeepsRawContent() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId("call_bad_json");
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName("broken_tool");
+        function.setArguments("{\"city\":}");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("call_bad_json", toolUse.getId());
+        assertEquals("broken_tool", toolUse.getName());
+        assertEquals("{\"city\":}", toolUse.getContent());
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should emit placeholder fragment when chunk only carries thought signature")
+    void testStreamingToolCallThoughtSignatureOnlyFragment() {
+        OpenAIResponse response = new OpenAIResponse();
+        response.setId("chatcmpl-tool");
+        response.setObject("chat.completion.chunk");
+
+        OpenAIChoice choice = new OpenAIChoice();
+        choice.setIndex(0);
+
+        OpenAIMessage delta = new OpenAIMessage();
+        OpenAIToolCall toolCall = new OpenAIToolCall();
+        toolCall.setId("call_sig_only");
+        toolCall.setIndex(0);
+        toolCall.setType("function");
+        toolCall.setThoughtSignature("signature_only");
+
+        OpenAIFunction function = new OpenAIFunction();
+        function.setName(null);
+        function.setArguments("");
+        toolCall.setFunction(function);
+
+        delta.setToolCalls(List.of(toolCall));
+        choice.setDelta(delta);
+        response.setChoices(List.of(choice));
+
+        ChatResponse chatResponse = parser.parseResponse(response, Instant.now());
+
+        assertNotNull(chatResponse);
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals(OpenAIResponseParser.FRAGMENT_PLACEHOLDER, toolUse.getName());
+        assertEquals("", toolUse.getId());
+        assertEquals(
+                "signature_only",
+                toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+    }
 }
