@@ -58,29 +58,17 @@ public class SkillBox implements StateModule {
     private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
 
     public SkillBox(Toolkit toolkit) {
-        this(toolkit, null, null);
+        this(toolkit, null);
     }
 
     /**
-     * Creates a SkillBox with custom skill prompt instruction and template.
-     *
-     * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
-     */
-    public SkillBox(String instruction, String template) {
-        this(null, instruction, template);
-    }
-
-    /**
-     * Creates a SkillBox with a toolkit and custom skill prompt instruction and template.
+     * Creates a SkillBox with a toolkit and custom skill prompt instruction.
      *
      * @param toolkit The toolkit to bind
      * @param instruction Custom instruction header (null or blank uses default)
-     * @param template Custom skill template (null or blank uses default)
      */
-    public SkillBox(Toolkit toolkit, String instruction, String template) {
-        this.skillPromptProvider =
-                new AgentSkillPromptProvider(skillRegistry, instruction, template);
+    public SkillBox(Toolkit toolkit, String instruction) {
+        this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry, instruction);
         this.skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
         this.toolkit = toolkit;
     }
@@ -95,6 +83,19 @@ public class SkillBox implements StateModule {
      */
     public String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
+    }
+
+    /**
+     * Controls whether the skill prompt exposes all metadata fields or only the core fields.
+     *
+     * <p>When disabled, only {@code name}, {@code description}, and {@code skill-id}
+     * are included in the skill prompt.
+     *
+     * @param exposeAllMetadata {@code true} to expose all metadata, {@code false} to expose only
+     *                          the core fields
+     */
+    public void setExposeAllSkillMetadata(boolean exposeAllMetadata) {
+        skillPromptProvider.setExposeAllMetadata(exposeAllMetadata);
     }
 
     /**

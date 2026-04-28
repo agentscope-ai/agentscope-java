@@ -15,9 +15,11 @@
  */
 package io.agentscope.core.skill.repository.mysql;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.util.JsonUtils;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -25,6 +27,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -35,18 +38,16 @@ import org.slf4j.LoggerFactory;
 /**
  * MySQL database-based implementation of AgentSkillRepository.
  *
- * <p>
- * This implementation stores skills in MySQL database tables with the following
- * structure:
+ * <p>This implementation stores skills in MySQL database tables with the following structure:
  *
  * <ul>
- * <li>Skills table: stores skill metadata (id, name, description, content, source)
- * <li>Resources table: stores skill resources (id, resource_path,
- * resource_content)
+ *   <li>Skills table: stores core lookup fields ({@code name}, {@code description}), skill
+ *       content, source, and optionally the full metadata tree in {@code metadata_json}
+ *   <li>Resources table: stores skill resources ({@code id}, {@code resource_path},
+ *       {@code resource_content})
  * </ul>
  *
- * <p>
- * Table Schema (auto-created if createIfNotExist=true):
+ * <p>Table schema for newly created tables ({@code createIfNotExist=true}):
  *
  * <pre>
  * CREATE TABLE IF NOT EXISTS agentscope_skills (
@@ -55,6 +56,7 @@ import org.slf4j.LoggerFactory;
  *     description TEXT NOT NULL,
  *     skill_content LONGTEXT NOT NULL,
  *     source VARCHAR(255) NOT NULL,
+ *     metadata_json LONGTEXT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  *     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -70,15 +72,25 @@ import org.slf4j.LoggerFactory;
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
  *
- * <p>
- * Features:
+ * <p>Compatibility behavior:
  *
  * <ul>
- * <li>Automatic table creation when createIfNotExist=true
- * <li>Full CRUD operations for skills and their resources
- * <li>SQL injection prevention through parameterized queries
- * <li>Transaction support for atomic operations
- * <li>UTF-8 (utf8mb4) character set support for internationalization
+ *   <li>New tables created by this repository include {@code metadata_json}
+ *   <li>Existing tables are not auto-migrated with {@code ALTER TABLE}
+ *   <li>When {@code metadata_json} exists, full skill metadata is persisted and restored
+ *   <li>When {@code metadata_json} does not exist, the repository falls back to the legacy
+ *       schema and only round-trips {@code name} and {@code description}
+ * </ul>
+ *
+ * <p>Features:
+ *
+ * <ul>
+ *   <li>Automatic database/table creation when {@code createIfNotExist=true}
+ *   <li>Runtime compatibility detection for legacy and new schemas
+ *   <li>Full CRUD operations for skills and their resources
+ *   <li>SQL injection prevention through parameterized queries
+ *   <li>Transaction support for atomic operations
+ *   <li>UTF-8 (utf8mb4) character set support for internationalization
  * </ul>
  *
  * <p>
@@ -140,6 +152,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     private final String databaseName;
     private final String skillsTableName;
     private final String resourcesTableName;
+    private final boolean metadataJsonColumnSupported;
     private boolean writeable;
 
     /**
@@ -150,8 +163,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * names ({@code agentscope_skills} and {@code agentscope_skill_resources}).
      *
      * @param dataSource       DataSource for database connections
-     * @param createIfNotExist If true, auto-create database and tables; if false,
-     *                         require existing
+     * @param createIfNotExist If true, auto-create the database and tables for new deployments; if
+     *                         false, require existing schema. Existing tables are not auto-migrated
+     *                         to add {@code metadata_json}
      * @param writeable        Whether the repository supports write operations
      * @throws IllegalArgumentException if dataSource is null
      * @throws IllegalStateException    if createIfNotExist is false and
@@ -173,10 +187,10 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      * options.
      *
      * <p>
-     * If {@code createIfNotExist} is true, the database and tables will be created
-     * automatically
-     * if they don't exist. If false and the database or tables don't exist, an
-     * {@link IllegalStateException} will be thrown.
+     * If {@code createIfNotExist} is true, the database and tables will be created automatically if
+     * they don't exist. If false and the database or tables don't exist, an
+     * {@link IllegalStateException} will be thrown. Existing tables are validated as-is and are not
+     * auto-migrated to add {@code metadata_json}.
      *
      * <p>
      * This constructor is private. Use {@link #builder(DataSource)} to create instances
@@ -189,8 +203,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      *                           empty)
      * @param resourcesTableName Custom resources table name (uses default if null
      *                           or empty)
-     * @param createIfNotExist   If true, auto-create database and tables; if false,
-     *                           require existing
+     * @param createIfNotExist   If true, auto-create the database and tables for new deployments;
+     *                           if false, require existing schema. Existing tables are not
+     *                           auto-migrated to add {@code metadata_json}
      * @param writeable          Whether the repository supports write operations
      * @throws IllegalArgumentException if dataSource is null or identifiers are
      *                                  invalid
@@ -240,6 +255,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             verifyTablesExist();
         }
 
+        this.metadataJsonColumnSupported = detectMetadataJsonColumnSupport();
+
         logger.info(
                 "MysqlSkillRepository initialized with database: {}, skills table: {},"
                         + " resources table: {}",
@@ -272,6 +289,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
 
     /**
      * Create the skills and resources tables if they don't exist.
+     *
+     * <p>Newly created skills tables include the optional {@code metadata_json} column so complete
+     * skill metadata can be persisted without changing the legacy lookup columns.
      */
     private void createTablesIfNotExist() {
         // Create skills table with id as primary key and name as unique
@@ -281,6 +301,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                         + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,"
                         + " name VARCHAR(255) NOT NULL UNIQUE, description TEXT NOT NULL,"
                         + " skill_content LONGTEXT NOT NULL, source VARCHAR(255) NOT NULL,"
+                        + " metadata_json LONGTEXT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
                         + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) DEFAULT"
                         + " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
@@ -390,12 +411,41 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         return databaseName + "." + tableName;
     }
 
+    /**
+     * Detect whether the current skills table supports the optional {@code metadata_json} column.
+     *
+     * <p>This capability is cached at repository construction time and drives the read/write
+     * compatibility path: full metadata round-trip when present, legacy fallback when absent.
+     */
+    private boolean detectMetadataJsonColumnSupport() {
+        String checkSql =
+                "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                        + " AND COLUMN_NAME = ? LIMIT 1";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+            stmt.setString(1, databaseName);
+            stmt.setString(2, skillsTableName);
+            stmt.setString(3, "metadata_json");
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            logger.warn(
+                    "Failed to detect metadata_json column support, falling back to legacy schema",
+                    e);
+            return false;
+        }
+    }
+
     @Override
     public AgentSkill getSkill(String name) {
         validateSkillName(name);
 
         String selectSkillSql =
-                "SELECT id, name, description, skill_content, source FROM "
+                "SELECT id, name, description, skill_content, source"
+                        + (metadataJsonColumnSupported ? ", metadata_json" : "")
+                        + " FROM "
                         + getFullTableName(skillsTableName)
                         + " WHERE name = ?";
 
@@ -410,6 +460,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             String description;
             String skillContent;
             String source;
+            String metadataJson = null;
 
             try (PreparedStatement stmt = conn.prepareStatement(selectSkillSql)) {
                 stmt.setString(1, name);
@@ -421,6 +472,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     description = rs.getString("description");
                     skillContent = rs.getString("skill_content");
                     source = rs.getString("source");
+                    if (metadataJsonColumnSupported) {
+                        metadataJson = rs.getString("metadata_json");
+                    }
                 }
             }
 
@@ -437,7 +491,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 }
             }
 
-            return new AgentSkill(name, description, skillContent, resources, source);
+            return buildSkill(name, description, skillContent, source, metadataJson, resources);
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load skill: " + name, e);
@@ -469,7 +523,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     @Override
     public List<AgentSkill> getAllSkills() {
         String selectAllSkillsSql =
-                "SELECT id, name, description, skill_content, source FROM "
+                "SELECT id, name, description, skill_content, source"
+                        + (metadataJsonColumnSupported ? ", metadata_json" : "")
+                        + " FROM "
                         + getFullTableName(skillsTableName)
                         + " ORDER BY name";
 
@@ -479,7 +535,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
 
         try (Connection conn = dataSource.getConnection()) {
             // Load all skills in one query, use id as key for mapping resources
-            Map<Long, AgentSkill.Builder> skillBuilders = new HashMap<>();
+            Map<Long, LoadedSkillRecord> skillRecords = new HashMap<>();
 
             try (PreparedStatement stmt = conn.prepareStatement(selectAllSkillsSql);
                     ResultSet rs = stmt.executeQuery()) {
@@ -489,14 +545,13 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     String description = rs.getString("description");
                     String skillContent = rs.getString("skill_content");
                     String source = rs.getString("source");
+                    String metadataJson =
+                            metadataJsonColumnSupported ? rs.getString("metadata_json") : null;
 
-                    AgentSkill.Builder builder =
-                            AgentSkill.builder()
-                                    .name(name)
-                                    .description(description)
-                                    .skillContent(skillContent)
-                                    .source(source);
-                    skillBuilders.put(skillId, builder);
+                    skillRecords.put(
+                            skillId,
+                            new LoadedSkillRecord(
+                                    name, description, skillContent, source, metadataJson));
                 }
             }
 
@@ -508,9 +563,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     String resourcePath = rs.getString("resource_path");
                     String resourceContent = rs.getString("resource_content");
 
-                    AgentSkill.Builder builder = skillBuilders.get(skillId);
-                    if (builder != null) {
-                        builder.addResource(resourcePath, resourceContent);
+                    LoadedSkillRecord record = skillRecords.get(skillId);
+                    if (record != null) {
+                        record.resources.put(resourcePath, resourceContent);
                     } else {
                         logger.warn("Found orphaned resource for non-existent id: {}", skillId);
                     }
@@ -518,10 +573,17 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             }
 
             // Build all skills
-            List<AgentSkill> skills = new ArrayList<>(skillBuilders.size());
-            for (AgentSkill.Builder builder : skillBuilders.values()) {
+            List<AgentSkill> skills = new ArrayList<>(skillRecords.size());
+            for (LoadedSkillRecord record : skillRecords.values()) {
                 try {
-                    skills.add(builder.build());
+                    skills.add(
+                            buildSkill(
+                                    record.name,
+                                    record.description,
+                                    record.skillContent,
+                                    record.source,
+                                    record.metadataJson,
+                                    record.resources));
                 } catch (Exception e) {
                     logger.warn("Failed to build skill: {}", e.getMessage(), e);
                 }
@@ -631,7 +693,11 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         String insertSql =
                 "INSERT INTO "
                         + getFullTableName(skillsTableName)
-                        + " (name, description, skill_content, source) VALUES (?, ?, ?, ?)";
+                        + (metadataJsonColumnSupported
+                                ? " (name, description, skill_content, source, metadata_json)"
+                                        + " VALUES (?, ?, ?, ?, ?)"
+                                : " (name, description, skill_content, source) VALUES (?, ?, ?,"
+                                        + " ?)");
 
         try (PreparedStatement stmt =
                 conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
@@ -639,6 +705,16 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             stmt.setString(2, skill.getDescription());
             stmt.setString(3, skill.getSkillContent());
             stmt.setString(4, skill.getSource());
+            if (metadataJsonColumnSupported) {
+                stmt.setString(5, serializeMetadata(skill.getMetadata()));
+            } else if (hasExtendedMetadata(skill.getMetadata())) {
+                logger.warn(
+                        "metadata_json column not found in {}.{}; extended metadata for skill '{}'"
+                                + " will not be persisted",
+                        databaseName,
+                        skillsTableName,
+                        skill.getName());
+            }
             stmt.executeUpdate();
 
             try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
@@ -873,6 +949,101 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      */
     public DataSource getDataSource() {
         return dataSource;
+    }
+
+    /**
+     * Exposes whether the connected skills table supports {@code metadata_json}.
+     *
+     * <p>Package-private for tests.
+     */
+    boolean isMetadataJsonColumnSupported() {
+        return metadataJsonColumnSupported;
+    }
+
+    /**
+     * Build an {@link AgentSkill} from SQL row data, restoring full metadata when available and
+     * otherwise falling back to legacy core metadata.
+     */
+    private AgentSkill buildSkill(
+            String name,
+            String description,
+            String skillContent,
+            String source,
+            String metadataJson,
+            Map<String, String> resources) {
+        Map<String, Object> metadata = deserializeMetadata(metadataJson, name, description);
+        return new AgentSkill(metadata, skillContent, resources, source);
+    }
+
+    /**
+     * Deserialize {@code metadata_json} when present, then overlay the authoritative SQL columns
+     * for {@code name} and {@code description}.
+     */
+    private Map<String, Object> deserializeMetadata(
+            String metadataJson, String name, String description) {
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        if (metadataJson != null && !metadataJson.isBlank()) {
+            try {
+                Map<String, Object> parsed =
+                        JsonUtils.getJsonCodec()
+                                .fromJson(
+                                        metadataJson, new TypeReference<Map<String, Object>>() {});
+                if (parsed != null) {
+                    metadata.putAll(parsed);
+                }
+            } catch (RuntimeException e) {
+                logger.warn(
+                        "Failed to deserialize metadata_json for skill '{}', falling back to core"
+                                + " metadata",
+                        name,
+                        e);
+            }
+        }
+        metadata.put("name", name);
+        metadata.put("description", description);
+        return metadata;
+    }
+
+    /** Serialize the complete skill metadata tree for storage in {@code metadata_json}. */
+    private String serializeMetadata(Map<String, Object> metadata) {
+        return JsonUtils.getJsonCodec().toJson(metadata);
+    }
+
+    /**
+     * Check whether metadata contains fields beyond the legacy core columns.
+     *
+     * <p>This is used only to emit a downgrade warning when writing to a legacy schema.
+     */
+    private boolean hasExtendedMetadata(Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return false;
+        }
+        return metadata.size() > 2
+                || metadata.keySet().stream()
+                        .anyMatch(key -> !"name".equals(key) && !"description".equals(key));
+    }
+
+    /** Temporary holder used while stitching skills and resources from separate result sets. */
+    private static final class LoadedSkillRecord {
+        private final String name;
+        private final String description;
+        private final String skillContent;
+        private final String source;
+        private final String metadataJson;
+        private final Map<String, String> resources = new HashMap<>();
+
+        private LoadedSkillRecord(
+                String name,
+                String description,
+                String skillContent,
+                String source,
+                String metadataJson) {
+            this.name = name;
+            this.description = description;
+            this.skillContent = skillContent;
+            this.source = source;
+            this.metadataJson = metadataJson;
+        }
     }
 
     /**

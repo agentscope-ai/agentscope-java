@@ -59,6 +59,12 @@ skill-name/
 ---
 name: skill-name                    # Required: Skill name (lowercase letters, numbers, underscores)
 description: This skill should be used when...  # Required: Trigger description, explaining when to use
+homepage: https://example.com/docs  # Optional: Additional metadata exposed to the agent prompt
+metadata:
+  clawdbot:
+    requires:
+      env:
+        - API_KEY
 ---
 
 # Skill Name
@@ -79,6 +85,13 @@ description: This skill should be used when...  # Required: Trigger description,
 - `name` - Skill name (lowercase letters, numbers, underscores)
 - `description` - Skill functionality and usage scenarios, helps AI determine when to use
 
+**Metadata Notes:**
+
+- Any additional YAML frontmatter fields are preserved as skill metadata, not limited to predefined fields
+- Nested maps and lists are supported and keep their structure and insertion order
+- Frontmatter is parsed with SnakeYAML `SafeConstructor`; only top-level YAML objects of type `Map` are accepted
+- Invalid frontmatter or frontmatter exceeding the parser limit is ignored and treated as empty metadata
+
 ## Quick Start
 
 ### 1. Create a Skill
@@ -89,6 +102,7 @@ description: This skill should be used when...  # Required: Trigger description,
 AgentSkill skill = AgentSkill.builder()
     .name("data_analysis")
     .description("Use when analyzing data...")
+    .putMetadata("homepage", "https://example.com/docs")
     .skillContent("# Data Analysis\n...")
     .addResource("references/formulas.md", "# Common Formulas\n...")
     .source("custom")
@@ -341,31 +355,31 @@ try (NacosSkillRepository repository = new NacosSkillRepository(aiService, "name
 
 ### Feature 4: Custom Skill Prompts
 
-When SkillBox injects a system prompt into the Agent, it generates a description entry for each registered Skill so the LLM can decide when to load which Skill. The two components of this prompt can be customized via the constructor:
+When SkillBox injects a system prompt into the Agent, it generates one XML `<skill>` entry per registered Skill so the LLM can decide when to load which Skill. Metadata is rendered directly from `AgentSkill.getMetadata()`, and `<skill-id>` is always appended for tool loading.
 
 - **`instruction`**: The prompt header, explaining how to use Skills (how to load them, path conventions, etc.). Defaults to a built-in `load_skill_through_path` usage guide
-- **`template`**: The format template for each Skill entry, containing three `%s` placeholders corresponding to `name`, `description`, and `skillId` in order
+- **XML metadata rendering**: Scalar metadata becomes a child element, nested maps become nested XML, and lists become repeated `<item>` elements
+- **Metadata exposure control**: `skillBox.setExposeAllSkillMetadata(false)` limits the prompt to `name`, `description`, and `skill-id`; the default is to expose all metadata fields
 
 When code execution is enabled, the section appended after `</available_skills>` can also be customized via `.codeExecutionInstruction()`:
 
 - **`codeExecutionInstruction`**: Template for the code execution section; every `%s` placeholder will be replaced with the `uploadDir` absolute path. Passing `null` or blank uses the built-in default.
 
-Passing `null` or a blank string for any of these uses the built-in default.
+Passing `null` or a blank string for `instruction` or `codeExecutionInstruction` uses the built-in default.
 
 **Example**:
 
 ```java
-// Customize instruction and template
+// Customize the instruction header
 String customInstruction = """
     ## Available Skills
     When a task matches a skill, load it with load_skill_through_path.
     """;
 
-String customTemplate = """
-    - **%s**: %s (id: %s)
-    """;
+SkillBox skillBox = new SkillBox(toolkit, customInstruction);
 
-SkillBox skillBox = new SkillBox(toolkit, customInstruction, customTemplate);
+// Optionally expose only core metadata fields in the prompt
+skillBox.setExposeAllSkillMetadata(false);
 
 // Customize the code execution section (takes effect when code execution is enabled)
 skillBox.codeExecution()
@@ -391,4 +405,3 @@ skillBox.codeExecution()
 - [Claude Agent Skills Official Documentation](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview) - Complete concept and architecture introduction
 - [Tool Usage Guide](./tool.md) - Tool system usage methods
 - [Agent Configuration](./agent.md) - Agent configuration and usage
-

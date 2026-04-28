@@ -211,17 +211,16 @@ class SkillUtilTest {
                             + "Content";
             AgentSkill skill4 = SkillUtil.createFrom(extraFieldsSkillMd, null);
             assertEquals("skill", skill4.getName());
+            assertEquals("1.0.0", String.valueOf(skill4.getMetadataValue("version")));
+            assertEquals("John", skill4.getMetadataValue("author"));
         }
 
         @Test
-        @DisplayName("Should create from with numeric metadata")
-        void testCreateFromWithNumericMetadata() {
+        @DisplayName("Should reject numeric values for required metadata")
+        void testCreateFromRejectsNumericRequiredMetadata() {
             String skillMd = "---\nname: 123\ndescription: 456\n---\nContent";
 
-            AgentSkill skill = SkillUtil.createFrom(skillMd, null);
-
-            assertEquals("123", skill.getName());
-            assertEquals("456", skill.getDescription());
+            assertThrows(IllegalArgumentException.class, () -> SkillUtil.createFrom(skillMd, null));
         }
     }
 
