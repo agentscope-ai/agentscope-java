@@ -245,18 +245,20 @@ class SubAgentToolTest {
     }
 
     @Test
-    @DisplayName("Should forward events when forwardEvents is true and emitter is provided")
+    @DisplayName("Should forward events with preserved block types and metadata")
     void testEventForwardingEnabled() {
         // Create mock agent that supports streaming
         Agent mockAgent = mock(Agent.class);
         when(mockAgent.getName()).thenReturn("StreamAgent");
+        when(mockAgent.getAgentId()).thenReturn("stream-agent-123");
         when(mockAgent.getDescription()).thenReturn("Streaming agent");
 
-        Msg responseMsg =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Thinking...").build())
-                        .build();
+        Map<String, Object> mockArgs = new HashMap<>();
+        mockArgs.put("param", "value");
+        ToolUseBlock originalToolBlock =
+                ToolUseBlock.builder().id("call-123").name("nested_tool").input(mockArgs).build();
+
+        Msg responseMsg = Msg.builder().role(MsgRole.ASSISTANT).content(originalToolBlock).build();
 
         // Mock stream() to return events
         Event reasoningEvent = new Event(EventType.REASONING, responseMsg, true);
@@ -290,8 +292,29 @@ class SubAgentToolTest {
         // Verify stream() was called (not call())
         verify(mockAgent).stream(any(List.class), any(StreamOptions.class));
         verify(mockAgent, never()).call(any(List.class));
-        // Verify events were forwarded
+
+        // Verify events were forwarded and structure is preserved
         assertFalse(emittedChunks.isEmpty());
+        ToolResultBlock emittedResult = emittedChunks.get(0);
+
+        assertNotNull(emittedResult.getOutput());
+        assertEquals(1, emittedResult.getOutput().size());
+        assertTrue(
+                emittedResult.getOutput().get(0) instanceof ToolUseBlock,
+                "The forwarded block should preserve its original specific type (ToolUseBlock)");
+
+        ToolUseBlock forwardedBlock = (ToolUseBlock) emittedResult.getOutput().get(0);
+        assertEquals("call-123", forwardedBlock.getId());
+        assertEquals("nested_tool", forwardedBlock.getName());
+
+        // Verify metadata was populated correctly instead of JSON serialization
+        Map<String, Object> metadata = emittedResult.getMetadata();
+        assertNotNull(metadata);
+        assertEquals("StreamAgent", metadata.get("subagent_name"));
+        assertEquals("stream-agent-123", metadata.get("subagent_id"));
+        assertEquals(EventType.REASONING.name(), metadata.get("subagent_event_type"));
+        assertEquals(true, metadata.get("subagent_event_last"));
+        assertTrue(metadata.containsKey("subagent_session_id"));
     }
 
     @Test

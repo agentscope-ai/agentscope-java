@@ -18,6 +18,7 @@ package io.agentscope.core.tool.subagent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -27,7 +28,6 @@ import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
-import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -301,10 +301,11 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Forwards an event to the emitter as serialized JSON.
+     * Forwards an event to the emitter.
      *
-     * <p>Serializes the event using JsonCodec and emits it as a text block. Serialization
-     * failures are logged but do not interrupt execution.
+     * <p>Extracts content blocks from the event message to preserve original types
+     * and emits them with event metadata. If no content is present, a default empty
+     * text block is emitted. Failures are logged but do not interrupt execution.
      *
      * @param event The event to forward
      * @param emitter The emitter to send the event to
@@ -313,17 +314,32 @@ public class SubAgentTool implements AgentTool {
      */
     private void forwardEvent(Event event, ToolEmitter emitter, Agent agent, String sessionId) {
         try {
-            String json = JsonUtils.getJsonCodec().toJson(event);
             Map<String, Object> metadata = new HashMap<>();
-            metadata.put("subagent_event", event == null ? "" : event);
             metadata.put("subagent_name", agent.getName() == null ? "" : agent.getName());
             metadata.put("subagent_id", agent.getAgentId() == null ? "" : agent.getAgentId());
             metadata.put("subagent_session_id", sessionId == null ? "" : sessionId);
-            emitter.emit(
-                    new ToolResultBlock(
-                            null, null, List.of(TextBlock.builder().text(json).build()), metadata));
+
+            List<ContentBlock> outputBlocks = null;
+
+            if (event != null) {
+                metadata.put(
+                        "subagent_event_type",
+                        event.getType() != null ? event.getType().name() : "");
+                metadata.put("subagent_event_last", event.isLast());
+
+                Msg msg = event.getMessage();
+                if (msg != null && msg.getContent() != null && !msg.getContent().isEmpty()) {
+                    outputBlocks = msg.getContent();
+                }
+            }
+
+            if (outputBlocks == null || outputBlocks.isEmpty()) {
+                outputBlocks = List.of(TextBlock.builder().text("").build());
+            }
+
+            emitter.emit(new ToolResultBlock(null, null, outputBlocks, metadata));
         } catch (Exception e) {
-            logger.warn("Failed to serialize event to JSON: {}", e.getMessage());
+            logger.warn("Failed to forward event: {}", e.getMessage());
         }
     }
 
