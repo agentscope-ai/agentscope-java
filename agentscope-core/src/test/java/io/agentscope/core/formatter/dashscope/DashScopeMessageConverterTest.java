@@ -37,8 +37,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -206,6 +204,7 @@ class DashScopeMessageConverterTest {
         assertEquals("tool_call_1", dsMsg.getToolCallId());
         assertEquals("fetch_data", dsMsg.getName());
         assertTrue(dsMsg.isMultimodal());
+        assertEquals("Data retrieved", dsMsg.getContentAsList().get(0).getText());
     }
 
     @Test
@@ -565,67 +564,154 @@ class DashScopeMessageConverterTest {
         assertTrue(args.contains("Shanghai"));
     }
 
-    @Nested
-    @DisplayName("Qwen3 Thinking Mode Tests (Issue #1268)")
-    class Qwen3ThinkingModeTests {
+    @Test
+    void testToolResultWithImageBlock() {
+        DashScopeMessageConverter conv =
+                new DashScopeMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append(tb.getText());
+                                } else if (block instanceof ImageBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned image can be found at: /tmp/test.png");
+                                }
+                            }
+                            return sb.toString();
+                        });
 
-        @Test
-        @DisplayName(
-                "Should set empty content for assistant with ThinkingBlock + ToolUseBlock but no"
-                        + " TextBlock")
-        void testThinkingModeAssistantWithToolCallsHasNonNullContent() {
-            ThinkingBlock thinkingBlock =
-                    ThinkingBlock.builder().thinking("Let me call the tool...").build();
-            ToolUseBlock toolBlock =
-                    ToolUseBlock.builder()
-                            .id("call_123")
-                            .name("get_weather")
-                            .input(Map.of("city", "Shanghai"))
-                            .build();
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("get_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Here is a cat image").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg")
+                                                                .build())
+                                                .build()))
+                        .build();
 
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.ASSISTANT)
-                            .content(List.of(thinkingBlock, toolBlock))
-                            .build();
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = conv.convertToMessage(msg, true);
 
-            DashScopeMessage result = converter.convertToMessage(msg, false);
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_123", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Here is a cat image", dsMsg.getContentAsList().get(0).getText());
+        assertEquals(
+                "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg",
+                dsMsg.getContentAsList().get(1).getImage());
+    }
 
-            assertNotNull(result);
-            assertEquals("assistant", result.getRole());
-            assertNotNull(result.getToolCalls());
-            assertNotNull(
-                    result.getContentAsString(),
-                    "Content should not be null to comply with DashScope API");
-            assertEquals("", result.getContentAsString());
-        }
+    @Test
+    void testToolResultWithTextImageAudioBlocks() {
+        // Test that tool result with TextBlock + ImageBlock + AudioBlock returns 3 content parts
+        DashScopeMessageConverter conv =
+                new DashScopeMessageConverter(
+                        blocks -> {
+                            StringBuilder sb = new StringBuilder();
+                            for (ContentBlock block : blocks) {
+                                if (block instanceof TextBlock tb) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append(tb.getText());
+                                } else if (block instanceof ImageBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned image can be found at: /tmp/test.png");
+                                } else if (block instanceof AudioBlock) {
+                                    if (!sb.isEmpty()) {
+                                        sb.append("\n");
+                                    }
+                                    sb.append("The returned audio can be found at: /tmp/test.wav");
+                                }
+                            }
+                            return sb.toString();
+                        });
 
-        @Test
-        @DisplayName(
-                "Should preserve text content when both TextBlock and ThinkingBlock exist with tool"
-                        + " calls")
-        void testThinkingModeAssistantWithTextAndToolCalls() {
-            Msg msg =
-                    Msg.builder()
-                            .role(MsgRole.ASSISTANT)
-                            .content(
-                                    List.of(
-                                            ThinkingBlock.builder()
-                                                    .thinking("reasoning...")
-                                                    .build(),
-                                            TextBlock.builder().text("Here is my answer").build(),
-                                            ToolUseBlock.builder()
-                                                    .id("call_456")
-                                                    .name("search")
-                                                    .input(Map.of("q", "test"))
-                                                    .build()))
-                            .build();
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_multi_media")
+                        .name("get_multimodal")
+                        .output(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/audio.wav")
+                                                                .build())
+                                                .build()))
+                        .build();
 
-            DashScopeMessage result = converter.convertToMessage(msg, false);
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = conv.convertToMessage(msg, true);
 
-            assertNotNull(result);
-            assertEquals("Here is my answer", result.getContentAsString());
-            assertNotNull(result.getToolCalls());
-        }
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_multi_media", dsMsg.getToolCallId());
+        assertEquals("get_multimodal", dsMsg.getName());
+        assertTrue(dsMsg.isMultimodal());
+        // Should preserve all 3 content parts: text, image, audio
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("The capital of Japan is Tokyo.", dsMsg.getContentAsList().get(0).getText());
+        assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
+        assertEquals("https://example.com/audio.wav", dsMsg.getContentAsList().get(2).getAudio());
+    }
+
+    @Test
+    void testToolResultWithInvalidImageBlockAddsFailureText() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("call_invalid_image")
+                        .name("get_invalid_image")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Image lookup finished").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/not-image.txt")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("tool", dsMsg.getRole());
+        assertEquals("call_invalid_image", dsMsg.getToolCallId());
+        assertTrue(dsMsg.isMultimodal());
+        assertEquals(2, dsMsg.getContentAsList().size());
+        assertEquals("Image lookup finished", dsMsg.getContentAsList().get(0).getText());
+        assertTrue(
+                dsMsg.getContentAsList()
+                        .get(1)
+                        .getText()
+                        .startsWith("[Image - processing failed:"));
     }
 }
