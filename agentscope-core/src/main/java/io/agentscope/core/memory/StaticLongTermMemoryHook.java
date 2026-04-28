@@ -145,18 +145,17 @@ public class StaticLongTermMemoryHook implements Hook {
                             // Wrap memory content in tags
                             String wrappedMemory = wrap(memoryText);
 
-                            // Create system message with retrieved memories
+                            // Create user message with retrieved memories
                             Msg memoryMsg =
                                     Msg.builder()
-                                            .role(MsgRole.SYSTEM)
+                                            .role(MsgRole.USER)
                                             .name("long_term_memory")
                                             .content(
                                                     TextBlock.builder().text(wrappedMemory).build())
                                             .build();
 
-                            // Inject memory message at the beginning
-                            List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.addAll(inputMessages);
+                            // Inject memory message at the end
+                            List<Msg> enhancedMessages = new ArrayList<>(inputMessages);
                             enhancedMessages.add(memoryMsg);
                             event.setInputMessages(enhancedMessages);
 

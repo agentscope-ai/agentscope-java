@@ -138,7 +138,7 @@ class StaticLongTermMemoryHookTest {
                         resultEvent -> {
                             List<Msg> messages = resultEvent.getInputMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+                            assertEquals(MsgRole.USER, messages.get(1).getRole());
                             assertTrue(
                                     messages.get(1)
                                             .getTextContent()
