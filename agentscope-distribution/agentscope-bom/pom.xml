@@ -114,13 +114,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- AgentScope Extensions AutoContext Memory -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- AgentScope Extensions Chat Completions Web -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -128,10 +121,31 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions AutoContext Memory -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Mem0 -->
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-mem0</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Reme -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-reme</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- AgentScope Extensions Bailian Long Term Memory -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-memory-bailian</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -167,13 +181,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope Extensions Reme -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-reme</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
