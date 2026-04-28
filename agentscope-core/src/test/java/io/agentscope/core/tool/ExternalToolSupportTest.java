@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -161,6 +162,41 @@ class ExternalToolSupportTest {
     }
 
     @Test
+    @DisplayName("Should preserve strict when registering external schema")
+    void testExternalSchemaStrictPreserved() {
+        ToolSchema strictSchema =
+                ToolSchema.builder()
+                        .name("strict_tool")
+                        .description("Strict external tool")
+                        .parameters(Map.of("type", "object"))
+                        .strict(true)
+                        .build();
+
+        toolkit.registerSchema(strictSchema);
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
+    }
+
+    @Test
+    @DisplayName("Should keep strict as null when schema strict is not set")
+    void testExternalSchemaStrictNullPreserved() {
+        ToolSchema schema =
+                ToolSchema.builder()
+                        .name("null_strict_tool")
+                        .description("Null strict external tool")
+                        .parameters(Map.of("type", "object"))
+                        .build();
+
+        toolkit.registerSchema(schema);
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertNull(schemas.get(0).getStrict());
+    }
+
+    @Test
     @DisplayName("Should handle null schemas list gracefully")
     void testRegisterSchemasNull() {
         // Should not throw
@@ -205,5 +241,23 @@ class ExternalToolSupportTest {
         public String calculate(@ToolParam(name = "expression") String expression) {
             return "result";
         }
+    }
+
+    static class StrictInternalToolExample {
+        @Tool(name = "strict_calculator", description = "Calculate expression", strict = true)
+        public String calculate(@ToolParam(name = "expression") String expression) {
+            return "result";
+        }
+    }
+
+    @Test
+    @DisplayName("Should propagate strict from @Tool annotation")
+    void testAnnotationStrictPropagation() {
+        toolkit.registerTool(new StrictInternalToolExample());
+
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals("strict_calculator", schemas.get(0).getName());
+        assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
     }
 }

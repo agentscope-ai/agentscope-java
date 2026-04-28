@@ -27,6 +27,26 @@ public class WeatherService {
 
 > **注意**：`@ToolParam` 的 `name` 属性必须指定，因为 Java 默认不保留参数名。
 
+### 严格模式（Strict Mode）
+
+`strict` 用于控制支持严格 Schema 检查的模型提供商是否应严格遵循工具参数 Schema。
+
+```java
+public class WeatherService {
+    @Tool(name = "get_weather", description = "获取天气", strict = true)
+    public String getWeather(
+            @ToolParam(name = "city", description = "城市名称") String city) {
+        return city + " 的天气：晴天，25°C";
+    }
+}
+```
+
+配置了严格模式后，AgentScope 在以下所有路径中保留并传播严格模式配置：
+
+- `@Tool(..., strict = true)` 注解驱动的工具注册
+- `AgentTool` 接口实现（通过 `getStrict()` 方法）
+- `Toolkit#registerSchema(...)` 和 `Toolkit#registerSchemas(...)` 方式
+
 ### 注册和使用
 
 ```java
@@ -262,6 +282,9 @@ public class CustomTool implements AgentTool {
     }
 
     @Override
+    public Boolean getStrict() { return true; }
+
+    @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         String query = (String) param.getInput().get("query");
         return Mono.just(ToolResultBlock.text("结果：" + query));
@@ -360,6 +383,7 @@ ToolSchema schema = ToolSchema.builder()
         "properties", Map.of("sql", Map.of("type", "string")),
         "required", List.of("sql")
     ))
+    .strict(true)
     .build();
 
 toolkit.registerSchema(schema);

@@ -27,6 +27,27 @@ public class WeatherService {
 
 > **Note**: The `name` attribute of `@ToolParam` is required because Java doesn't preserve parameter names by default.
 
+### Strict Mode
+
+`strict` controls whether model providers that support strict schema enforcement should strictly follow
+the tool parameter schema.
+
+```java
+public class WeatherService {
+    @Tool(name = "get_weather", description = "Get weather", strict = true)
+    public String getWeather(
+            @ToolParam(name = "city", description = "City name") String city) {
+        return city + " weather: Sunny, 25°C";
+    }
+}
+```
+
+When strict mode is configured, AgentScope preserves and propagates it consistently through:
+
+- `@Tool(..., strict = true)` annotation-based registration
+- `AgentTool` interface implementations (via `getStrict()`)
+- `Toolkit#registerSchema(...)` and `Toolkit#registerSchemas(...)`
+
 ### Register and Use
 
 ```java
@@ -262,6 +283,9 @@ public class CustomTool implements AgentTool {
     }
 
     @Override
+    public Boolean getStrict() { return true; }
+
+    @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         String query = (String) param.getInput().get("query");
         return Mono.just(ToolResultBlock.text("Result: " + query));
@@ -361,6 +385,7 @@ ToolSchema schema = ToolSchema.builder()
         "properties", Map.of("sql", Map.of("type", "string")),
         "required", List.of("sql")
     ))
+    .strict(true)
     .build();
 
 toolkit.registerSchema(schema);
