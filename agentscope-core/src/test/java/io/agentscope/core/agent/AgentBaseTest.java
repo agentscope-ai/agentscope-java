@@ -309,6 +309,22 @@ class AgentBaseTest {
     }
 
     @Test
+    @DisplayName("Should provide a mutable context map")
+    void testGetContext() {
+        // Context should be non-null and initially empty
+        assertNotNull(agent.getContext(), "Context should not be null");
+        assertTrue(agent.getContext().isEmpty(), "Context should be initially empty");
+
+        // Should support put and get
+        agent.getContext().put("key", "value");
+        assertEquals("value", agent.getContext().get("key"));
+
+        // Each agent instance should have its own context
+        TestAgent agent2 = new TestAgent("Agent2");
+        assertTrue(agent2.getContext().isEmpty(), "New agent context should be empty");
+    }
+
+    @Test
     @DisplayName("Should allow concurrent calls when checkRunning is disabled")
     void testCheckRunningDisabled_AllowsConcurrentCall() throws InterruptedException {
         // Create agent with checkRunning=false and delay

@@ -60,6 +60,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -396,6 +397,7 @@ class JsonlTraceExporterTest {
     private static final class TestAgent implements Agent {
         private final String agentId;
         private final String name;
+        private final Map<String, Object> context = new ConcurrentHashMap<>();
 
         private TestAgent(String agentId, String name) {
             this.agentId = agentId;
@@ -410,6 +412,11 @@ class JsonlTraceExporterTest {
         @Override
         public String getName() {
             return name;
+        }
+
+        @Override
+        public Map<String, Object> getContext() {
+            return context;
         }
 
         @Override

@@ -108,6 +108,8 @@ public abstract class AgentBase implements StateModule, Agent {
     private final AtomicReference<InterruptSource> interruptSource =
             new AtomicReference<>(InterruptSource.USER);
 
+    private final Map<String, Object> context;
+
     /**
      * Constructor for AgentBase.
      *
@@ -143,6 +145,8 @@ public abstract class AgentBase implements StateModule, Agent {
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
         sortHooks();
+
+        this.context = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -153,6 +157,11 @@ public abstract class AgentBase implements StateModule, Agent {
     @Override
     public final String getName() {
         return name;
+    }
+
+    @Override
+    public final Map<String, Object> getContext() {
+        return context;
     }
 
     @Override
