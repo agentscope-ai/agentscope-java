@@ -40,7 +40,20 @@ public final class AgentScopeJvmShutdownHook {
 
     private AgentScopeJvmShutdownHook() {}
 
+    /**
+     * Resets the REGISTERED flag for testing purposes.
+     *
+     * <p>This method is intended for testing only. It allows tests to verify
+     * the JVM hook registration behavior in isolation.
+     */
+    static void resetForTesting() {
+        REGISTERED.set(false);
+    }
+
     public static void register(GracefulShutdownManager manager) {
+        if (!manager.getConfig().isRegister()) {
+            return;
+        }
         if (!REGISTERED.compareAndSet(false, true)) {
             return;
         }

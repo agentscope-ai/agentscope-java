@@ -27,3 +27,4 @@ agent:
   model-name: qwen3.5-plus
   shutdown-timeout-seconds: -1
   shutdown-partial-reasoning-policy: save
+  shutdown-hook-is-register: true

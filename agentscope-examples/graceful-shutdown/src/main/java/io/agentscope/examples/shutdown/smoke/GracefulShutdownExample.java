@@ -129,7 +129,8 @@ public class GracefulShutdownExample {
 
         shutdownManager.resetForTesting();
         shutdownManager.setConfig(
-                new GracefulShutdownConfig(Duration.ofSeconds(5), PartialReasoningPolicy.SAVE));
+                new GracefulShutdownConfig(
+                        Duration.ofSeconds(5), PartialReasoningPolicy.SAVE, true));
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new DataAnalysisTool());
