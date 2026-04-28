@@ -16,6 +16,7 @@
 package io.agentscope.core.memory.bailian;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,14 +43,12 @@ class BailianLongTermMemoryTest {
 
     private MockWebServer mockServer;
     private String baseUrl;
-    private OkHttpTransport httpTransport;
 
     @BeforeEach
     void setUp() throws Exception {
         mockServer = new MockWebServer();
         mockServer.start();
         baseUrl = mockServer.url("/").toString().replaceAll("/$", "");
-        httpTransport = OkHttpTransport.builder().build();
     }
 
     @AfterEach
@@ -61,15 +60,15 @@ class BailianLongTermMemoryTest {
 
     @Test
     void testBuilderWithUserId() {
-        BailianLongTermMemory memory =
-                BailianLongTermMemory.builder().apiKey("test-key").userId("user123").build();
-
-        assertNotNull(memory);
+        try (BailianLongTermMemory memory =
+                BailianLongTermMemory.builder().apiKey("test-key").userId("user123").build()) {
+            assertNotNull(memory);
+        }
     }
 
     @Test
     void testBuilderWithAllFields() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
@@ -82,9 +81,9 @@ class BailianLongTermMemoryTest {
                         .enableRerank(true)
                         .enableJudge(true)
                         .enableRewrite(true)
-                        .build();
-
-        assertNotNull(memory);
+                        .build()) {
+            assertNotNull(memory);
+        }
     }
 
     @Test
@@ -93,14 +92,14 @@ class BailianLongTermMemoryTest {
         metadata.put("key1", "value1");
         metadata.put("key2", 123);
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .userId("user123")
                         .metadata(metadata)
-                        .build();
-
-        assertNotNull(memory);
+                        .build()) {
+            assertNotNull(memory);
+        }
     }
 
     @Test
@@ -182,86 +181,88 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_123\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("I prefer dark mode").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Noted").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("I prefer dark mode").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Noted").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"user_id\":\"user123\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"user_id\":\"user123\""));
+        }
     }
 
     @Test
     void testRecordWithNullMessages() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
-
-        StepVerifier.create(memory.record(null)).verifyComplete();
+                        .build()) {
+            StepVerifier.create(memory.record(null)).verifyComplete();
+        }
     }
 
     @Test
     void testRecordWithEmptyMessages() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
-
-        StepVerifier.create(memory.record(new ArrayList<>())).verifyComplete();
+                        .build()) {
+            StepVerifier.create(memory.record(List.of())).verifyComplete();
+        }
     }
 
     @Test
-    void testRecordFiltersNullMessages() throws Exception {
+    void testRecordFiltersNullMessages() {
         mockServer.enqueue(
                 new MockResponse()
                         .setBody("{\"request_id\":\"req_456\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Valid message").build())
-                        .build());
-        messages.add(null);
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Another valid").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Valid message").build())
+                            .build());
+            messages.add(null);
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Another valid").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+        }
     }
 
     @Test
@@ -271,27 +272,28 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_789\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Valid message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Valid message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+        }
     }
 
     @Test
@@ -301,37 +303,38 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_sys\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text("System message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Assistant message").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("User message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .content(TextBlock.builder().text("System message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Assistant message").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"role\":\"user\""));
-        assertTrue(requestBody.contains("\"role\":\"assistant\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"role\":\"user\""));
+            assertTrue(requestBody.contains("\"role\":\"assistant\""));
+        }
     }
 
     @Test
@@ -341,31 +344,32 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_tool\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.TOOL)
-                        .content(TextBlock.builder().text("Tool result").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("User message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .content(TextBlock.builder().text("Tool result").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"role\":\"user\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"role\":\"user\""));
+        }
     }
 
     @Test
@@ -375,31 +379,32 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_tooluse\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(ToolUseBlock.builder().name("tool_name").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("User message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(ToolUseBlock.builder().name("tool_name").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"role\":\"user\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"role\":\"user\""));
+        }
     }
 
     @Test
@@ -409,56 +414,57 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_compress\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Valid message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text(
-                                                "<compressed_history>old"
-                                                        + " conversation</compressed_history>")
-                                        .build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Valid message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(
+                                    TextBlock.builder()
+                                            .text(
+                                                    "<compressed_history>old"
+                                                            + " conversation</compressed_history>")
+                                            .build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(!requestBody.contains("compressed_history"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertFalse(requestBody.contains("compressed_history"));
+        }
     }
 
     @Test
     void testRecordWithOnlyInvalidMessages() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
+                        .build()) {
+            List<Msg> messages = new ArrayList<>();
+            messages.add(null);
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("").build())
+                            .build());
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(null);
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("").build())
-                        .build());
-
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+        }
     }
 
     @Test
@@ -468,27 +474,28 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_lib\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .memoryLibraryId("lib_456")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Test message").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"memory_library_id\":\"lib_456\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"memory_library_id\":\"lib_456\""));
+        }
     }
 
     @Test
@@ -498,27 +505,28 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_schema\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .profileSchema("profile_123")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Test message").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"profile_schema\":\"profile_123\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"profile_schema\":\"profile_123\""));
+        }
     }
 
     @Test
@@ -528,27 +536,28 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_proj\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .projectId("proj_789")
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Test message").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"project_id\":\"proj_789\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"project_id\":\"proj_789\""));
+        }
     }
 
     @Test
@@ -562,27 +571,28 @@ class BailianLongTermMemoryTest {
         metadata.put("key1", "value1");
         metadata.put("key2", 123);
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .metadata(metadata)
-                        .build();
+                        .build()) {
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Test message").build())
-                        .build());
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
 
-        StepVerifier.create(memory.record(messages)).verifyComplete();
+            StepVerifier.create(memory.record(messages)).verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"meta_data\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"meta_data\""));
+        }
     }
 
     @Test
@@ -595,27 +605,28 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("What are my preferences?").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("What are my preferences?").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(
-                        result -> {
-                            assertNotNull(result);
-                            assertEquals("User prefers dark mode\nUser likes coffee", result);
-                        })
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(
+                            result -> {
+                                assertNotNull(result);
+                                assertEquals("User prefers dark mode\nUser likes coffee", result);
+                            })
+                    .verifyComplete();
+        }
     }
 
     @Test
@@ -624,97 +635,100 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
     void testRetrieveWithNullMessage() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        StepVerifier.create(memory.retrieve(null))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(null))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
     void testRetrieveWithEmptyQuery() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
+                        .build()) {
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("").build())
+                            .build();
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("").build())
-                        .build();
-
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
     void testRetrieveWithNullQuery() {
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
                         .userId("user123")
-                        .build();
+                        .build()) {
+            Msg query = Msg.builder().role(MsgRole.USER).build();
 
-        Msg query = Msg.builder().role(MsgRole.USER).build();
-
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
-    void testRetrieveWithHttpError() throws Exception {
+    void testRetrieveWithHttpError() {
         mockServer.enqueue(
                 new MockResponse().setBody("{\"error\":\"Not found\"}").setResponseCode(404));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
@@ -728,23 +742,24 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("Valid memory\nAnother valid", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("Valid memory\nAnother valid", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
@@ -758,23 +773,24 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("Valid memory\nAnother valid", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("Valid memory\nAnother valid", result))
+                    .verifyComplete();
+        }
     }
 
     @Test
@@ -783,28 +799,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
-                        .httpTransport(httpTransport)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .memoryLibraryId("lib_456")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"memory_library_id\":\"lib_456\""));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"memory_library_id\":\"lib_456\""));
+        }
     }
 
     @Test
@@ -813,27 +830,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .projectId("proj_789")
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"project_ids\":[\"proj_789\"]"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"project_ids\":[\"proj_789\"]"));
+        }
     }
 
     @Test
@@ -842,27 +861,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .topK(15)
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"top_k\":15"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"top_k\":15"));
+        }
     }
 
     @Test
@@ -871,27 +892,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .minScore(0.7)
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"min_score\":0.7"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"min_score\":0.7"));
+        }
     }
 
     @Test
@@ -900,27 +923,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .enableRerank(true)
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"enable_rerank\":true"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"enable_rerank\":true"));
+        }
     }
 
     @Test
@@ -929,27 +954,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .enableJudge(true)
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"enable_judge\":true"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"enable_judge\":true"));
+        }
     }
 
     @Test
@@ -958,27 +985,29 @@ class BailianLongTermMemoryTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        BailianLongTermMemory memory =
+        try (BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
                         .userId("user123")
                         .enableRewrite(true)
-                        .build();
+                        .build()) {
 
-        Msg query =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test query").build())
-                        .build();
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("test query").build())
+                            .build();
 
-        StepVerifier.create(memory.retrieve(query))
-                .assertNext(result -> assertEquals("", result))
-                .verifyComplete();
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
 
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"enable_rewrite\":true"));
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"enable_rewrite\":true"));
+        }
     }
 
     @Test
@@ -988,38 +1017,114 @@ class BailianLongTermMemoryTest {
                         .setBody("{\"request_id\":\"req_role\",\"memory_nodes\":[]}")
                         .setResponseCode(200));
 
+        try (BailianLongTermMemory memory =
+                BailianLongTermMemory.builder()
+                        .apiKey("test-key")
+                        .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .userId("user123")
+                        .build()) {
+
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("User message").build())
+                            .build());
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Assistant message").build())
+                            .build());
+
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+
+            RecordedRequest recordedRequest = mockServer.takeRequest();
+            String requestBody = recordedRequest.getBody().readUtf8();
+            assertTrue(requestBody.contains("\"role\":\"user\""));
+            assertTrue(requestBody.contains("\"role\":\"assistant\""));
+        }
+    }
+
+    @Test
+    void testCloseMethod() {
+        OkHttpTransport transport = OkHttpTransport.builder().build();
         BailianLongTermMemory memory =
                 BailianLongTermMemory.builder()
                         .apiKey("test-key")
                         .apiBaseUrl(baseUrl)
+                        .httpTransport(transport)
                         .userId("user123")
                         .build();
 
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("User message").build())
-                        .build());
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Assistant message").build())
-                        .build());
-
-        StepVerifier.create(memory.record(messages)).verifyComplete();
-
-        RecordedRequest recordedRequest = mockServer.takeRequest();
-        String requestBody = recordedRequest.getBody().readUtf8();
-        assertTrue(requestBody.contains("\"role\":\"user\""));
-        assertTrue(requestBody.contains("\"role\":\"assistant\""));
+        assertNotNull(memory);
+        memory.close();
     }
 
     @Test
-    void testDefaultValues() {
-        BailianLongTermMemory memory =
-                BailianLongTermMemory.builder().apiKey("test-key").userId("user123").build();
+    void testRecordWithHttpError() {
+        mockServer.enqueue(
+                new MockResponse().setBody("{\"error\":\"Internal error\"}").setResponseCode(500));
 
-        assertNotNull(memory);
+        try (BailianLongTermMemory memory =
+                BailianLongTermMemory.builder()
+                        .apiKey("test-key")
+                        .apiBaseUrl(baseUrl)
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .userId("user123")
+                        .build()) {
+
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
+
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+        }
+    }
+
+    @Test
+    void testRecordWithNetworkError() {
+        try (BailianLongTermMemory memory =
+                BailianLongTermMemory.builder()
+                        .apiKey("test-key")
+                        .apiBaseUrl("http://nonexistent-host:99999")
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .userId("user123")
+                        .build()) {
+
+            List<Msg> messages = new ArrayList<>();
+            messages.add(
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("Test message").build())
+                            .build());
+
+            StepVerifier.create(memory.record(messages)).verifyComplete();
+        }
+    }
+
+    @Test
+    void testRetrieveWithNetworkError() {
+        try (BailianLongTermMemory memory =
+                BailianLongTermMemory.builder()
+                        .apiKey("test-key")
+                        .apiBaseUrl("http://nonexistent-host:99999")
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .userId("user123")
+                        .build()) {
+
+            Msg query =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("query").build())
+                            .build();
+
+            StepVerifier.create(memory.retrieve(query))
+                    .assertNext(result -> assertEquals("", result))
+                    .verifyComplete();
+        }
     }
 }

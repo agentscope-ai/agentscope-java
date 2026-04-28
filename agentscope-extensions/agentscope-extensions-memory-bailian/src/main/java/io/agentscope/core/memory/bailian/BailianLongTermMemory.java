@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -44,34 +46,37 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
- * BailianLongTermMemory memory = BailianLongTermMemory.builder()
- *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
- *     .userId("user_001")
- *     .memoryLibraryId("memory_library_123")
- *     .projectId(project_id_123);
- *     .profileSchema(profile_schema_123);
- *     .build();
+ * // Using try-with-resources (recommended)
+ * try (BailianLongTermMemory memory = BailianLongTermMemory.builder()
+ *         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+ *         .userId("user_001")
+ *         .memoryLibraryId("memory_library_123")
+ *         .projectId(project_id_123)
+ *         .profileSchema(profile_schema_123)
+ *         .build()) {
  *
- * // Record messages
- * Msg msg = Msg.builder()
- *     .role(MsgRole.USER)
- *     .content("Remind me to drink water at 9 a.m. every day")
- *     .build();
- * memory.record(List.of(msg)).block();
+ *     // Record messages
+ *     Msg msg = Msg.builder()
+ *         .role(MsgRole.USER)
+ *         .content("Remind me to drink water at 9 a.m. every day")
+ *         .build();
+ *     memory.record(List.of(msg)).block();
  *
- * // Retrieve memories
- * Msg query = Msg.builder()
- *     .role(MsgRole.USER)
- *     .content("What reminder do I have?")
- *     .build();
- * String memories = memory.retrieve(query).block();
+ *     // Retrieve memories
+ *     Msg query = Msg.builder()
+ *         .role(MsgRole.USER)
+ *         .content("What reminder do I have?")
+ *         .build();
+ *     String memories = memory.retrieve(query).block();
+ * }
  * }</pre>
  *
  * @see LongTermMemory
  * @see BailianMemoryClient
  */
-public class BailianLongTermMemory implements LongTermMemory {
+public class BailianLongTermMemory implements LongTermMemory, AutoCloseable {
 
+    private static final Logger log = LoggerFactory.getLogger(BailianLongTermMemory.class);
     private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com";
     private static final Integer DEFAULT_TOP_K = 10;
     private static final Double DEFAULT_MIN_SCORE = 0.3;
@@ -203,7 +208,10 @@ public class BailianLongTermMemory implements LongTermMemory {
             addRequestBuilder.metadata(metadata);
         }
 
-        return client.add(addRequestBuilder.build()).then();
+        return client.add(addRequestBuilder.build())
+                .doOnError(e -> log.warn("Failed to record Bailian memory", e))
+                .onErrorComplete()
+                .then();
     }
 
     /**
@@ -260,6 +268,7 @@ public class BailianLongTermMemory implements LongTermMemory {
                                     .filter(s -> s != null && !s.isBlank())
                                     .collect(Collectors.joining("\n"));
                         })
+                .doOnError(e -> log.warn("Failed to retrieve Bailian memory", e))
                 .onErrorReturn("");
     }
 
@@ -297,6 +306,16 @@ public class BailianLongTermMemory implements LongTermMemory {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Closes the BailianMemoryClient and releases resources.
+     */
+    @Override
+    public void close() {
+        if (client != null) {
+            client.close();
+        }
     }
 
     /**
