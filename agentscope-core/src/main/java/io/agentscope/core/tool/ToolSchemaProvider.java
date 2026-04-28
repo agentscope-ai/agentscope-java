@@ -83,6 +83,7 @@ class ToolSchemaProvider {
                             .name(toolName)
                             .description(tool.getDescription())
                             .parameters(registered.getExtendedParameters())
+                            .outputSchema(tool.getOutputSchema())
                             .build();
             schemas.add(schema);
         }
