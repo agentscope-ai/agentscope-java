@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -173,6 +172,8 @@ public final class SkillFileSystemHelper {
             return false;
         }
 
+        int size = skills.size();
+        int saveCount = 0;
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
@@ -182,7 +183,7 @@ public final class SkillFileSystemHelper {
                     if (!force) {
                         logger.info(
                                 "Skill directory already exists and force=false: {}", skillName);
-                        return false;
+                        continue; // Skip to the next skill if force=false
                     } else {
                         logger.info("Overwriting existing skill directory: {}", skillName);
                         deleteDirectory(skillDir);
@@ -191,12 +192,8 @@ public final class SkillFileSystemHelper {
 
                 Files.createDirectories(skillDir);
 
-                Map<String, String> metadata = new LinkedHashMap<>();
-                metadata.put("name", skill.getName());
-                metadata.put("description", skill.getDescription());
-
                 String skillMdContent =
-                        MarkdownSkillParser.generate(metadata, skill.getSkillContent());
+                        MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
 
                 Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
                 Files.writeString(skillFile, skillMdContent, StandardCharsets.UTF_8);
@@ -215,10 +212,15 @@ public final class SkillFileSystemHelper {
                     }
                 }
 
+                saveCount++;
                 logger.info("Successfully saved skill: {}", skillName);
             }
+            boolean allSaved = (size == saveCount);
+            if (!allSaved) {
+                logger.warn("Not all skills were saved. Saved {} of {}", saveCount, size);
+            }
 
-            return true;
+            return allSaved;
         } catch (IOException e) {
             logger.error("Failed to save skills", e);
             throw new RuntimeException("Failed to save skills", e);
@@ -444,8 +446,9 @@ public final class SkillFileSystemHelper {
         try {
             String skillMdContent = Files.readString(skillFile, StandardCharsets.UTF_8);
             ParsedMarkdown parsed = MarkdownSkillParser.parse(skillMdContent);
-            Map<String, String> metadata = parsed.getMetadata();
-            String name = metadata.get("name");
+            Map<String, Object> metadata = parsed.getMetadata();
+            Object nameObject = metadata.get("name");
+            String name = nameObject != null ? String.valueOf(nameObject) : null;
             if (name == null || name.isEmpty()) {
                 logger.warn("Missing skill name in SKILL.md: {}", skillFile);
                 return Optional.empty();

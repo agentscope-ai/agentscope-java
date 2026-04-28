@@ -172,6 +172,114 @@ class AguiAgentAdapterTest {
     }
 
     @Test
+    void testRunWithSummaryEventUsesTextMessages() {
+        Msg summaryChunk =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Here is the conversation summary.")
+                                        .build())
+                        .build();
+
+        Msg summaryFinal =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Here is the conversation summary.")
+                                        .build())
+                        .build();
+
+        Event summaryChunkEvent = new Event(EventType.SUMMARY, summaryChunk, false);
+        Event summaryFinalEvent = new Event(EventType.SUMMARY, summaryFinal, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(summaryChunkEvent, summaryFinalEvent));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        AguiEvent.TextMessageContent summaryContent =
+                events.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(e -> (AguiEvent.TextMessageContent) e)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(summaryContent, "Should convert SUMMARY to TextMessageContent");
+        assertEquals("msg-summary", summaryContent.messageId());
+        assertEquals("Here is the conversation summary.", summaryContent.delta());
+
+        long textEndCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        assertEquals(1, textEndCount, "Should close the summary text message exactly once");
+    }
+
+    @Test
+    void testRunWithStreamingSummaryEvents() {
+        Msg summaryChunk1 =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("First part. ").build())
+                        .build();
+
+        Msg summaryChunk2 =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Second part.").build())
+                        .build();
+
+        Msg summaryFinal =
+                Msg.builder()
+                        .id("msg-summary")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("First part. Second part.").build())
+                        .build();
+
+        Event event1 = new Event(EventType.SUMMARY, summaryChunk1, false);
+        Event event2 = new Event(EventType.SUMMARY, summaryChunk2, false);
+        Event event3 = new Event(EventType.SUMMARY, summaryFinal, true);
+
+        when(mockAgent.stream(anyList(), any(StreamOptions.class)))
+                .thenReturn(Flux.just(event1, event2, event3));
+
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("run-1")
+                        .messages(List.of(AguiMessage.userMessage("msg-1", "Hello")))
+                        .build();
+
+        List<AguiEvent> events = adapter.run(input).collectList().block();
+
+        assertNotNull(events);
+
+        long contentCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
+        assertEquals(2, contentCount, "Should stream summary chunks as text deltas");
+
+        long startCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
+        assertEquals(1, startCount, "Should only start the summary message once");
+
+        long endCount = events.stream().filter(e -> e instanceof AguiEvent.TextMessageEnd).count();
+        assertEquals(1, endCount, "Should only end the summary message once");
+    }
+
+    @Test
     void testRunWithToolCallEvent() {
         Msg toolCallMsg =
                 Msg.builder()

@@ -22,20 +22,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Some deployment relative properties, such as server default export port and host.
+ * Some deployment relative properties, such as server default export port and host and path.
  *
  * <p>When developers don't specified target {@link TransportProperties}, and want to use default transport, developers
  * should create this class and input port at least to make sure AgentScope can generate the url for default transport.
  */
-public record DeploymentProperties(String host, int port) {
+public record DeploymentProperties(String host, int port, String path) {
 
     private static final Logger log = LoggerFactory.getLogger(DeploymentProperties.class);
+    private static final String DEFAULT_HOST = "localhost";
 
     public static class Builder {
 
         private String host;
 
         private Integer port;
+
+        private String path;
 
         public Builder host(String host) {
             this.host = host;
@@ -47,6 +50,11 @@ public record DeploymentProperties(String host, int port) {
             return this;
         }
 
+        public Builder path(String path) {
+            this.path = path;
+            return this;
+        }
+
         public DeploymentProperties build() {
             if (null == host) {
                 log.info(
@@ -55,13 +63,18 @@ public record DeploymentProperties(String host, int port) {
                 try {
                     host = NetworkUtils.getLocalIpAddress();
                     log.info("Local IP address: {}", host);
-                } catch (SocketException ignored) {
+                } catch (SocketException exception) {
+                    host = DEFAULT_HOST;
+                    log.warn(
+                            "Failed to resolve local IP address, fallback to default host: {}",
+                            DEFAULT_HOST,
+                            exception);
                 }
             }
             if (null == port) {
                 throw new IllegalArgumentException("port must be configured.");
             }
-            return new DeploymentProperties(host, port);
+            return new DeploymentProperties(host, port, path);
         }
     }
 }

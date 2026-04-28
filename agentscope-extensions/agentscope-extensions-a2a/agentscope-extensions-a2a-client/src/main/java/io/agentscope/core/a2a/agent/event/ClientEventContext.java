@@ -19,8 +19,13 @@ package io.agentscope.core.a2a.agent.event;
 import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
 /**
@@ -39,6 +44,16 @@ public class ClientEventContext {
     private List<Hook> hooks;
 
     private Task task;
+
+    /**
+     * Temporarily store the complete historical dialogue context at the time of this call,
+     * specifically for use in constructing PreReasoning Events using the {@link #publishPreReasoning()} method.
+     */
+    private List<Msg> inputMessages;
+
+    // Ensure that lifecycle events are triggered only once
+    private final AtomicBoolean preReasoningFired = new AtomicBoolean(false);
+    private final AtomicBoolean postReasoningFired = new AtomicBoolean(false);
 
     public ClientEventContext(String currentRequestId, A2aAgent agent) {
         this.currentRequestId = currentRequestId;
@@ -75,5 +90,73 @@ public class ClientEventContext {
 
     public void setTask(Task task) {
         this.task = task;
+    }
+
+    public void setInputMessages(List<Msg> inputMessages) {
+        this.inputMessages = inputMessages;
+    }
+
+    // ==========================================
+    // Unified Event Publishing API
+    // ==========================================
+
+    /**
+     * Trigger PreReasoningEvent (triggered only once)
+     */
+    void publishPreReasoning() {
+        if (hooks != null && !hooks.isEmpty() && preReasoningFired.compareAndSet(false, true)) {
+            List<Msg> msgs = inputMessages == null ? List.of() : inputMessages;
+            PreReasoningEvent preEvent = new PreReasoningEvent(agent, "A2A", null, msgs);
+
+            Mono<PreReasoningEvent> eventMono = Mono.just(preEvent);
+            for (Hook hook : hooks) {
+                eventMono = eventMono.flatMap(hook::onEvent);
+            }
+            eventMono.block();
+        }
+    }
+
+    /**
+     * Trigger ReasoningChunkEvent (streaming process)
+     */
+    void publishReasoningChunk(Msg chunkMsg) {
+        if (hooks != null && !hooks.isEmpty()) {
+            publishPreReasoning(); // If not sent Pre before, send Pre first
+            ReasoningChunkEvent chunkEvent =
+                    new ReasoningChunkEvent(agent, "A2A", null, chunkMsg, chunkMsg);
+
+            Mono<ReasoningChunkEvent> eventMono = Mono.just(chunkEvent);
+            for (Hook hook : hooks) {
+                eventMono = eventMono.flatMap(hook::onEvent);
+            }
+            eventMono.block();
+        }
+    }
+
+    /**
+     * Trigger PostReasoningEvent (triggered only once) and return the final reasoning message
+     * after hooks have had a chance to modify it.
+     *
+     * @param finalMsg the original final reasoning message
+     * @return the hook-modified reasoning message, or {@code finalMsg} if no hooks ran or no
+     * modification was applied
+     */
+    Msg publishPostReasoning(Msg finalMsg) {
+        if (hooks != null && !hooks.isEmpty() && postReasoningFired.compareAndSet(false, true)) {
+            publishPreReasoning();
+            PostReasoningEvent postEvent = new PostReasoningEvent(agent, "A2A", null, finalMsg);
+
+            Mono<PostReasoningEvent> eventMono = Mono.just(postEvent);
+            for (Hook hook : hooks) {
+                eventMono = eventMono.flatMap(hook::onEvent);
+            }
+
+            postEvent = eventMono.block();
+            if (postEvent != null) {
+                Msg modifiedMsg = postEvent.getReasoningMessage();
+                return modifiedMsg != null ? modifiedMsg : finalMsg;
+            }
+        }
+        return finalMsg;
     }
 }

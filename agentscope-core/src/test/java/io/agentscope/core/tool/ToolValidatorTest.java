@@ -27,6 +27,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,37 @@ import org.junit.jupiter.api.Test;
 @Tag("unit")
 @DisplayName("ToolValidator Tests")
 class ToolValidatorTest {
+
+    static class BeanPayload {
+        @ToolParam(name = "requiredField", description = "required field", required = true)
+        private String requiredField;
+
+        @ToolParam(name = "optionalField", description = "optional field", required = false)
+        private String optionalField;
+
+        public String getRequiredField() {
+            return requiredField;
+        }
+
+        public void setRequiredField(String requiredField) {
+            this.requiredField = requiredField;
+        }
+
+        public String getOptionalField() {
+            return optionalField;
+        }
+
+        public void setOptionalField(String optionalField) {
+            this.optionalField = optionalField;
+        }
+    }
+
+    static class BeanPayloadTool {
+        public String echo(
+                @ToolParam(name = "payload", description = "payload") BeanPayload payload) {
+            return payload.getRequiredField();
+        }
+    }
 
     // ==================== validateInput Tests ====================
 
@@ -622,6 +654,68 @@ class ToolValidatorTest {
             assertTrue(
                     result.contains("cannot be resolved"),
                     "Error should mention unresolved reference, but got: " + result);
+        }
+    }
+
+    @Nested
+    @DisplayName("validateInput - Generated Bean Schema")
+    class ValidateInputGeneratedBeanSchema {
+
+        private Map<String, Object> buildBeanToolSchema() throws Exception {
+            Method method = BeanPayloadTool.class.getMethod("echo", BeanPayload.class);
+            return new ToolSchemaGenerator().generateParameterSchema(method, null);
+        }
+
+        @Test
+        @DisplayName("Should allow missing optional nested bean field")
+        void testGeneratedBeanSchema_MissingOptionalField() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+
+            String input = "{\"payload\":{\"requiredField\":\"value\"}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNull(result, "Missing optional nested field should be accepted");
+        }
+
+        @Test
+        @DisplayName("Should allow explicit null optional nested bean field")
+        void testGeneratedBeanSchema_ExplicitNullOptionalField() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+
+            String input = "{\"payload\":{\"requiredField\":\"value\",\"optionalField\":null}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNull(result, "Explicit null optional nested field should be accepted");
+        }
+
+        @Test
+        @DisplayName("Should reject explicit null required nested bean field")
+        void testGeneratedBeanSchema_ExplicitNullRequiredField() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+
+            String input = "{\"payload\":{\"requiredField\":null}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNotNull(result, "Explicit null required nested field should be rejected");
+        }
+
+        @Test
+        @DisplayName("Should preserve unknown null field for additionalProperties validation")
+        void testGeneratedBeanSchema_UnknownNullFieldStillFails() throws Exception {
+            Map<String, Object> toolSchema = buildBeanToolSchema();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payloadSchema =
+                    (Map<String, Object>)
+                            ((Map<String, Object>) toolSchema.get("properties")).get("payload");
+            payloadSchema.put("additionalProperties", false);
+
+            String input = "{\"payload\":{\"requiredField\":\"value\",\"unknownField\":null}}";
+
+            String result = ToolValidator.validateInput(input, toolSchema);
+            assertNotNull(result, "Unknown null field should still be rejected");
+            assertTrue(
+                    result.toLowerCase().contains("additional") || result.contains("unknownField"),
+                    "Error should indicate unknown/additional property, but got: " + result);
         }
     }
 
